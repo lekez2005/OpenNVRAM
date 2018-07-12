@@ -84,7 +84,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             tempgds = OPTS.openram_temp + "/temp.gds"
             self.sp_write(tempspice)
             self.gds_write(tempgds)
-            debug.check(verify.run_drc(self.name, tempgds) == 0,"DRC failed for {0}".format(self.name))
+            debug.check(verify.run_drc(self.name, tempgds, exception_group=self.__class__.__name__) == 0,"DRC failed for {0}".format(self.name))
             debug.check(verify.run_lvs(self.name, tempgds, tempspice, final_verification) == 0,"LVS failed for {0}".format(self.name))
             os.remove(tempspice)
             os.remove(tempgds)
@@ -94,7 +94,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         if OPTS.check_lvsdrc:
             tempgds = OPTS.openram_temp + "/temp.gds"
             self.gds_write(tempgds)
-            debug.check(verify.run_drc(self.name, tempgds) == 0,"DRC failed for {0}".format(self.name))
+            debug.check(verify.run_drc(self.name, tempgds, exception_group=self.__class__.__name__) == 0,"DRC failed for {0}".format(self.name))
             os.remove(tempgds)
 
     def LVS(self, final_verification=False):

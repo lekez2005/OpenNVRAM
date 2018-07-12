@@ -66,13 +66,32 @@ from globals import OPTS
 import subprocess
 
 
-def run_drc(cell_name, gds_name):
+def run_drc(cell_name, gds_name, exception_group=""):
     """Run DRC check on a given top-level name which is
        implemented in gds_name."""
 
     # the runset file contains all the options to run calibre
     from tech import drc
     drc_rules = drc["drc_rules"]
+
+    rule_unselect = []
+    group_unselect = []
+    if "exceptions" in drc:
+        drc_exceptions = drc["exceptions"]
+        if "groups" in drc_exceptions:
+            group_unselect.extend(drc_exceptions["groups"])
+        if "all" in drc_exceptions:
+            rule_unselect.extend(drc_exceptions["all"])
+        if exception_group and exception_group in drc_exceptions:
+            rule_unselect.extend(drc_exceptions[exception_group])
+
+    rule_unselect_str = ""
+    for i in range(0, len(rule_unselect)):
+        rule_unselect_str += " {{check_unselect[{0}]}} {1}".format(i+1, rule_unselect[i])
+    group_unselect_str = ""
+    for i in range(0, len(group_unselect)):
+        group_unselect_str += " {{group_unselect[{0}]}} {1}".format(i+1, group_unselect[i])
+
 
     drc_runset = {
         'drcRulesFile': drc_rules,
@@ -81,6 +100,9 @@ def run_drc(cell_name, gds_name):
         'drcLayoutPrimary': cell_name,
         'drcLayoutSystem': 'GDSII',
         'drcResultsformat': 'ASCII',
+        'drcActiveRecipe': 'All checks (Modified)',
+        'drcUserRecipes': '{{All checks (Modified)} {{group_unselect[1]} all {group_select[1]} rule_file ' +
+            group_unselect_str + rule_unselect_str + '}}',
         'drcResultsFile': OPTS.openram_temp + cell_name + ".drc.results",
         'drcSummaryFile': OPTS.openram_temp + cell_name + ".drc.summary",
         'cmnFDILayerMapFile': drc["layer_map"],
@@ -118,17 +140,34 @@ def run_drc(cell_name, gds_name):
     results = f.readlines()
     f.close()
     # those lines should be the last 3
-    results = results[-3:]
-    geometries = int(re.split("\W+", results[0])[5])
-    rulechecks = int(re.split("\W+", results[1])[4])
-    errors = int(re.split("\W+", results[2])[5])
+    summary = []
+    if results[-1].startswith("TOTAL DFM RDB Results Generated"): # DFM results
+        summary=results[-4:-1]
+    else:
+        summary = results[-3:]
+    geometries = int(re.split("\W+", summary[0])[5])
+    rulechecks = int(re.split("\W+", summary[1])[4])
+    errors = int(re.split("\W+", summary[2])[5])
 
-    # always display this summary
-    if errors > 0:
-        debug.error("{0}\tGeometries: {1}\tChecks: {2}\tErrors: {3}".format(cell_name, 
+    # always display this summary 
+    if errors > 0:        
+        violations = [] # DRC violations
+        in_statistics = False
+        for i in range(len(results)-1, -1, -1): # iterate in reverse order for efficiency
+            result = results[i]
+            if result.startswith("--- RULECHECK"):
+                in_statistics = False
+                break
+            if in_statistics:
+                violations.append(result)
+            if result.startswith("--- SUMMARY"):
+                in_statistics = True
+        violations.reverse()
+        debug.error("{0}\tGeometries: {1}\tChecks: {2}\tErrors: {3} \n {4}".format(cell_name, 
                                                                             geometries,
                                                                             rulechecks,
-                                                                            errors))
+                                                                            errors, 
+                                                                            "".join(violations)))
     else:
         debug.info(1, "{0}\tGeometries: {1}\tChecks: {2}\tErrors: {3}".format(cell_name, 
                                                                               geometries,

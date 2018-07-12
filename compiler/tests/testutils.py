@@ -12,7 +12,7 @@ class openram_test(unittest.TestCase):
         tempgds = OPTS.openram_temp + "temp.gds"
         w.gds_write(tempgds)
         import verify
-        self.assertFalse(verify.run_drc(w.name, tempgds))
+        self.assertFalse(verify.run_drc(w.name, tempgds, exception_group=w.__class__.__name__))
 
         files = glob.glob(OPTS.openram_temp + '*')
         for f in files:
@@ -28,7 +28,7 @@ class openram_test(unittest.TestCase):
 
         import verify
         try:
-            self.assertTrue(verify.run_drc(a.name, tempgds)==0)
+            self.assertTrue(verify.run_drc(a.name, tempgds, exception_group=a.__class__.__name__)==0)
         except:
             self.reset()
             self.fail("DRC failed: {}".format(a.name))

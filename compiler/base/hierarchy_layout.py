@@ -4,6 +4,10 @@ import gdsMill
 import debug
 from tech import drc, GDS
 from tech import layer as techlayer
+try:
+    from tech import purpose as techpurpose
+except ImportError:
+    techpurpose = {}
 import os
 from vector import vector
 from pin_layout import pin_layout
@@ -141,7 +145,7 @@ class layout(lef.lef):
         # negative layers indicate "unused" layers in a given technology
         layer_num = techlayer[layer]
         if layer_num >= 0:
-            self.objs.append(geometry.rectangle(layer_num, offset, width, height))
+            self.objs.append(geometry.rectangle(layer_num, offset, width, height, layerPurpose=get_purpose(layer)))
             return self.objs[-1]
         return None
 
@@ -155,7 +159,7 @@ class layout(lef.lef):
         layer_num = techlayer[layer]
         corrected_offset = offset - vector(0.5*width,0.5*height)
         if layer_num >= 0:
-            self.objs.append(geometry.rectangle(layer_num, corrected_offset, width, height))
+            self.objs.append(geometry.rectangle(layer_num, corrected_offset, width, height, layerPurpose=get_purpose(layer)))
             return self.objs[-1]
         return None
 
@@ -291,7 +295,7 @@ class layout(lef.lef):
         debug.info(5,"add label " + str(text) + " " + layer + " " + str(offset))
         layer_num = techlayer[layer]
         if layer_num >= 0:
-            self.objs.append(geometry.label(text, layer_num, offset, zoom))
+            self.objs.append(geometry.label(text, layer_num, offset, zoom, layerPurpose=get_purpose(layer)))
             return self.objs[-1]
         return None
 
@@ -573,7 +577,8 @@ class layout(lef.lef):
         debug.info(0, 
                    "|==============================================================================|")
         for obj in self.objs:
-            debug.info(0, "layer={0} : offset={1} : size={2}".format(obj.layerNumber,
+            debug.info(0, "layer={0} purpose={1} : offset={2} : size={3}".format(obj.layerNumber,
+                                                                     obj.layerPurpose,
                                                                      obj.offset,
                                                                      obj.size))
 
@@ -588,3 +593,7 @@ class layout(lef.lef):
                                                                    inst.mod.name,
                                                                    inst.offset))
 
+def get_purpose(layer):
+    if layer in techpurpose:
+        return techpurpose[layer]
+    return 0

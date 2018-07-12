@@ -377,9 +377,9 @@ class VlsiLayout:
 
         boundaryToAdd = GdsBoundary()
         boundaryToAdd.drawingLayer = layerNumber
-        boundaryToAdd.dataType = 0
+        boundaryToAdd.dataType = purposeNumber if purposeNumber is not None else 0
         boundaryToAdd.coordinates = coordinates
-        boundaryToAdd.purposeLayer = purposeNumber
+        boundaryToAdd.purposeLayer = 0
         #add the sref to the root structure
         self.structures[self.rootStructureName].boundaries+=[boundaryToAdd]
     

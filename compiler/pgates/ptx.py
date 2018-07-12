@@ -1,6 +1,7 @@
 import design
 import debug
 from tech import drc, info, spice
+from tech import layer as tech_layers
 from vector import vector
 from contact import contact
 import path
@@ -127,6 +128,17 @@ class ptx(design.design):
         self.active_offset = vector([self.well_enclose_active]*2)
 
         # Well enclosure of active, ensure minwidth as well
+        if "ptx_implant_enclosure_active" in drc and drc["ptx_implant_enclosure_active"] > 0:
+            self.implant_enclose = drc["ptx_implant_enclosure_active"]
+            self.implant_height = self.poly_height + 2*self.implant_enclose
+            self.implant_offset = self.active_offset - [self.implant_enclose, self.implant_enclose + self.poly_extend_active]
+            
+        else:
+            self.implant_enclose = drc["implant_enclosure_active"]
+            self.implant_height = self.active_height + 2*self.implant_enclose
+            self.implant_offset = self.active_offset - [self.implant_enclose]*2
+        self.implant_width = self.active_width + 2*self.implant_enclose
+
         if info["has_{}well".format(self.well_type)]:
             self.cell_well_width = max(self.active_width + 2*self.well_enclose_active,
                                   self.well_width)
@@ -254,6 +266,20 @@ class ptx(design.design):
             poly_positions.append(poly_offset)
             poly_offset = poly_offset + vector(self.poly_pitch,0)
 
+        # poly dummys
+        if "po_dummy" in tech_layers:
+            dummy_height = drc["po_dummy_min_height"]
+            if self.active_height > drc["po_dummy_thresh"]:
+                dummy_height = self.active_height + 2*drc["po_dummy_enc"]
+            dummy_y_offset = self.active_offset.y + (self.active_height-dummy_height)*0.5
+            shifts = [0, 1, -self.mults-1, -self.mults-2]
+            for i in range(0, 4):
+                self.add_rect_center(layer="po_dummy",
+                                 offset=vector(poly_offset.x+self.poly_pitch*shifts[i], poly_offset.y),
+                                 height=dummy_height,
+                                 width=self.poly_width)
+
+
         if self.connect_poly:
             self.connect_fingered_poly(poly_positions)
             
@@ -267,26 +293,25 @@ class ptx(design.design):
                       height=self.active_height)
         # If the implant must enclose the active, shift offset
         # and increase width/height
-        enclose_width = drc["implant_enclosure_active"]
-        enclose_offset = [enclose_width]*2
         self.add_rect(layer="{}implant".format(self.implant_type),
-                      offset=self.active_offset - enclose_offset,
-                      width=self.active_width + 2*enclose_width,
-                      height=self.active_height + 2*enclose_width)
+                      offset=self.implant_offset,
+                      width=self.implant_width,
+                      height=self.implant_height)
 
     def add_well_implant(self):
         """
         Add an (optional) well and implant for the type of transistor.
         """
-        if info["has_{}well".format(self.well_type)]:
+        if info["has_{}well".format(self.well_type)]:                                                                                                                                       
             self.add_rect(layer="{}well".format(self.well_type),
                           offset=(0,0),
                           width=self.cell_well_width,
                           height=self.cell_well_height)
-            self.add_rect(layer="vtg",
-                          offset=(0,0),
-                          width=self.cell_well_width,
-                          height=self.cell_well_height)
+            if "vtg" in tech_layers:
+                self.add_rect(layer="vtg",
+                            offset=(0,0),
+                            width=self.cell_well_width,
+                            height=self.cell_well_height)
 
 
     def calculate_num_contacts(self):
@@ -327,8 +352,8 @@ class ptx(design.design):
             contact=self.add_contact_center(layers=("active", "contact", "metal1"),
                                             offset=pos,
                                             size=(1, self.num_contacts),
-                                            implant_type=self.implant_type,
-                                            well_type=self.well_type)
+                                            implant_type=None,
+                                            well_type=None)
             self.add_layout_pin_center_rect(text="S",
                                             layer="metal1",
                                             offset=pos,
@@ -340,8 +365,8 @@ class ptx(design.design):
             contact=self.add_contact_center(layers=("active", "contact", "metal1"),
                                             offset=pos,
                                             size=(1, self.num_contacts),
-                                            implant_type=self.implant_type,
-                                            well_type=self.well_type)
+                                            implant_type=None,
+                                            well_type=None)
             self.add_layout_pin_center_rect(text="D",
                                             layer="metal1",
                                             offset=pos,

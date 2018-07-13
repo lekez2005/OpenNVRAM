@@ -50,6 +50,10 @@ class ptx(design.design):
         # but this may be uncommented for debug purposes
         #self.DRC()
 
+    def setup_drc_constants(self):
+        design.design.setup_drc_constants(self)
+        if "ptx_well_enclosure_active" in drc:
+            self.well_enclose_active = drc["ptx_well_enclosure_active"]
     
     def create_layout(self):
         """Calls all functions related to the generation of the layout"""
@@ -138,7 +142,7 @@ class ptx(design.design):
             self.implant_height = self.active_height + 2*self.implant_enclose
             self.implant_offset = self.active_offset - [self.implant_enclose]*2
         self.implant_width = self.active_width + 2*self.implant_enclose
-
+        
         if info["has_{}well".format(self.well_type)]:
             self.cell_well_width = max(self.active_width + 2*self.well_enclose_active,
                                   self.well_width)
@@ -151,6 +155,7 @@ class ptx(design.design):
             # If no well, use the boundary of the active and poly
             self.height = self.poly_height
             self.width = self.active_width
+
         
         # The active offset is due to the well extension
         self.active_offset = vector([self.well_enclose_active]*2)
@@ -291,12 +296,7 @@ class ptx(design.design):
                       offset=self.active_offset,
                       width=self.active_width,
                       height=self.active_height)
-        # If the implant must enclose the active, shift offset
-        # and increase width/height
-        self.add_rect(layer="{}implant".format(self.implant_type),
-                      offset=self.implant_offset,
-                      width=self.implant_width,
-                      height=self.implant_height)
+        
 
     def add_well_implant(self):
         """
@@ -307,6 +307,13 @@ class ptx(design.design):
                           offset=(0,0),
                           width=self.cell_well_width,
                           height=self.cell_well_height)
+            # If the implant must enclose the active, shift offset
+            # and increase width/height
+            self.add_rect(layer="{}implant".format(self.implant_type),
+                        offset=self.implant_offset,
+                        width=self.implant_width,
+                        height=self.implant_height)
+            
             if "vtg" in tech_layers:
                 self.add_rect(layer="vtg",
                             offset=(0,0),

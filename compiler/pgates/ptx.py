@@ -4,6 +4,7 @@ from tech import drc, info, spice
 from tech import layer as tech_layers
 from vector import vector
 from contact import contact
+import math
 import path
 import re
 
@@ -324,9 +325,17 @@ class ptx(design.design):
     def calculate_num_contacts(self):
         """ 
         Calculates the possible number of source/drain contacts in a finger.
-        For now, it is hard set as 1.
         """
-        return 1
+        num_contacts = int(math.ceil(self.tx_width/(self.contact_width + self.contact_spacing)))
+        while num_contacts > 1:
+            contact_array = contact(layer_stack=("active", "contact", "metal1"),
+                              dimensions=[1, num_contacts],
+                              implant_type=None,
+                              well_type=None)
+            if contact_array.first_layer_height < self.tx_width and contact_array.second_layer_height < self.tx_width:
+                break
+            num_contacts -= 1
+        return num_contacts
 
 
     def get_contact_positions(self):

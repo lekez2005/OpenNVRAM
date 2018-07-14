@@ -57,6 +57,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.m3_space = drc["metal3_to_metal3"]
         self.active_width = drc["minwidth_active"]
         self.contact_width = drc["minwidth_contact"]
+        self.contact_spacing = drc["contact_to_contact"]
         
         self.poly_to_active = drc["poly_to_active"]
         self.poly_extend_active = drc["poly_extend_active"]

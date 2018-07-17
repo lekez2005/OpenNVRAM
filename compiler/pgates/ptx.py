@@ -134,6 +134,8 @@ class ptx(design.design):
         
         if "metal1_to_metal1_wide" in drc:
             self.wide_m1_space = drc["metal1_to_metal1_wide"]
+            if self.tx_width < drc["minwidth_tx"] + 0.01:
+                self.wide_m1_space += 0.01
         else:
             self.wide_m1_space = drc["metal1_to_metal1"]
 
@@ -184,7 +186,14 @@ class ptx(design.design):
             self.height = self.poly_height
             self.width = self.active_width
 
-                # The active offset is due to the well extension
+        # poly dummys
+        if "po_dummy" in tech_layers:
+            self.dummy_height = drc["po_dummy_min_height"]
+            if self.active_height > drc["po_dummy_thresh"]:
+                self.dummy_height = self.active_height + 2*drc["po_dummy_enc"]
+            self.dummy_y_offset = self.well_enclose_active + 0.5*self.active_height
+        
+        # The active offset is due to the well extension
         self.active_offset = vector([self.well_enclose_active]*2)
 
         # This is the center of the first active contact offset (centered vertically)
@@ -337,15 +346,11 @@ class ptx(design.design):
 
         # poly dummys
         if "po_dummy" in tech_layers:
-            dummy_height = drc["po_dummy_min_height"]
-            if self.active_height > drc["po_dummy_thresh"]:
-                dummy_height = self.active_height + 2*drc["po_dummy_enc"]
-            dummy_y_offset = self.well_enclose_active + 0.5*self.active_height
             shifts = [0, 1, -self.mults-1, -self.mults-2]
             for i in range(0, 4):
                 self.add_rect_center(layer="po_dummy",
-                                 offset=vector(poly_offset.x+self.poly_pitch*shifts[i], dummy_y_offset),
-                                 height=dummy_height,
+                                 offset=vector(poly_offset.x+self.poly_pitch*shifts[i], self.dummy_y_offset),
+                                 height=self.dummy_height,
                                  width=self.poly_width)
 
 

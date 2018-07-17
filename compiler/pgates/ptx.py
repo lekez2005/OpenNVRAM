@@ -4,6 +4,7 @@ from tech import drc, info, spice
 from tech import layer as tech_layers
 from vector import vector
 from contact import contact
+from contact import poly as poly_contact
 import math
 import path
 import re
@@ -126,8 +127,32 @@ class ptx(design.design):
         # Active height is just the transistor width
         self.active_height = self.tx_width
 
+        if "poly_contact_layer" in info:
+            self.poly_contact_layer = info["poly_contact_layer"]
+        else:
+            self.poly_contact_layer = None
+        
+        if "metal1_to_metal1_wide" in drc:
+            self.wide_m1_space = drc["metal1_to_metal1_wide"]
+        else:
+            self.wide_m1_space = drc["metal1_to_metal1"]
+
         # Poly height must include poly extension over active
+        self.poly_offset_y = self.well_enclose_active + 0.5*self.active_height
+        self.additional_poly = 0.0
         self.poly_height = self.tx_width + 2*self.poly_extend_active
+        if self.poly_contact_layer == "metal1":
+            self.active_to_contact_center = self.wide_m1_space + poly_contact.second_layer_height*0.5
+            poly_height = self.poly_extend_active + self.tx_width + self.active_to_contact_center + \
+                0.5*poly_contact.first_layer_height
+            self.additional_poly = poly_height - self.poly_height  # additional poly from adding poly_to_m1 via
+            self.poly_height = poly_height
+            if self.tx_type == "nmos":
+                self.poly_offset_y += 0.5*self.additional_poly
+                self.poly_contact_center = self.well_enclose_active + self.active_height + self.active_to_contact_center
+            else:
+                self.poly_offset_y -= 0.5*self.additional_poly
+                self.poly_contact_center = self.well_enclose_active - self.active_to_contact_center
 
         # The active offset is due to the well extension
         self.active_offset = vector([self.well_enclose_active]*2)
@@ -137,6 +162,8 @@ class ptx(design.design):
             self.implant_enclose = drc["ptx_implant_enclosure_active"]
             self.implant_height = self.poly_height + 2*self.implant_enclose
             self.implant_offset = self.active_offset - [self.implant_enclose, self.implant_enclose + self.poly_extend_active]
+            if self.tx_type == "pmos":
+                self.implant_offset.y -= self.additional_poly
             
         else:
             self.implant_enclose = drc["implant_enclosure_active"]
@@ -157,8 +184,7 @@ class ptx(design.design):
             self.height = self.poly_height
             self.width = self.active_width
 
-        
-        # The active offset is due to the well extension
+                # The active offset is due to the well extension
         self.active_offset = vector([self.well_enclose_active]*2)
 
         # This is the center of the first active contact offset (centered vertically)
@@ -180,24 +206,34 @@ class ptx(design.design):
         # Nothing to do if there's one poly gate
         if len(poly_positions)<2:
             return
+        
+        # Remove the old pin and add the new one
+        self.remove_layout_pin("G") # only keep the main pin
 
         # The width of the poly is from the left-most to right-most poly gate
         poly_width = poly_positions[-1].x - poly_positions[0].x + self.poly_width
-        if self.tx_type == "pmos":
-            # This can be limited by poly to active spacing or the poly extension
-            distance_below_active = self.poly_width + max(self.poly_to_active,0.5*self.poly_height)
-            poly_offset = poly_positions[0] - vector(0.5*self.poly_width, distance_below_active)
-        else:
-            # This can be limited by poly to active spacing or the poly extension
-            distance_above_active = max(self.poly_to_active,0.5*self.poly_height)            
-            poly_offset = poly_positions[0] + vector(-0.5*self.poly_width, distance_above_active)
-        # Remove the old pin and add the new one
-        self.remove_layout_pin("G") # only keep the main pin
-        self.add_layout_pin(text="G",
-                            layer="poly",
-                            offset=poly_offset,
+
+        if self.poly_contact_layer == "metal1":
+            self.add_layout_pin(text="G",
+                            layer="metal1",
+                            offset=vector(poly_positions[0].x, self.poly_contact_center)-[0.5*self.m1_width]*2,
                             width=poly_width,
-                            height=drc["minwidth_poly"])
+                            height=self.m1_width)
+        else:
+            if self.tx_type == "pmos":
+                # This can be limited by poly to active spacing or the poly extension
+                distance_below_active = self.poly_width + max(self.poly_to_active,0.5*self.poly_height)
+                poly_offset = poly_positions[0] - vector(0.5*self.poly_width, distance_below_active)
+            else:
+                # This can be limited by poly to active spacing or the poly extension
+                distance_above_active = max(self.poly_to_active,0.5*self.poly_height)            
+                poly_offset = poly_positions[0] + vector(-0.5*self.poly_width, distance_above_active)
+            
+            self.add_layout_pin(text="G",
+                                layer="poly",
+                                offset=poly_offset,
+                                width=poly_width,
+                                height=drc["minwidth_poly"])
 
 
     def connect_fingered_active(self, drain_positions, source_positions):
@@ -208,7 +244,7 @@ class ptx(design.design):
         # This is the distance that we must route up or down from the center
         # of the contacts to avoid DRC violations to the other contacts
         pin_offset = vector(0, 0.5*self.active_contact.second_layer_height \
-                            + self.m1_space + 0.5*self.m1_width)
+                            + self.wide_m1_space + 0.5*self.m1_width)
         # This is the width of a m1 extend the ends of the pin
         end_offset = vector(self.m1_width/2,0)
 
@@ -234,24 +270,38 @@ class ptx(design.design):
                                                end=source_positions[-1]+source_offset+end_offset)
 
         if len(drain_positions)>1:
-            drain_offset = pin_offset.scale(drain_dir,drain_dir)
+            
             self.remove_layout_pin("D") # remove the individual connections
-            # Add each vertical segment
-            for a in drain_positions:
-                self.add_path(("metal1"), [a,a+drain_offset])
-            # Add a single horizontal pin
-            self.add_layout_pin_center_segment(text="D",
-                                               layer="metal1",
-                                               start=drain_positions[0]+drain_offset-end_offset,
-                                               end=drain_positions[-1]+drain_offset+end_offset)
+            if self.poly_contact_layer == "metal1":
+                metal2_width = drc["minwidth_metal2"]
+                for a in drain_positions:
+                    contact=self.add_contact_center(layers=("metal1", "via1", "metal2"),
+                                offset=a,
+                                size=(1, 1),
+                                implant_type=None,
+                                well_type=None)
+                self.add_layout_pin(text="D",
+                                layer="metal2",
+                                offset=drain_positions[0]-vector(0, 0.5*metal2_width),
+                                width=drain_positions[-1][0]-drain_positions[0][0],
+                                height=metal2_width)
+            else:
+                drain_offset = pin_offset.scale(drain_dir,drain_dir)
+                # Add each vertical segment
+                for a in drain_positions:
+                    self.add_path(("metal1"), [a,a+drain_offset])
+                # Add a single horizontal pin
+                self.add_layout_pin_center_segment(text="D",
+                                                layer="metal1",
+                                                start=drain_positions[0]+drain_offset-end_offset,
+                                                end=drain_positions[-1]+drain_offset+end_offset)
             
     def add_poly(self):
         """
         Add the poly gates(s) and (optionally) connect them.
         """
         # poly is one contacted spacing from the end and down an extension
-        poly_offset = self.active_offset + vector(self.poly_width,self.poly_height).scale(0.5,0.5) \
-                      + vector(self.end_to_poly, -self.poly_extend_active)
+        poly_offset = vector(self.active_offset.x + 0.5*self.poly_width + self.end_to_poly,  self.poly_offset_y)
 
         # poly_positions are the bottom center of the poly gates
         poly_positions = []
@@ -264,11 +314,24 @@ class ptx(design.design):
                                  offset=poly_offset,
                                  height=self.poly_height,
                                  width=self.poly_width)
-            self.add_layout_pin_center_rect(text="G",
-                                            layer="poly",
-                                            offset=poly_offset,
-                                            height=self.poly_height,
-                                            width=self.poly_width)
+            if self.poly_contact_layer == "metal1":
+                contact_pos = vector(poly_offset.x, self.poly_contact_center)
+                p_contact=self.add_contact_center(layers=("poly", "contact", "metal1"),
+                                            offset=contact_pos,
+                                            size=(1, 1),
+                                            implant_type=None,
+                                            well_type=None)
+                self.add_layout_pin_center_rect(text="G",
+                                                layer="metal1",
+                                                offset=contact_pos,
+                                                height=poly_contact.second_layer_height,
+                                                width=poly_contact.second_layer_width)
+            else:
+                self.add_layout_pin_center_rect(text="G",
+                                                layer="poly",
+                                                offset=poly_offset,
+                                                height=self.poly_height,
+                                                width=self.poly_width)
             poly_positions.append(poly_offset)
             poly_offset = poly_offset + vector(self.poly_pitch,0)
 
@@ -277,11 +340,11 @@ class ptx(design.design):
             dummy_height = drc["po_dummy_min_height"]
             if self.active_height > drc["po_dummy_thresh"]:
                 dummy_height = self.active_height + 2*drc["po_dummy_enc"]
-            dummy_y_offset = self.active_offset.y + (self.active_height-dummy_height)*0.5
+            dummy_y_offset = self.well_enclose_active + 0.5*self.active_height
             shifts = [0, 1, -self.mults-1, -self.mults-2]
             for i in range(0, 4):
                 self.add_rect_center(layer="po_dummy",
-                                 offset=vector(poly_offset.x+self.poly_pitch*shifts[i], poly_offset.y),
+                                 offset=vector(poly_offset.x+self.poly_pitch*shifts[i], dummy_y_offset),
                                  height=dummy_height,
                                  width=self.poly_width)
 
@@ -314,7 +377,6 @@ class ptx(design.design):
                         offset=self.implant_offset,
                         width=self.implant_width,
                         height=self.implant_height)
-            
             if "vtg" in tech_layers:
                 self.add_rect(layer="vtg",
                             offset=(0,0),

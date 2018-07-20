@@ -4,7 +4,6 @@ import debug
 from tech import drc, parameter, spice, info
 from ptx import ptx
 from vector import vector
-import math
 from globals import OPTS
 from utils import round_to_grid
 import utils
@@ -49,7 +48,7 @@ class pinv(pgate.pgate):
     def add_pins(self):
         """ Adds pins for spice netlist """
         self.add_pin_list(["A", "Z", "vdd", "gnd"])
-
+        
     def create_layout(self):
         """ Calls all functions related to the generation of the layout """
 
@@ -64,58 +63,15 @@ class pinv(pgate.pgate):
         self.route_input_gate(self.pmos_inst, self.nmos_inst, self.output_pos.y, "A", rotate=0)
         self.route_outputs()
         
-
     def determine_tx_mults(self):
-        """
-        Determines the number of fingers needed to achieve the size within
-        the height constraint. This may fail if the user has a tight height.
-        """
-        # Do a quick sanity check and bail if unlikely feasible height
-        # Sanity check. can we make an inverter in the height with minimum tx sizes?
-        # Assume we need 3 metal 1 pitches (2 power rails, one between the tx for the drain)
-        # plus the tx height
-        nmos = ptx(tx_type="nmos")
-        pmos = ptx(width=drc["minwidth_tx"], tx_type="pmos")
-        tx_height = nmos.height + pmos.height
-        # rotated m1 pitch or poly to active spacing
-        min_channel = max(contact.poly.width + self.m1_space,
-                          contact.poly.width + 2*drc["poly_to_active"])
-        # This is the extra space needed to ensure DRC rules to the active contacts
-        extra_contact_space = max(-nmos.get_pin("D").by(),0)
-        # This is a poly-to-poly of a flipped cell
-        self.top_bottom_space = max(0.5*self.m1_width + self.m1_space + extra_contact_space, 
-                                    drc["poly_extend_active"], self.poly_space)
-        total_height = tx_height + min_channel + 2*self.top_bottom_space
-        debug.check(self.height> total_height,"Cell height {0} too small for simple min height {1}.".format(self.height,total_height))
-
-        # Determine the height left to the transistors to determine the number of fingers
-        tx_height_available = self.height - min_channel - 2*self.top_bottom_space
-        # Divide the height in half. Could divide proportional to beta, but this makes
-        # connecting wells of multiple cells easier.
-        # Subtract the poly space under the rail of the tx
-        nmos_height_available = 0.5 * tx_height_available - 0.5*drc["poly_to_poly"]
-        pmos_height_available = 0.5 * tx_height_available - 0.5*drc["poly_to_poly"]
-
-        debug.info(2,"Height avail {0} PMOS height {1} NMOS height {2}".format(tx_height_available, nmos_height_available, pmos_height_available))
-
-        # Determine the number of mults for each to fit width into available space
-        self.nmos_width = self.nmos_size*drc["minwidth_tx"]
-        self.pmos_width = self.pmos_size*drc["minwidth_tx"]
-        nmos_required_mults = max(int(math.ceil(self.nmos_width/nmos_height_available)),1)
-        pmos_required_mults = max(int(math.ceil(self.pmos_width/pmos_height_available)),1)
-        # The mults must be the same for easy connection of poly
-        self.tx_mults = max(nmos_required_mults, pmos_required_mults)
-
-        # Recompute each mult width and check it isn't too small
-        # This could happen if the height is narrow and the size is small
-        # User should pick a bigger size to fix it...
-        # We also need to round the width to the grid or we will end up with LVS property
-        # mismatch errors when fingers are not a grid length and get rounded in the offset geometry.
-        self.nmos_width = round_to_grid(self.nmos_width / self.tx_mults)
-        debug.check(self.nmos_width>=drc["minwidth_tx"],"Cannot finger NMOS transistors to fit cell height.")
-        self.pmos_width = round_to_grid(self.pmos_width / self.tx_mults)
-        debug.check(self.pmos_width>=drc["minwidth_tx"],"Cannot finger PMOS transistors to fit cell height.")
-        
+        if not self.route_output:
+            #output metal1 should be large enough for drc min area
+            self.output_width = contact.m1m2.second_layer_height
+            self.output_height = utils.ceil(drc["minarea_metal1_contact"]/self.output_width)
+        else:
+            self.output_height = self.m1_width
+        self.min_channel = self.output_height + 0.5*self.m1_space
+        pgate.pgate.determine_tx_mults(self)
 
     def setup_layout_constants(self):
         """
@@ -232,17 +188,14 @@ class pinv(pgate.pgate):
             output_offset = mid_drain_offset.scale(0,1) + vector(self.width,0)
             self.add_layout_pin_center_segment(text="Z",
                                                layer="metal1",
+                                               height = self.output_height,
                                                start=vector(contact_offset_x, mid_drain_offset.y),
                                                end=output_offset)
         else:
-            # This leaves the output as an internal pin (min sized)
-            #output metal1 should be large enough for drc min area
-            rect_width = contact.m1m2.second_layer_height
-            rect_height = utils.ceil(drc["minarea_metal1_contact"]/rect_width)
             self.add_layout_pin_center_rect(text="Z",
                                             layer="metal1",
-                                            width=rect_width,
-                                            height=rect_height,
+                                            width=self.output_width,
+                                            height=self.output_height,
                                             offset=vector(contact_offset_x, mid_drain_offset.y))
 
 

@@ -5,6 +5,8 @@ from tech import drc, parameter, spice, info
 from ptx import ptx
 from vector import vector
 from globals import OPTS
+import math
+from utils import round_to_grid
 
 class pgate(design.design):
     """
@@ -15,6 +17,54 @@ class pgate(design.design):
         """ Creates a generic cell """
         design.design.__init__(self, name)
         self.rail_height = drc["rail_height"]
+
+    def determine_tx_mults(self):
+        """
+        Determines the number of fingers needed to achieve the size within
+        the height constraint. This may fail if the user has a tight height.
+        """
+        # Do a quick sanity check and bail if unlikely feasible height
+        # Sanity check. can we make an inverter in the height with minimum tx sizes?
+        # Assume we need 3 metal 1 pitches (2 power rails, one between the tx for the drain)
+        # plus the tx height
+        nmos = ptx(tx_type="nmos")
+        pmos = ptx(width=drc["minwidth_tx"], tx_type="pmos")
+        tx_height = nmos.height + pmos.height
+        
+        # This is the extra space needed to ensure DRC rules to the active contacts
+        extra_contact_space = max(-nmos.get_pin("D").by(),0)
+        total_height = tx_height + self.min_channel
+        debug.check(self.height> total_height,"Cell height {0} too small for simple min height {1}.".format(self.height,total_height))
+
+        # Determine the height left to the transistors to determine the number of fingers
+        tx_height_available = self.height - self.min_channel
+        # Divide the height in half. Could divide proportional to beta, but this makes
+        # connecting wells of multiple cells easier.
+        # Subtract the poly space under the rail of the tx
+        nmos_height_available = 0.5 * tx_height_available - 0.5*drc["poly_to_poly"]
+        pmos_height_available = 0.5 * tx_height_available - 0.5*drc["poly_to_poly"]
+
+        debug.info(2,"Height avail {0} PMOS height {1} NMOS height {2}".format(tx_height_available, nmos_height_available, pmos_height_available))
+
+        # Determine the number of mults for each to fit width into available space
+        self.nmos_width = self.nmos_size*drc["minwidth_tx"]
+        self.pmos_width = self.pmos_size*drc["minwidth_tx"]
+        nmos_required_mults = max(int(math.ceil(self.nmos_width/nmos_height_available)),1)
+        pmos_required_mults = max(int(math.ceil(self.pmos_width/pmos_height_available)),1)
+        # The mults must be the same for easy connection of poly
+        self.tx_mults = max(nmos_required_mults, pmos_required_mults)
+
+        # Recompute each mult width and check it isn't too small
+        # This could happen if the height is narrow and the size is small
+        # User should pick a bigger size to fix it...
+        # We also need to round the width to the grid or we will end up with LVS property
+        # mismatch errors when fingers are not a grid length and get rounded in the offset geometry.
+        self.nmos_width = round_to_grid(self.nmos_width / self.tx_mults)
+        debug.check(self.nmos_width>=drc["minwidth_tx"],"Cannot finger NMOS transistors to fit cell height.")
+        self.pmos_width = round_to_grid(self.pmos_width / self.tx_mults)
+        debug.check(self.pmos_width>=drc["minwidth_tx"],"Cannot finger PMOS transistors to fit cell height.")
+        
+
 
 
     def connect_pin_to_rail(self,inst,pin,supply):

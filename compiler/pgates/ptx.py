@@ -20,7 +20,8 @@ class ptx(design.design):
     you to connect the fingered gates and active for parallel devices.
 
     """
-    def __init__(self, width=drc["minwidth_tx"], mults=1, tx_type="nmos", connect_active=False, connect_poly=False, num_contacts=None):
+    def __init__(self, width=drc["minwidth_tx"], mults=1, tx_type="nmos",
+         connect_active=False, connect_poly=False, num_contacts=None, dummy_pos = range(0, 4)):
         # We need to keep unique names because outputting to GDSII
         # will use the last record with a given name. I.e., you will
         # over-write a design in GDS if one has and the other doesn't
@@ -44,6 +45,7 @@ class ptx(design.design):
         self.connect_active = connect_active
         self.connect_poly = connect_poly
         self.num_contacts = num_contacts
+        self.dummy_pos = dummy_pos
 
         self.create_spice()
         self.create_layout()
@@ -295,6 +297,13 @@ class ptx(design.design):
                             size=(1, 1),
                             implant_type=None,
                             well_type=None)
+                # metal2 contact fill for drc
+                metal2_fill_height = self.minside_metal1_contact
+                metal2_fill_width = utils.ceil(drc["minarea_metal1_contact"]/metal2_fill_height)
+                metal2_area_fill = self.add_rect_center(layer="metal2",
+                        offset=a,
+                        width=metal2_fill_width,
+                        height=metal2_fill_height)
                 if rect_height is not None:
                     # compute bottom left coordinates
                     rect_x_offset = a.x - 0.5*rect_width
@@ -302,10 +311,6 @@ class ptx(design.design):
                     if source_dir == -1:
                         rect_y_offset -= (rect_height-max_contact_height)
                     metal1_area_fill = self.add_rect(layer="metal1",
-                        offset=vector(rect_x_offset, rect_y_offset),
-                        width=rect_width,
-                        height=rect_height)
-                    metal2_area_fill = self.add_rect(layer="metal2",
                         offset=vector(rect_x_offset, rect_y_offset),
                         width=rect_width,
                         height=rect_height)
@@ -384,8 +389,8 @@ class ptx(design.design):
 
         # poly dummys
         if "po_dummy" in tech_layers:
-            shifts = [0, 1, -self.mults-1, -self.mults-2]
-            for i in range(0, 4):
+            shifts = [-self.mults-2, -self.mults-1, 0, 1]
+            for i in self.dummy_pos:
                 self.add_rect_center(layer="po_dummy",
                                  offset=vector(poly_offset.x+self.poly_pitch*shifts[i], self.dummy_y_offset),
                                  height=self.dummy_height,

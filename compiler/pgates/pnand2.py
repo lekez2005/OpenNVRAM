@@ -5,6 +5,7 @@ from tech import drc, parameter, spice
 from ptx import ptx
 from vector import vector
 from globals import OPTS
+import utils
 
 class pnand2(pgate.pgate):
     """
@@ -30,10 +31,6 @@ class pnand2(pgate.pgate):
         self.pmos_width = self.pmos_size*drc["minwidth_tx"]
         self.height = height
 
-        # FIXME: Allow these to be sized
-        debug.check(size==1,"Size 1 pnand2 is only supported now.")
-        self.tx_mults = 1
-
         self.add_pins()
         self.create_layout()
         #self.DRC_LVS()
@@ -45,6 +42,9 @@ class pnand2(pgate.pgate):
 
     def create_layout(self):
         """ Calls all functions related to the generation of the layout """
+        self.determine_tx_mults()
+        # FIXME: Allow multiple fingers
+        debug.check(self.tx_mults==1,"Only Single finger pnand2 is supported now.")
 
         self.create_ptx()
         self.setup_layout_constants()
@@ -56,60 +56,88 @@ class pnand2(pgate.pgate):
         self.route_inputs()
         self.route_output()
 
+    def determine_tx_mults(self):
+
+        if "metal1_to_metal1_wide" in drc:
+            self.wide_m1_space = drc["metal1_to_metal1_wide"]
+        else:
+            self.wide_m1_space = drc["metal1_to_metal1"]
+
+        # metal spacing to allow contacts on any layer
+        self.max_input_width = max(contact.m1m2.first_layer_width,
+                                 contact.m2m3.first_layer_width, contact.m2m3.second_layer_width)
+        self.input_spacing = self.max_input_width + self.wide_m1_space
+        # pmos gate contact to A input to B input to nmos gate contact
+        self.min_channel = 3*self.input_spacing
+        pgate.pgate.determine_tx_mults(self)
+
     def create_ptx(self):
         """ Create the PMOS and NMOS transistors. """
         self.nmos = ptx(width=self.nmos_width,
                         mults=self.tx_mults,
                         tx_type="nmos",
+                        dummy_pos=[0, 1],
                         connect_poly=True,
                         connect_active=True)
         self.add_mod(self.nmos)
+        self.nmos2 = ptx(width=self.nmos_width,
+                        mults=self.tx_mults,
+                        tx_type="nmos",
+                        dummy_pos=[2, 3],
+                        connect_poly=True,
+                        connect_active=False)
+        self.add_mod(self.nmos2)
 
         self.pmos = ptx(width=self.pmos_width,
                         mults=self.tx_mults,
                         tx_type="pmos",
+                        dummy_pos=[0, 1],
                         connect_poly=True,
                         connect_active=True)
         self.add_mod(self.pmos)
+        self.pmos2 = ptx(width=self.pmos_width,
+                        mults=self.tx_mults,
+                        tx_type="pmos",
+                        dummy_pos=[2, 3],
+                        connect_poly=True,
+                        connect_active=False)
+        self.add_mod(self.pmos2)
 
     def setup_layout_constants(self):
         """ Pre-compute some handy layout parameters. """
-
-        # metal spacing to allow contacts on any layer
-        self.input_spacing = max(self.poly_space + contact.poly.first_layer_width,
-                                 self.m1_space + contact.m1m2.first_layer_width,
-                                 self.m2_space + contact.m2m3.first_layer_width, 
-                                 self.m3_space + contact.m2m3.second_layer_width)
-
-        
+ 
         # Compute the other pmos2 location, but determining offset to overlap the
         # source and drain pins
-        self.overlap_offset = self.pmos.get_pin("D").ll() - self.pmos.get_pin("S").ll()
+        self.overlap_offset = vector((self.pmos.get_pin("D").ll() - self.pmos.get_pin("S").ll()).x, 0)
 
-        # Two PMOS devices and a well contact. Separation between each.
-        # Enclosure space on the sides.
-        self.well_width = 2*self.pmos.active_width + contact.active.width \
-                          + 2*drc["active_to_body_active"] + 2*drc["well_enclosure_active"]
+        tx_width = 5*self.pmos.poly_pitch + self.pmos.poly_width
 
+        # the well width is determined the multi-finger PMOS device width plus
+        # the well contact width and half well enclosure on both sides
+        well_contact = contact.contact(layer_stack=("cont_active", "contact", "cont_metal1"), 
+                                implant_type="n",
+                                well_type="n")
+        # width of active and one side of enclosure of well around active
+        active_implant_width = well_contact.first_layer_width + drc["well_enclosure_active"]
+        self.well_width = tx_width + drc["poly_dummy_to_active"] +  active_implant_width
         self.width = self.well_width
         # Height is an input parameter, so it is not recomputed.
 
-        # This is the extra space needed to ensure DRC rules to the active contacts
-        extra_contact_space = max(-self.nmos.get_pin("D").by(),0)
-        # This is a poly-to-poly of a flipped cell
-        self.top_bottom_space = max(0.5*self.m1_width + self.m1_space + extra_contact_space, 
-                                    drc["poly_extend_active"], self.poly_space)
+        
+        
         
     def add_supply_rails(self):
         """ Add vdd/gnd rails to the top and bottom. """
         self.add_layout_pin_center_rect(text="gnd",
                                         layer="metal1",
                                         offset=vector(0.5*self.width,0),
+                                        height = self.rail_height,
                                         width=self.width)
 
         self.add_layout_pin_center_rect(text="vdd",
                                         layer="metal1",
                                         offset=vector(0.5*self.width,self.height),
+                                        height = self.rail_height,
                                         width=self.width)
 
     def add_ptx(self):
@@ -118,8 +146,17 @@ class pnand2(pgate.pgate):
         to provide maximum routing in channel
         """
 
-        pmos1_pos = vector(self.pmos.active_offset.x,
-                           self.height - self.pmos.active_height - self.top_bottom_space)
+        # x offset should be first dummy poly to active
+        x_offset = 2*self.pmos.poly_pitch - self.pmos.end_to_poly
+
+        #place PMOS so that its implant aligns with cell boundary
+        # account for active_offset translation that happens after creation
+
+        active_to_bottom_implant = self.pmos.active_offset.y - self.pmos.implant_offset.y
+        active_bottom_to_top_implant = self.pmos.implant_height - active_to_bottom_implant
+
+        pmos1_pos = vector(x_offset,
+                           self.height-active_bottom_to_top_implant)
         self.pmos1_inst=self.add_inst(name="pnand2_pmos1",
                                       mod=self.pmos,
                                       offset=pmos1_pos)
@@ -127,12 +164,15 @@ class pnand2(pgate.pgate):
 
         self.pmos2_pos = pmos1_pos + self.overlap_offset
         self.pmos2_inst = self.add_inst(name="pnand2_pmos2",
-                                        mod=self.pmos,
+                                        mod=self.pmos2,
                                         offset=self.pmos2_pos)
         self.connect_inst(["Z", "B", "vdd", "vdd"])
 
+
+        # place NMOS so that its implant aligns with cell boundary
         
-        nmos1_pos = vector(self.pmos.active_offset.x, self.top_bottom_space)
+        nmos_y_offset = self.nmos.active_offset.y - self.nmos.implant_offset.y        
+        nmos1_pos = vector(x_offset, nmos_y_offset)
         self.nmos1_inst=self.add_inst(name="pnand2_nmos1",
                                       mod=self.nmos,
                                       offset=nmos1_pos)
@@ -140,21 +180,23 @@ class pnand2(pgate.pgate):
 
         self.nmos2_pos = nmos1_pos + self.overlap_offset
         self.nmos2_inst=self.add_inst(name="pnand2_nmos2",
-                                      mod=self.nmos,
+                                      mod=self.nmos2,
                                       offset=self.nmos2_pos)
         self.connect_inst(["net1", "A", "gnd", "gnd"])
 
-        # Output position will be in between the PMOS and NMOS        
-        self.output_pos = vector(0,0.5*(pmos1_pos.y+nmos1_pos.y+self.nmos.active_height))
-
+        # Output position will be in between the PMOS and NMOS drains
+        pmos_drain_pos = self.pmos1_inst.get_pin("D").ll()
+        nmos_drain_pos = self.nmos1_inst.get_pin("D").ul()
+        self.output_pos = vector(0,utils.ceil(0.5*(pmos_drain_pos.y+nmos_drain_pos.y)))    
+        
         # This will help with the wells 
-        self.well_pos = vector(0,self.nmos1_inst.uy())
+        self.well_pos = vector(0, self.output_pos.y)
         
     def add_well_contacts(self):
         """ Add n/p well taps to the layout and connect to supplies AFTER the wells are created """
 
-        self.add_nwell_contact(self.pmos, self.pmos2_pos)
-        self.add_pwell_contact(self.nmos, self.nmos2_pos)
+        self.add_nwell_contact(self.pmos, self.pmos2_pos, size=[1, 3])
+        self.add_pwell_contact(self.nmos, self.nmos2_pos, size=[1, 3])
 
         
     def connect_rails(self):
@@ -168,11 +210,10 @@ class pnand2(pgate.pgate):
 
     def route_inputs(self):
         """ Route the A and B inputs """
-        inputB_yoffset = self.nmos2_pos.y + self.nmos.active_height + self.m2_space + 0.5*self.m2_width
+        inputB_yoffset = self.output_pos.y - self.wide_m1_space - 0.5*self.max_input_width
         self.route_input_gate(self.pmos2_inst, self.nmos2_inst, inputB_yoffset, "B", position="center")
         
-        # This will help with the wells and the input/output placement
-        self.inputA_yoffset = inputB_yoffset + self.input_spacing
+        self.inputA_yoffset = self.output_pos.y + self.wide_m1_space + 0.5*self.max_input_width
         self.route_input_gate(self.pmos1_inst, self.nmos1_inst, self.inputA_yoffset, "A")
 
         
@@ -183,25 +224,39 @@ class pnand2(pgate.pgate):
         # NMOS2 drain
         nmos_pin = self.nmos2_inst.get_pin("D")        
         # Output pin
-        mid_offset = vector(nmos_pin.center().x,self.inputA_yoffset)
+        mid_offset = vector(nmos_pin.center().x + drc["nand_output_offset"], self.output_pos.y)
+
+        self.output_width = contact.m1m2.first_layer_height
+        self.output_height = utils.ceil(drc["minarea_metal1_contact"]/self.output_width)
+
+        metal1_contact_area = self.pmos.active_contact.second_layer_height*self.pmos.active_contact.second_layer_width
+        if metal1_contact_area < self.pmos.minarea_metal1_contact:
+            # add extra metal1 to nmos2 drain to fulfill drc requirement
+            fill_height = self.pmos2.active_contact.second_layer_height
+            fill_width = utils.ceil(drc["minarea_metal1_contact"]/fill_height)
+            self.add_rect(layer="metal1",
+                        offset=nmos_pin.ll(),
+                        height=fill_height,
+                        width=fill_width)
+
+
+        pin_pos = mid_offset - (0.5*contact.m1m2.first_layer_height, 0)
         
-        self.add_contact_center(layers=("metal1", "via1", "metal2"),
-                                offset=pmos_pin.center())
         self.add_contact_center(layers=("metal1", "via1", "metal2"),
                                 offset=nmos_pin.center())
         self.add_contact_center(layers=("metal1", "via1", "metal2"),
-                                offset=mid_offset,
+                                offset=pin_pos,
                                 rotate=90)
 
         # PMOS1 to mid-drain to NMOS2 drain
-        self.add_path("metal2",[pmos_pin.bc(), mid_offset, nmos_pin.uc()])
+        self.add_path("metal2",[pmos_pin.bc(), mid_offset, nmos_pin.center()])
 
         # This extends the output to the edge of the cell
         self.add_layout_pin_center_rect(text="Z",
                                         layer="metal1",
-                                        offset=mid_offset,
-                                        width=contact.m1m2.first_layer_height,
-                                        height=contact.m1m2.first_layer_width)
+                                        offset=pin_pos,
+                                        width=self.output_width,
+                                        height=self.output_height)
 
 
 

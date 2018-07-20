@@ -32,23 +32,23 @@ class pgate(design.design):
         tx_height = nmos.height + pmos.height
         
         # This is the extra space needed to ensure DRC rules to the active contacts
-        extra_contact_space = max(-nmos.get_pin("D").by(),0)
-        total_height = tx_height + self.min_channel
+        extra_contact_space = drc["extra_contact_space"]
+        total_height = tx_height + self.min_channel + 2*extra_contact_space
         debug.check(self.height> total_height,"Cell height {0} too small for simple min height {1}.".format(self.height,total_height))
 
         # Determine the height left to the transistors to determine the number of fingers
-        tx_height_available = self.height - self.min_channel
-        # Divide the height in half. Could divide proportional to beta, but this makes
-        # connecting wells of multiple cells easier.
-        # Subtract the poly space under the rail of the tx
-        nmos_height_available = 0.5 * tx_height_available - 0.5*drc["poly_to_poly"]
-        pmos_height_available = 0.5 * tx_height_available - 0.5*drc["poly_to_poly"]
-
-        debug.info(2,"Height avail {0} PMOS height {1} NMOS height {2}".format(tx_height_available, nmos_height_available, pmos_height_available))
+        tx_height_available = self.height - self.min_channel - 2*extra_contact_space
 
         # Determine the number of mults for each to fit width into available space
         self.nmos_width = self.nmos_size*drc["minwidth_tx"]
         self.pmos_width = self.pmos_size*drc["minwidth_tx"]
+        # Divide the height according to size ratio
+        nmos_height_available = self.nmos_width/(self.nmos_width+self.pmos_width) * tx_height_available
+        pmos_height_available = self.pmos_width/(self.nmos_width+self.pmos_width) * tx_height_available
+
+        debug.info(2,"Height avail {0} PMOS height {1} NMOS height {2}".format(tx_height_available, nmos_height_available, pmos_height_available))
+
+
         nmos_required_mults = max(int(math.ceil(self.nmos_width/nmos_height_available)),1)
         pmos_required_mults = max(int(math.ceil(self.pmos_width/pmos_height_available)),1)
         # The mults must be the same for easy connection of poly
@@ -139,13 +139,14 @@ class pgate(design.design):
         #               width=self.well_width,
         #               height=nwell_height)
 
+        # use for cell pr boundary
         pwell_position = vector(0,-0.5*self.rail_height)
         pwell_height = middle_position.y-pwell_position.y
         if info["has_pwell"]:
             self.add_rect(layer="pwell",
                           offset=pwell_position,
                           width=self.well_width,
-                          height=pwell_height)
+                          height=self.height)
         # self.add_rect(layer="vtg",
         #               offset=pwell_position,
         #               width=self.well_width,

@@ -6,6 +6,11 @@ import globals
 from vector import vector
 from pin_layout import pin_layout
 
+try:
+    from tech import layer_pin_map
+except ImportError:
+    layer_pin_map = {}
+
 OPTS = globals.OPTS
 
 def ceil(decimal):
@@ -97,7 +102,7 @@ def get_libcell_pins(pin_list, name, units, layer):
     cell = {}
     for pin in pin_list:
         cell[str(pin)]=[]
-        label_list=cell_vlsi.getPinShapeByLabel(str(pin))
+        label_list=cell_vlsi.getPinShapeByLabel(str(pin), layer_pin_map=layer_pin_map)
         for label in label_list:
             (name,layer,boundary)=label
             rect = pin_rect(boundary)

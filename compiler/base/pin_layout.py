@@ -3,6 +3,11 @@ from tech import GDS
 from vector import vector
 from tech import layer
 
+try:
+    from tech import layer_pin_map
+except ImportError:
+    layer_pin_map = {}
+
 class pin_layout:
     """
     A class to represent a rectangular design pin. It is limited to a
@@ -182,8 +187,12 @@ class pin_layout:
                          width=self.width(),
                          height=self.height(),
                          center=False)
+        if layer[self.layer] in layer_pin_map:
+            pin_layer = layer_pin_map[layer[self.layer]]
+        else:
+            pin_layer = layer[self.layer]
         newLayout.addText(text=self.name,
-                          layerNumber=layer[self.layer],
+                          layerNumber=pin_layer,
                           purposeNumber=0,
                           offsetInMicrons=self.ll(),
                           magnification=GDS["zoom"],

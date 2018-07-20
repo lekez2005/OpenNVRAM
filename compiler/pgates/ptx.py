@@ -188,8 +188,10 @@ class ptx(design.design):
             self.height = self.poly_height
             self.width = self.active_width
 
+        self.height = self.implant_height
         # poly dummys
         if "po_dummy" in tech_layers:
+            self.width = self.poly_pitch*(self.mults+3) + self.poly_width
             self.dummy_height = drc["po_dummy_min_height"]
             if self.active_height > drc["po_dummy_thresh"]:
                 self.dummy_height = self.active_height + 2*drc["po_dummy_enc"]
@@ -268,62 +270,67 @@ class ptx(design.design):
             drain_dir = 1
             source_dir = -1
         source_offset = pin_offset.scale(source_dir,source_dir)    
-        if len(drain_positions)>1:
-            self.remove_layout_pin("D") # remove the individual connections
-            if self.poly_contact_layer == "metal1":
-                self.metal2_width = drc["minwidth_metal2"]
-                self.minarea_metal1_contact = drc["minarea_metal1_contact"]
-                self.minside_metal1_contact = drc["minside_metal1_contact"]
-                metal1_contact_area = self.active_contact.second_layer_height*self.active_contact.second_layer_width
+        self.remove_layout_pin("D") # remove the individual connections
+        if self.poly_contact_layer == "metal1":
+            self.metal2_width = drc["minwidth_metal2"]
+            self.minarea_metal1_contact = drc["minarea_metal1_contact"]
+            self.minside_metal1_contact = drc["minside_metal1_contact"]
+            metal1_contact_area = self.active_contact.second_layer_height*self.active_contact.second_layer_width
 
-                rect_height = None
-                rect_width = None
-                metal1_area_fill = None
-                if metal1_contact_area < self.minarea_metal1_contact or \
-                    ( self.active_contact.second_layer_height < self.minside_metal1_contact and \
-                    self.active_contact.second_layer_width  < self.minside_metal1_contact ):
-                    # place metal1 rectangle above the contact. 
-                    # The top of this metal1 should align with the m1-m2 contact that will be placed when connecting actives together
-                    rect_height = self.minside_metal1_contact
-                    rect_width = utils.ceil(self.minarea_metal1_contact/rect_height)
-                
-                for a in drain_positions:
-                    contact=self.add_contact_center(layers=("metal1", "via1", "metal2"),
-                                offset=a,
-                                size=(1, 1),
-                                implant_type=None,
-                                well_type=None)
-                    if rect_height is not None:
-                        # compute bottom left coordinates
-                        rect_x_offset = a.x - 0.5*rect_width
-                        rect_y_offset = a.y-0.5*contact.mod.second_layer_height
-                        if source_dir == -1:
-                            rect_y_offset -= (rect_height-contact.mod.second_layer_height)
-                        metal1_area_fill = self.add_rect(layer="metal1",
-                            offset=vector(rect_x_offset, rect_y_offset),
-                            width=rect_width,
-                            height=rect_height)
-                if metal1_area_fill is not None:
-                    distance_from_mid_contact = max(abs(metal1_area_fill.by() - drain_positions[0].y), \
-                        abs(metal1_area_fill.uy() - drain_positions[0].y))
-                    source_offset = vector(pin_offset.x, distance_from_mid_contact + self.wide_m1_space \
-                         + 0.5*self.m1_width).scale(source_dir,source_dir)
+            rect_height = None
+            rect_width = None
+            metal1_area_fill = None
+            max_contact_height = max(self.active_contact.second_layer_height, m1m2.first_layer_height)
+            if metal1_contact_area < self.minarea_metal1_contact or \
+                ( self.active_contact.second_layer_height < self.minside_metal1_contact and \
+                self.active_contact.second_layer_width  < self.minside_metal1_contact ):
+                # place metal1 rectangle above the contact. 
+                # The top of this metal1 should align with the m1-m2 contact that will be placed when connecting actives together
+                rect_height = max(self.minside_metal1_contact, max_contact_height)
+                rect_width = max(utils.ceil(self.minarea_metal1_contact/rect_height), self.active_contact.second_layer_width)
+            
+            for a in drain_positions:
+                contact=self.add_contact_center(layers=("metal1", "via1", "metal2"),
+                            offset=a,
+                            size=(1, 1),
+                            implant_type=None,
+                            well_type=None)
+                if rect_height is not None:
+                    # compute bottom left coordinates
+                    rect_x_offset = a.x - 0.5*rect_width
+                    rect_y_offset = a.y-0.5*max_contact_height
+                    if source_dir == -1:
+                        rect_y_offset -= (rect_height-max_contact_height)
+                    metal1_area_fill = self.add_rect(layer="metal1",
+                        offset=vector(rect_x_offset, rect_y_offset),
+                        width=rect_width,
+                        height=rect_height)
+                    metal2_area_fill = self.add_rect(layer="metal2",
+                        offset=vector(rect_x_offset, rect_y_offset),
+                        width=rect_width,
+                        height=rect_height)
+            if metal1_area_fill is not None:
+                distance_from_mid_contact = max(abs(metal1_area_fill.by() - drain_positions[0].y), \
+                    abs(metal1_area_fill.uy() - drain_positions[0].y))
+                source_offset = vector(pin_offset.x, distance_from_mid_contact + self.wide_m1_space \
+                        + 0.5*self.m1_width).scale(source_dir,source_dir)
 
-                self.add_layout_pin(text="D",
-                                layer="metal2",
-                                offset=drain_positions[0]-vector(0, 0.5*self.metal2_width),
-                                width=drain_positions[-1][0]-drain_positions[0][0],
-                                height=self.metal2_width)
-            else:
-                drain_offset = pin_offset.scale(drain_dir,drain_dir)
-                # Add each vertical segment
-                for a in drain_positions:
-                    self.add_path(("metal1"), [a,a+drain_offset])
-                # Add a single horizontal pin
-                self.add_layout_pin_center_segment(text="D",
-                                                layer="metal1",
-                                                start=drain_positions[0]+drain_offset-end_offset,
-                                                end=drain_positions[-1]+drain_offset+end_offset)
+            drain_pin_width = drain_positions[-1][0]-drain_positions[0][0] + self.metal2_width
+            self.add_layout_pin(text="D",
+                            layer="metal1",
+                            offset=drain_positions[0]-vector(0.5*self.metal2_width, 0.5*self.metal2_width),
+                            width=drain_pin_width,
+                            height=self.metal2_width)
+        else:
+            drain_offset = pin_offset.scale(drain_dir,drain_dir)
+            # Add each vertical segment
+            for a in drain_positions:
+                self.add_path(("metal1"), [a,a+drain_offset])
+            # Add a single horizontal pin
+            self.add_layout_pin_center_segment(text="D",
+                                            layer="metal1",
+                                            start=drain_positions[0]+drain_offset-end_offset,
+                                            end=drain_positions[-1]+drain_offset+end_offset)
 
         if len(source_positions)>1:
             self.remove_layout_pin("S") # remove the individual connections

@@ -33,6 +33,8 @@ class ptx(design.design):
             name += "_p"
         if num_contacts:
             name += "_c{}".format(num_contacts)
+        if not dummy_pos == range(0, 4):
+            name += "_d{}".format("".join([str(pos) for pos in dummy_pos]))
         # replace periods with underscore for newer spice compatibility
         name=re.sub('\.','_',name)
 

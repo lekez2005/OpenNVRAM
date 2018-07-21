@@ -33,7 +33,7 @@ class pgate(design.design):
         
         # This is the extra space needed to ensure DRC rules to the active contacts
         extra_contact_space = drc["extra_contact_space"]
-        total_height = tx_height + self.min_channel + 2*extra_contact_space
+        total_height = tx_height + self.min_channel
         debug.check(self.height> total_height,"Cell height {0} too small for simple min height {1}.".format(self.height,total_height))
 
         # Determine the height left to the transistors to determine the number of fingers

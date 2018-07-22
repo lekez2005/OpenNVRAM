@@ -204,11 +204,7 @@ class pnand3(pgate.pgate):
                                       offset=self.nmos3_pos)
         self.connect_inst(["net2", "A", "gnd", "gnd"])
         
-        # This should be placed at the top of the NMOS well
-        # Output position will be in between the PMOS and NMOS drains
-        pmos_drain_pos = self.pmos1_inst.get_pin("D").ll()
-        nmos_drain_pos = self.nmos1_inst.get_pin("D").ul()
-        self.output_pos = self.nmos.height + 3*self.input_spacing    
+        self.output_pos = vector(0,utils.ceil(0.5*(self.height-self.pmos.height + self.nmos.height)))  
         
         # This will help with the wells 
         self.well_pos = vector(0,utils.round_to_grid(0.5*(self.height-self.pmos.height+self.nmos.height)))

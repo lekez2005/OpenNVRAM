@@ -44,7 +44,8 @@ class pnand2(pgate.pgate):
         """ Calls all functions related to the generation of the layout """
         self.determine_tx_mults()
         # FIXME: Allow multiple fingers
-        debug.check(self.tx_mults==1,"Only Single finger pnand2 is supported now.")
+        debug.check(self.tx_mults==1,
+            "Only Single finger {} is supported now.".format(self.__class__.__name__))
 
         self.create_ptx()
         self.setup_layout_constants()
@@ -184,10 +185,7 @@ class pnand2(pgate.pgate):
                                       offset=self.nmos2_pos)
         self.connect_inst(["net1", "A", "gnd", "gnd"])
 
-        # Output position will be in between the PMOS and NMOS drains
-        pmos_drain_pos = self.pmos1_inst.get_pin("D").ll()
-        nmos_drain_pos = self.nmos1_inst.get_pin("D").ul()
-        self.output_pos = vector(0,utils.ceil(0.5*(pmos_drain_pos.y+nmos_drain_pos.y)))    
+        self.output_pos = vector(0,utils.ceil(0.5*(self.height-self.pmos.height + self.nmos.height)))    
         
         # This will help with the wells 
         self.well_pos = vector(0, self.output_pos.y)
@@ -226,9 +224,6 @@ class pnand2(pgate.pgate):
         # Output pin
         mid_offset = vector(nmos_pin.center().x + drc["nand_output_offset"], self.output_pos.y)
 
-        self.output_width = contact.m1m2.first_layer_height
-        self.output_height = utils.ceil(drc["minarea_metal1_contact"]/self.output_width)
-
         metal1_contact_area = self.pmos.active_contact.second_layer_height*self.pmos.active_contact.second_layer_width
         if metal1_contact_area < self.pmos.minarea_metal1_contact:
             # add extra metal1 to nmos2 drain to fulfill drc requirement
@@ -251,7 +246,10 @@ class pnand2(pgate.pgate):
         # PMOS1 to mid-drain to NMOS2 drain
         self.add_path("metal2",[pmos_pin.bc(), mid_offset, nmos_pin.center()])
 
-        # This extends the output to the edge of the cell
+        # minimum area rules for metal1 output
+        self.output_width = contact.m1m2.first_layer_height
+        self.output_height = utils.ceil(drc["minarea_metal1_contact"]/self.output_width)
+
         self.add_layout_pin_center_rect(text="Z",
                                         layer="metal1",
                                         offset=pin_pos,

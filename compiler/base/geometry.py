@@ -156,7 +156,8 @@ class instance(geometry):
         if self.mod.is_library_cell:
             # For lib cells, block the whole thing except on metal3
             # since they shouldn't use metal3
-            if layer==tech.layer["metal1"] or layer==tech.layer["metal2"]: #TODO confirm metal3 usage
+            if layer==tech.layer["metal1"] or layer==tech.layer["metal2"] \
+                 or layer==tech.layer["metal3"]: #TODO confirm metal3 usage
                 return [self.transform_coords(self.mod.get_boundary(), self.offset, mirr, angle)]
             else:
                 return []

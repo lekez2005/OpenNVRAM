@@ -423,7 +423,7 @@ class ptx(design.design):
                           height=self.cell_well_height)
             # If the implant must enclose the active, shift offset
             # and increase width/height
-            self.add_rect(layer="{}implant".format(self.implant_type),
+            self.implant_rect = self.add_rect(layer="{}implant".format(self.implant_type),
                         offset=self.implant_offset,
                         width=self.implant_width,
                         height=self.implant_height)

@@ -204,7 +204,22 @@ class pnand3(pgate.pgate):
                                       offset=self.nmos3_pos)
         self.connect_inst(["net2", "A", "gnd", "gnd"])
         
-        self.output_pos = vector(0,utils.ceil(0.5*(self.height-self.pmos.height + self.nmos.height)))  
+        self.output_pos = vector(0,utils.ceil(0.5*(self.height-self.pmos.height + self.nmos.height))) 
+
+        # DRC fill for nmos series source and drain
+        contact_height = self.nmos.active_contact.height
+        contact_width = self.nmos.active_contact.width 
+        min_area = drc["minarea_metal1_contact"]
+        if contact_height*contact_width < min_area:
+            fill_width = utils.ceil(min_area/contact_height)
+            self.add_rect_center(layer="metal1",
+                                 offset=self.nmos1_inst.get_pin("D").center(),
+                                 width=fill_width,
+                                 height=contact_height)
+            self.add_rect_center(layer="metal1",
+                                 offset=self.nmos2_inst.get_pin("D").center(),
+                                 width=fill_width,
+                                 height=contact_height)
         
         # This will help with the wells 
         self.well_pos = vector(0,utils.round_to_grid(0.5*(self.height-self.pmos.height+self.nmos.height)))

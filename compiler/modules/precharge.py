@@ -143,7 +143,7 @@ class precharge(pgate.pgate):
                                             offset=upper_pmos2_pos)
         self.connect_inst(["br", "en", "vdd", "vdd"])
 
-        self.height = self.upper_pmos1_pos.y + self.tl_pmos.height + self.m1_space
+        self.height = self.tl_implant_by + self.tl_pmos.height + 2*self.m1_space
 
     def connect_gates(self):
         """Connects the upper and lower pmos together"""
@@ -183,13 +183,13 @@ class precharge(pgate.pgate):
         the contact is positioned to align with the top right cornell of the
         cell """
         layer_stack = ("cont_active", "contact", "cont_metal1")
-        dummy_well_contact = contact.contact(layer_stack=layer_stack, dimensions=[1, 6],
+        dummy_well_contact = contact.contact(layer_stack=layer_stack, dimensions=[2, 3],
                                              implant_type="n", well_type="n")
         active_well_enclosure = drc["well_enclosure_active"]
         x_offset = self.width - (0.5*dummy_well_contact.first_layer_width + active_well_enclosure)
         y_offset = self.height - (0.5*dummy_well_contact.first_layer_height + active_well_enclosure)
         self.add_contact_center(layers=layer_stack,
-                                size=[1, 6],
+                                size=[2, 3],
                                 offset=vector(x_offset, y_offset),
                                 implant_type="n",
                                 well_type="n")

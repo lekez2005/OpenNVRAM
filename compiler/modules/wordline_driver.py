@@ -41,13 +41,13 @@ class wordline_driver(design.design):
         self.create_layout()
 
     def add_layout(self):
-        self.inv = pinv()
+        self.inv = pinv(size=4)
         self.add_mod(self.inv)
 
-        self.inv_no_output = pinv(route_output=False)
+        self.inv_no_output = pinv(size=1, route_output=False)
         self.add_mod(self.inv_no_output)
         
-        self.nand2 = pnand2()
+        self.nand2 = pnand2(size=2)
         self.add_mod(self.nand2)
 
 
@@ -71,9 +71,9 @@ class wordline_driver(design.design):
         
         self.add_layout_pin(text="gnd",
                             layer="metal1",
-                            offset=[0, -0.5*self.m1_width],
+                            offset=[0, -0.5*self.rail_height],
                             width=self.x_offset0,
-                            height=self.m1_width)
+                            height=self.rail_height)
         
         for row in range(self.rows):
             name_inv1 = "wl_driver_inv_en{}".format(row)
@@ -103,7 +103,7 @@ class wordline_driver(design.design):
             base_offset = vector(self.width, y_offset)
 
             # Extend vdd and gnd of wordline_driver
-            yoffset = (row + 1) * self.inv.height - 0.5 * self.m1_width
+            yoffset = (row + 1) * self.inv.height - 0.5 * self.rail_height
             if (row % 2):
                 pin_name = "gnd"
             else:
@@ -113,7 +113,7 @@ class wordline_driver(design.design):
                                 layer="metal1",
                                 offset=[0, yoffset],
                                 width=self.x_offset0,
-                                height=self.m1_width)
+                                height=self.rail_height)
             
             
             # add inv1 based on the info above
@@ -171,22 +171,29 @@ class wordline_driver(design.design):
             b_pin = nand_inst.get_pin("B")
             b_pos = b_pin.lc()
             # needs to move down since B nand input is nearly aligned with A inv input
-            up_or_down = self.m2_space if row%2 else -self.m2_space
-            input_offset = vector(0,b_pos.y + up_or_down) 
-            mid_via_offset = vector(clk_offset.x,input_offset.y) + vector(0.5*self.m2_width+self.m2_space+0.5*contact.m1m2.width,0) 
+            en_in_space = 0.5*contact.m1m2.first_layer_height + self.wide_m1_space + 0.5*self.m2_width
+            if row%2:
+                up_or_down = en_in_space
+            else:
+                up_or_down = -en_in_space
+            input_offset = vector(0,clk_offset.y + up_or_down)
+            mid_via_offset = vector(clk_offset.x,input_offset.y) +\
+                             vector(self.m2_width+self.m2_space+0.5*contact.m1m2.height,0)
             # must under the clk line in M1
             self.add_layout_pin_center_segment(text="in[{0}]".format(row),
                                                layer="metal1",
                                                start=input_offset,
                                                end=mid_via_offset)
             self.add_via_center(layers=("metal1", "via1", "metal2"),
+                                rotate=90,
                                 offset=mid_via_offset)
 
             # now connect to the nand2 B
-            self.add_path("metal2", [mid_via_offset, b_pos])
+            path_offset = vector(0.5*contact.m1m2.second_layer_height-0.5*self.m2_width, 0)
+            self.add_path("metal2", [mid_via_offset+path_offset, b_pos])
             self.add_via_center(layers=("metal1", "via1", "metal2"),
-                                offset=b_pos - vector(0.5*contact.m1m2.height,0),
-                                rotate=90)
+                                offset=b_pos+vector(0.5*contact.m1m2.second_layer_width, 0),
+                                rotate=0)
 
 
             # output each WL on the right

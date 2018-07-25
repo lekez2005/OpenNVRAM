@@ -137,22 +137,15 @@ class ptx(design.design):
             self.poly_contact_layer = info["poly_contact_layer"]
         else:
             self.poly_contact_layer = None
-        
-        if "metal1_to_metal1_wide" in drc:
-            self.wide_m1_space = drc["metal1_to_metal1_wide"]
-            if self.tx_width < drc["minwidth_tx"] + 0.01:
-                self.wide_m1_space += 0.01
-        else:
-            self.wide_m1_space = drc["metal1_to_metal1"]
-        
+
         # Poly height must include poly extension over active
         self.poly_offset_y = self.well_enclose_active + 0.5*self.active_height
         self.additional_poly = 0.0
         self.poly_height = self.tx_width + 2*self.poly_extend_active
         if self.poly_contact_layer == "metal1":
-            self.active_to_contact_center = self.wide_m1_space + poly_contact.second_layer_height*0.5
-            poly_height = self.poly_extend_active + self.tx_width + self.active_to_contact_center + \
-                0.5*poly_contact.first_layer_height
+            self.active_to_contact_center = self.wide_m1_space + max(0, 0.5*(m1m2.first_layer_height-self.tx_width)) +\
+                                            poly_contact.second_layer_height*0.5
+            poly_height = self.poly_extend_active + self.tx_width + self.active_to_contact_center + 0.5*poly_contact.first_layer_height
             self.additional_poly = poly_height - self.poly_height  # additional poly from adding poly_to_m1 via
             self.poly_height = poly_height
             if self.tx_type == "nmos":
@@ -162,17 +155,33 @@ class ptx(design.design):
                 self.poly_offset_y -= 0.5*self.additional_poly
                 self.poly_contact_center = self.well_enclose_active - self.active_to_contact_center
 
+        self.poly_top = self.poly_offset_y + 0.5*self.poly_height
+        self.poly_bottom = self.poly_offset_y - 0.5*self.poly_height
+
         # The active offset is due to the well extension
         self.active_offset = vector([self.well_enclose_active]*2)
+
+        # poly dummys
+        if "po_dummy" in tech_layers:
+            self.dummy_height = drc["po_dummy_min_height"]
+            if self.active_height > drc["po_dummy_thresh"]:
+                self.dummy_height = self.active_height + 2 * drc["po_dummy_enc"]
+            # center around active
+            self.dummy_y_offset = self.well_enclose_active + 0.5 * self.active_height
+            self.dummy_top = self.dummy_y_offset + 0.5*self.dummy_height
+            self.dummy_bottom = self.dummy_y_offset - 0.5*self.dummy_height
 
         # Well enclosure of active, ensure minwidth as well
         if "ptx_implant_enclosure_active" in drc and drc["ptx_implant_enclosure_active"] > 0:
             self.implant_enclose = drc["ptx_implant_enclosure_active"]
-            self.implant_height = self.poly_height + 2*self.implant_enclose
-            self.implant_offset = self.active_offset - [self.implant_enclose, self.implant_enclose + self.poly_extend_active]
-            if self.tx_type == "pmos":
-                self.implant_offset.y -= self.additional_poly
-            
+            self.dummy_poly_spacing= drc["dummy_poly_spacing"]
+            self.implant_top = max(self.poly_top+self.implant_enclose,
+                                   self.dummy_top+0.5*self.dummy_poly_spacing)
+            self.implant_bottom = min(self.poly_bottom-self.implant_enclose,
+                                      self.dummy_bottom-0.5*self.dummy_poly_spacing)
+            self.implant_height = self.implant_top-self.implant_bottom
+            self.implant_offset = vector(self.active_offset.x + 0.5*self.active_width,
+                                         0.5*(self.implant_top+self.implant_bottom))
         else:
             self.implant_enclose = drc["implant_enclosure_active"]
             self.implant_height = self.active_height + 2*self.implant_enclose
@@ -180,30 +189,16 @@ class ptx(design.design):
         self.implant_width = self.active_width + 2*self.implant_enclose
         
         if info["has_{}well".format(self.well_type)]:
-            self.cell_well_width = max(self.active_width + 2*self.well_enclose_active,
-                                  self.well_width)
-            self.cell_well_height = max(self.tx_width + 2*self.well_enclose_active,
-                                   self.well_width)
-            # We are going to shift the 0,0, so include that in the width and height
-            self.height = self.cell_well_height - self.active_offset.y
-            self.width = self.cell_well_width - self.active_offset.x
+            self.width = self.poly_pitch * (self.mults + 3) + self.poly_width
+            self.height = self.implant_height
+            self.cell_well_width = max(self.active_width + 2 * self.well_enclose_active,
+                                       self.well_width)
+            self.cell_well_height = max(self.tx_width + 2 * self.well_enclose_active,
+                                        self.well_width)
         else:
             # If no well, use the boundary of the active and poly
             self.height = self.poly_height
             self.width = self.active_width
-
-        self.height = self.implant_height
-        # poly dummys
-        if "po_dummy" in tech_layers:
-            self.width = self.poly_pitch*(self.mults+3) + self.poly_width
-            self.dummy_height = drc["po_dummy_min_height"]
-            if self.active_height > drc["po_dummy_thresh"]:
-                self.dummy_height = self.active_height + 2*drc["po_dummy_enc"]
-            self.dummy_y_offset = self.well_enclose_active + 0.5*self.active_height
-        
-        # The active offset is due to the well extension
-        self.active_offset = vector([self.well_enclose_active]*2)
-
         # This is the center of the first active contact offset (centered vertically)
         self.contact_offset = self.active_offset + vector(active_enclose_contact + 0.5*self.contact_width,
                                                           0.5*self.active_height)
@@ -299,13 +294,6 @@ class ptx(design.design):
                             size=(1, 1),
                             implant_type=None,
                             well_type=None)
-                # metal2 contact fill for drc
-                metal2_fill_height = self.minside_metal1_contact
-                metal2_fill_width = utils.ceil(drc["minarea_metal1_contact"]/metal2_fill_height)
-                metal2_area_fill = self.add_rect_center(layer="metal2",
-                        offset=a,
-                        width=metal2_fill_width,
-                        height=metal2_fill_height)
                 if rect_height is not None:
                     # compute bottom left coordinates
                     rect_x_offset = a.x - 0.5*rect_width
@@ -316,18 +304,29 @@ class ptx(design.design):
                         offset=vector(rect_x_offset, rect_y_offset),
                         width=rect_width,
                         height=rect_height)
+            if len(drain_positions) > 1:  # add m1m2 vias connect
+                drain_pin_width = drain_positions[-1][0]-drain_positions[0][0] + self.metal2_width
+                self.add_layout_pin(text="D",
+                                    layer="metal2",
+                                    offset=drain_positions[0]-vector(0.5*self.metal2_width, 0.5*self.metal2_width),
+                                    width=drain_pin_width,
+                                    height=m1m2.second_layer_height)
+            else:
+                # metal2 contact fill for drc
+                metal2_fill_height = self.minside_metal1_contact
+                metal2_fill_width = utils.ceil(drc["minarea_metal1_contact"]/metal2_fill_height)
+                self.add_layout_pin_center_rect(text="D",
+                                     layer="metal2",
+                                     offset=drain_positions[0],
+                                     width=metal2_fill_width,
+                                     height=metal2_fill_height)
+            # source connection needs to be shifted when drain metal1 height is increased
             if metal1_area_fill is not None:
                 distance_from_mid_contact = max(abs(metal1_area_fill.by() - drain_positions[0].y), \
                     abs(metal1_area_fill.uy() - drain_positions[0].y))
                 source_offset = vector(pin_offset.x, distance_from_mid_contact + self.wide_m1_space \
                         + 0.5*self.m1_width).scale(source_dir,source_dir)
 
-            drain_pin_width = drain_positions[-1][0]-drain_positions[0][0] + self.metal2_width
-            self.add_layout_pin(text="D",
-                            layer="metal1",
-                            offset=drain_positions[0]-vector(0.5*self.metal2_width, 0.5*self.metal2_width),
-                            width=drain_pin_width,
-                            height=self.metal2_width)
         else:
             drain_offset = pin_offset.scale(drain_dir,drain_dir)
             # Add each vertical segment
@@ -423,7 +422,7 @@ class ptx(design.design):
                           height=self.cell_well_height)
             # If the implant must enclose the active, shift offset
             # and increase width/height
-            self.implant_rect = self.add_rect(layer="{}implant".format(self.implant_type),
+            self.implant_rect = self.add_rect_center(layer="{}implant".format(self.implant_type),
                         offset=self.implant_offset,
                         width=self.implant_width,
                         height=self.implant_height)

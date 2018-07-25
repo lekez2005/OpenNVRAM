@@ -16,7 +16,6 @@ class pgate(design.design):
     def __init__(self, name):
         """ Creates a generic cell """
         design.design.__init__(self, name)
-        self.rail_height = drc["rail_height"]
 
     def determine_tx_mults(self):
         """
@@ -32,7 +31,7 @@ class pgate(design.design):
         tx_height = nmos.height + pmos.height
         
         # This is the extra space needed to ensure DRC rules to the active contacts
-        extra_contact_space = drc["extra_contact_space"]
+        extra_contact_space = nmos.height - nmos.tx_width
         total_height = tx_height + self.min_channel
         debug.check(self.height> total_height,"Cell height {0} too small for simple min height {1}.".format(self.height,total_height))
 
@@ -140,7 +139,7 @@ class pgate(design.design):
         #               height=nwell_height)
 
         # use for cell pr boundary
-        pwell_position = vector(0,-0.5*self.rail_height)
+        pwell_position = vector(0, 0)
         pwell_height = middle_position.y-pwell_position.y
         if info["has_pwell"]:
             self.add_rect(layer="pwell",

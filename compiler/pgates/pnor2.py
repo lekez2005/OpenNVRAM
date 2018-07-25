@@ -73,16 +73,14 @@ class pnor2(pnand2.pnand2):
         Add PMOS and NMOS to the layout at the upper-most and lowest position
         to provide maximum routing in channel
         """
-        # x offset should be first dummy poly to active
-        x_offset = 2*self.pmos.poly_pitch - self.pmos.end_to_poly
+        x_offset = 0.5*(self.pmos.width-self.pmos.active_width)
 
         #place PMOS so that its implant aligns with cell boundary
         # account for active_offset translation that happens after creation
 
-        active_to_bottom_implant = self.pmos.active_offset.y - self.pmos.implant_offset.y
-        active_bottom_to_top_implant = self.pmos.implant_height - active_to_bottom_implant
+        pmos_bottom = self.height - (self.pmos.implant_rect.offset.y + self.pmos.implant_rect.height)
 
-        pmos1_pos = vector(x_offset, self.height-active_bottom_to_top_implant)
+        pmos1_pos = vector(x_offset, pmos_bottom)
 
         self.pmos1_inst=self.add_inst(name="pnor2_pmos1",
                                       mod=self.pmos,
@@ -96,8 +94,7 @@ class pnor2(pnand2.pnand2):
         self.connect_inst(["net1", "B", "Z", "vdd"])
 
         # place NMOS so that its implant aligns with cell boundary
-        
-        nmos_y_offset = self.nmos.active_offset.y - self.nmos.implant_offset.y        
+        nmos_y_offset = -self.nmos.implant_rect.offset.y
         nmos1_pos = vector(x_offset, nmos_y_offset)
        
         self.nmos1_inst=self.add_inst(name="pnor2_nmos1",

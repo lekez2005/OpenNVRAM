@@ -36,7 +36,7 @@ class pinv(pgate.pgate):
         self.pmos_size = beta*size
         self.beta = beta
         self.height = height # Maybe minimize height if not defined in future?
-        self.route_output = False
+        self.route_output = route_output
 
         self.add_pins()
         self.create_layout()
@@ -60,17 +60,13 @@ class pinv(pgate.pgate):
         self.add_well_contacts()
         self.extend_wells(self.well_pos)
         self.connect_rails()
-        self.route_input_gate(self.pmos_inst, self.nmos_inst, self.output_pos.y, "A", rotate=0)
+        self.route_input_gate(self.pmos_inst, self.nmos_inst, self.output_pos.y, "A",
+                              rotate=0, position="center")
         self.route_outputs()
         
     def determine_tx_mults(self):
-        if not self.route_output:
-            #output metal1 should be large enough for drc min area
-            self.output_width = contact.m1m2.second_layer_height
-            self.output_height = utils.ceil(drc["minarea_metal1_contact"]/self.output_width)
-        else:
-            self.output_height = self.m1_width
-        self.min_channel = self.output_height + 0.5*self.m1_space
+        self.output_height = self.m1_width
+        self.min_channel = self.m1_space + max(drc["implant_to_implant"], self.output_height)
         pgate.pgate.determine_tx_mults(self)
 
     def setup_layout_constants(self):
@@ -126,22 +122,19 @@ class pinv(pgate.pgate):
         Add PMOS and NMOS to the layout at the upper-most and lowest position
         to provide maximum routing in channel
         """
-        # x offset should be first dummy poly to active
-        x_offset = 2*self.pmos.poly_pitch - self.pmos.end_to_poly
+        x_offset = 0.5*(self.pmos.width-self.pmos.active_width)
         
-        #place PMOS so that its implant aligns with cell boundary
+        # place PMOS so that its implant aligns with cell boundary
         # account for active_offset translation that happens after creation
-        active_to_bottom_implant = self.pmos.active_offset.y - self.pmos.implant_offset.y
-        active_bottom_to_top_implant = self.pmos.implant_height - active_to_bottom_implant
-        self.pmos_pos = vector(x_offset, self.height-active_bottom_to_top_implant)
+        pmos_bottom = self.height - (self.pmos.implant_rect.offset.y + self.pmos.implant_rect.height)
+        self.pmos_pos = vector(x_offset, pmos_bottom)
         self.pmos_inst=self.add_inst(name="pinv_pmos",
                                      mod=self.pmos,
                                      offset=self.pmos_pos)
         self.connect_inst(["Z", "A", "vdd", "vdd"])
 
         # place NMOS so that its implant aligns with cell boundary
-        
-        nmos_y_offset = self.nmos.active_offset.y - self.nmos.implant_offset.y
+        nmos_y_offset = -self.nmos.implant_rect.offset.y
         self.nmos_pos = vector(x_offset, nmos_y_offset)
         self.nmos_inst=self.add_inst(name="pinv_nmos",
                                      mod=self.nmos,
@@ -163,40 +156,59 @@ class pinv(pgate.pgate):
 
     def route_outputs(self):
         """ Route the output (drains) together. Optionally, routes output to edge. """
-
+        layers=("metal1", "via1", "metal2")
+        min_output_separation = drc["min_output_separation"]
         # Get the drain pins
         nmos_drain_pin = self.nmos_inst.get_pin("D")
         pmos_drain_pin = self.pmos_inst.get_pin("D")
+        gate_pin = self.pmos_inst.get_pin("G")
 
-        # Pick point at right most of NMOS and connect down to PMOS
-        nmos_drain_pos = nmos_drain_pin.lr() - vector(0.5*self.m1_width,0)
-        pmos_drain_pos = vector(nmos_drain_pos.x, pmos_drain_pin.bc().y)
-        self.add_path("metal2",[nmos_drain_pos,pmos_drain_pos])
+        output_x = pmos_drain_pin.rx()
+        if nmos_drain_pin.rx() < gate_pin.lx() + min_output_separation:
+            output_x = gate_pin.lx() + min_output_separation - self.m2_width
+            self.add_rect(layer="metal2", offset=pmos_drain_pin.lr(), height=pmos_drain_pin.height(),
+                          width=output_x-pmos_drain_pin.rx())
+            self.add_rect(layer="metal2", offset=nmos_drain_pin.lr(), height=nmos_drain_pin.height(),
+                          width=output_x-nmos_drain_pin.rx())
+
+
+        top_via = self.pmos_inst.get_pin("G").center().y - 0.5*contact.poly.second_layer_height \
+                  - self.wide_m1_space - contact.m1m2.first_layer_height
+        top_via_offset = vector(output_x - contact.m1m2.second_layer_width, top_via)
+        self.add_contact(layers, top_via_offset)
+
+        bottom_via = self.nmos_inst.get_pin("G").center().y + 0.5*contact.poly.second_layer_height \
+                     + self.wide_m1_space
+        bottom_via_offset = vector(output_x - contact.m1m2.second_layer_width, bottom_via)
+        self.add_contact(layers, bottom_via_offset)
+
+        nmos_drain_pos = vector(output_x-self.m2_width, nmos_drain_pin.uy())
+        pmos_drain_pos = vector(output_x-self.m2_width, pmos_drain_pin.by())
+
+        pmos_connection_height = pmos_drain_pos.y-top_via
+        self.add_rect(layer="metal2", offset=pmos_drain_pos-vector(0, pmos_connection_height),
+                      width=self.m2_width, height=pmos_connection_height)
+        self.add_rect(layer="metal2", offset=nmos_drain_pos, width=self.m2_width, height=bottom_via-nmos_drain_pos.y)
+
+        self.add_rect(layer="metal1", offset=bottom_via_offset, width=self.m1_width,
+                      height=top_via_offset.y-bottom_via_offset.y)
+
 
         # Remember the mid for the output
-        mid_drain_offset = vector(nmos_drain_pos.x,self.output_pos.y)
-        inverter_out_extension = drc["inverter_out_extension"]
-        self.add_path("metal2", [mid_drain_offset, mid_drain_offset+vector(inverter_out_extension, 0)])
-        contact_offset_x = mid_drain_offset.x + inverter_out_extension - 0.5*contact.m1m2.second_layer_height
-
-        self.add_contact_center(layers=("metal1", "via1", "metal2"),
-                                      offset=vector(contact_offset_x, mid_drain_offset.y),
-                                      rotate=90)
+        mid_drain_offset = vector(output_x-0.5*self.m1_width, self.output_pos.y)
 
         if self.route_output == True:
             # This extends the output to the edge of the cell
             output_offset = mid_drain_offset.scale(0,1) + vector(self.width,0)
             self.add_layout_pin_center_segment(text="Z",
                                                layer="metal1",
-                                               height = self.output_height,
-                                               start=vector(contact_offset_x, mid_drain_offset.y),
+                                               start=mid_drain_offset,
                                                end=output_offset)
         else:
             self.add_layout_pin_center_rect(text="Z",
                                             layer="metal1",
-                                            width=self.output_width,
                                             height=self.output_height,
-                                            offset=vector(contact_offset_x, mid_drain_offset.y))
+                                            offset=mid_drain_offset)
 
 
     def add_well_contacts(self):

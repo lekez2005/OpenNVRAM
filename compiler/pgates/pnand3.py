@@ -57,11 +57,6 @@ class pnand3(pgate.pgate):
 
     def determine_tx_mults(self):
 
-        if "metal1_to_metal1_wide" in drc:
-            self.wide_m1_space = drc["metal1_to_metal1_wide"]
-        else:
-            self.wide_m1_space = drc["metal1_to_metal1"]
-
         # metal spacing to allow contacts on any layer
         self.max_input_width = max(contact.m1m2.first_layer_width,
                                  contact.m2m3.first_layer_width, contact.m2m3.second_layer_width)
@@ -122,7 +117,7 @@ class pnand3(pgate.pgate):
         
         # Compute the other pmos2 location, by determining offset to overlap the
         # source and drain pins
-        self.overlap_offset = vector((self.pmos.get_pin("D").ll() - self.pmos.get_pin("S").ll()).x, 0)
+        self.overlap_offset = vector(self.pmos.contact_pitch, 0)
 
         tx_width = 7*self.pmos.poly_pitch + self.pmos.poly_width
 
@@ -157,13 +152,13 @@ class pnand3(pgate.pgate):
         to provide maximum routing in channel
         """
 
-        # x offset should be first dummy poly to active
-        x_offset = 2*self.pmos.poly_pitch - self.pmos.end_to_poly
+        x_offset = 0.5*(self.pmos.width-self.pmos.active_width)
 
-        active_to_bottom_implant = self.pmos.active_offset.y - self.pmos.implant_offset.y
-        active_bottom_to_top_implant = self.pmos.implant_height - active_to_bottom_implant
+        # place PMOS so that its implant aligns with cell boundary
+        # account for active_offset translation that happens after creation
+        pmos_bottom = self.height - (self.pmos.implant_rect.offset.y + self.pmos.implant_rect.height)
 
-        pmos1_pos = vector(x_offset, self.height-active_bottom_to_top_implant)
+        pmos1_pos = vector(x_offset, pmos_bottom)
 
         self.pmos1_inst=self.add_inst(name="pnand3_pmos1",
                                       mod=self.pmos,
@@ -183,7 +178,7 @@ class pnand3(pgate.pgate):
         self.connect_inst(["Z", "C", "vdd", "vdd"])
         
         # place NMOS so that its implant aligns with cell boundary
-        nmos_y_offset = self.nmos.active_offset.y - self.nmos.implant_offset.y        
+        nmos_y_offset = -self.nmos.implant_rect.offset.y
         nmos1_pos = vector(x_offset, nmos_y_offset)
 
         self.nmos1_inst=self.add_inst(name="pnand3_nmos1",

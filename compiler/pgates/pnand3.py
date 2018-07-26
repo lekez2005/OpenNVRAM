@@ -237,9 +237,9 @@ class pnand3(pgate.pgate):
 
     def route_inputs(self):
         """ Route the A and B inputs """
-        inputC_yoffset = self.well_pos.y + 1.5*self.input_spacing
-        inputB_yoffset = self.well_pos.y - 0.5*self.input_spacing
-        inputA_yoffset = self.well_pos.y - 1.5*self.input_spacing
+        inputC_yoffset = self.well_pos.y - 1.5*self.input_spacing
+        inputB_yoffset = self.well_pos.y
+        inputA_yoffset = self.well_pos.y + 1.5*self.input_spacing
         
         self.route_input_gate(self.pmos3_inst, self.nmos3_inst, inputC_yoffset, "C", position="center")
 
@@ -251,41 +251,49 @@ class pnand3(pgate.pgate):
 
     def route_output(self):
         """ Route the Z output """
+        layers = ("metal1", "via1", "metal2")
         # PMOS1 drain 
         pmos1_pin = self.pmos1_inst.get_pin("D")
         # PMOS3 drain 
         pmos3_pin = self.pmos3_inst.get_pin("D")
         # NMOS3 drain
-        nmos3_pin = self.nmos3_inst.get_pin("D")    
+        nmos3_pin = self.nmos3_inst.get_pin("D")
 
-        output_y_offset = self.well_pos.y + 0.5*self.input_spacing
-        mid_offset = vector(nmos3_pin.center().x + drc["nand_output_offset"], output_y_offset)
-    
-        
-        # PMOS3 and NMOS3 are drain aligned
-        self.add_path("metal2",[pmos3_pin.bc(), mid_offset, nmos3_pin.uc()])
-        
-        self.add_path("metal2",[pmos1_pin.bc(), mid_offset, nmos3_pin.uc()]) 
+        self.add_rect(layer="metal2", offset=pmos1_pin.ll(), height=pmos1_pin.height(),
+                      width=pmos3_pin.rx()-pmos1_pin.rx())
 
-        pin_offset = mid_offset - vector(0, 0.5*contact.m1m2.second_layer_height)
+        gate_pin = self.nmos3_inst.get_pin("G")
 
-        # add extra metal1 to nmos2 drain to fulfill drc requirement
-        fill_height = contact.m1m2.first_layer_height
-        fill_width = utils.ceil(drc["minarea_metal1_contact"]/fill_height)
-        self.add_rect_center(layer="metal1",
-                        offset=pin_offset,
-                        height=fill_height,
-                        width=fill_width)       
+        min_output_separation = drc["min_output_separation"]
+        output_x = gate_pin.rx() + min_output_separation
 
-        # This extends the output to the edge of the cell
-        self.add_contact_center(layers=("metal1", "via1", "metal2"),
-                                offset=pin_offset)
+        self.add_rect(layer="metal2", offset=pmos3_pin.lr(), height=pmos3_pin.height(),
+                      width=output_x-pmos3_pin.rx())
+        self.add_rect(layer="metal2", offset=nmos3_pin.lr(), height=nmos3_pin.height(),
+                      width=output_x-nmos3_pin.rx())
+
+        top_via = self.pmos3_inst.get_pin("G").center().y - 0.5 * contact.poly.second_layer_height \
+                  - self.wide_m1_space - contact.m1m2.first_layer_height
+        top_via_offset = vector(output_x - contact.m1m2.second_layer_width, top_via)
+        self.add_contact(layers, top_via_offset)
+
+        bottom_via = self.nmos3_inst.get_pin("G").center().y + 0.5 * contact.poly.second_layer_height \
+                     + self.wide_m1_space
+        bottom_via_offset = vector(output_x - contact.m1m2.second_layer_width, bottom_via)
+        self.add_contact(layers, bottom_via_offset)
+
+        bot_rect_offset = vector(output_x - self.m2_width, nmos3_pin.by())
+        self.add_rect(layer="metal2", width=self.m2_width, height=bottom_via_offset.y - bot_rect_offset.y,
+                      offset=bot_rect_offset)
+        self.add_rect(layer="metal2", width=self.m2_width, height=pmos3_pin.by() - top_via, offset=top_via_offset)
+
+        self.add_rect(layer="metal1", width=self.m1_width, offset=bottom_via_offset, height=top_via - bottom_via)
+
+        pin_pos = vector(output_x - 0.5 * self.m1_width, self.output_pos.y+0.5*self.input_spacing)
+
         self.add_layout_pin_center_rect(text="Z",
                                         layer="metal1",
-                                        offset=pin_offset,
-                                        width=contact.m1m2.first_layer_width,
-                                        height=contact.m1m2.first_layer_height)
-
+                                        offset=pin_pos)
 
 
     def input_load(self):

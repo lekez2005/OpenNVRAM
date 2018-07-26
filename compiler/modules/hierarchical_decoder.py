@@ -1,8 +1,6 @@
 from tech import drc
 import debug
 import design
-from math import log
-from math import sqrt
 import math
 import contact 
 from pnand2 import pnand2
@@ -138,7 +136,11 @@ class hierarchical_decoder(design.design):
             self.predecoder_width = self.pre3_8.width 
         else:
             self.predecoder_width = self.pre2_4.width
-        self.predecoder_height = self.pre2_4.height*self.no_of_pre2x4 + self.pre3_8.height*self.no_of_pre3x8
+
+        # put space because of drc implant spacing rules from misaligned predecoder and decoder
+        self.predecoder_decoder_space = self.inv.height
+        self.predecoder_height = self.pre2_4.height*self.no_of_pre2x4 + self.pre3_8.height*self.no_of_pre3x8  + \
+                                 self.predecoder_decoder_space
 
         # Calculates height and width of row-decoder 
         if (self.num_inputs == 4 or self.num_inputs == 5):
@@ -427,18 +429,30 @@ class hierarchical_decoder(design.design):
         if (self.num_inputs == 4 or self.num_inputs == 5):
             for index_A in self.predec_groups[0]:
                 for index_B in self.predec_groups[1]:
-                    self.connect_rail(index_A, self.nand_inst[row_index].get_pin("A"))
-                    self.connect_rail(index_B, self.nand_inst[row_index].get_pin("B"))
+                    self.connect_rail_m2(index_A, self.nand_inst[row_index].get_pin("A"))
+                    self.connect_rail_m2(index_B, self.nand_inst[row_index].get_pin("B"))
                     row_index = row_index + 1
 
         elif (self.num_inputs > 5):
             for index_A in self.predec_groups[0]:
                 for index_B in self.predec_groups[1]:
                     for index_C in self.predec_groups[2]:
-                        self.connect_rail(index_A, self.nand_inst[row_index].get_pin("A"))
-                        self.connect_rail(index_B, self.nand_inst[row_index].get_pin("B"))
-                        self.connect_rail(index_C, self.nand_inst[row_index].get_pin("C"))
+                        self.connect_rail_m2(index_A, self.nand_inst[row_index].get_pin("A"))
+                        self.connect_rail_m2(index_B, self.nand_inst[row_index].get_pin("B"))
+                        self.connect_rail_m2(index_C, self.nand_inst[row_index].get_pin("C"))
                         row_index = row_index + 1
+
+    def connect_rail_m2(self, rail_index, pin):
+        max_rail = max(self.rail_x_offsets)
+        layers = ("metal1", "via1", "metal2")
+        via_x = max_rail + 2 * self.m1_space + 0.5 * contact.m1m2.first_layer_height
+        via_offset = vector(via_x, pin.cy())
+        rail_offset = vector(self.rail_x_offsets[rail_index], pin.cy())
+        self.add_via_center(layers=layers, offset=rail_offset, rotate=0)
+        self.add_path("metal1", [rail_offset, via_offset])
+        self.add_via_center(layers=layers, offset=via_offset, rotate=90)
+        self.add_path("metal2", [via_offset, pin.center()])
+        self.add_via_center(layers=layers, offset=pin.center(), rotate=0)
 
     def route_vdd_gnd(self):
         """ Add a pin for each row of vdd/gnd which are must-connects next level up. """
@@ -447,14 +461,16 @@ class hierarchical_decoder(design.design):
             # this will result in duplicate polygons for rails, but who cares
             
             # use the inverter offset even though it will be the nand's too
-            (gate_offset, y_dir) = self.get_gate_offset(0, self.inv.height, num)
+            (gate_offset, y_dir) = self.get_gate_offset(0, self.inv.height, num, rail_height=self.inv.rail_height)
+            if num >= self.total_number_of_predecoder_outputs:
+                gate_offset.y += self.predecoder_decoder_space
             # route vdd
             vdd_offset = gate_offset + self.inv.get_pin("vdd").ll().scale(1,y_dir) 
             self.add_layout_pin(text="vdd",
                                 layer="metal1",
                                 offset=vdd_offset,
                                 width=self.width,
-                                height=drc["minwidth_metal1"])
+                                height=self.inv.rail_height)
 
             # route gnd
             gnd_offset = gate_offset+self.inv.get_pin("gnd").ll().scale(1,y_dir)
@@ -462,7 +478,7 @@ class hierarchical_decoder(design.design):
                                 layer="metal1",
                                 offset=gnd_offset,
                                 width=self.width,
-                                height=drc["minwidth_metal1"])
+                                height=self.inv.rail_height)
         
 
     def connect_rail(self, rail_index, pin):
@@ -471,7 +487,7 @@ class hierarchical_decoder(design.design):
         self.add_path("metal1", [rail_pos, pin.lc()])
         self.add_via_center(layers=("metal1", "via1", "metal2"),
                             offset=rail_pos,
-                            rotate=90)
+                            rotate=0)
 
         
     def analytical_delay(self, slew, load = 0.0):

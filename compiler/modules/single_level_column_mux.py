@@ -3,8 +3,10 @@ import debug
 from tech import drc, info
 from vector import vector
 import contact
+import geometry
 from ptx import ptx
 from globals import OPTS
+import utils
 
 class single_level_column_mux(design.design):
     """
@@ -30,8 +32,8 @@ class single_level_column_mux(design.design):
         self.add_ptx()
         self.pin_height = 2*self.m2_width
         self.width = self.bitcell.width
-        self.height = self.nmos2.uy() + self.pin_height
-        self.connect_poly()
+        self.height = self.nmos2.uy() + 2*self.pin_height
+        self.connect_gates()
         self.add_gnd_rail()
         self.add_bitline_pins()
         self.connect_bitlines()
@@ -68,30 +70,39 @@ class single_level_column_mux(design.design):
         """ Create the two pass gate NMOS transistors to switch the bitlines"""
         
         # Adds nmos1,nmos2 to the module
-        self.nmos = ptx(width=self.ptx_width)
+        self.nmos = ptx(width=self.ptx_width, connect_active=False)
         self.add_mod(self.nmos)
 
-        # Space it in the center
-        nmos1_position = self.nmos.active_offset.scale(0,1) + vector(0.5*self.bitcell.width-0.5*self.nmos.active_width,0)
+        # Space it in the center for x offset and align implant with cell boundary for y offset
+        x_offset = 0.5*self.bitcell.width-0.5*self.nmos.active_width
+        y_offset =  -self.nmos.implant_rect.offset.y
+        nmos1_position = vector(x_offset, y_offset)
         self.nmos1=self.add_inst(name="mux_tx1",
                                  mod=self.nmos,
                                  offset=nmos1_position)
         self.connect_inst(["bl", "sel", "bl_out", "gnd"])
 
+        # place at zero to determine offset after mirror
+        dummy_inst = geometry.instance("dummy_inst", self.nmos, offset=vector(0, 0), mirror="MX", rotate=0)
+        dummy_gate_pos = dummy_inst.get_pin("G").cy()
+
+        nmos2_y_offset = self.nmos1.get_pin("G").cy() - dummy_gate_pos
+
         # This aligns it directly above the other tx with gates abutting
-        nmos2_position = nmos1_position + vector(0,self.nmos.active_height + self.poly_space)
+        nmos2_position = vector(x_offset, nmos2_y_offset)
         self.nmos2=self.add_inst(name="mux_tx2",
                                  mod=self.nmos,
+                                 mirror="MX",
                                  offset=nmos2_position)
         self.connect_inst(["br", "sel", "br_out", "gnd"])
 
 
-    def connect_poly(self):
+    def connect_gates(self):
         """ Connect the poly gate of the two pass transistors """
         
-        height=self.nmos2.get_pin("G").uy() - self.nmos1.get_pin("G").by()
+        height=self.nmos2.get_pin("G").height()
         self.add_layout_pin(text="sel",
-                            layer="poly",
+                            layer="metal1",
                             offset=self.nmos1.get_pin("G").ll(),
                             height=height)
 
@@ -113,29 +124,36 @@ class single_level_column_mux(design.design):
         # Add vias to bl, br_out, nmos2/S, nmos1/D
         self.add_via_center(layers=("metal1","via1","metal2"),
                             offset=bl_pin.bc())
+        # bl needs more area to meet m2 min area requirement
+        fill_width = bl_pin.width()
+        fill_height = utils.ceil(drc["minarea_metal1_contact"]/fill_width)
+        self.add_rect_center("metal2", offset=bl_pin.uc()-vector(0, 0.5*fill_height),
+                      width=fill_width,
+                      height=fill_height)
         self.add_via_center(layers=("metal1","via1","metal2"),
                             offset=br_out_pin.uc())
         self.add_via_center(layers=("metal1","via1","metal2"),
                             offset=nmos2_s_pin.center())
         self.add_via_center(layers=("metal1","via1","metal2"),
                             offset=nmos1_d_pin.center())
-        
+
+        gate_y = self.nmos1.get_pin("G").cy()
         # bl -> nmos2/D on metal1
         # bl_out -> nmos2/S on metal2
         self.add_path("metal1",[bl_pin.ll(), vector(nmos2_d_pin.cx(),bl_pin.by()), nmos2_d_pin.center()])
         # halfway up, move over
-        mid1 = bl_out_pin.uc().scale(1,0.5)+nmos2_s_pin.bc().scale(0,0.5)
-        mid2 = bl_out_pin.uc().scale(0,0.5)+nmos2_s_pin.bc().scale(1,0.5)        
-        self.add_path("metal2",[bl_out_pin.uc(), mid1, mid2, nmos2_s_pin.bc()])
+        mid1 = vector(bl_out_pin.cx(), gate_y)
+        mid2 = vector(nmos2_s_pin.cx(), gate_y)
+        self.add_path("metal2",[bl_out_pin.uc(), mid1, mid2, nmos2_s_pin.center()])
         
         # br -> nmos1/D on metal2
         # br_out -> nmos1/S on metal1
         self.add_path("metal1",[br_out_pin.uc(), vector(nmos1_s_pin.cx(),br_out_pin.uy()), nmos1_s_pin.center()])
         # halfway up, move over
-        mid1 = br_pin.bc().scale(1,0.5)+nmos1_d_pin.uc().scale(0,0.5)
-        mid2 = br_pin.bc().scale(0,0.5)+nmos1_d_pin.uc().scale(1,0.5)
-        self.add_path("metal2",[br_pin.bc(), mid1, mid2, nmos1_d_pin.uc()])        
-        
+        mid1 = vector(br_pin.cx(), gate_y)
+        mid2 = vector(nmos1_d_pin.cx(), gate_y)
+        self.add_path("metal2",[br_pin.bc(), mid1, mid2, nmos1_d_pin.center()])
+
 
     def add_gnd_rail(self):
         """ Add the gnd rails through the cell to connect to the bitcell array """
@@ -147,6 +165,7 @@ class single_level_column_mux(design.design):
                 gnd_position = vector(gnd_pin.lx(), 0)
                 self.add_layout_pin(text="gnd",
                                     layer="metal2",
+                                    width=gnd_pin.width(),
                                     offset=gnd_position,
                                     height=self.height)
         
@@ -163,11 +182,18 @@ class single_level_column_mux(design.design):
         # Add to the right (first) gnd rail
         m1m2_offset = right_gnd.bc() + vector(0,0.5*self.nmos.poly_height)
         self.add_via_center(layers=("metal1", "via1", "metal2"),
+                            size=[1, 3],
                             offset=m1m2_offset)
         active_offset = right_gnd.bc() + vector(0,0.5*self.nmos.poly_height)
-        self.add_via_center(layers=("active", "contact", "metal1"),
+        body_contact = self.add_via_center(layers=("cont_active", "contact", "metal1"),
                             offset=active_offset,
+                            size=[1, 3],
                             implant_type="p",
                             well_type="p")
+        # double implant area to meet drc requirement
+        implant_width = body_contact.mod.first_layer_width + 2 * drc["implant_enclosure_active"]
+        implant_height = body_contact.mod.first_layer_height + 2 * drc["implant_enclosure_active"]
+        self.add_rect_center("pimplant", active_offset+vector(0, implant_height),
+                             width=implant_width, height=implant_height)
 
 

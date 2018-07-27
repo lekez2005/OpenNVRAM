@@ -113,7 +113,7 @@ class single_level_column_mux_array(design.design):
 
     def add_routing(self):
         self.add_horizontal_input_rail()
-        self.add_vertical_poly_rail()
+        self.add_vertical_gate_rail()
         self.route_bitlines()
 
     def add_horizontal_input_rail(self):
@@ -126,24 +126,34 @@ class single_level_column_mux_array(design.design):
                                 width=self.mux.width * self.columns,
                                 height=contact.m1m2.width)
 
-    def add_vertical_poly_rail(self):
-        """  Connect the poly to the address rails """
+    def add_vertical_gate_rail(self):
+        """  Connect the selection gate to the address rails """
+
+        # shift to use the blank space to the left of the transistor implant
+        sel_pos = self.mux.get_pin("sel").lx()
+        tx_implant_offset = self.mux.nmos1.offset.x + self.mux.nmos.implant_rect.offset.x
+        x_shift = sel_pos - tx_implant_offset + self.m1_width
+
+        via_y_offset = self.mux_inst[0].offset.y + self.m1_space + 0.5*contact.m1m2.first_layer_height
         
         # Offset to the first transistor gate in the pass gate
         for col in range(self.columns):
             # which select bit should this column connect to depends on the position in the word
             sel_index = col % self.words_per_row
             # Add the column x offset to find the right select bit
-            gate_offset = self.mux_inst[col].get_pin("sel").bc()
-            # height to connect the gate to the correct horizontal row
-            sel_height = self.get_pin("sel[{}]".format(sel_index)).by()
-            # use the y offset from the sel pin and the x offset from the gate
-            offset = vector(gate_offset.x,self.get_pin("sel[{}]".format(sel_index)).cy())
-            # Add the poly contact with a shift to account for the rotation
-            self.add_via_center(layers=("metal1", "contact", "poly"),
-                                offset=offset,
+            gate_offset = self.mux_inst[col].get_pin("sel").lc()
+            gate_left = gate_offset - vector(x_shift, 0)
+            self.add_path("metal1", [gate_offset, gate_left-vector(0.5*self.m1_width, 0)])
+            via_offset = vector(gate_left.x, via_y_offset)
+            self.add_path("metal1", [gate_left, via_offset])
+            self.add_via_center(layers=("metal1", "via1", "metal2"),
+                                offset=via_offset,
+                                rotate=0)
+            sel_pos = vector(via_offset.x, self.get_pin("sel[{}]".format(sel_index)).cy())
+            self.add_path("metal2", [via_offset, sel_pos])
+            self.add_via_center(layers=("metal1", "via1", "metal2"),
+                                offset=sel_pos,
                                 rotate=90)
-            self.add_path("poly", [offset, gate_offset])
 
     def route_bitlines(self):
         """  Connect the output bit-lines to form the appropriate width mux """

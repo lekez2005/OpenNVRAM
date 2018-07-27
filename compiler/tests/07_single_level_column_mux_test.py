@@ -10,7 +10,7 @@ import globals
 from globals import OPTS
 import debug
 
-class single_level_column_mux_array_test(openram_test):
+class single_level_column_mux_test(openram_test):
 
     def runTest(self):
         globals.init_openram("config_20_{0}".format(OPTS.tech_name))
@@ -18,18 +18,10 @@ class single_level_column_mux_array_test(openram_test):
         import verify
         OPTS.check_lvsdrc = False
 
-        import single_level_column_mux_array
+        from single_level_column_mux import single_level_column_mux
         
-        debug.info(1, "Testing sample for 2-way column_mux_array")
-        a = single_level_column_mux_array.single_level_column_mux_array(columns=16, word_size=8)
-        self.local_check(a)
-
-        debug.info(1, "Testing sample for 4-way column_mux_array")
-        a = single_level_column_mux_array.single_level_column_mux_array(columns=16, word_size=4)
-        self.local_check(a)
-
-        debug.info(1, "Testing sample for 8-way column_mux_array")
-        a = single_level_column_mux_array.single_level_column_mux_array(columns=32, word_size=4)
+        debug.info(1, "8x ptx single level column mux")
+        a = single_level_column_mux(tx_size=8)
         self.local_check(a)
 
         OPTS.check_lvsdrc = True        

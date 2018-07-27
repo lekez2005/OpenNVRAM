@@ -122,7 +122,7 @@ class precharge(pgate.pgate):
         # self.implant_space
         self.lower_tx_implant = self.rect_to_pin(self.b_pmos.implant_rect,
             offset=self.lower_pmos_position, mirror=bottom_mirror)
-        self.implant_space = 2.5*self.m1_space
+        self.implant_space = drc["implant_to_implant"]
 
         self.tl_implant_by = self.lower_tx_implant.by() + self.lower_tx_implant.height() + self.implant_space
         before_offset = self.rect_to_pin(self.tl_pmos.implant_rect).by()

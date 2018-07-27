@@ -91,29 +91,31 @@ class sense_amp_array(design.design):
 
     def connect_rails(self):
         # add vdd rail across entire array
-        vdd_offset = self.amp.get_pin("vdd").ll().scale(0,1)
+        vdd_pin = self.amp.get_pin("vdd")
+        vdd_offset = vdd_pin.ll().scale(0,1)
         self.add_layout_pin(text="vdd",
                       layer="metal1",
                       offset=vdd_offset,
                       width=self.width,
-                      height=drc["minwidth_metal1"])
+                      height=vdd_pin.height())
 
         # NOTE:the gnd rails are vertical so it is not connected horizontally
         # add gnd rail across entire array
-        gnd_offset = self.amp.get_pin("gnd").ll().scale(0,1)
+        gnd_pin = self.amp.get_pin("gnd")
+        gnd_offset = gnd_pin.ll().scale(0,1)
         self.add_layout_pin(text="gnd",
                       layer="metal1",
                       offset=gnd_offset,
                       width=self.width,
-                      height=drc["minwidth_metal1"])
+                      height=gnd_pin.height())
 
         # add sclk rail across entire array
-        sclk_offset = self.amp.get_pin("en").ll().scale(0,1)
+        en_pin = self.amp.get_pin("en")
         self.add_layout_pin(text="en",
                       layer="metal1",
-                      offset=sclk_offset,
+                      offset=en_pin.ll().scale(0,1),
                       width=self.width,
-                      height=drc["minwidth_metal1"])
+                      height=en_pin.height())
 
     def analytical_delay(self, slew, load=0.0):
         return self.amp.analytical_delay(slew=slew, load=load)

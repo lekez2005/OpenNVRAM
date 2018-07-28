@@ -13,9 +13,10 @@ class pgate(design.design):
     This is a module that implements some shared functions for parameterized gates.
     """
 
-    def __init__(self, name):
+    def __init__(self, name, rail_offset=0.0):
         """ Creates a generic cell """
         design.design.__init__(self, name)
+        self.rail_offset = rail_offset
 
     def determine_tx_mults(self):
         """
@@ -28,7 +29,7 @@ class pgate(design.design):
         # plus the tx height
         nmos = ptx(tx_type="nmos")
         pmos = ptx(width=drc["minwidth_tx"], tx_type="pmos")
-        tx_height = nmos.height + pmos.height
+        tx_height = nmos.height + pmos.height + 2*self.rail_offset
         
         # This is the extra space needed to ensure DRC rules to the active contacts
         extra_contact_space = nmos.height - nmos.tx_width
@@ -36,7 +37,7 @@ class pgate(design.design):
         debug.check(self.height> total_height,"Cell height {0} too small for simple min height {1}.".format(self.height,total_height))
 
         # Determine the height left to the transistors to determine the number of fingers
-        tx_height_available = self.height - self.min_channel - 2*extra_contact_space
+        tx_height_available = self.height - self.min_channel - 2*extra_contact_space - 2*self.rail_offset
 
         # Determine the number of mults for each to fit width into available space
         self.nmos_width = self.nmos_size*drc["minwidth_tx"]
@@ -161,7 +162,7 @@ class pgate(design.design):
         
         # To the right a spacing away from the pmos right poly dummy
         contact_xoffset = self.well_width - (0.5*dummy_well_contact.first_layer_width + active_well_enclosure)
-        contact_yoffset = self.height - (0.5*dummy_well_contact.first_layer_height + active_well_enclosure)
+        contact_yoffset = self.height - (0.5*dummy_well_contact.first_layer_height + active_well_enclosure) - self.rail_offset
         contact_offset = vector(contact_xoffset, contact_yoffset)
         self.nwell_contact=self.add_contact_center(layers=layer_stack,
                                                    offset=contact_offset,
@@ -179,7 +180,7 @@ class pgate(design.design):
         nimplant_right = contact_offset.x + 0.5*dummy_well_contact.first_layer_width + drc["implant_enclosure_active"]
         nimplant_width = nimplant_right - pimplant_right
         self.add_rect(layer="nimplant",
-                     offset=vector(pimplant_right, self.height-nimplant_height),
+                     offset=vector(pimplant_right, self.height-nimplant_height-self.rail_offset),
                      width=nimplant_width,
                      height=nimplant_height)
 
@@ -196,7 +197,7 @@ class pgate(design.design):
         # To the right a spacing away from the nmos right active edge
         contact_xoffset = self.well_width - (0.5*dummy_well_contact.first_layer_width + active_well_enclosure)
         # Must be at least an well enclosure of active up from the bottom of the well
-        contact_yoffset = (0.5*dummy_well_contact.first_layer_height + active_well_enclosure)
+        contact_yoffset = 0.5*dummy_well_contact.first_layer_height + active_well_enclosure + self.rail_offset
         contact_offset = vector(contact_xoffset, contact_yoffset)
 
         self.pwell_contact=self.add_contact_center(layers=layer_stack,
@@ -216,6 +217,6 @@ class pgate(design.design):
         pimplant_right = contact_offset.x + 0.5*dummy_well_contact.first_layer_width + drc["implant_enclosure_active"]
         pimplant_width = pimplant_right - nimplant_right
         self.add_rect(layer="pimplant",
-                     offset=vector(nimplant_right, 0),
+                     offset=vector(nimplant_right, self.rail_offset),
                      width=pimplant_width,
                      height=pimplant_height)

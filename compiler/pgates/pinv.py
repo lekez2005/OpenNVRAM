@@ -22,14 +22,14 @@ class pinv(pgate.pgate):
 
     unique_id = 1
     
-    def __init__(self, size=1, beta=parameter["beta"], height=bitcell.height, route_output=True):
+    def __init__(self, size=1, beta=parameter["beta"], height=bitcell.height, route_output=True, rail_offset=0.0):
         # We need to keep unique names because outputting to GDSII
         # will use the last record with a given name. I.e., you will
         # over-write a design in GDS if one has and the other doesn't
         # have poly connected, for example.
         name = "pinv_{}".format(pinv.unique_id)
         pinv.unique_id += 1
-        pgate.pgate.__init__(self, name)
+        pgate.pgate.__init__(self, name, rail_offset)
         debug.info(2, "create pinv structure {0} with size of {1}".format(name, size))
 
         self.nmos_size = size
@@ -126,7 +126,7 @@ class pinv(pgate.pgate):
         
         # place PMOS so that its implant aligns with cell boundary
         # account for active_offset translation that happens after creation
-        pmos_bottom = self.height - (self.pmos.implant_rect.offset.y + self.pmos.implant_rect.height)
+        pmos_bottom = self.height - (self.pmos.implant_rect.offset.y + self.pmos.implant_rect.height) - self.rail_offset
         self.pmos_pos = vector(x_offset, pmos_bottom)
         self.pmos_inst=self.add_inst(name="pinv_pmos",
                                      mod=self.pmos,
@@ -134,7 +134,7 @@ class pinv(pgate.pgate):
         self.connect_inst(["Z", "A", "vdd", "vdd"])
 
         # place NMOS so that its implant aligns with cell boundary
-        nmos_y_offset = -self.nmos.implant_rect.offset.y
+        nmos_y_offset = -self.nmos.implant_rect.offset.y + self.rail_offset
         self.nmos_pos = vector(x_offset, nmos_y_offset)
         self.nmos_inst=self.add_inst(name="pinv_nmos",
                                      mod=self.nmos,
@@ -148,8 +148,8 @@ class pinv(pgate.pgate):
         self.output_pos = vector(0,0.5*(pmos_drain_pos.y+nmos_drain_pos.y))
 
         # This will help with the wells 
-        nmos_top = self.nmos_inst.height
-        pmos_bottom = self.height - self.pmos_inst.height
+        nmos_top = self.nmos_inst.height + self.rail_offset
+        pmos_bottom = self.height - self.pmos_inst.height - self.rail_offset
         self.well_pos = vector(0, round_to_grid(0.5*(nmos_top + pmos_bottom)))
         
 

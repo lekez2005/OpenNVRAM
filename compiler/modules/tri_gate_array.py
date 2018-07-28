@@ -34,6 +34,7 @@ class tri_gate_array(design.design):
         self.add_pins()
         self.create_array()
         self.add_layout_pins()
+        self.connect_en_pins()
 
     def add_pins(self):
         """create the name of pins depend on the word size"""
@@ -56,6 +57,16 @@ class tri_gate_array(design.design):
             self.connect_inst(["in[{0}]".format(i/self.words_per_row),
                                "out[{0}]".format(i/self.words_per_row),
                                "en", "en_bar", "vdd", "gnd"])
+
+    def connect_en_pins(self):
+        tri_width = self.tri.width
+        enbar_pin = self.tri_inst[0].get_pin("en_bar")
+        en_pin = self.tri_inst[0].get_pin("en")
+        for i in range(0, self.columns):
+            if i % self.words_per_row != 0:
+                base = vector(i * self.tri.width, 0)
+                self.add_rect("metal1", offset=base + en_pin.ll(), width=tri_width, height=en_pin.height())
+                self.add_rect("metal1", offset=base + enbar_pin.ll(), width=tri_width, height=enbar_pin.height())
 
 
     def add_layout_pins(self):
@@ -83,22 +94,22 @@ class tri_gate_array(design.design):
         self.add_layout_pin(text="en",
                             layer="metal1",
                             offset=en_pin.ll().scale(0, 1),
-                            width=width,
-                            height=drc["minwidth_metal1"])
+                            width=drc["minwidth_metal1"],
+                            height=en_pin.height())
         
         enbar_pin = self.tri_inst[0].get_pin("en_bar")
         self.add_layout_pin(text="en_bar",
                             layer="metal1",
                             offset=enbar_pin.ll().scale(0, 1),
-                            width=width,
-                            height=drc["minwidth_metal1"])
+                            width=drc["minwidth_metal1"],
+                            height=enbar_pin.height())
         
         vdd_pin = self.tri_inst[0].get_pin("vdd")
         self.add_layout_pin(text="vdd",
                             layer="metal1",
                             offset=vdd_pin.ll().scale(0, 1),
                             width=width,
-                            height=drc["minwidth_metal1"])
+                            height=vdd_pin.height())
             
         for gnd_pin in self.tri_inst[0].get_pins("gnd"):
             if gnd_pin.layer=="metal1":
@@ -106,7 +117,7 @@ class tri_gate_array(design.design):
                                     layer="metal1",
                                     offset=gnd_pin.ll().scale(0, 1),
                                     width=width,
-                                    height=drc["minwidth_metal1"])
+                                    height=gnd_pin.height())
 
 
     def analytical_delay(self, slew, load=0.0):

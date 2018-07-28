@@ -108,7 +108,7 @@ class ms_flop_array(design.design):
                             layer="metal1",
                             offset=self.ms_inst[0].get_pin("clk").ll().scale(0,1),
                             width=self.width,
-                            height=drc["minwidth_metal1"])
+                            height=self.ms_inst[0].get_pin("clk").height())
 
         
         # Continous vdd rail along with label.
@@ -119,7 +119,7 @@ class ms_flop_array(design.design):
                                 layer="metal1",
                                 offset=vdd_pin.ll().scale(0,1),
                                 width=self.width,
-                                height=drc["minwidth_metal1"])
+                                height=vdd_pin.height())
 
         # Continous gnd rail along with label.
         for gnd_pin in self.ms_inst[i].get_pins("gnd"):
@@ -129,7 +129,7 @@ class ms_flop_array(design.design):
                                 layer="metal1",
                                 offset=gnd_pin.ll().scale(0,1),
                                 width=self.width,
-                                height=drc["minwidth_metal1"])
+                                height=gnd_pin.height())
             
 
     def analytical_delay(self, slew, load=0.0):

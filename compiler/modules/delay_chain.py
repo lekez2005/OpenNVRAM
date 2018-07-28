@@ -50,7 +50,7 @@ class delay_chain(design.design):
 
         self.create_inv_list()
 
-        self.inv = pinv(route_output=False)
+        self.inv = pinv(route_output=False, rail_offset=drc["implant_to_implant"])
         self.add_mod(self.inv)
 
         # half chain length is the width of the layout 
@@ -124,17 +124,26 @@ class delay_chain(design.design):
             if i != 0:
                 self.add_via_center(layers=("metal1", "via1", "metal2"),
                                     offset=cur_inv.get_pin("A").center())
-    def add_route(self, pin1, pin2):
+    def add_route(self, pin1, pin2, source_inv, dest_inv):
         """ This guarantees that we route from the top to bottom row correctly. """
         pin1_pos = pin1.center()
         pin2_pos = pin2.center()
         if pin1_pos.y == pin2_pos.y:
             self.add_path("metal2", [pin1_pos, pin2_pos])
         else:
-            mid_point = vector(pin2_pos.x, 0.5*(pin1_pos.y+pin2_pos.y))
-            # Written this way to guarantee it goes right first if we are switching rows
-            self.add_path("metal2", [pin1_pos, vector(pin1_pos.x,mid_point.y), mid_point, vector(mid_point.x,pin2_pos.y), pin2_pos])
-    
+            # go to closest edge, then down to power rails and slightly close to one of the edges of the destination inverter
+            closest_source = source_inv.lx() if abs(source_inv.lx()-pin1.cx()) < abs(source_inv.rx()-pin1.cx()) else source_inv.rx()
+            direction = 1 if closest_source < pin1.lx() else -1
+            mid1x = closest_source + direction*self.m2_space
+
+            closest_dest = dest_inv.lx() if abs(dest_inv.lx()-pin1.cx()) < abs(dest_inv.rx()-pin1.cx()) else dest_inv.rx()
+            direction = 1 if closest_dest < pin2.lx() else -1
+            mid2 = vector(pin2_pos.x, 0.5 * (pin1_pos.y + pin2_pos.y))
+            mid3x = closest_dest + direction*self.m2_space
+
+            self.add_path("metal2", [pin1_pos, vector(mid1x, pin1_pos.y),  vector(mid1x, mid2.y), vector(mid3x, mid2.y),
+                                     vector(mid3x, pin2_pos.y), pin2_pos])
+
     def route_inv(self):
         """ Add metal routing for each of the fanout stages """
         start_inv = end_inv = 0
@@ -150,7 +159,7 @@ class delay_chain(design.design):
             start_inv_pin = start_inv_inst.get_pin("Z")
             load_inst = self.inv_inst_list[start_inv+1]
             load_pin = load_inst.get_pin("A")
-            self.add_route(start_inv_pin, load_pin)
+            self.add_route(start_inv_pin, load_pin, start_inv_inst, load_inst)
             
             next_inv = start_inv+2
             while next_inv <= end_inv:
@@ -158,7 +167,7 @@ class delay_chain(design.design):
                 prev_load_pin = prev_load_inst.get_pin("A")
                 load_inst = self.inv_inst_list[next_inv]
                 load_pin = load_inst.get_pin("A")
-                self.add_route(prev_load_pin, load_pin)
+                self.add_route(prev_load_pin, load_pin, prev_load_inst, load_inst)
                 next_inv += 1
             # set the start of next one after current end
             start_inv = end_inv

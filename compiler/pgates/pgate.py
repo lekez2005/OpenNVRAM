@@ -130,7 +130,7 @@ class pgate(design.design):
         self.nwell_position = middle_position
         nwell_height = max_y_offset - middle_position.y
         if info["has_nwell"]:
-            self.add_rect(layer="nwell",
+            self.nwell_rect = self.add_rect(layer="nwell",
                           offset=middle_position,
                           width=self.well_width,
                           height=nwell_height)

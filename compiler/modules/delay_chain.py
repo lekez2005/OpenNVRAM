@@ -1,10 +1,12 @@
+import math
 import debug
 import design
 from tech import drc
 from pinv import pinv
-from contact import contact
+from contact import contact, m1m2
 from vector import vector
 from globals import OPTS
+import utils
 
 class delay_chain(design.design):
     """
@@ -13,12 +15,13 @@ class delay_chain(design.design):
     Input is a list contains the electrical effort of each stage.
     """
 
-    def __init__(self, fanout_list, name="delay_chain"):
+    def __init__(self, fanout_list, cells_per_row=2, name="delay_chain"):
         """init function"""
         design.design.__init__(self, name)
         # FIXME: input should be logic effort value 
         # and there should be functions to get 
-        # area efficient inverter stage list 
+        # area efficient inverter stage list
+        self.cells_per_row = int(cells_per_row)
 
         for f in fanout_list:
             debug.check(f>0,"Must have non-zero fanouts for each stage.")
@@ -26,7 +29,7 @@ class delay_chain(design.design):
         # number of inverters including any fanout loads.
         self.fanout_list = fanout_list
         self.num_inverters = 1 + sum(fanout_list)
-        self.num_top_half = round(self.num_inverters / 2.0)
+        self.rows = int(math.ceil(self.num_inverters / float(cells_per_row)))
         
         c = reload(__import__(OPTS.bitcell))
         self.mod_bitcell = getattr(c, OPTS.bitcell)
@@ -50,14 +53,14 @@ class delay_chain(design.design):
 
         self.create_inv_list()
 
-        self.inv = pinv(route_output=False, rail_offset=drc["implant_to_implant"])
+        self.inv = pinv(route_output=False, rail_offset=0.5*drc["implant_to_implant"])
         self.add_mod(self.inv)
 
         # half chain length is the width of the layout 
         # invs are stacked into 2 levels so input/output are close
         # extra metal is for the gnd connection U
-        self.width = self.num_top_half * self.inv.width + 2*drc["metal1_to_metal1"] + 0.5*drc["minwidth_metal1"]
-        self.height = 2 * self.inv.height
+        self.width = self.cells_per_row * self.inv.width
+        self.height = self.rows * self.inv.height
 
         self.add_inv_list()
         
@@ -82,14 +85,17 @@ class delay_chain(design.design):
         dummy_load_counter = 1
         self.inv_inst_list = []
         for i in range(self.num_inverters):
+            current_row = 1 + math.floor(i/float(self.cells_per_row)) # row numbers start from 1 to rows
             # First place the gates
-            if i < self.num_top_half:
-                # add top level that is upside down
-                inv_offset = vector(i * self.inv.width, 2 * self.inv.height)
+            if current_row % 2 == 1:
+                col = i % self.cells_per_row
+                # add upside down
+                inv_offset = vector(col * self.inv.width, self.inv.height * (1+self.rows-current_row))
                 inv_mirror="MX"
             else:
+                col = self.cells_per_row - (i % self.cells_per_row)
                 # add bottom level from right to left
-                inv_offset = vector((self.num_inverters - i) * self.inv.width, 0)
+                inv_offset = vector(col * self.inv.width, self.inv.height * (self.rows-current_row))
                 inv_mirror="MY"
 
             cur_inv=self.add_inst(name="dinv{}".format(i),
@@ -124,6 +130,7 @@ class delay_chain(design.design):
             if i != 0:
                 self.add_via_center(layers=("metal1", "via1", "metal2"),
                                     offset=cur_inv.get_pin("A").center())
+
     def add_route(self, pin1, pin2, source_inv, dest_inv):
         """ This guarantees that we route from the top to bottom row correctly. """
         pin1_pos = pin1.center()
@@ -131,18 +138,14 @@ class delay_chain(design.design):
         if pin1_pos.y == pin2_pos.y:
             self.add_path("metal2", [pin1_pos, pin2_pos])
         else:
-            # go to closest edge, then down to power rails and slightly close to one of the edges of the destination inverter
-            closest_source = source_inv.lx() if abs(source_inv.lx()-pin1.cx()) < abs(source_inv.rx()-pin1.cx()) else source_inv.rx()
-            direction = 1 if closest_source < pin1.lx() else -1
-            mid1x = closest_source + direction*self.m2_space
+            # go to cell edge, then down
+            if pin1_pos.x < pin2_pos.x: # need to go down then right
+                mid_x = source_inv.rx() - self.m2_space
+            else:
+                mid_x = source_inv.lx() + self.m2_space
 
-            closest_dest = dest_inv.lx() if abs(dest_inv.lx()-pin1.cx()) < abs(dest_inv.rx()-pin1.cx()) else dest_inv.rx()
-            direction = 1 if closest_dest < pin2.lx() else -1
-            mid2 = vector(pin2_pos.x, 0.5 * (pin1_pos.y + pin2_pos.y))
-            mid3x = closest_dest + direction*self.m2_space
-
-            self.add_path("metal2", [pin1_pos, vector(mid1x, pin1_pos.y),  vector(mid1x, mid2.y), vector(mid3x, mid2.y),
-                                     vector(mid3x, pin2_pos.y), pin2_pos])
+            self.add_path("metal2", [pin1_pos, vector(mid_x, pin1_pos.y),
+                                     vector(mid_x, pin2_pos.y), pin2_pos])
 
     def route_inv(self):
         """ Add metal routing for each of the fanout stages """
@@ -175,33 +178,25 @@ class delay_chain(design.design):
     def add_layout_pins(self):
         """ Add vdd and gnd rails and the input/output. Connect the gnd rails internally on
         the top end with no input/output to obstruct. """
-        vdd_pin = self.inv.get_pin("vdd")
-        gnd_pin = self.inv.get_pin("gnd")
-        for i in range(3):
-            (offset,y_dir)=self.get_gate_offset(0, self.inv.height, i)
-            rail_width = self.num_top_half * self.inv.width
+        num_grounds = 0
+        for i in range(self.rows+1):
+            offset = vector(0, (self.rows-i)*self.inv.height-0.5*self.inv.rail_height)
+            rail_width = self.cells_per_row * self.inv.width
             if i % 2:
                 self.add_layout_pin(text="vdd",
                                     layer="metal1",
-                                    offset=offset + vdd_pin.ll().scale(1,y_dir),
+                                    offset=offset,
                                     width=rail_width,
-                                    height=drc["minwidth_metal1"])
+                                    height=self.inv.rail_height)
             else:
+                num_grounds += 1
                 self.add_layout_pin(text="gnd",
                                     layer="metal1",
-                                    offset=offset + gnd_pin.ll().scale(1,y_dir),
+                                    offset=offset,
                                     width=rail_width,
-                                    height=drc["minwidth_metal1"])
+                                    height=self.inv.rail_height)
 
-        # Use the right most parts of the gnd rails and add a U connector
-        # We still have the two gnd pins, but it is an either-or connect
-        gnd_pins = self.get_pins("gnd")
-        gnd_start = gnd_pins[0].rc()
-        gnd_mid1 = gnd_start + vector(2*drc["metal1_to_metal1"],0)
-        gnd_end = gnd_pins[1].rc()
-        gnd_mid2 = gnd_end + vector(2*drc["metal1_to_metal1"],0)
-        #self.add_wire(("metal1","via1","metal2"), [gnd_start, gnd_mid1, gnd_mid2, gnd_end])
-        self.add_path("metal1", [gnd_start, gnd_mid1, gnd_mid2, gnd_end])                
+
         
         # input is A pin of first inverter
         a_pin = self.inv_inst_list[0].get_pin("A")
@@ -213,10 +208,17 @@ class delay_chain(design.design):
 
 
         # output is Z pin of last inverter
-        z_pin = self.inv_inst_list[-1].get_pin("Z")
-        self.add_layout_pin(text="out",
-                            layer="metal1",
-                            offset=z_pin.ll().scale(0,1),
-                            width=z_pin.lx())
+        self.output_inv = self.inv_inst_list[-1]
+        z_pin = self.output_inv.get_pin("Z")
+        a_pin = self.output_inv.get_pin("A")
+        if a_pin.lx() < z_pin.lx():
+            self.add_layout_pin(text="out",
+                                layer="metal1",
+                                offset=z_pin.ll().scale(1, 1),
+                                width=self.cells_per_row * self.inv.width - z_pin.lx())
+        else:
+            self.add_layout_pin(text="out",
+                                layer="metal1",
+                                offset=z_pin.ll().scale(0, 1),
+                                width=z_pin.lx())
 
-            

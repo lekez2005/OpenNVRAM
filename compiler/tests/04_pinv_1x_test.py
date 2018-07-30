@@ -26,6 +26,10 @@ class pinv_test(openram_test):
         tx = pinv.pinv(size=1)
         self.local_check(tx)
 
+        debug.info(2, "Checking 1x size inverter with implant offset")
+        tx = pinv.pinv(size=1, rail_offset=0.08)
+        self.local_check(tx)
+
         OPTS.check_lvsdrc = True
         globals.end_openram()        
 

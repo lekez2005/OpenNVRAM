@@ -11,6 +11,7 @@ import globals
 from globals import OPTS
 import debug
 
+@unittest.skip("SKIPPING 04_driver_test")
 class dff_array_test(openram_test):
 
     def runTest(self):

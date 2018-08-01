@@ -412,8 +412,8 @@ class control_logic(design.design):
         we_bottom = self.w_en_bar.get_pin("C").by()
         cs_bottom = self.rblk_bar.get_pin("C").by()
         bottoms = [oe_bar_bottom, oe_bottom, we_bottom, cs_bottom]
-        msf_outputs = [self.msf_inst.get_pin("dout_bar[0]"), self.msf_inst.get_pin("dout[0]"),
-                       self.msf_inst.get_pin("dout[2]"), self.msf_inst.get_pin("dout[1]")]
+        msf_outputs = [self.msf_inst.get_pin("dout[0]"), self.msf_inst.get_pin("dout_bar[0]"),
+                       self.msf_inst.get_pin("dout_bar[2]"), self.msf_inst.get_pin("dout_bar[1]")]
         horizontal_rail_order = [3, 2, 0, 1]
         rail_x_offset = self.left_clk_rail.lx() - len(bottoms) * rail_pitch
         m1_y_offset = self.msf_inst.by() -2*self.wide_m1_space

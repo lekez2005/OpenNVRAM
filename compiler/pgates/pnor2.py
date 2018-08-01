@@ -123,25 +123,21 @@ class pnor2(pnand2.pnand2):
         self.connect_pin_to_rail(self.pmos1_inst,"S","vdd")
 
 
-    def route_inputs(self):
-        """ Route the A and B inputs """
-        inputB_yoffset = self.output_pos.y - self.wide_m1_space - 0.5*self.max_input_width
-        self.route_input_gate(self.pmos2_inst, self.nmos2_inst, inputB_yoffset, "B", position="center")
-        
-        self.inputA_yoffset = self.output_pos.y + self.wide_m1_space + 0.5*self.max_input_width
-        self.route_input_gate(self.pmos1_inst, self.nmos1_inst, self.inputA_yoffset, "A")
-
     def route_output(self):
         """ Route the Z output """
+        layers = ("metal1", "via1", "metal2")
         # PMOS1 drain 
         pmos_pin = self.pmos2_inst.get_pin("D")
         # NMOS2 drain
-        nmos_pin = self.nmos1_inst.get_pin("D")        
-        # Output pin
-        mid_offset = vector(pmos_pin.center().x + drc["nand_output_offset"], self.output_pos.y)
-        self.add_path("metal2",[pmos_pin.center(), mid_offset, nmos_pin.center()])
+        nmos_pin = self.nmos1_inst.get_pin("D")
 
-        self.add_contact_center(layers=("metal1", "via1", "metal2"),
+        gate_pin = self.nmos2_inst.get_pin("G")
+
+        min_output_separation = drc["min_output_separation"]
+        output_x = gate_pin.rx() + min_output_separation
+
+
+        self.add_contact_center(layers=layers,
                                 offset=pmos_pin.center())
 
         metal1_contact_area = self.pmos.active_contact.second_layer_height*self.pmos.active_contact.second_layer_width
@@ -154,20 +150,27 @@ class pnor2(pnand2.pnand2):
                         height=fill_height,
                         width=fill_width)
 
-        output_pin_offset = mid_offset - vector(0, 0.5*contact.m1m2.second_layer_height)
-        # This extends the output to the edge of the cell
-        self.add_contact_center(layers=("metal1", "via1", "metal2"),
-                                offset=output_pin_offset)
+        top_via = self.pmos2_inst.get_pin("G").center().y - 0.5 * contact.poly.second_layer_height \
+                  - self.wide_m1_space - contact.m1m2.first_layer_height
+        top_via_offset = vector(output_x - 0.5*contact.m1m2.first_layer_width, top_via)
+        self.add_contact(layers, top_via_offset)
+        self.add_path("metal2", [pmos_pin.center(), vector(output_x, pmos_pin.cy()),
+                                 vector(output_x, top_via)])
 
-        # minimum area rules for metal1 output
-        self.output_width = contact.m1m2.first_layer_height
-        self.output_height = utils.ceil(drc["minarea_metal1_contact"]/self.output_width)
+        bottom_via = self.nmos2_inst.get_pin("G").center().y + 0.5 * contact.poly.second_layer_height \
+                     + self.wide_m1_space
+        bottom_via_offset = vector(output_x - 0.5*contact.m1m2.first_layer_width, bottom_via)
+        self.add_contact(layers, bottom_via_offset)
+        self.add_path("metal2", [nmos_pin.center(), vector(output_x, nmos_pin.cy()),
+                                 vector(output_x, bottom_via)])
 
+        self.add_path("metal1", [vector(output_x, bottom_via), vector(output_x, top_via)])
+
+        output_pin_offset = vector(output_x, self.output_pos.y)
         self.add_layout_pin_center_rect(text="Z",
                                         layer="metal1",
-                                        offset=output_pin_offset,
-                                        width=self.output_width,
-                                        height=self.output_height)
+                                        offset=output_pin_offset)
+
 
 
     def input_load(self):

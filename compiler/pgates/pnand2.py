@@ -203,10 +203,10 @@ class pnand2(pgate.pgate):
 
     def route_inputs(self):
         """ Route the A and B inputs """
-        inputB_yoffset = self.output_pos.y - self.wide_m1_space - 0.5*self.max_input_width
+        inputB_yoffset = self.output_pos.y - self.wide_m1_space - self.m1_width
         self.route_input_gate(self.pmos2_inst, self.nmos2_inst, inputB_yoffset, "B", position="center")
 
-        self.inputA_yoffset = self.output_pos.y + self.wide_m1_space + 0.5*self.max_input_width
+        self.inputA_yoffset = self.output_pos.y + self.wide_m1_space + self.m1_width
         self.route_input_gate(self.pmos1_inst, self.nmos1_inst, self.inputA_yoffset, "A", position="center")
 
 

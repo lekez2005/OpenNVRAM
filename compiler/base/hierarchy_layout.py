@@ -295,6 +295,7 @@ class layout(lef.lef):
         debug.info(5,"add label " + str(text) + " " + layer + " " + str(offset))
         layer_num = techlayer[layer]
         if layer_num >= 0:
+            # FIXME fix by adding mapping for text purpose
             self.objs.append(geometry.label(text, layer_num, offset, zoom, layerPurpose=get_purpose(layer)))
             return self.objs[-1]
         return None

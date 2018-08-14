@@ -113,9 +113,7 @@ class control_logic(design.design):
         self.clk_bar_rail_x = msf_right_x + 2*self.m2_space
         self.clk_buf_rail_x = self.clk_bar_rail_x + self.wide_m1_space + 1.5*self.m2_width
 
-        rbl_vdd_pins = self.rbl.get_pins("vdd")
-        self.left_vdd = rbl_vdd_pins[0] if rbl_vdd_pins[0].lx() < rbl_vdd_pins[0].lx() else rbl_vdd_pins[1]
-        self.right_vdd = rbl_vdd_pins[1] if rbl_vdd_pins[1].lx() > rbl_vdd_pins[0].lx() else rbl_vdd_pins[0]
+        [self.left_vdd, self.right_vdd] = sorted(self.rbl.get_pins("vdd"), key=lambda x: x.lx())
 
         self.width = max(self.right_vdd.rx(), self.clk_buf_rail_x + 1.5*self.m2_width) +\
                      self.wide_m1_space + self.rail_height
@@ -610,8 +608,8 @@ class control_logic(design.design):
     def route_gnd(self):
         # create rail to the right
         rbl_buffer_gnd = self.s_en.get_pin("gnd")
-        self.gnd_rail = self.add_rect("metal1", width=self.rail_height, height=self.height-rbl_buffer_gnd.by(),
-                      offset=vector(self.width-self.rail_height, rbl_buffer_gnd.by()))
+        self.gnd_rail = self.add_rect("metal1", width=self.rail_height, height=self.height,
+                      offset=vector(self.width-self.rail_height, 0))
         rbl_gnd = self.rbl.get_pin("gnd")
         self.add_rect("metal1", width=self.rail_height, height=rbl_buffer_gnd.by()-rbl_gnd.uy(),
                       offset=rbl_gnd.ul())
@@ -632,13 +630,6 @@ class control_logic(design.design):
 
     def add_pin_to_top(self, text, layer, rail, height):
         pin_offset = vector(rail.lx(), rail.uy()-height)
-        self.add_layout_pin(text=text, layer=layer,
-                            width=rail.width,
-                            height=height,
-                            offset=pin_offset)
-
-    def add_pin_to_bottom(self, text, layer, rail, height):
-        pin_offset = vector(rail.lx(), rail.by())
         self.add_layout_pin(text=text, layer=layer,
                             width=rail.width,
                             height=height,
@@ -667,13 +658,27 @@ class control_logic(design.design):
         self.add_pin_to_top("clk", "metal2", clk_rect, 2 * self.m1_width)
 
         # clock outputs
-        self.add_pin_to_bottom("clk_buf", "metal2", self.clk_buf_rail, 2 * self.m1_width)
-        self.add_pin_to_bottom("clk_bar", "metal2", self.clk_bar_rail, 2 * self.m1_width)
+        bottom = self.add_pin_to_bottom("clk_buf", "metal2", self.clk_buf_rail, self.clk_buf_rail.by() - self.m1_space)
+        bottom = self.add_pin_to_bottom("clk_bar", "metal2", self.clk_bar_rail, bottom)
         # control outputs
-        self.add_pin_to_bottom("s_en", "metal2", self.s_en_rail, 2 * self.m1_width)
-        self.add_pin_to_bottom("w_en", "metal2", self.w_en_rail, 2 * self.m1_width)
-        self.add_pin_to_bottom("tri_en", "metal2", self.en_rail, 2 * self.m1_width)
-        self.add_pin_to_bottom("tri_en_bar", "metal2", self.en_bar_rail, 2 * self.m1_width)
+        bottom = self.add_pin_to_bottom("tri_en_bar", "metal2", self.en_bar_rail, bottom)
+        bottom = self.add_pin_to_bottom("tri_en", "metal2", self.en_rail, bottom)
+        bottom = self.add_pin_to_bottom("w_en", "metal2", self.w_en_rail, bottom)
+        self.add_pin_to_bottom("s_en", "metal2", self.s_en_rail, bottom)
+
+
+    def add_pin_to_bottom(self, text, layer, rail, prev_rail_y):
+        rail_extension = 1.5*self.m2_space + rail.width
+        rail_bottom = prev_rail_y - rail_extension
+        self.add_rect(layer, width=rail.width, height=rail.by()-rail_bottom,
+                      offset=vector(rail.lx(), rail_bottom))
+
+        pin_offset = vector(rail.lx(), rail_bottom)
+        self.add_layout_pin(text=text, layer=layer,
+                            width=self.width-rail.lx(),
+                            height=rail.width,
+                            offset=pin_offset)
+        return rail_bottom
 
 
     def add_lvs_correspondence_points(self):

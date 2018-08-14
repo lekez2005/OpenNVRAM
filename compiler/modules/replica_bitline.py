@@ -40,9 +40,15 @@ class replica_bitline(design.design):
         self.calculate_module_offsets()
         self.add_modules()
         self.route()
+        self.calculate_dimensions()
         self.add_lvs_correspondence_points()
 
         self.DRC_LVS()
+
+    def calculate_dimensions(self):
+        top_gnd = sorted(self.dc_inst.get_pins("gnd"), key=lambda x: x.uy())[-1]
+        self.height = max(top_gnd.uy(), self.rbl_inst.uy())
+        self.width = self.right_vdd.rx()
 
     def calculate_module_offsets(self):
         """ Calculate all the module offsets """
@@ -81,8 +87,6 @@ class replica_bitline(design.design):
         self.bitcell_offset = vector(bitcell_x_offset, self.replica_bitcell.height + self.bottom_y_offset)
         self.rbl_offset = self.bitcell_offset
 
-        self.height = self.rbl_offset.y + self.rbl.height + self.m2_pitch
-        self.width = self.rbl_offset.x + self.bitcell.width
 
 
     def create_modules(self):
@@ -242,7 +246,7 @@ class replica_bitline(design.design):
 
         right_vdd_start = vector(self.bitcell_offset.x + self.bitcell.width + self.m1_pitch, 0)
         # It is the height of the entire RBL and bitcell
-        self.add_layout_pin(text="vdd",
+        self.right_vdd = self.add_layout_pin(text="vdd",
                             layer="metal1",
                             offset=right_vdd_start,
                             width=self.rail_height,

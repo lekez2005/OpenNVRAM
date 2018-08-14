@@ -852,11 +852,12 @@ class sram(design.design):
         return line_positions
 
 
-    def add_control_logic(self, position, rotate):
+    def add_control_logic(self, position, rotate=0, mirror="R0"):
         """ Add and place control logic """
         self.control_logic_inst=self.add_inst(name="control",
                                               mod=self.control_logic,
                                               offset=position,
+                                              mirror=mirror,
                                               rotate=rotate)
         self.connect_inst(self.control_logic_inputs + self.control_logic_outputs + ["vdd", "gnd"])
 
@@ -889,12 +890,11 @@ class sram(design.design):
         # Control logic is placed to the left of the blank even with the
         # decoder bottom. A small gap is in the x-dimension.
         control_gap = 2*self.m3_width
-        pos = vector(-control_gap,
-                     self.bank.row_decoder_inst.by() + 2*self.m3_width)
-        self.add_control_logic(position=pos,
-                               rotate=90)
+        pos = vector(-control_gap - self.control_logic.width,
+                     self.bank.height)
+        self.add_control_logic(position=pos, mirror="MX")
 
-        self.width = self.bank.width + self.control_logic.height + control_gap
+        self.width = self.bank.width + self.control_logic.width + control_gap
         self.height = self.bank.height
 
     def add_single_bank_pins(self):
@@ -954,8 +954,10 @@ class sram(design.design):
         in_pos = src_pin.rc()
         out_pos = vector(dest_pin.cx(), in_pos.y)
         self.add_wire(("metal3","via2","metal2"),[in_pos, out_pos, out_pos - vector(0,self.m2_pitch)])
+        # centralize the via
+        via_offset = (src_pin.rx(), src_pin.cy() - 0.5*contact.m2m3.second_layer_width) - self.m2m3_offset_fix
         self.add_via(layers=("metal2","via2","metal3"),
-                     offset=src_pin.lr() - self.m2m3_offset_fix,
+                     offset=via_offset,
                      rotate=90)
         
     def connect_rail_from_left_m2m1(self, src_pin, dest_pin):
@@ -971,19 +973,24 @@ class sram(design.design):
             dest_pin = self.bank_inst.get_pin(n)                
             self.connect_rail_from_left_m2m3(src_pin, dest_pin)
 
-        src_pins = self.control_logic_inst.get_pins("vdd")
-        for src_pin in src_pins:
-            if src_pin.layer != "metal2":
-                continue
-            dest_pin = self.bank_inst.get_pins("vdd")[1]
-            self.connect_rail_from_left_m2m1(src_pin,dest_pin)
-            
-        src_pins = self.control_logic_inst.get_pins("gnd")
-        for src_pin in src_pins:            
-            if src_pin.layer != "metal2":
-                continue
-            dest_pin = self.bank_inst.get_pin("gnd")
-            self.connect_rail_from_left_m2m3(src_pin,dest_pin)
+        control_vdd = self.control_logic_inst.get_pin("vdd")
+        bank_left_vdd = min(self.bank_inst.get_pins("vdd"), key=lambda x: x.lx())
+        vdd_extension = 2*self.m1_space + control_vdd.width()
+        intersection = control_vdd.ll()-vector(0, vdd_extension)
+        self.add_rect("metal1", width=control_vdd.width(), height=vdd_extension,
+                      offset=intersection)
+        self.add_rect("metal1", height=control_vdd.width(), width=bank_left_vdd.lx()-intersection.x,
+                      offset=intersection)
+
+        control_gnd = self.control_logic_inst.get_pin("gnd")
+        bank_gnd = self.bank_inst.get_pin("gnd")
+        connection_height = 3*self.m2_width
+        connection_offset = control_gnd.ul() - vector(0, connection_height)
+        self.add_rect("metal2", height=connection_height, width=bank_gnd.lx()-control_gnd.lx(),
+                      offset=connection_offset)
+        self.add_via_center(layers=("metal1", "via1", "metal2"),
+                            offset=vector(control_gnd.cx(), control_gnd.uy()-0.5*connection_height))
+
         
 
 

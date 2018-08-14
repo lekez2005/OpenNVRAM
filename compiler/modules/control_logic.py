@@ -628,7 +628,8 @@ class control_logic(design.design):
         self.pin_to_vdd(self.clk_bar.get_pin("gnd"), self.gnd_rail)
         self.pin_to_vdd(self.clk_inv1.get_pin("gnd"), self.gnd_rail)
 
-    def add_pin_to_top(self, text, layer, rail, height):
+    def add_pin_to_top(self, text, layer, rail):
+        height = rail.height
         pin_offset = vector(rail.lx(), rail.uy()-height)
         self.add_layout_pin(text=text, layer=layer,
                             width=rail.width,
@@ -637,13 +638,13 @@ class control_logic(design.design):
 
     def add_layout_pins(self):
         """ Add the input/output layout pins. """
-        self.add_pin_to_top("vdd", "metal1", self.vdd_rect, 2*self.m1_width)
-        self.add_pin_to_top("gnd", "metal1", self.gnd_rail, 2*self.m1_width)
+        self.add_pin_to_top("vdd", "metal1", self.vdd_rect)
+        self.add_pin_to_top("gnd", "metal1", self.gnd_rail)
 
         # control inputs
-        self.add_pin_to_top("web", "metal2", self.web_rail, 2*self.m1_width)
-        self.add_pin_to_top("csb", "metal2", self.csb_rail, 2*self.m1_width)
-        self.add_pin_to_top("oeb", "metal2", self.oeb_rail, 2*self.m1_width)
+        self.add_pin_to_top("web", "metal2", self.web_rail)
+        self.add_pin_to_top("csb", "metal2", self.csb_rail)
+        self.add_pin_to_top("oeb", "metal2", self.oeb_rail)
 
         # clock input
         clk_inv_a_pin = self.clk_inv1.get_pin("A")
@@ -655,7 +656,7 @@ class control_logic(design.design):
                             width=self.m2_width,
                             height=self.height-clk_inv_a_pin.by(),
                             offset=vector(clk_in_x_offset, clk_inv_a_pin.by()))
-        self.add_pin_to_top("clk", "metal2", clk_rect, 2 * self.m1_width)
+        self.add_pin_to_top("clk", "metal2", clk_rect)
 
         # clock outputs
         bottom = self.add_pin_to_bottom("clk_buf", "metal2", self.clk_buf_rail, self.clk_buf_rail.by() - self.m1_space)
@@ -668,7 +669,7 @@ class control_logic(design.design):
 
 
     def add_pin_to_bottom(self, text, layer, rail, prev_rail_y):
-        rail_extension = 1.5*self.m2_space + rail.width
+        rail_extension = 2*self.m2_space + rail.width
         rail_bottom = prev_rail_y - rail_extension
         self.add_rect(layer, width=rail.width, height=rail.by()-rail_bottom,
                       offset=vector(rail.lx(), rail_bottom))

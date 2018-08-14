@@ -1,7 +1,6 @@
 import debug
 import design
-from tech import drc
-from math import log
+from contact import contact, m1m2
 from vector import vector
 from globals import OPTS
 
@@ -68,6 +67,8 @@ class ms_flop_array(design.design):
                                "vdd", "gnd"])
 
     def add_layout_pins(self):
+
+        self.add_in_out_pins()
         
         for i in range(self.word_size):
 
@@ -79,28 +80,6 @@ class ms_flop_array(design.design):
                                     offset=gnd_pin.ll(),
                                     width=gnd_pin.width(),
                                     height=gnd_pin.height())
-
-            din_pins = self.ms_inst[i].get_pins("din")
-            for din_pin in din_pins:
-                self.add_layout_pin(text="din[{}]".format(i),
-                                    layer=din_pin.layer,
-                                    offset=din_pin.ll(),
-                                    width=din_pin.width(),
-                                    height=din_pin.height())
-
-            dout_pin = self.ms_inst[i].get_pin("dout")
-            self.add_layout_pin(text="dout[{}]".format(i),
-                                layer="metal2",
-                                offset=dout_pin.ll(),
-                                width=dout_pin.width(),
-                                height=dout_pin.height())
-
-            doutbar_pin = self.ms_inst[i].get_pin("dout_bar")
-            self.add_layout_pin(text="dout_bar[{}]".format(i),
-                                layer="metal2",
-                                offset=doutbar_pin.ll(),
-                                width=doutbar_pin.width(),
-                                height=doutbar_pin.height())
             
             
         # Continous clk rail along with label.
@@ -130,8 +109,30 @@ class ms_flop_array(design.design):
                                 offset=gnd_pin.ll().scale(0,1),
                                 width=self.width,
                                 height=gnd_pin.height())
-            
+    def add_in_out_pins(self):
+        for i in range(self.word_size):
+            din_pins = self.ms_inst[i].get_pins("din")
+            for din_pin in din_pins:
+                self.add_layout_pin(text="din[{}]".format(i),
+                                    layer=din_pin.layer,
+                                    offset=din_pin.ll(),
+                                    width=din_pin.width(),
+                                    height=din_pin.height())
+
+            dout_pin = self.ms_inst[i].get_pin("dout")
+            self.add_layout_pin(text="dout[{}]".format(i),
+                                layer="metal2",
+                                offset=dout_pin.ll(),
+                                width=dout_pin.width(),
+                                height=dout_pin.height())
+
+            doutbar_pin = self.ms_inst[i].get_pin("dout_bar")
+            self.add_layout_pin(text="dout_bar[{}]".format(i),
+                                layer="metal2",
+                                offset=doutbar_pin.ll(),
+                                width=doutbar_pin.width(),
+                                height=doutbar_pin.height())
 
     def analytical_delay(self, slew, load=0.0):
         return self.ms.analytical_delay(slew=slew, load=load)
-        
+

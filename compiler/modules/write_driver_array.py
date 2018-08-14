@@ -89,17 +89,20 @@ class write_driver_array(design.design):
                             offset=self.driver_insts[0].get_pin("en").ll().scale(0,1),
                             width=self.width,
                             height=drc['minwidth_metal1'])
-                       
+
+        vdd_pin = self.driver_insts[0].get_pin("vdd")
         self.add_layout_pin(text="vdd",
                             layer="metal1",
-                            offset=self.driver_insts[0].get_pin("vdd").ll().scale(0,1),
+                            offset=vdd_pin.ll().scale(0,1),
                             width=self.width,
-                            height=drc['minwidth_metal1'])
-                       
-        self.add_layout_pin(text="gnd",
-                            layer="metal1",
-                            offset=self.driver_insts[0].get_pin("gnd").ll().scale(0,1),
-                            width=self.width,
-                            height=drc['minwidth_metal1'])
+                            height=vdd_pin.height())
+
+        gnd_pins = self.driver_insts[0].get_pins("gnd")
+        for gnd_pin in gnd_pins:
+            self.add_layout_pin(text="gnd",
+                                layer="metal1",
+                                offset=gnd_pin.ll().scale(0,1),
+                                width=self.width,
+                                height=gnd_pin.height())
                        
 

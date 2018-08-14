@@ -391,9 +391,13 @@ class control_logic(design.design):
                                       width=self.m2_width)
 
         y_pos = self.msf_inst.uy() + self.m1_pitch
-        self.route_pin_to_rail(self.msf_inst.get_pin("din[2]"), self.web_rail, y_pos, self.msf_inst.lx())
-        self.route_pin_to_rail(self.msf_inst.get_pin("din[1]"), self.csb_rail, y_pos + self.m1_pitch, self.msf_inst.lx())
-        self.route_pin_to_rail(self.msf_inst.get_pin("din[0]"), self.oeb_rail, y_pos + 2*self.m1_pitch, self.msf_inst.lx())
+        m2_pin_lambda = lambda x: x.layer=="metal2"
+        self.route_pin_to_rail(filter(m2_pin_lambda, self.msf_inst.get_pins("din[2]"))[0],
+                               self.web_rail, y_pos, self.msf_inst.lx())
+        self.route_pin_to_rail(filter(m2_pin_lambda, self.msf_inst.get_pins("din[1]"))[0],
+                               self.csb_rail, y_pos + self.m1_pitch, self.msf_inst.lx())
+        self.route_pin_to_rail(filter(m2_pin_lambda, self.msf_inst.get_pins("din[0]"))[0],
+                               self.oeb_rail, y_pos + 2*self.m1_pitch, self.msf_inst.lx())
 
         msf_clk_pin = self.msf_inst.get_pin("clk")
         rail_left_x = self.clk_buf_rail.offset.x

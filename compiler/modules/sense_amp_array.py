@@ -101,13 +101,14 @@ class sense_amp_array(design.design):
 
         # NOTE:the gnd rails are vertical so it is not connected horizontally
         # add gnd rail across entire array
-        gnd_pin = self.amp.get_pin("gnd")
-        gnd_offset = gnd_pin.ll().scale(0,1)
-        self.add_layout_pin(text="gnd",
-                      layer="metal1",
-                      offset=gnd_offset,
-                      width=self.width,
-                      height=gnd_pin.height())
+        gnd_pins = self.amp.get_pins("gnd")
+        for gnd_pin in gnd_pins:
+            gnd_offset = gnd_pin.ll().scale(0,1)
+            self.add_layout_pin(text="gnd",
+                          layer="metal1",
+                          offset=gnd_offset,
+                          width=self.width,
+                          height=gnd_pin.height())
 
         # add sclk rail across entire array
         en_pin = self.amp.get_pin("en")

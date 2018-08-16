@@ -50,12 +50,8 @@ class ms_flop_array(design.design):
         self.ms_inst={}
         for i in range(0,self.columns,self.words_per_row):
             name = "Xdff{0}".format(i)
-            if (i % 2 == 0 or self.words_per_row>1):
-                base = vector(i*self.ms.width,0)
-                mirror = "R0"
-            else:
-                base = vector((i+1)*self.ms.width,0)
-                mirror = "MY"
+            base = vector(i * self.ms.width, 0)
+            mirror = "R0"
             self.ms_inst[i/self.words_per_row]=self.add_inst(name=name,
                                                              mod=self.ms,
                                                              offset=base, 

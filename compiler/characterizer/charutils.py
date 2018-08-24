@@ -1,3 +1,4 @@
+import os
 import re
 import debug
 from globals import OPTS
@@ -10,9 +11,13 @@ def relative_compare(value1,value2,error_tolerance=0.001):
 
 def parse_output(filename, key):
     """Parses a hspice output.lis file for a key value"""
+    re_pattern = r"{0}\s*=\s*(-?\d+.?\d*[e]?[-+]?[0-9]*\S*)\s+.*".format(key)
     if OPTS.spice_name == "xa" :
         # customsim has a different output file name
         full_filename="{0}xa.meas".format(OPTS.openram_temp)
+    elif OPTS.spice_name == "spectre":
+        full_filename = os.path.join(OPTS.openram_temp, "transient1.meas_tran")
+        re_pattern = re_pattern = r'"{0}"\s*"measReal"\s*(-?\d+.?\d*[e]?[-+]?[0-9]*\S*)\s+.*'.format(key)
     else:
         # ngspice/hspice using a .lis file
         full_filename="{0}{1}.lis".format(OPTS.openram_temp, filename)
@@ -23,7 +28,7 @@ def parse_output(filename, key):
         debug.error("Unable to open spice output file: {0}".format(full_filename),1)
     contents = f.read()
     # val = re.search(r"{0}\s*=\s*(-?\d+.?\d*\S*)\s+.*".format(key), contents)
-    val = re.search(r"{0}\s*=\s*(-?\d+.?\d*[e]?[-+]?[0-9]*\S*)\s+.*".format(key), contents)
+    val = re.search(re_pattern, contents)
     
     if val != None:
         debug.info(4, "Key = " + key + " Val = " + val.group(1))

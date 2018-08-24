@@ -6,9 +6,8 @@ simulations as well.
 
 import tech
 import debug
-import subprocess
+import utils
 import os
-import sys
 import numpy as np
 from globals import OPTS
 
@@ -216,6 +215,9 @@ class stimuli():
     
     def write_control(self, end_time):
         """ Write the control cards to run and end the simulation """
+        if OPTS.spice_name == "spectre":
+            self.write_control_spectre(end_time)
+            return
         # UIC is needed for ngspice to converge
         self.sf.write(".TRAN 5p {0}n UIC\n".format(end_time))
         if OPTS.spice_name == "ngspice":
@@ -241,25 +243,57 @@ class stimuli():
         # end the stimulus file
         self.sf.write(".end\n\n")
 
+    def write_control_spectre(self, end_time):
+        self.sf.write("simulator lang=spectre\n")
+        self.sf.write('simulatorOptions options reltol=1e-3 vabstol=1e-6 iabstol=1e-12 temp={} \
+            scalem=1.0 scale=1.0 gmin=1e-13 rforce=1 maxnotes=5 maxwarns=5 \
+            digits=5 cols=80 pivrel=1e-3\n'.format(self.temperature))
+        self.sf.write('dcOp dc write="spectre.dc" maxiters=150 maxsteps=10000 annotate=status\n')
+        self.sf.write('tran tran step={} stop={}n annotate=status maxiters=5\n'.format("5p", end_time))
+
+        self.sf.write('saveOptions options save=lvlpub nestlvl=1 pwr=total \n')
+
+
+        self.sf.write("simulator lang=spice\n")
+
+
+
+
 
     def write_include(self, circuit):
         """Writes include statements, inputs are lists of model files"""
         includes = self.device_models + [circuit]
-        self.sf.write("* {} process corner\n".format(self.process))
-        for item in list(includes):
-            if os.path.isfile(item):
-                self.sf.write(".include \"{0}\"\n".format(item))
-            else:
-                debug.error("Could not find spice model: {0}\nSet SPICE_MODEL_DIR to over-ride path.\n".format(item))
+        if OPTS.spice_name == "spectre":
+            self.sf.write("simulator lang=spectre\n")
+            self.sf.write("// {} process corner\n".format(self.process))
+            for item in list(includes):
+                if len(item) == 2:
+                    (item, section) = item
+                    section = " section={}".format(section)
+                else:
+                    section = ""
+                if os.path.isfile(item):
+                    self.sf.write("include \"{0}\" {1} \n".format(item, section))
+                else:
+                    debug.error(
+                        "Could not find spice model: {0}\nSet SPICE_MODEL_DIR to over-ride path.\n".format(item))
+            self.sf.write("\nsimulator lang=spice\n")
+        else:
+            self.sf.write("* {} process corner\n".format(self.process))
+            for item in list(includes):
+                if os.path.isfile(item):
+                    self.sf.write(".include \"{0}\"\n".format(item))
+                else:
+                    debug.error("Could not find spice model: {0}\nSet SPICE_MODEL_DIR to over-ride path.\n".format(item))
 
 
     def write_supply(self):
         """ Writes supply voltage statements """
-        self.sf.write("V{0} {0} 0.0 {1}\n".format(self.vdd_name, self.voltage))
-        self.sf.write("V{0} {0} 0.0 {1}\n".format(self.gnd_name, 0))
+        self.sf.write("V{0} {0} 0 {1}\n".format(self.vdd_name, self.voltage))
+        self.sf.write("V{0} {0} 0 {1}\n".format(self.gnd_name, 0))
         # This is for the test power supply
-        self.sf.write("V{0} {0} 0.0 {1}\n".format("test"+self.vdd_name, self.voltage))
-        self.sf.write("V{0} {0} 0.0 {1}\n".format("test"+self.gnd_name, 0))
+        self.sf.write("V{0} {0} 0 {1}\n".format("test"+self.vdd_name, self.voltage))
+        self.sf.write("V{0} {0} 0 {1}\n".format("test"+self.gnd_name, 0))
 
 
     def run_sim(self):
@@ -285,6 +319,9 @@ class stimuli():
                                                          temp_stim,
                                                          OPTS.openram_temp)
             valid_retcode=0
+        elif OPTS.spice_name == "spectre":
+            cmd = "{0} {1} -format psfascii -raw {2} +aps ".format(OPTS.spice_exe, temp_stim, OPTS.openram_temp)
+            valid_retcode = 0
         else:
             # ngspice 27+ supports threading with "set num_threads=4" in the stimulus file or a .spiceinit 
             cmd = "{0} -b -o {2}timing.lis {1}".format(OPTS.spice_exe,
@@ -293,17 +330,13 @@ class stimuli():
             # for some reason, ngspice-25 returns 1 when it only has acceptable warnings
             valid_retcode=1
 
-        
-        spice_stdout = open("{0}spice_stdout.log".format(OPTS.openram_temp), 'w')
-        spice_stderr = open("{0}spice_stderr.log".format(OPTS.openram_temp), 'w')
-        
-        debug.info(3, cmd)
-        retcode = subprocess.call(cmd, stdout=spice_stdout, stderr=spice_stderr, shell=True)
 
-        spice_stdout.close()
-        spice_stderr.close()
+        retcode = utils.run_command(cmd, stdout_file="{0}spice_stdout.log".format(OPTS.openram_temp),
+                          stderror_file="{0}spice_stderr.log".format(OPTS.openram_temp),
+                          verbose_level=1)
+
         
-        if (retcode > valid_retcode):
+        if retcode > valid_retcode:
             debug.error("Spice simulation error: " + cmd, -1)
         else:
             end_time = datetime.datetime.now()

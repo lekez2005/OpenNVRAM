@@ -1,8 +1,10 @@
-import os
+import subprocess
+
 import gdsMill
 import tech
 import math
 import globals
+import time
 from vector import vector
 from pin_layout import pin_layout
 
@@ -111,5 +113,25 @@ def get_libcell_pins(pin_list, name, units, layer):
     return cell
 
 
+def run_command(command, stdout_file, stderror_file, verbose_level=1):
+    verbose = OPTS.debug_level >= verbose_level
+    process = None
+    with open(stdout_file, "w") as stdout_f, open(stderror_file, "w") as stderr_f:
+        stdout = subprocess.PIPE if verbose else stdout_f
+        process = subprocess.Popen(command, stdout=stdout, stderr=stderr_f, shell=True)
+        while verbose:
+            line = process.stdout.readline()
+            if not line:
+                break
+            else:
+                print line,
+                stdout_f.write(line)
 
+    if process is not None:
+        while process.poll() is None:
+            # Process hasn't exited yet, let's wait some
+            time.sleep(0.5)
+        return process.returncode
+    else:
+        return -1
 

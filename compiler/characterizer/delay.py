@@ -98,6 +98,8 @@ class delay():
         # creates and opens stimulus file for writing
         temp_stim = "{0}/stim.sp".format(OPTS.openram_temp)
         self.sf = open(temp_stim, "w")
+        if OPTS.spice_name == "spectre":
+            self.sf.write("simulator lang=spice\n")
         self.sf.write("* Delay stimulus for period of {0}n load={1}fF slew={2}ns\n\n".format(self.period,
                                                                                              self.load,
                                                                                              self.slew))
@@ -158,6 +160,8 @@ class delay():
         # creates and opens stimulus file for writing
         temp_stim = "{0}/stim.sp".format(OPTS.openram_temp)
         self.sf = open(temp_stim, "w")
+        if OPTS.spice_name == "spectre":
+            self.sf.write("simulator lang=spice\n")
         self.sf.write("* Power stimulus for period of {0}n\n\n".format(self.period))
         self.stim = stimuli.stimuli(self.sf, self.corner)
         
@@ -198,6 +202,8 @@ class delay():
         """
         Write the measure statements to quantify the delay and power results.
         """
+        if OPTS.spice_name == "spectre":
+            self.sf.write("simulator lang=spice \n")
 
         self.sf.write("\n* Measure statements for delay and power\n")
 
@@ -239,7 +245,7 @@ class delay():
                                  targ_val=0.1*self.vdd_voltage,
                                  trig_dir="FALL",
                                  targ_dir="FALL",
-                                 trig_td=self.cycle_times[self.read0_cycle],
+                                 trig_td=self.cycle_times[self.read0_cycle]+0.5*self.period,
                                  targ_td=self.cycle_times[self.read0_cycle]+0.5*self.period)
 
         self.stim.gen_meas_delay(meas_name="SLEW_LH",
@@ -249,7 +255,7 @@ class delay():
                                  targ_val=0.9*self.vdd_voltage,
                                  trig_dir="RISE",
                                  targ_dir="RISE",
-                                 trig_td=self.cycle_times[self.read1_cycle],
+                                 trig_td=self.cycle_times[self.read1_cycle]+0.5*self.period,
                                  targ_td=self.cycle_times[self.read1_cycle]+0.5*self.period)
         
         # add measure statements for power
@@ -276,6 +282,8 @@ class delay():
         self.stim.gen_meas_power(meas_name="READ1_POWER",
                                  t_initial=t_initial,
                                  t_final=t_final)
+        if OPTS.spice_name == "spectre":
+            self.sf.write("simulator lang=spice \n")
 
         
     def write_power_measures(self):

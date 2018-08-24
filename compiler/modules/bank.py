@@ -434,7 +434,6 @@ class bank(design.design):
             # FIXME: Should just load this rather than reference a level down
             self.col_decoder = self.decoder.pre2_4
         elif self.col_addr_size == 3:
-            debug.error("8 way column mux not yet supported...", -1)
             # FIXME: Should just load this rather than reference a level down
             self.col_decoder = self.decoder.pre3_8
         else:

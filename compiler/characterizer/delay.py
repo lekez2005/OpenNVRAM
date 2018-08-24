@@ -536,7 +536,7 @@ class delay():
         else:
             # The non-reduced netlist file when it is disabled
             self.trim_sp_file = "{}sram.sp".format(OPTS.openram_temp)
-            
+
         # The non-reduced netlist file for power simulation 
         self.sim_sp_file = "{}sram.sp".format(OPTS.openram_temp)
         # Make a copy in temp for debugging

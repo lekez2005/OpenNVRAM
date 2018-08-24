@@ -9,6 +9,7 @@ import datetime
 import getpass
 from vector import vector
 from globals import OPTS, print_time
+import utils
 
     
 class sram(design.design):
@@ -56,7 +57,8 @@ class sram(design.design):
         self.m1_pitch = max(contact.m1m2.width,contact.m1m2.height) + max(self.m1_space,self.m2_space)
         self.m2_pitch = max(contact.m2m3.width,contact.m2m3.height) + max(self.m2_space,self.m3_space)
         self.m3_pitch = max(contact.m2m3.width,contact.m2m3.height) + max(self.m2_space,self.m3_space)
-        
+        self.m4_pitch = max(contact.m3m4.width,contact.m3m4.height) + max(self.m3_space,self.m4_space)
+
 
         self.control_size = 6
         self.bank_to_bus_distance = 5*self.m3_width
@@ -182,15 +184,17 @@ class sram(design.design):
         self.add_busses()
 
         self.add_four_bank_logic()
-        
+
         self.width = self.bank_inst[1].ur().x
-        self.height = max(self.control_logic_inst.uy(),self.msb_decoder_inst.uy())
+        self.height = self.addr_bus_height
 
 
     def add_two_bank_modules(self):
         """ Adds the modules and the buses to the top level """
 
         self.compute_two_bank_offsets()
+
+        self.compute_two_bank_logic_locs()
 
         self.add_two_banks()
         
@@ -199,7 +203,8 @@ class sram(design.design):
         self.add_two_bank_logic()
 
         self.width = self.bank_inst[1].ur().x
-        self.height = self.control_logic_inst.uy()
+        hoz_max = max(self.horz_control_bus_positions.values(), key=lambda v: v.y)
+        self.height = hoz_max.y + 0.5*self.m1_width
         
         
     def route_shared_banks(self):
@@ -210,20 +215,18 @@ class sram(design.design):
             self.copy_layout_pin(self.control_logic_inst, n.lower(), n)
             
         # connect the control logic to the control bus
-        for n in self.control_logic_outputs + ["vdd", "gnd"]:
-            pins = self.control_logic_inst.get_pins(n)
-            for pin in pins:
-                if pin.layer=="metal2":
-                    pin_pos = pin.bc()
-                    break
-            rail_pos = vector(pin_pos.x,self.horz_control_bus_positions[n].y)
-            self.add_path("metal2",[pin_pos,rail_pos])
-            self.add_via_center(("metal1","via1","metal2"),rail_pos)
-        
-        # connect the control logic cross bar
         for n in self.control_logic_outputs:
-            cross_pos = vector(self.vert_control_bus_positions[n].x,self.horz_control_bus_positions[n].y)
-            self.add_via_center(("metal1","via1","metal2"),cross_pos)
+            pin = self.control_logic_inst.get_pin(n)
+            vertical_rail_x = self.vert_control_bus_positions[n].x
+
+            self.add_via(layers=("metal2", "via2", "metal3"),
+                         rotate=90,
+                         offset=pin.ll()+vector(contact.m1m2.first_layer_height, 0))
+            via34 = self.add_via_center(layers=("metal3", "via3", "metal4"),
+                                offset=vector(vertical_rail_x, pin.by()+0.5*self.m3_width),
+                                rotate=90)
+            self.add_rect("metal3", width=pin.lx() - via34.lx(),
+                          offset=via34.offset)
 
         # connect the bank select signals to the vertical bus
         for i in range(self.num_banks):
@@ -231,7 +234,7 @@ class sram(design.design):
             pin_pos = pin.rc() if i==0 else pin.lc()
             rail_pos = vector(self.vert_control_bus_positions["bank_sel[{}]".format(i)].x,pin_pos.y)
             self.add_path("metal3",[pin_pos,rail_pos])
-            self.add_via_center(("metal2","via2","metal3"),rail_pos)
+            self.add_via_center(("metal3","via3","metal4"),rail_pos)
 
         
             
@@ -253,7 +256,7 @@ class sram(design.design):
                 rail_pos = vector(pin_pos.x,self.data_bus_positions[n].y)
                 self.add_path("metal2",[pin_pos,rail_pos])
                 self.add_via_center(("metal2","via2","metal3"),rail_pos)
-                
+
         # route msb address bits
         # route 2:4 decoder
         self.route_double_msb_address()
@@ -271,10 +274,62 @@ class sram(design.design):
                 pin1_pos = self.bank_inst[bank_id+1].get_pin(n).lc()
                 rail_pos = vector(self.vert_control_bus_positions[n].x,pin0_pos.y)
                 self.add_path("metal3",[pin0_pos,pin1_pos])
-                self.add_via_center(("metal2","via2","metal3"),rail_pos)
-            
+                if n in self.addr_bus_names:
+                    self.add_via_center(("metal3", "via3", "metal4"), rail_pos, rotate=90)
+                else:
+                    self.add_via_center(("metal3", "via3", "metal4"), rail_pos)
+
 
         self.route_bank_supply_rails(bottom_banks=[2,3])
+
+        # connect top and bottom bank rails
+        top_left_vdd = min(filter(lambda x: x.layer == "metal1", self.bank_inst[0].get_pins("vdd")),
+                            key=lambda x: x.lx())
+        bottom_left_vdd = min(filter(lambda x: x.layer == "metal1", self.bank_inst[2].get_pins("vdd")),
+                           key=lambda x: x.lx())
+        top_right_vdd = max(filter(lambda x: x.layer == "metal1", self.bank_inst[1].get_pins("vdd")),
+                           key=lambda x: x.rx())
+        bottom_right_vdd = max(filter(lambda x: x.layer == "metal1", self.bank_inst[3].get_pins("vdd")),
+                              key=lambda x: x.rx())
+
+        top_left_gnd = min(filter(lambda x: x.layer == "metal2", self.bank_inst[0].get_pins("gnd")),
+                            key=lambda x: x.lx())
+        bottom_left_gnd = min(filter(lambda x: x.layer == "metal2", self.bank_inst[2].get_pins("gnd")),
+                           key=lambda x: x.lx())
+        top_right_gnd = max(filter(lambda x: x.layer == "metal2", self.bank_inst[1].get_pins("gnd")),
+                           key=lambda x: x.rx())
+        bottom_right_gnd = max(filter(lambda x: x.layer == "metal2", self.bank_inst[3].get_pins("gnd")),
+                              key=lambda x: x.rx())
+
+        for (top, bottom) in [(top_left_vdd, bottom_left_vdd), (top_right_vdd, bottom_right_vdd),
+                              (top_left_gnd, bottom_left_gnd), (top_right_gnd, bottom_right_gnd)]:
+            self.add_rect(bottom.layer, offset=bottom.ul(), width=bottom.width(),
+                          height=top.by()-bottom.uy())
+
+        left_vdd = max(filter(lambda x: x.layer == "metal1", self.bank_inst[0].get_pins("vdd")),
+                           key=lambda x: x.lx())
+
+        right_vdd = min(filter(lambda x: x.layer == "metal1", self.bank_inst[1].get_pins("vdd")),
+                            key=lambda x: x.rx())
+
+        bottom_y_offset = self.horz_control_bus_positions["vdd"].y
+        for vdd_pin in [left_vdd, right_vdd]:
+            enclosure = 0.5 * self.m2_width
+            self.add_via_center(layers=("metal1", "via1", "metal2"),
+                                offset=vector(vdd_pin.cx(), bottom_y_offset-enclosure),
+                                rotate=90,
+                                size=[1, 2])
+            self.add_via_center(layers=("metal1", "via1", "metal2"),
+                                offset=vector(vdd_pin.cx(), vdd_pin.by() + 0.5 *contact.m1m2.first_layer_width + enclosure),
+                                rotate=90,
+                                size=[1, 2])
+            rect_height = vdd_pin.by() + 2*enclosure + contact.m1m2.first_layer_width - \
+                          (bottom_y_offset-enclosure-0.5*contact.m1m2.first_layer_width-enclosure)
+            self.add_rect("metal2", width=vdd_pin.width(),
+                          height=rect_height,
+                          offset=vector(vdd_pin.lx(), bottom_y_offset
+                                        -0.5*contact.m1m2.first_layer_width-2*enclosure))
+
 
 
 
@@ -288,15 +343,15 @@ class sram(design.design):
         # data bus size
         self.num_horizontal_line = self.word_size
 
-        self.vertical_bus_width = self.m2_pitch*self.num_vertical_line
+        self.vertical_bus_width = max(self.m4_pitch*self.num_vertical_line, self.control_logic.width)
+        if self.num_banks == 4:
+            self.vertical_bus_width = max(self.vertical_bus_width, self.msb_decoder.width) + self.power_rail_pitch
+        self.vertical_bus_wire_width = self.m4_pitch*self.num_vertical_line
         # vertical bus height depends on 2 or 4 banks
         
         self.data_bus_height = self.m3_pitch*self.num_horizontal_line
         self.data_bus_width = 2*(self.bank.width + self.bank_to_bus_distance) + self.vertical_bus_width
-        
-        self.control_bus_height = self.m1_pitch*(self.control_size+2) 
-        self.control_bus_width = self.bank.width + self.bank_to_bus_distance + self.vertical_bus_width
-        
+
         self.supply_bus_height = self.m1_pitch*2 # 2 for vdd/gnd placed with control bus
         self.supply_bus_width = self.data_bus_width
 
@@ -309,33 +364,28 @@ class sram(design.design):
 
         # The main difference is that the four bank SRAM has the data bus in the middle of the four banks
         # as opposed to the top of the banks.
-        
-        self.compute_bus_sizes()
-        
-        # In 4 bank SRAM, the height is determined by the bank decoder and address flop
-        self.vertical_bus_height = 2*self.bank.height + 4*self.bank_to_bus_distance + self.data_bus_height \
-                                   + self.supply_bus_height + self.msb_decoder.height + self.msb_address.width 
+
+        self.compute_two_bank_offsets()
+
+        self.vertical_bus_height += 2*self.m1_pitch + self.bank_to_bus_distance + self.bank.height
         # The address bus extends down through the power rails, but control and bank_sel bus don't
-        self.addr_bus_height = self.vertical_bus_height + 2*self.power_rail_pitch
+        self.addr_bus_height = self.vertical_bus_height + self.bank_y_offset
 
-        self.vertical_bus_offset = vector(self.bank.width + self.bank_to_bus_distance, 2*self.power_rail_pitch)
-        self.data_bus_offset = vector(0, 2*self.power_rail_pitch + self.bank.height + self.bank_to_bus_distance)
-        self.supply_bus_offset = vector(0, self.data_bus_offset.y + self.data_bus_height + self.bank.height + 2*self.bank_to_bus_distance)        
-        self.control_bus_offset = vector(0, self.supply_bus_offset.y + self.supply_bus_height)
-        self.bank_sel_bus_offset = self.vertical_bus_offset + vector(self.m2_pitch*self.control_size,0)
-        self.addr_bus_offset = self.bank_sel_bus_offset.scale(1,0) + vector(self.m2_pitch*self.num_banks,0)
+        module_spacing = drc["pwell_to_nwell"]
 
-        # Control is placed at the top above the control bus and everything
-        self.control_logic_position = vector(0, self.control_bus_offset.y + self.control_bus_height + self.m1_pitch)
+        self.msb_address_position = vector(self.bank.width + self.bank_to_bus_distance,
+                                           self.bank_y_offset + self.msb_space_from_top)
 
-        # Bank select flops get put to the right of control logic above bank1 and the buses
-        # Leave a pitch to get the vdd rails up to M2
-        self.msb_address_position = vector(max(self.bank.width + self.vertical_bus_width + 2*self.bank_to_bus_distance, self.control_logic.width),
-                                           self.supply_bus_offset.y + self.supply_bus_height + 2*self.m1_pitch + self.msb_address.width)
+        # Decoder goes above the msb_address flip flops
+        # separate the two by a pwell to nwell space
+        self.msb_decoder_position = self.msb_address_position + vector(0, module_spacing + self.msb_address.height)
 
-        # Decoder goes above the MSB address flops, and is flipped in Y
-        # separate the two by a bank to bus distance for nwell rules, just in case
-        self.msb_decoder_position = self.msb_address_position + vector(self.msb_decoder.width, self.bank_to_bus_distance)
+        # Control is placed above the msb address decoder
+        # align control_logic vdd with bank's vdd
+        control_vdd = self.control_logic.get_pin("vdd")
+        control_logic_x = self.bank.width - control_vdd.width()
+        self.control_logic_position = vector(control_logic_x,
+                                             self.msb_decoder_position.y + module_spacing + self.msb_decoder.height)
 
 
     def compute_two_bank_offsets(self):
@@ -343,41 +393,57 @@ class sram(design.design):
 
         self.compute_bus_sizes()
 
+        precharge_vdd = self.bank.precharge_array_inst.get_pin("vdd")
+        vdd_to_top = self.bank.height - precharge_vdd.uy()
+        self.bank_y_offset = self.power_rail_pitch + self.power_rail_width - vdd_to_top - precharge_vdd.height()
+
         # In 2 bank SRAM, the height is determined by the control bus which is higher than the msb address
-        self.vertical_bus_height = self.bank.height + 2*self.bank_to_bus_distance + self.data_bus_height + self.control_bus_height
+        self.vertical_bus_height = self.bank.height + 2*self.bank_to_bus_distance + self.data_bus_height
         # The address bus extends down through the power rails, but control and bank_sel bus don't
-        self.addr_bus_height = self.vertical_bus_height + 2*self.power_rail_pitch
-        
-        self.vertical_bus_offset = vector(self.bank.width + self.bank_to_bus_distance, 2*self.power_rail_pitch)
-        self.data_bus_offset = vector(0, 2*self.power_rail_pitch + self.bank.height + self.bank_to_bus_distance)
+        self.addr_bus_height = self.vertical_bus_height + self.bank_y_offset
+        # centralize the vertical buses
+        mid_bus = self.bank.width + self.bank_to_bus_distance + 0.5*self.vertical_bus_width
+        self.vertical_bus_offset = vector(mid_bus - 0.5*self.vertical_bus_wire_width,
+                                          self.bank_y_offset)
+        self.data_bus_offset = vector(0, self.bank_y_offset + self.bank.height + self.bank_to_bus_distance)
         self.supply_bus_offset = vector(0, self.data_bus_offset.y + self.data_bus_height)        
-        self.control_bus_offset = vector(0, self.supply_bus_offset.y + self.supply_bus_height)
-        self.bank_sel_bus_offset = self.vertical_bus_offset + vector(self.m2_pitch*self.control_size,0)
-        self.addr_bus_offset = self.bank_sel_bus_offset.scale(1,0) + vector(self.m2_pitch*self.num_banks,0)
+        self.bank_sel_bus_offset = self.vertical_bus_offset + vector(self.m4_pitch*self.control_size,0)
+        self.addr_bus_offset = self.bank_sel_bus_offset.scale(1,0) + vector(self.m4_pitch*self.num_banks,0)
 
-        # Control is placed at the top above the control bus and everything
-        self.control_logic_position = vector(0, self.control_bus_offset.y + self.control_bus_height + self.m1_pitch)
+        # Bank select is level with top of the banks and placed in between them
+        # careful with flip-flop metal3 input pin clash with rail vias
+        self.msb_space_from_top = contact.m3m4.second_layer_height + 8*self.m1_space
 
-        # Bank select flops get put to the right of control logic above bank1 and the buses
-        # Leave a pitch to get the vdd rails up to M2
-        self.msb_address_position = vector(max(self.bank.width + self.vertical_bus_width + 2*self.bank_to_bus_distance,self.control_logic.width),
-                                           self.supply_bus_offset.y+self.supply_bus_height + 2*self.m1_pitch + self.msb_address.width)
+
+    def compute_two_bank_logic_locs(self):
+        self.msb_address_position = vector(self.bank.width + self.bank_to_bus_distance,
+                                           self.bank_y_offset + self.bank.height - self.msb_address.height
+                                           - self.msb_space_from_top)
+
+        # Control is placed below the msb address
+        # align control_logic vdd with first bank's vdd
+        control_vdd = self.control_logic.get_pin("vdd")
+        control_logic_x = self.bank.width - control_vdd.width()
+        self.control_logic_position = vector(control_logic_x,
+                                             self.msb_address_position.y - drc[
+                                                 "pwell_to_nwell"] - self.control_logic.height)
+
         
     def add_busses(self):
         """ Add the horizontal and vertical busses """
         # Vertical bus
         # The order of the control signals on the control bus:
         self.control_bus_names = ["clk_buf", "tri_en_bar", "tri_en", "clk_bar", "w_en", "s_en"]
-        self.vert_control_bus_positions = self.create_bus(layer="metal2",
-                                                          pitch=self.m2_pitch,
+        self.vert_control_bus_positions = self.create_bus(layer="metal4",
+                                                          pitch=self.m4_pitch,
                                                           offset=self.vertical_bus_offset,
                                                           names=self.control_bus_names,
                                                           length=self.vertical_bus_height,
                                                           vertical=True)
 
         self.addr_bus_names=["ADDR[{}]".format(i) for i in range(self.addr_size)]
-        self.vert_control_bus_positions.update(self.create_bus(layer="metal2",
-                                                               pitch=self.m2_pitch,
+        self.vert_control_bus_positions.update(self.create_bus(layer="metal4",
+                                                               pitch=self.m4_pitch,
                                                                offset=self.addr_bus_offset,
                                                                names=self.addr_bus_names,
                                                                length=self.addr_bus_height,
@@ -386,8 +452,8 @@ class sram(design.design):
 
         
         self.bank_sel_bus_names = ["bank_sel[{}]".format(i) for i in range(self.num_banks)]
-        self.vert_control_bus_positions.update(self.create_bus(layer="metal2",
-                                                               pitch=self.m2_pitch,
+        self.vert_control_bus_positions.update(self.create_bus(layer="metal4",
+                                                               pitch=self.m4_pitch,
                                                                offset=self.bank_sel_bus_offset,
                                                                names=self.bank_sel_bus_names,
                                                                length=self.vertical_bus_height,
@@ -415,17 +481,16 @@ class sram(design.design):
                                                           vertical=False)
         # The gnd rail must not be the entire width since we protrude the right-most vdd rail up for
         # the decoder in 4-bank SRAMs
+        left_bank_vdd = min(filter(lambda x: x.layer=="metal1", self.bank.get_pins("vdd")),
+                            key=lambda x: x.lx())
+        space_to_vdd = left_bank_vdd.lx()
+        # leave space to left and right for vdd connection
+        cutout = space_to_vdd + left_bank_vdd.width() + 2*self.m1_space
         self.horz_control_bus_positions.update(self.create_bus(layer="metal1",
                                                                pitch=self.m1_pitch,
-                                                               offset=self.supply_bus_offset+vector(0,self.m1_pitch),
+                                                               offset=self.supply_bus_offset+vector(cutout,self.m1_pitch),
                                                                names=["gnd"],
-                                                               length=self.supply_bus_width-2*self.power_rail_width,
-                                                               vertical=False))
-        self.horz_control_bus_positions.update(self.create_bus(layer="metal1",
-                                                               pitch=self.m1_pitch,
-                                                               offset=self.control_bus_offset,
-                                                               names=self.control_bus_names,
-                                                               length=self.control_bus_width,
+                                                               length=self.supply_bus_width-2*cutout,
                                                                vertical=False))
         
     def add_two_bank_logic(self):
@@ -435,8 +500,9 @@ class sram(design.design):
 
         self.msb_address_inst = self.add_inst(name="msb_address",
                                               mod=self.msb_address,
-                                              offset=self.msb_address_position,
-                                              rotate=270)
+                                              offset=self.msb_address_position+vector(0, self.msb_address.height),
+                                              mirror="MX",
+                                              rotate=0)
         self.msb_bank_sel_addr = "ADDR[{}]".format(self.addr_size-1)
         self.connect_inst([self.msb_bank_sel_addr,"bank_sel[1]","bank_sel[0]","clk_buf", "vdd", "gnd"])
 
@@ -449,7 +515,7 @@ class sram(design.design):
         self.msb_address_inst = self.add_inst(name="msb_address",
                                               mod=self.msb_address,
                                               offset=self.msb_address_position,
-                                              rotate=270)
+                                              rotate=0)
 
         self.msb_bank_sel_addr = ["ADDR[{}]".format(i) for i in range(self.addr_size-2,self.addr_size,1)]        
         temp = list(self.msb_bank_sel_addr)
@@ -460,7 +526,7 @@ class sram(design.design):
         self.msb_decoder_inst = self.add_inst(name="msb_decoder",
                                               mod=self.msb_decoder,
                                               offset=self.msb_decoder_position,
-                                              mirror="MY")
+                                              )
         temp = ["msb[{}]".format(i) for i in range(2)]
         temp.extend(["bank_sel[{}]".format(i) for i in range(4)])
         temp.extend(["vdd", "gnd"])
@@ -494,7 +560,10 @@ class sram(design.design):
             pin1_pos = self.bank_inst[1].get_pin(n).lc()
             rail_pos = vector(self.vert_control_bus_positions[n].x,pin0_pos.y)
             self.add_path("metal3",[pin0_pos,pin1_pos])
-            self.add_via_center(("metal2","via2","metal3"),rail_pos)
+            if n in self.addr_bus_names:
+                self.add_via_center(("metal3","via3","metal4"),rail_pos, rotate=90)
+            else:
+                self.add_via_center(("metal3", "via3", "metal4"), rail_pos)
 
 
         self.route_bank_supply_rails(bottom_banks=[0,1])
@@ -502,182 +571,216 @@ class sram(design.design):
         
     def route_double_msb_address(self):
         """ Route two MSB address bits and the bank decoder for 4-bank SRAM """
-        
-
 
         # connect the MSB flops to the address input bus
+        rail_separation = contact.m3m4.first_layer_height + self.m3_space
+        rail_y = 0
         for i in [0,1]:
             msb_pins = self.msb_address_inst.get_pins("din[{}]".format(i))
             for msb_pin in msb_pins:
                 if msb_pin.layer == "metal3":
-                    msb_pin_pos = msb_pin.lc()
+                    msb_pin_pos = msb_pin.bc() + vector(0, 0.5*self.m3_width)
                     break
-            rail_pos = vector(self.vert_control_bus_positions[self.msb_bank_sel_addr[i]].x,msb_pin_pos.y)
-            self.add_path("metal3",[msb_pin_pos,rail_pos])
-            self.add_via_center(("metal2","via2","metal3"),rail_pos)
+            rail_y = msb_pin_pos.y-rail_separation + i*rail_separation
+            rail_pos = vector(self.vert_control_bus_positions[self.msb_bank_sel_addr[i]].x, rail_y)
+            self.add_path("metal3",[msb_pin_pos, vector(msb_pin_pos.x, rail_y), rail_pos])
+            self.add_via_center(("metal3","via3","metal4"),rail_pos)
         
         # Connect clk
         clk_pin = self.msb_address_inst.get_pin("clk")
-        clk_pos = clk_pin.bc()
-        rail_pos = self.horz_control_bus_positions["clk_buf"]
-        bend_pos = vector(clk_pos.x,self.horz_control_bus_positions["clk_buf"].y)
-        self.add_path("metal1",[clk_pos,bend_pos,rail_pos])
+        clk_pos = clk_pin.ll()
+        rail_pos = self.vert_control_bus_positions["clk_buf"]
+
+        rail_y = msb_pin.by() - 2*rail_separation
+        via_pos = vector(clk_pos.x, rail_y)
+        self.add_rect("metal1", height=clk_pos.y-rail_y, offset=vector(clk_pos.x, rail_y))
+        self.add_via(("metal1", "via1", "metal2"), via_pos)
+        self.add_via(("metal2", "via2", "metal3"), via_pos)
+        # fill to fulfill min drc area requirement
+        via_height = contact.m1m2.second_layer_height
+        min_area = drc["minarea_metal3_drc"]
+        fill_width = utils.ceil(min_area / via_height)
+        self.add_rect("metal2", width=fill_width, height=via_height, offset=via_pos)
+
+        self.add_rect("metal3", width=rail_pos.x-via_pos.x, offset=via_pos)
+        self.add_via_center(("metal3", "via3", "metal4"), vector(rail_pos.x, rail_y+0.5*self.m3_width))
+
 
         # Connect bank decoder outputs to the bank select vertical bus wires
         for i in range(self.num_banks):
             msb_pin = self.msb_decoder_inst.get_pin("out[{}]".format(i))
-            msb_pin_pos = msb_pin.lc()
-            rail_pos = vector(self.vert_control_bus_positions["bank_sel[{}]".format(i)].x,msb_pin_pos.y)
-            self.add_path("metal1",[msb_pin_pos,rail_pos])
-            self.add_via_center(("metal1","via1","metal2"),rail_pos)
+            via_pos = msb_pin.lr()
+            self.add_via(("metal1", "via1", "metal2"), via_pos, rotate=90)
+            self.add_via(("metal2", "via2", "metal3"), via_pos, rotate=90)
+            self.add_rect_center("metal2", height=fill_width, width=via_height,
+                                 offset=msb_pin.rc()-vector(0.5*contact.m1m2.second_layer_height, 0))
+            rail_pos = vector(self.vert_control_bus_positions["bank_sel[{}]".format(i)].x,msb_pin.cy())
+            self.add_path("metal3",[msb_pin.rc(),rail_pos])
+            self.add_via_center(("metal3","via3","metal4"),rail_pos)
 
         # connect MSB flop outputs to the bank decoder inputs
-        msb_pin = self.msb_address_inst.get_pin("dout[0]")
-        msb_pin_pos = msb_pin.rc()
-        in_pin = self.msb_decoder_inst.get_pin("in[0]")
-        in_pos = in_pin.bc() + vector(0,1*self.m2_pitch,) # pin is up from bottom
-        out_pos = msb_pin_pos + vector(1*self.m2_pitch,0) # route out to the right
-        up_pos = vector(out_pos.x,in_pos.y) # and route up to the decoer
-        self.add_wire(("metal1","via1","metal2"),[msb_pin_pos,out_pos,up_pos,in_pos])
-        self.add_via_center(("metal1","via1","metal2"),in_pos)
-        self.add_via_center(("metal1","via1","metal2"),msb_pin_pos,rotate=90)
-            
-        msb_pin = self.msb_address_inst.get_pin("dout[1]")
-        msb_pin_pos = msb_pin.rc()
-        in_pin = self.msb_decoder_inst.get_pin("in[1]")
-        in_pos = in_pin.bc() + vector(0,self.bitcell.height+self.m2_pitch) # route the next row up
-        out_pos = msb_pin_pos + vector(2*self.m2_pitch,0) # route out to the right
-        up_pos = vector(out_pos.x,in_pos.y) # and route up to the decoer
-        self.add_wire(("metal1","via1","metal2"),[msb_pin_pos,out_pos,up_pos,in_pos])
-        self.add_via_center(("metal1","via1","metal2"),in_pos)
-        self.add_via_center(("metal1","via1","metal2"),msb_pin_pos,rotate=90)
-        
-        # Route the right-most vdd/gnd of the right upper bank to the top of the decoder
-        vdd_pins = self.bank_inst[1].get_pins("vdd")
-        highest_x = None
-        for bank_vdd_pin in vdd_pins:
-            if highest_x == None or bank_vdd_pin.lx()>highest_x:
-                highest_x = bank_vdd_pin.lx()
-                bank_vdd_pos = bank_vdd_pin.ul()
-        # Route to top
-        self.add_rect(layer="metal1",
-                      offset=bank_vdd_pos,
-                      height=self.height-bank_vdd_pos.y,
-                      width=bank_vdd_pin.width())
+        rail_space = 3*self.m2_width
+        for i in [0,1]:
+            out_pin = self.msb_address_inst.get_pin("dout[{}]".format(i))
+            in_pin = self.msb_decoder_inst.get_pin("in[{}]".format(i))
+            mid_y = out_pin.uy() + (i+1)*rail_space
 
-        gnd_pins = self.bank_inst[1].get_pins("gnd")
-        highest_x = None
-        for bank_gnd_pin in gnd_pins:
-            if highest_x == None or bank_gnd_pin.lx()>highest_x:
-                highest_x = bank_gnd_pin.lx()
-                bank_gnd_pos = bank_gnd_pin.ul()
-        # Route to top
-        self.add_rect(layer="metal2",
-                      offset=bank_gnd_pos,
-                      height=self.height-bank_gnd_pos.y,
-                      width=bank_gnd_pin.width())
-        
-        # Connect bank decoder vdd/gnd supplies using the previous bank_vdd_pos and bank_gnd_pos
-        vdd_pins = self.msb_decoder_inst.get_pins("vdd")
+            self.add_path("metal2", [out_pin.uc(), vector(out_pin.cx(), mid_y),
+                                     vector(in_pin.cx(), mid_y), in_pin.lc()])
+
+        # connect msb_address and decoder vdd pins
+        vdd_pins = self.msb_address_inst.get_pins("vdd") + self.msb_decoder_inst.get_pins("vdd")
+        bank1_vdd = max((self.bank_inst[0]).get_pins("vdd"), key=lambda x: x.rx())
         for vdd_pin in vdd_pins:
             if vdd_pin.layer != "metal1": continue
-            vdd_pos = vdd_pin.rc()
-            rail_pos = vector(bank_vdd_pos.x+bank_vdd_pin.width(),vdd_pos.y)
-            self.add_path("metal1",[vdd_pos,rail_pos])
-        gnd_pins = self.msb_decoder_inst.get_pins("gnd")
+            self.add_rect("metal1", height=vdd_pin.height(),
+                          width=vdd_pin.lx() - bank1_vdd.rx(),
+                          offset=vector(bank1_vdd.rx(), vdd_pin.by()))
+
+        # add metal1 ground rail to the right of msb_address and decoder
+        control_gnd = self.control_logic_inst.get_pin("gnd")
+        rail_x_offset = 2*self.m1_space + max(self.msb_address_inst.rx(), self.msb_decoder_inst.rx())
+        rail_height = control_gnd.by() - self.msb_address_inst.by()
+        bottom_gnd_extension = self.add_rect("metal1", offset=vector(rail_x_offset, self.msb_address_inst.by()),
+                                        height=rail_height, width=control_gnd.width())
+
+        gnd_pins = self.msb_address_inst.get_pins("gnd") + self.msb_decoder_inst.get_pins("gnd")
         for gnd_pin in gnd_pins:
             if gnd_pin.layer != "metal1": continue
-            gnd_pos = gnd_pin.rc()
-            rail_pos = vector(bank_gnd_pos.x+bank_gnd_pin.width(),gnd_pos.y)
-            self.add_path("metal1",[gnd_pos,rail_pos])
-            self.add_via(("metal1","via1","metal2"),rail_pos- vector(0,0.5*self.m1_width),rotate=90,size=[1,3])
-        
-        # connect the bank MSB flop supplies
-        vdd_pins = self.msb_address_inst.get_pins("vdd")
-        # vdd pins go down to the rail
-        for vdd_pin in vdd_pins:
-            if vdd_pin.layer != "metal1": continue
-            vdd_pos = vdd_pin.bc()
-            down_pos = vdd_pos - vector(0,self.m1_pitch)
-            rail_pos = vector(vdd_pos.x,self.horz_control_bus_positions["vdd"].y)
-            self.add_path("metal1",[vdd_pos,down_pos])            
-            self.add_via_center(("metal1","via1","metal2"),down_pos,rotate=90)   
-            self.add_path("metal2",[down_pos,rail_pos])
-            self.add_via_center(("metal1","via1","metal2"),rail_pos)        
-        # gnd pins go right to the rail
-        gnd_pins = self.msb_address_inst.get_pins("gnd")
-        for gnd_pin in gnd_pins:
-            if gnd_pin.layer != "metal2": continue
-            gnd_pos = gnd_pin.rc()
-            rail_pos = vector(bank_gnd_pos.x+bank_gnd_pin.width(),gnd_pos.y)
-            self.add_path("metal1",[gnd_pos,rail_pos])
-            self.add_via_center(("metal1","via1","metal2"),gnd_pos,rotate=90)
-            self.add_via(("metal1","via1","metal2"),rail_pos- vector(0,0.5*self.m1_width),rotate=90,size=[1,3])            
-        
+            self.add_rect("metal1", height=gnd_pin.height(),
+                          width=bottom_gnd_extension.lx() - gnd_pin.rx(),
+                          offset=vector(gnd_pin.rx(), gnd_pin.by()))
+
+        # join control_gnd with bottom_gnd_extension
+        self.add_rect("metal1", width=bottom_gnd_extension.rx()-control_gnd.rx(), height=control_gnd.width(),
+                      offset=control_gnd.lr())
+
+        m1m2 = ("metal1", "via1", "metal2")
+        contact_size = [1, 3]
+        dummy_contact = contact.contact(m1m2, dimensions=contact_size)
+        contact_height = dummy_contact.second_layer_height
+        # bottom_gnd_extension to bottom ground rail
+        self.add_rect("metal2", width=control_gnd.width(), height=bottom_gnd_extension.by() + contact_height,
+                      offset=vector(bottom_gnd_extension.lx(), 0))
+        extension_cx = bottom_gnd_extension.lx() + 0.5*bottom_gnd_extension.width
+        self.add_via_center(layers=m1m2,
+                            offset=vector(extension_cx, bottom_gnd_extension.by()-contact_height / 2),
+                            size=contact_size)
+        self.add_via(("metal2", "via2", "metal3"), size=[2, 3],
+                     offset=vector(extension_cx, 0) + vector(contact_height / 2, 0), rotate=90)
+        # control gnd to top ground rail
+        self.add_rect("metal2", width=control_gnd.width(),
+                      height=self.horz_control_bus_positions["gnd"].y - control_gnd.uy() + contact_height,
+                      offset=control_gnd.ul() - vector(0, contact_height))
+        self.add_via_center(layers=m1m2, offset=vector(control_gnd.cx(), control_gnd.uy() - contact_height / 2),
+                            size=contact_size)
+        self.add_via_center(m1m2, size=contact_size, offset=vector(control_gnd.cx(),
+                                                                   self.horz_control_bus_positions["gnd"].y),
+                            rotate=90)
+
+
     def route_single_msb_address(self):
         """ Route one MSB address bit for 2-bank SRAM """
         
         # connect the bank MSB flop supplies
         vdd_pins = self.msb_address_inst.get_pins("vdd")
+        bank1_vdd = max((self.bank_inst[0]).get_pins("vdd"), key=lambda x: x.rx())
         for vdd_pin in vdd_pins:
             if vdd_pin.layer != "metal1": continue
-            vdd_pos = vdd_pin.bc()
-            down_pos = vdd_pos - vector(0,self.m1_pitch)
-            rail_pos = vector(vdd_pos.x,self.horz_control_bus_positions["vdd"].y)
-            self.add_path("metal1",[vdd_pos,down_pos])            
-            self.add_via_center(("metal1","via1","metal2"),down_pos,rotate=90)   
-            self.add_path("metal2",[down_pos,rail_pos])
-            self.add_via_center(("metal1","via1","metal2"),rail_pos)
-        
-        gnd_pins = self.msb_address_inst.get_pins("gnd")
-        # Only add the ground connection to the lowest metal2 rail in the flop array
-        # FIXME: SCMOS doesn't have a vertical rail in the cell, or we could use those
-        lowest_y = None
-        for gnd_pin in gnd_pins:
-            if gnd_pin.layer != "metal2": continue
-            if lowest_y==None or gnd_pin.by()<lowest_y:
-                lowest_y=gnd_pin.by()
-                gnd_pos = gnd_pin.ur()
-        rail_pos = vector(gnd_pos.x,self.horz_control_bus_positions["gnd"].y)
-        self.add_path("metal2",[gnd_pos,rail_pos])
-        self.add_via_center(("metal1","via1","metal2"),rail_pos)            
-        
-        # connect the MSB flop to the address input bus 
+            self.add_rect("metal1", height=vdd_pin.height(),
+                          width=vdd_pin.lx()-bank1_vdd.rx(),
+                          offset=vector(bank1_vdd.rx(), vdd_pin.by()))
+
+        # connect the MSB flop to the address input bus
         msb_pins = self.msb_address_inst.get_pins("din[0]")
         for msb_pin in msb_pins:
             if msb_pin.layer == "metal3":
-                msb_pin_pos = msb_pin.lc()
+                msb_pin_pos = msb_pin.ll()
                 break
         rail_pos = vector(self.vert_control_bus_positions[self.msb_bank_sel_addr].x,msb_pin_pos.y)
         self.add_path("metal3",[msb_pin_pos,rail_pos])
-        self.add_via_center(("metal2","via2","metal3"),rail_pos)
+        self.add_via_center(("metal3","via3","metal4"),rail_pos)
 
         # Connect the output bar to select 0
         msb_out_pin = self.msb_address_inst.get_pin("dout_bar[0]")
-        msb_out_pos = msb_out_pin.rc()
-        out_extend_right_pos = msb_out_pos + vector(2*self.m2_pitch,0)
-        out_extend_up_pos = out_extend_right_pos + vector(0,self.m2_width)
-        rail_pos = vector(self.vert_control_bus_positions["bank_sel[0]"].x,out_extend_up_pos.y)
-        self.add_path("metal2",[msb_out_pos,out_extend_right_pos,out_extend_up_pos])
-        self.add_wire(("metal3","via2","metal2"),[out_extend_right_pos,out_extend_up_pos,rail_pos])
-        self.add_via_center(("metal2","via2","metal3"),rail_pos)
-        
+        self.connect_m2_m4_rails(msb_out_pin, self.vert_control_bus_positions["bank_sel[0]"].x)
+
         # Connect the output to select 1
         msb_out_pin = self.msb_address_inst.get_pin("dout[0]")
-        msb_out_pos = msb_out_pin.rc()
-        out_extend_right_pos = msb_out_pos + vector(2*self.m2_pitch,0)
-        out_extend_down_pos = out_extend_right_pos - vector(0,2*self.m1_pitch)
-        rail_pos = vector(self.vert_control_bus_positions["bank_sel[1]"].x,out_extend_down_pos.y)
-        self.add_path("metal2",[msb_out_pos,out_extend_right_pos,out_extend_down_pos])
-        self.add_wire(("metal3","via2","metal2"),[out_extend_right_pos,out_extend_down_pos,rail_pos])
-        self.add_via_center(("metal2","via2","metal3"),rail_pos)
-        
+        # extend in metal2 to avoid clash with dout_bar
+        space = 4*self.m3_space
+        extension_rect = self.add_rect("metal2", width=msb_out_pin.width(), height=space,
+                      offset=msb_out_pin.ll()-vector(0, space))
+        self.connect_m2_m4_rails(extension_rect, self.vert_control_bus_positions["bank_sel[1]"].x)
+
         # Connect clk
         clk_pin = self.msb_address_inst.get_pin("clk")
-        clk_pos = clk_pin.bc()
-        rail_pos = self.horz_control_bus_positions["clk_buf"]
-        bend_pos = vector(clk_pos.x,self.horz_control_bus_positions["clk_buf"].y)
-        self.add_path("metal1",[clk_pos,bend_pos,rail_pos])
+        clk_pos = clk_pin.rc()
+        rail_pos = self.vert_control_bus_positions["clk_buf"]
+
+        via_pos = vector(rail_pos.x, self.msb_address_inst.uy() + self.msb_space_from_top -
+                         2*self.m1_space - contact.m1m2.first_layer_height)
+
+        self.add_path("metal1", [clk_pos, vector(rail_pos.x, clk_pos.y), via_pos])
+        self.add_via_center(("metal1", "via1", "metal2"), via_pos)
+        self.add_via_center(("metal2", "via2", "metal3"), via_pos)
+        self.add_via_center(("metal3", "via3", "metal4"), via_pos)
+        # fill to fulfill min drc area requirement
+        via_height = contact.m1m2.second_layer_height
+        min_area = drc["minarea_metal3_drc"]
+        fill_width = utils.ceil(min_area / via_height)
+        self.add_rect_center("metal2", width=fill_width, height=via_height, offset=via_pos)
+        self.add_rect_center("metal3", width=fill_width, height=via_height, offset=via_pos)
+
+        # connect msb ground to control_logic ground
+        gnd_pins = self.msb_address_inst.get_pins("gnd")
+        control_gnd = self.control_logic_inst.get_pin("gnd")
+        # extend control ground
+        top_gnd = max(gnd_pins, key=lambda x: x.uy())
+        extension = self.add_rect("metal1", width=control_gnd.width(),
+                                  height=top_gnd.uy() - control_gnd.uy(),
+                                  offset=control_gnd.ul())
+
+        for gnd_pin in gnd_pins:
+            if gnd_pin.layer != "metal1": continue
+            self.add_rect("metal1", height=gnd_pin.height(),
+                          width=control_gnd.lx() - gnd_pin.rx(),
+                          offset=gnd_pin.lr())
+
+        m1m2 = ("metal1", "via1", "metal2")
+        contact_size = [1, 3]
+        dummy_contact = contact.contact(m1m2, dimensions=contact_size)
+        contact_height = dummy_contact.second_layer_height
+        # control gnd to bottom ground rail
+        self.add_rect("metal2", width=control_gnd.width(), height=control_gnd.by() + contact_height,
+                      offset=vector(control_gnd.lx(), 0))
+        self.add_via_center(layers=m1m2, offset=control_gnd.bc() + vector(0, contact_height / 2), size=contact_size)
+        self.add_via(("metal2", "via2", "metal3"), size=[2, 3],
+                     offset=vector(control_gnd.cx(), 0) + vector(contact_height / 2, 0), rotate=90)
+        # control gnd to top ground rail
+        self.add_rect("metal2", width=control_gnd.width(),
+                      height=self.horz_control_bus_positions["gnd"].y - extension.uy() + contact_height,
+                      offset=extension.ul() - vector(0, contact_height))
+        self.add_via_center(layers=m1m2, offset=vector(control_gnd.cx(), extension.uy() - contact_height / 2),
+                            size=contact_size)
+        self.add_via_center(m1m2, size=contact_size, offset=vector(control_gnd.cx(),
+                                                                   self.horz_control_bus_positions["gnd"].y),
+                            rotate=90)
+
+
+    def connect_m2_m4_rails(self, m2_rail, m4_rail_x):
+        if m4_rail_x < m2_rail.lx():
+            self.add_rect("metal3", width=m2_rail.rx()-m4_rail_x+0.5*self.m3_width,
+                          offset=vector(m4_rail_x-0.5*self.m3_width, m2_rail.by()))
+            self.add_via(("metal2", "via2", "metal3"), offset=m2_rail.lr(), rotate=90)
+        else:
+            self.add_rect("metal3", width=m4_rail_x+0.5*self.m3_width-m2_rail.lx(),
+                          offset=m2_rail.ll())
+            self.add_via(("metal2", "via2", "metal3"), offset=m2_rail.ll()+vector(contact.m2m3.second_layer_height, 0),
+                         rotate=90)
+
+        self.add_via_center(("metal3", "via3", "metal4"), vector(m4_rail_x, m2_rail.by()+0.5*self.m3_width))
+
         
 
 
@@ -690,12 +793,12 @@ class sram(design.design):
                             height=self.power_rail_width,
                             width=self.width)
 
+
         self.add_layout_pin(text="vdd",
                             layer="metal1",
                             offset=vector(0,self.power_rail_pitch),
                             height=self.power_rail_width,
                             width=self.width)
-
 
         # route bank vertical rails to bottom
         for i in bottom_banks:
@@ -717,9 +820,9 @@ class sram(design.design):
                               height=self.horz_control_bus_positions["gnd"].y, # route to the top bank
                               width=gnd_pin.width())
                 # Add vias at top
-                right_rail_pos = vector(gnd_pin.ur().x,self.horz_control_bus_positions["gnd"].y)            
-                self.add_via(layers=("metal1","via1","metal2"),
-                             offset=right_rail_pos - vector(0,0.5*self.m1_width),
+                right_rail_pos = vector(gnd_pin.cx(),self.horz_control_bus_positions["gnd"].y)
+                self.add_via_center(layers=("metal1","via1","metal2"),
+                             offset=right_rail_pos,
                              rotate=90,
                              size=[1,3]) 
                 # Add vias at bottom 
@@ -918,7 +1021,7 @@ class sram(design.design):
     def add_two_banks(self):
         # Placement of bank 0 (left)
         bank_position_0 = vector(self.bank.width,
-                                 self.bank.height + 2*self.power_rail_pitch)
+                                 self.bank.height + self.bank_y_offset)
         self.bank_inst=[self.add_bank(0, bank_position_0, -1, -1)]
 
         # Placement of bank 1 (right)
@@ -931,7 +1034,8 @@ class sram(design.design):
         
         # Placement of bank 0 (upper left)
         bank_position_0 = vector(self.bank.width,
-                                 self.bank.height + self.data_bus_height + 2*self.bank_to_bus_distance + 2*self.power_rail_pitch)
+                                 self.bank.height + self.data_bus_height + 2*self.bank_to_bus_distance
+                                 + self.bank_y_offset + 2*self.m1_pitch)
         self.bank_inst=[self.add_bank(0, bank_position_0, 1, -1)]
 
         # Placement of bank 1 (upper right)
@@ -940,14 +1044,24 @@ class sram(design.design):
         self.bank_inst.append(self.add_bank(1, bank_position_1, 1, 1))
 
         # Placement of bank 2 (bottom left)
-        y_off = self.bank.height + 2*self.power_rail_pitch
-        bank_position_2 = vector(bank_position_0.x, y_off)
+        bank_position_2 = vector(bank_position_0.x, self.bank.height + self.bank_y_offset)
         self.bank_inst.append(self.add_bank(2, bank_position_2, -1, -1))
 
         # Placement of bank 3 (bottom right)
         bank_position_3 = vector(bank_position_1.x, bank_position_2.y)
         self.bank_inst.append(self.add_bank(3, bank_position_3, -1, 1))
         
+
+    def connect_rail_from_left_m3m4(self, src_pin, dest_pin):
+        """ Helper routine to connect an unrotated/mirrored oriented instance to the rails """
+        in_pos = src_pin.rc()
+        out_pos = vector(dest_pin.cx(), in_pos.y)
+        self.add_wire(("metal4","via3","metal3"),[in_pos, out_pos, out_pos - vector(0,self.m3_pitch)])
+        # centralize the via
+        via_offset = (src_pin.rx(), src_pin.cy() - 0.5*contact.m3m4.second_layer_width) - self.m3m4_offset_fix
+        self.add_via(layers=("metal3","via3","metal4"),
+                     offset=via_offset,
+                     rotate=90)
 
     def connect_rail_from_left_m2m3(self, src_pin, dest_pin):
         """ Helper routine to connect an unrotated/mirrored oriented instance to the rails """

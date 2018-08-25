@@ -14,6 +14,13 @@ class options(optparse.Values):
     tech_name = ""
     # This is the temp directory where all intermediate results are stored.
     openram_temp = os.environ["SCRATCH"] + "/openram/openram_{0}_temp/".format(os.getpid())
+
+    spice_file = os.path.join(openram_temp, 'temp.sp')
+    pex_spice = os.path.join(openram_temp, 'pex.sp')
+    reduced_spice = os.path.join(openram_temp, 'reduced.sp')
+    gds_file = os.path.join(openram_temp, 'temp.gds')
+
+    #openram_temp = os.environ["SCRATCH"] + "/openram/openram_{0}_temp/".format(os.getpid())
     # This is the verbosity level to control debug information. 0 is none, 1
     # is minimal, etc.
     debug_level = 0

@@ -533,7 +533,9 @@ class delay():
         """ Prepare a trimmed netlist and regular netlist. """
         
         # Set up to trim the netlist here if that is enabled
-        if OPTS.trim_netlist:
+        if OPTS.use_pex:
+            self.trim_sp_file = OPTS.pex_spice
+        elif OPTS.trim_netlist:
             self.trim_sp_file = "{}reduced.sp".format(OPTS.openram_temp)
             self.trimsp=trim_spice(self.sp_file, self.trim_sp_file)
             self.trimsp.set_configuration(self.num_banks,

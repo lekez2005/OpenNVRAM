@@ -60,10 +60,11 @@ more cell_6t.lvs.report
 
 import os
 import re
-import time
+
 import debug
 from globals import OPTS
-import subprocess
+from tech import drc
+import utils
 
 
 def run_drc(cell_name, gds_name, exception_group=""):
@@ -71,7 +72,6 @@ def run_drc(cell_name, gds_name, exception_group=""):
        implemented in gds_name."""
 
     # the runset file contains all the options to run calibre
-    from tech import drc
     drc_rules = drc["drc_rules"]
 
     rule_unselect = []
@@ -116,18 +116,14 @@ def run_drc(cell_name, gds_name, exception_group=""):
     f.close()
 
     # run drc
-    cwd = os.getcwd()
-    os.chdir(OPTS.openram_temp)
     errfile = "{0}{1}.drc.err".format(OPTS.openram_temp, cell_name)
     outfile = "{0}{1}.drc.out".format(OPTS.openram_temp, cell_name)
 
-    cmd = "{0} -gui -drc {1}drc_runset -batch 2> {2} 1> {3}".format(OPTS.drc_exe[1],
-                                                                    OPTS.openram_temp,
-                                                                    errfile,
-                                                                    outfile)
+    cmd = "{0} -gui -drc {1}drc_runset -batch".format(OPTS.drc_exe[1],
+                                                                    OPTS.openram_temp)
     debug.info(2, cmd)
-    os.system(cmd)
-    os.chdir(cwd)
+    utils.run_command(cmd, outfile, errfile, verbose_level=3, cwd=OPTS.openram_temp)
+
 
     # check the result for these lines in the summary:
     # TOTAL Original Layer Geometries: 106 (157)
@@ -221,18 +217,13 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
     f.close()
 
     # run LVS
-    cwd = os.getcwd()
-    os.chdir(OPTS.openram_temp)
     errfile = "{0}{1}.lvs.err".format(OPTS.openram_temp, cell_name)
     outfile = "{0}{1}.lvs.out".format(OPTS.openram_temp, cell_name)
 
-    cmd = "{0} -gui -lvs {1}lvs_runset -batch 2> {2} 1> {3}".format(OPTS.lvs_exe[1],
-                                                                    OPTS.openram_temp,
-                                                                    errfile,
-                                                                    outfile)
+    cmd = "{0} -gui -lvs {1}lvs_runset -batch".format(OPTS.lvs_exe[1],
+                                                                    OPTS.openram_temp)
     debug.info(2, cmd)
-    os.system(cmd)
-    os.chdir(cwd)
+    utils.run_command(cmd, outfile, errfile, verbose_level=3, cwd=OPTS.openram_temp)
 
     # check the result for these lines in the summary:
     f = open(lvs_runset['lvsReportFile'], "r")
@@ -303,7 +294,7 @@ def run_pex(cell_name, gds_name, sp_name, output=None):
 
     # check if lvs report has been done
     # if not run drc and lvs
-    if not os.path.isfile(cell_name + ".lvs.report"):
+    if not os.path.isfile(os.path.join(OPTS.openram_temp, cell_name + ".lvs.report")):
         run_drc(cell_name, gds_name)
         run_lvs(cell_name, gds_name, sp_name)
 
@@ -330,18 +321,14 @@ def run_pex(cell_name, gds_name, sp_name, output=None):
     f.close()
 
     # run pex
-    cwd = os.getcwd()
-    os.chdir(OPTS.openram_temp)
     errfile = "{0}{1}.pex.err".format(OPTS.openram_temp, cell_name)
     outfile = "{0}{1}.pex.out".format(OPTS.openram_temp, cell_name)
 
-    cmd = "{0} -gui -pex {1}pex_runset -batch 2> {2} 1> {3}".format(OPTS.pex_exe[1],
-                                                                    OPTS.openram_temp,
-                                                                    errfile,
-                                                                    outfile)
+    cmd = "{0} -gui -pex {1}pex_runset -batch ".format(OPTS.pex_exe[1],
+                                                                    OPTS.openram_temp)
     debug.info(2, cmd)
-    os.system(cmd)
-    os.chdir(cwd)
+    utils.run_command(cmd, outfile, errfile, verbose_level=3, cwd=OPTS.openram_temp)
+
 
     # also check the output file
     f = open(outfile, "r")

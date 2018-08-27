@@ -665,6 +665,8 @@ class VlsiLayout:
                 if label_layer!=None:
                     if label_layer in layer_pin_map.values():
                         label_layer = layer_pin_map.keys()[layer_pin_map.values().index(label_layer)] # reverse lookup layer_pin_map[label_layer]
+                    elif label_layer in layer_pin_map["text_layers"]:
+                        label_layer = Text.purposeLayer
                     label_list.append((label_coordinate,label_layer))
 
         debug.check(len(label_list)>0,"Did not find labels {0}.".format(label_name))

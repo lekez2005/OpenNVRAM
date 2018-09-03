@@ -9,7 +9,7 @@ def relative_compare(value1,value2,error_tolerance=0.001):
     return (abs(value1 - value2) / max(value1,value2) <= error_tolerance)
 
 
-def parse_output(filename, key):
+def parse_output(filename, key, find_max=True):
     """Parses a hspice output.lis file for a key value"""
     re_pattern = r"{0}\s*=\s*(-?\d+.?\d*[e]?[-+]?[0-9]*\S*)\s+.*".format(key)
     if OPTS.spice_name == "xa" :
@@ -28,13 +28,21 @@ def parse_output(filename, key):
         debug.error("Unable to open spice output file: {0}".format(full_filename),1)
     contents = f.read()
     # val = re.search(r"{0}\s*=\s*(-?\d+.?\d*\S*)\s+.*".format(key), contents)
-    val = re.search(re_pattern, contents)
-    
-    if val != None:
-        debug.info(4, "Key = " + key + " Val = " + val.group(1))
-        return convert_to_float(val.group(1))
+    vals = re.findall(re_pattern, contents, flags=re.IGNORECASE)
+    vals_float = map(convert_to_float, vals)
+    if len(vals_float) == 0:
+        return False
+    elif len(vals_float) == 1:
+        return vals_float[0]
     else:
-        return "Failed"
+        if find_max:
+            if False in vals_float:
+                return False
+            else:
+                return max(vals_float)
+        else:
+            return vals_float
+
     
 def round_time(time,time_precision=3):
     # times are in ns, so this is how many digits of precision
@@ -43,7 +51,7 @@ def round_time(time,time_precision=3):
     # etc.
     return round(time,time_precision)
 
-def round_voltage(voltage,voltag_precision=5):
+def round_voltage(voltage,voltage_precision=5):
     # voltages are in volts
     # 3 digits = 1mv
     # 4 digits = 0.1mv
@@ -82,5 +90,6 @@ def convert_to_float(number):
     # if we weren't able to convert it to a float then error out
     if not type(float_value)==float:
         debug.error("Invalid number: {0}".format(number),1)
+        return False
 
     return float_value

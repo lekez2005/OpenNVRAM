@@ -1,12 +1,15 @@
+import imp
+import math
+import os
 import subprocess
+import time
 
 import gdsMill
-import tech
-import math
 import globals
-import time
-from vector import vector
 from pin_layout import pin_layout
+import tech
+from vector import vector
+
 
 try:
     from tech import layer_pin_map
@@ -49,6 +52,41 @@ def pin_rect(boundary):
     This returns a LL,UR point pair.
     """
     return [vector(boundary[0],boundary[1]),vector(boundary[2],boundary[3])]
+
+
+def transform(pos, offset, mirror, rotate):
+    if mirror == "MX":
+        pos = pos.scale(1, -1)
+    elif mirror == "MY":
+        pos = pos.scale(-1, 1)
+    elif mirror == "XY":
+        pos = pos.scale(-1, -1)
+
+    if rotate == 90:
+        pos = pos.rotate_scale(-1, 1)
+    elif rotate == 180:
+        pos = pos.scale(-1, -1)
+    elif rotate == 270:
+        pos = pos.rotate_scale(1, -1)
+
+    return pos + offset
+
+
+def transform_relative(pos, inst):
+    return transform(pos, offset=inst.offset, mirror=inst.mirror, rotate=inst.rotate)
+
+
+def get_pin_rect(pin, instances):
+    first = pin.ll()
+    second = pin.ur()
+    for instance in reversed(instances):
+        (first, second) = map(lambda x: transform_relative(x, instance), [first, second])
+    ll = [min(first[0], second[0]), min(first[1], second[1])]
+    ur = [max(first[0], second[0]), max(first[1], second[1])]
+    return ll, ur
+
+
+
 
 def auto_measure_libcell(pin_list, name, units, layer):
     """
@@ -113,12 +151,15 @@ def get_libcell_pins(pin_list, name, units, layer):
     return cell
 
 
-def run_command(command, stdout_file, stderror_file, verbose_level=1):
+def run_command(command, stdout_file, stderror_file, verbose_level=1, cwd=None):
+
     verbose = OPTS.debug_level >= verbose_level
-    process = None
+    if cwd is None:
+        cwd = os.getcwd()
+
     with open(stdout_file, "w") as stdout_f, open(stderror_file, "w") as stderr_f:
         stdout = subprocess.PIPE if verbose else stdout_f
-        process = subprocess.Popen(command, stdout=stdout, stderr=stderr_f, shell=True)
+        process = subprocess.Popen(command, stdout=stdout, stderr=stderr_f, shell=True, cwd=cwd)
         while verbose:
             line = process.stdout.readline()
             if not line:
@@ -134,4 +175,11 @@ def run_command(command, stdout_file, stderror_file, verbose_level=1):
         return process.returncode
     else:
         return -1
+
+
+def to_cadence(gds_file):
+    to_cadence = imp.load_source("to_cadence",
+                                 "/research/APSEL/ota2/openram/OpenRAM/technology/freepdk45/scripts/to_cadence.py")
+    to_cadence.export_gds(gds_file)
+
 

@@ -3,7 +3,7 @@ import geometry
 import gdsMill
 import debug
 from tech import drc, GDS
-from tech import layer as techlayer
+from tech import layer as techlayer, layer_label_map
 try:
     from tech import purpose as techpurpose
 except ImportError:
@@ -293,10 +293,11 @@ class layout(lef.lef):
         """Adds a text label on the given layer,offset, and zoom level"""
         # negative layers indicate "unused" layers in a given technology
         debug.info(5,"add label " + str(text) + " " + layer + " " + str(offset))
-        layer_num = techlayer[layer]
+        layer_num, purpose = layer_label_map[layer]
         if layer_num >= 0:
             # FIXME fix by adding mapping for text purpose
-            self.objs.append(geometry.label(text, layer_num, offset, zoom, layerPurpose=get_purpose(layer)))
+            #self.objs.append(geometry.label(text, layer_num, offset, zoom, layerPurpose=get_purpose(layer)))
+            self.objs.append(geometry.label(text, layer_num, offset, zoom, layerPurpose=purpose))
             return self.objs[-1]
         return None
 

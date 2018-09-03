@@ -301,7 +301,7 @@ class label(geometry):
 
     def __repr__(self):
         """ override print function output """
-        return "( label: " + self.text + " @" + str(self.offset) + " layer=" + self.layerNumber + " )"
+        return "( label: " + self.text + " @" + str(self.offset) + " layer=" + str(self.layerNumber) + " )"
 
 class rectangle(geometry):
     """Represents a rectangular shape"""

@@ -25,7 +25,7 @@ class delay():
 
     """
 
-    def __init__(self, sram, spfile, corner):
+    def __init__(self, sram, spfile, corner, probe_points=[]):
         self.sram = sram
         self.name = sram.name
         self.word_size = self.sram.word_size
@@ -34,6 +34,7 @@ class delay():
         self.num_rows = self.sram.num_rows
         self.num_banks = self.sram.num_banks
         self.sp_file = spfile
+        self.probe_points = probe_points
 
         # These are the member variables for a simulation
         self.period = 0
@@ -347,16 +348,16 @@ class delay():
         # Checking from not data_value to data_value
         self.write_delay_stimulus()
         self.stim.run_sim()
-        delay_hl = ch.parse_output("timing", "delay_hl")
-        delay_lh = ch.parse_output("timing", "delay_lh")
-        slew_hl = ch.parse_output("timing", "slew_hl")
-        slew_lh = ch.parse_output("timing", "slew_lh")
+        delay_hl = ch.parse_output("timing", ".*delay_hl.*")
+        delay_lh = ch.parse_output("timing", ".*delay_lh.*")
+        slew_hl = ch.parse_output("timing", ".*slew_hl.*")
+        slew_lh = ch.parse_output("timing", ".*slew_lh.*")
         delays = (delay_hl, delay_lh, slew_hl, slew_lh)
 
-        read0_power=ch.parse_output("timing", "read0_power")
-        write0_power=ch.parse_output("timing", "write0_power")
-        read1_power=ch.parse_output("timing", "read1_power")
-        write1_power=ch.parse_output("timing", "write1_power")
+        read0_power=ch.parse_output("timing", "read0_power.*")
+        write0_power=ch.parse_output("timing", "write0_power.*")
+        read1_power=ch.parse_output("timing", "read1_power.*")
+        write1_power=ch.parse_output("timing", "write1_power.*")
 
         if not self.check_valid_delays(delays):
             return (False,{})
@@ -479,10 +480,10 @@ class delay():
         # Checking from not data_value to data_value
         self.write_delay_stimulus()
         self.stim.run_sim()
-        delay_hl = ch.parse_output("timing", "delay_hl")
-        delay_lh = ch.parse_output("timing", "delay_lh")
-        slew_hl = ch.parse_output("timing", "slew_hl")
-        slew_lh = ch.parse_output("timing", "slew_lh")
+        delay_hl = ch.parse_output("timing", ".*delay_hl.*")
+        delay_lh = ch.parse_output("timing", ".*delay_lh.*")
+        slew_hl = ch.parse_output("timing", ".*slew_hl.*")
+        slew_lh = ch.parse_output("timing", ".*slew_lh.*")
         # if it failed or the read was longer than a period
         if type(delay_hl)!=float or type(delay_lh)!=float or type(slew_lh)!=float or type(slew_hl)!=float:
             debug.info(2,"Invalid measures: Period {0}, delay_hl={1}ns, delay_lh={2}ns slew_hl={3}ns slew_lh={4}ns".format(self.period,
@@ -560,17 +561,6 @@ class delay():
         """
         
         self.set_probe(probe_address, probe_data)
-
-        # This is for debugging a full simulation
-        # debug.info(0,"Debug simulation running...")
-        # target_period=50.0
-        # feasible_delay_lh=0.059083183
-        # feasible_delay_hl=0.17953789
-        # load=1.6728
-        # slew=0.04
-        # self.try_period(target_period, feasible_delay_lh, feasible_delay_hl)
-        # sys.exit(1)
-
 
         # 1) Find a feasible period and it's corresponding delays using the trimmed array.
         self.load=max(loads)

@@ -245,9 +245,9 @@ class stimuli():
 
     def write_control_spectre(self, end_time):
         self.sf.write("simulator lang=spectre\n")
-        self.sf.write('simulatorOptions options reltol=1e-3 vabstol=1e-6 iabstol=1e-12 temp={} \
-            scalem=1.0 scale=1.0 gmin=1e-13 rforce=1 maxnotes=5 maxwarns=5 \
-            digits=5 cols=80 pivrel=1e-3\n'.format(self.temperature))
+        self.sf.write("simulatorOptions options reltol=1e-3 vabstol=1e-6 iabstol=1e-12 temp={0} "
+            "scalem=1.0 scale=1.0 gmin={1} rforce=1 maxnotes=5 maxwarns=5 "
+            "digits=5 cols=80 pivrel=1e-3\n".format(self.temperature, tech.spice["gmin"]))
         self.sf.write('dcOp dc write="spectre.dc" maxiters=150 maxsteps=10000 annotate=status\n')
         self.sf.write('tran tran step={} stop={}n annotate=status maxiters=5\n'.format("5p", end_time))
 
@@ -320,7 +320,8 @@ class stimuli():
                                                          OPTS.openram_temp)
             valid_retcode=0
         elif OPTS.spice_name == "spectre":
-            cmd = "{0} {1} -format psfascii -raw {2} +aps ".format(OPTS.spice_exe, temp_stim, OPTS.openram_temp)
+            cmd = "{0} -64 {1} -format psfascii -raw {2} +aps +parasitics=10 ".format(OPTS.spice_exe,
+                                                                                      temp_stim, OPTS.openram_temp)
             valid_retcode = 0
         else:
             # ngspice 27+ supports threading with "set num_threads=4" in the stimulus file or a .spiceinit 

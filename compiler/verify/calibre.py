@@ -72,6 +72,7 @@ def run_drc(cell_name, gds_name, exception_group=""):
        implemented in gds_name."""
 
     # the runset file contains all the options to run calibre
+    debug.info(1, "Run DRC for {}".format(cell_name))
     drc_rules = drc["drc_rules"]
 
     rule_unselect = []
@@ -176,6 +177,7 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
     """Run LVS check on a given top-level name which is
     implemented in gds_name and sp_name. Final verification will
     ensure that there are no remaining virtual conections. """
+    debug.info(1, "Run LVS for {}".format(cell_name))
 
     from tech import drc
     lvs_rules = drc["lvs_rules"]
@@ -288,6 +290,7 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
 def run_pex(cell_name, gds_name, sp_name, output=None):
     """Run pex on a given top-level name which is
        implemented in gds_name and sp_name. """
+    debug.info(1, "Run PEX for {}".format(cell_name))
     from tech import drc
     if output == None:
         output = name + ".pex.netlist"
@@ -312,6 +315,15 @@ def run_pex(cell_name, gds_name, sp_name, output=None):
         'pexPexReportFile': cell_name + ".pex.report",
         'pexMaskDBFile': cell_name + ".maskdb",
         'cmnFDIDEFLayoutPath': cell_name + ".def",
+        'cmnRunMT': "1",
+        'cmnNumTurbo': "8",
+        'pexPowerNames': "vdd",
+        'pexGroundNames': "gnd",
+        'pexPexGroundName': "1",
+        'pexPexGroundNameValue': "gnd",
+        'pexPexSeparator': "1",
+        'pexPexSeparatorValue': "_",
+        'pexPexNetlistNameSource': 'LAYOUTNAMES',
     }
 
     # write the runset file

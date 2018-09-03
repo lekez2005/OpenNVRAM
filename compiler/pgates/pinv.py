@@ -142,16 +142,13 @@ class pinv(pgate.pgate):
         self.connect_inst(["Z", "A", "gnd", "gnd"])
 
 
-        # Output position will be in between the PMOS and NMOS drains
-        pmos_drain_pos = self.pmos_inst.get_pin("D").ll()
-        nmos_drain_pos = self.nmos_inst.get_pin("D").ul()
-        self.output_pos = vector(0,0.5*(pmos_drain_pos.y+nmos_drain_pos.y))
 
         # This will help with the wells 
         nmos_top = self.nmos_inst.height + self.rail_offset
         pmos_bottom = self.height - self.pmos_inst.height - self.rail_offset
+        self.output_pos = vector(0, round_to_grid(0.5*(nmos_top + pmos_bottom)))
         self.well_pos = vector(0, round_to_grid(0.5*(nmos_top + pmos_bottom)))
-        
+
 
 
     def route_outputs(self):

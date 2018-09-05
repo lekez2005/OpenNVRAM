@@ -1086,9 +1086,11 @@ class sram(design.design):
         """ Route a single bank SRAM """
 
         control_logic_pins = map(lambda x: self.control_logic_inst.get_pin(x), self.control_logic_outputs)
-        ordered_pins = sorted(control_logic_pins, key=lambda x: x.lx())
+        ordered_pins = sorted(control_logic_pins, key=lambda x: x.uy(), reverse=True)
 
-        pin_x_offset = self.control_logic_inst.lx() + self.m4_pitch
+        pitch = self.m4_width + 2*self.m4_width
+
+        pin_x_offset = self.control_logic_inst.lx() + pitch
         for src_pin in ordered_pins:
             pin_name = src_pin.name
             dest_pin = self.bank_inst.get_pin(pin_name)
@@ -1103,7 +1105,7 @@ class sram(design.design):
                          offset=vector(pin_x_offset, dest_pin.by()))
             self.add_rect("metal3", offset=vector(pin_x_offset, dest_pin.by()), width=dest_pin.lx()-pin_x_offset)
 
-            pin_x_offset += self.m4_pitch
+            pin_x_offset += pitch
 
         # route bank_sel to vdd
         bank_sel_inv_inst = self.bank_inst.mod.bank_sel_inv_inst

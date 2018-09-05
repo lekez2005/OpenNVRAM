@@ -41,10 +41,7 @@ class bank(design.design):
 
         # The local control signals are gated when we have bank select logic,
         # so this prefix will be added to all of the input signals.
-        if self.num_banks>1:
-            self.prefix="gated_"
-        else:
-            self.prefix=""
+        self.prefix = "gated_"
         
         self.compute_sizes()
         self.add_pins()
@@ -54,8 +51,7 @@ class bank(design.design):
         self.route_layout()
 
         # Add and route the bank select logic
-        if(self.num_banks > 1):
-            self.add_bank_select()
+        self.add_bank_select()
 
         # Can remove the following, but it helps for debug!
         self.add_lvs_correspondence_points() 
@@ -71,11 +67,7 @@ class bank(design.design):
         for i in range(self.addr_size):
             self.add_pin("ADDR[{0}]".format(i))
 
-        # For more than one bank, we have a bank select and name
-        # the signals gated_*.
-        if(self.num_banks > 1):
-            self.add_pin("bank_sel")
-        for pin in ["s_en","w_en","tri_en_bar","tri_en",
+        for pin in ["bank_sel", "s_en","w_en","tri_en_bar","tri_en",
                     "clk_bar","clk_buf","vdd","gnd"]:
             self.add_pin(pin)
 
@@ -143,11 +135,8 @@ class bank(design.design):
         self.num_control_lines = 6
         # The order of the control signals on the control bus:
         self.input_control_signals = ["clk_buf", "tri_en_bar", "tri_en", "clk_bar", "w_en", "s_en"]
-        # These will be outputs of the gaters if this is multibank
-        if self.num_banks>1:
-            self.control_signals = ["gated_"+str for str in self.input_control_signals]
-        else:
-            self.control_signals = self.input_control_signals
+        self.control_signals = ["gated_" + str for str in self.input_control_signals]
+
         # The central bus is the column address (both polarities), row address
         if self.col_addr_size>0:
             self.num_addr_lines = 2**self.col_addr_size + self.row_addr_size
@@ -485,7 +474,7 @@ class bank(design.design):
         self.bank_select_inv_position = vector(xoffset_bank_sel_inv, 
                                                self.min_point)
         # bank select inverter (must be made unique if more than one OR)
-        bank_sel_inv=self.add_inst(name="bank_sel_inv", 
+        bank_sel_inv = self.bank_sel_inv_inst = self.add_inst(name="bank_sel_inv",
                                    mod=self.inv, 
                                    offset=[xoffset_bank_sel_inv,self.min_point])
         self.connect_inst(["bank_sel", "bank_sel_bar", "vdd", "gnd"])
@@ -663,11 +652,8 @@ class bank(design.design):
             self.decoder_min_point = self.col_decoder_inst.ll().y
         else:
             self.decoder_min_point = addr_min_point
-            
-        if self.num_banks>1:
-            self.min_point = min(self.decoder_min_point - self.num_control_lines * self.bitcell.height, tri_gate_min_point)
-        else:
-            self.min_point = min(self.decoder_min_point, addr_min_point, tri_gate_min_point)
+
+        self.min_point = min(self.decoder_min_point - self.num_control_lines * self.bitcell.height, tri_gate_min_point)
 
 
         # The max point is always the top of the precharge bitlines
@@ -1219,19 +1205,11 @@ class bank(design.design):
 
         for ctrl in self.control_signals:
             x_offset = self.central_line_xoffset[ctrl]
-            if self.num_banks > 1:
-                # it's not an input pin if we have multiple banks
-                self.add_label_pin(text=ctrl,
-                                    layer="metal2",  
-                                    offset=vector(x_offset - 0.5*self.m2_width, self.min_point), 
-                                    width=self.m2_width, 
-                                    height=self.height)
-            else:
-                self.add_layout_pin(text=ctrl,
-                                    layer="metal2",  
-                                    offset=vector(x_offset - 0.5*self.m2_width, self.min_point), 
-                                    width=self.m2_width, 
-                                    height=self.height)
+            self.add_label_pin(text=ctrl,
+                               layer="metal2",
+                               offset=vector(x_offset - 0.5 * self.m2_width, self.min_point),
+                               width=self.m2_width,
+                               height=self.height)
 
 
     def connect_rail_from_right(self,inst, pin, rail):

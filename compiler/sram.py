@@ -909,6 +909,8 @@ class sram(design.design):
             temp.append("ADDR[{0}]".format(i))
         if(self.num_banks > 1):
             temp.append("bank_sel[{0}]".format(bank_num))
+        else:
+            temp.append("vdd")
         temp.extend(["s_en", "w_en", "tri_en_bar", "tri_en",
                      "clk_bar","clk_buf" , "vdd", "gnd"])
         self.connect_inst(temp)
@@ -1082,10 +1084,40 @@ class sram(design.design):
 
     def route_single_bank(self):
         """ Route a single bank SRAM """
-        for n in self.control_logic_outputs:
-            src_pin = self.control_logic_inst.get_pin(n)
-            dest_pin = self.bank_inst.get_pin(n)                
-            self.connect_rail_from_left_m2m3(src_pin, dest_pin)
+
+        control_logic_pins = map(lambda x: self.control_logic_inst.get_pin(x), self.control_logic_outputs)
+        ordered_pins = sorted(control_logic_pins, key=lambda x: x.lx())
+
+        pin_x_offset = self.control_logic_inst.lx() + self.m4_pitch
+        for src_pin in ordered_pins:
+            pin_name = src_pin.name
+            dest_pin = self.bank_inst.get_pin(pin_name)
+
+            self.add_rect("metal3", offset=vector(pin_x_offset, src_pin.by()), width=src_pin.rx()-pin_x_offset)
+            self.add_via(layers=("metal2", "via2", "metal3"), offset=src_pin.lr(), rotate=90)
+            self.add_via(layers=("metal3", "via3", "metal4"),
+                         offset=vector(pin_x_offset+contact.m2m3.second_layer_height, src_pin.by()), rotate=90)
+
+            self.add_rect("metal4", offset=vector(pin_x_offset, dest_pin.by()), height=src_pin.by()-dest_pin.by())
+            self.add_via(layers=("metal3", "via3", "metal4"),
+                         offset=vector(pin_x_offset, dest_pin.by()))
+            self.add_rect("metal3", offset=vector(pin_x_offset, dest_pin.by()), width=dest_pin.lx()-pin_x_offset)
+
+            pin_x_offset += self.m4_pitch
+
+        # route bank_sel to vdd
+        bank_sel_inv_inst = self.bank_inst.mod.bank_sel_inv_inst
+        a_pin = bank_sel_inv_inst.get_pin("A")
+        vdd_pin = bank_sel_inv_inst.get_pin("vdd")
+        bank_sel_ll = bank_sel_inv_inst.offset
+
+        a_trans = utils.transform_relative(a_pin.ll(), self.bank_inst)
+        vdd_trans = utils.transform_relative(vdd_pin.bc(), self.bank_inst)
+        bank_sel_ll_trans = utils.transform_relative(bank_sel_ll, self.bank_inst)
+
+        self.add_rect("metal1", offset=vector(bank_sel_ll.x, a_trans.y), width=a_trans.x-bank_sel_ll.x)
+        self.add_rect("metal1", offset=vector(bank_sel_ll.x, a_trans.y), height=vdd_trans.y-a_trans.y)
+
 
         control_vdd = self.control_logic_inst.get_pin("vdd")
         bank_left_vdd = min(self.bank_inst.get_pins("vdd"), key=lambda x: x.lx())

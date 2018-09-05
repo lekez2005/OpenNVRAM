@@ -18,6 +18,8 @@ class SramProbe:
         self.sram = sram
         if pex_file is None:
             self.pex_file = OPTS.pex_spice
+        else:
+            self.pex_file = pex_file
 
         self.q_pin = utils.get_libcell_pins(["Q"], "cell_6t", tech.GDS["unit"], tech.layer["boundary"]).get("Q")[0]
         self.qbar_pin = \

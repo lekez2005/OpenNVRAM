@@ -320,8 +320,15 @@ class stimuli():
                                                          OPTS.openram_temp)
             valid_retcode=0
         elif OPTS.spice_name == "spectre":
-            cmd = "{0} -64 {1} -format psfascii -raw {2} +aps +parasitics=10 ".format(OPTS.spice_exe,
-                                                                                      temp_stim, OPTS.openram_temp)
+            extra_options = ""
+            if OPTS.use_pex:
+                # postlayout is more aggressive than +parasitics
+                # extra_options += " +dcopt +postlayout "
+                extra_options += " +dcopt +parasitics=10 "
+            cmd = "{0} -64 {1} -format psfascii -raw {2} +aps {3} ".format(OPTS.spice_exe,
+                                                                          temp_stim,
+                                                                          OPTS.openram_temp,
+                                                                          extra_options)
             valid_retcode = 0
         else:
             # ngspice 27+ supports threading with "set num_threads=4" in the stimulus file or a .spiceinit 

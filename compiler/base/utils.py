@@ -155,7 +155,7 @@ def run_command(command, stdout_file, stderror_file, verbose_level=1, cwd=None):
 
     verbose = OPTS.debug_level >= verbose_level
     if cwd is None:
-        cwd = os.getcwd()
+        cwd = OPTS.openram_temp
 
     with open(stdout_file, "w") as stdout_f, open(stderror_file, "w") as stderr_f:
         stdout = subprocess.PIPE if verbose else stdout_f

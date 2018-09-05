@@ -10,7 +10,7 @@ import characterizer
 
 class FunctionalTest:
 
-    def __init__(self, spice_name="spectre", use_pex=True):
+    def __init__(self, _sram=None, spice_name="spectre", use_pex=True):
 
         OPTS.spice_name = self.spice_name = spice_name
         OPTS.use_pex = self.use_pex = use_pex
@@ -33,10 +33,13 @@ class FunctionalTest:
 
         import sram
         OPTS.check_lvsdrc = False
-        self.sram = sram.sram(word_size=OPTS.word_size,
-                      num_words=OPTS.num_words,
-                      num_banks=OPTS.num_banks,
-                      name="sram1")
+        if _sram is None:
+            self.sram = sram.sram(word_size=OPTS.word_size,
+                          num_words=OPTS.num_words,
+                          num_banks=OPTS.num_banks,
+                          name="sram1")
+        else:
+            self.sram = _sram
 
     def add_probes(self, addresses=None):
         if addresses is None:

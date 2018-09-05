@@ -69,6 +69,7 @@ class SequentialDelay(delay.delay):
         """
 
         # creates and opens stimulus file for writing
+        self.current_time = 0
         temp_stim = "{0}/stim.sp".format(OPTS.openram_temp)
         self.sf = open(temp_stim, "w")
         if OPTS.spice_name == "spectre":

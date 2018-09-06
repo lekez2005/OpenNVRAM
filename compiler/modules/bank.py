@@ -1,10 +1,11 @@
 import sys
-from tech import drc, parameter
+from tech import drc, power_grid_layers
 import debug
 import design
 import math
 from math import log,sqrt,ceil
 import contact
+from contact_full_stack import ContactFullStack
 from pinv import pinv
 from pnand2 import pnand2
 from pnor2 import pnor2
@@ -50,8 +51,7 @@ class bank(design.design):
         self.setup_layout_constraints()
         self.route_layout()
 
-        # Add and route the bank select logic
-        self.add_bank_select()
+
 
         # Can remove the following, but it helps for debug!
         self.add_lvs_correspondence_points() 
@@ -82,7 +82,10 @@ class bank(design.design):
         self.route_column_address_lines()
         self.route_msf_address()
         self.route_control_lines()
+        # Add and route the bank select logic
+        self.add_bank_select()
         self.add_control_pins()
+        self.calculate_rail_vias()
         self.route_vdd_supply()
         self.route_gnd_supply()
         
@@ -513,6 +516,7 @@ class bank(design.design):
                             offset=vector(xoffset_bank_sel_bar+0.5*contact.m1m2.first_layer_width, bank_sel_bar_pin.cy()))
 
         logic_inst = None
+        self.gated_control_top_pos = []
             
         for i in range(self.num_control_lines):
             input_name = self.input_control_signals[i]
@@ -578,6 +582,7 @@ class bank(design.design):
             inv_z = inv_inst.get_pin("Z")
             out_pos = inv_z.rc()
             bus_pos = vector(self.central_line_xoffset[gated_name], out_pos.y)
+            self.gated_control_top_pos.append(inv_z.uy())
             self.add_path("metal3",[out_pos, bus_pos])
             self.add_via_center(layers=("metal2", "via2", "metal3"),
                                 offset=bus_pos,
@@ -663,30 +668,15 @@ class bank(design.design):
         
         # Add an extra gap between the bitcell and the rail
         self.right_vdd_x_offset = self.bitcell_array_inst.ur().x + 3 * self.m1_width
-        offset = vector(self.right_vdd_x_offset, self.min_point)
-        self.add_layout_pin(text="vdd",
-                            layer="metal1", 
-                            offset=offset, 
-                            width=self.vdd_rail_width,
-                            height=self.height)
+
 
         # from the edge of the decoder is another 2 times minwidth metal1
         # flip flop vertical m2 vdd rails extend to the left
         self.left_vdd_x_offset = min(self.msf_address_inst.ll().x-self.m1_width, self.row_decoder_inst.ll().x) - self.vdd_rail_width - 2*self.m1_width
-        offset = vector(self.left_vdd_x_offset, self.min_point)
-        self.add_layout_pin(text="vdd",
-                            layer="metal1", 
-                            offset=offset, 
-                            width=self.vdd_rail_width,
-                            height=self.height)
+
 
         self.gnd_x_offset = self.start_of_right_central_bus - self.gnd_rail_width - self.m2_pitch
-        offset = vector(self.gnd_x_offset, self.min_point)
-        self.add_layout_pin(text="gnd",
-                            layer="metal2", 
-                            offset=offset, 
-                            width=self.gnd_rail_width,
-                            height=self.height)
+
 
         self.width = self.right_vdd_x_offset - self.left_vdd_x_offset + self.vdd_rail_width
 
@@ -1140,10 +1130,94 @@ class bank(design.design):
         self.add_via_center(layers=("metal1", "via1", "metal2"),
                             offset=control_via_pos,
                             rotate=90)
-        
+
+    def calculate_rail_vias(self):
+        """Calculates positions of power grid rail to M1/M2 vias. Avoids internal metal3 control pins"""
+        # need to avoid the metal3 control signals
+        addr_pin_names = map("ADDR[{}]".format, range(self.addr_size))
+        m3_pins = map(lambda x: self.get_pin(x).uy(), self.input_control_signals + addr_pin_names)
+
+        sorted_pins = sorted(m3_pins + self.gated_control_top_pos)
+        via_positions = []
+
+
+        self.m1mtop = m1mtop = ContactFullStack.m1mtop()
+        self.add_mod(m1mtop)
+        self.m2mtop = m2mtop = ContactFullStack.m2mtop()
+        self.add_mod(m2mtop)
+
+        self.bottom_power_layer = power_grid_layers[0]
+        self.top_power_layer = power_grid_layers[1]
+
+        self.grid_rail_height = grid_rail_height = max(m1mtop.first_layer_height, m2mtop.first_layer_height)
+        self.grid_rail_width = m1mtop.second_layer_width
+
+        grid_space = drc["power_grid_space"]
+        grid_pitch = grid_space + grid_rail_height
+        m3_space = 2*self.m3_space
+
+        prev_y = current_y = self.min_point
+        current_pin = sorted_pins[0]
+        sorted_pins = sorted_pins[1:]
+
+        while True:
+            rail_top = current_y + grid_rail_height + m3_space
+            if rail_top > (self.min_point + self.height):
+                break
+            if current_pin is not None:
+                if current_pin - self.m3_width > rail_top:
+                    via_positions.append(current_y)
+                    current_y += grid_pitch
+                else:
+                    current_y = max(current_pin + m3_space, prev_y + grid_pitch)
+                    # find next pin
+                    if len(sorted_pins) > 0:
+                        current_pin = sorted_pins[0]
+                        sorted_pins = sorted_pins[1:]
+                    else:
+                        current_pin = None
+            else:
+                via_positions.append(current_y)
+                current_y += grid_pitch
+            prev_y = via_positions[-1]
+        self.power_grid_vias = via_positions
+
 
     def route_vdd_supply(self):
         """ Route vdd for the precharge, sense amp, write_driver, data FF, tristate """
+        # add vertical rails
+        self.vdd_grid_vias = self.power_grid_vias[1::2]
+
+        vdd_x_offsets = [self.left_vdd_x_offset, self.right_vdd_x_offset]
+        mirrors = ["R0", "MY"]
+        mirror_shifts = [0.0, self.vdd_rail_width-self.m1mtop.second_layer_width]
+        via_mirror_shifts = [0.0, self.vdd_rail_width]
+        for i in range(len(vdd_x_offsets)):
+            vdd_x_offset = vdd_x_offsets[i]
+            offset = vector(vdd_x_offset, self.min_point)
+            self.add_layout_pin(text="vdd",
+                                layer="metal1",
+                                offset=offset,
+                                width=self.vdd_rail_width,
+                                height=self.height)
+            m9_x_offset = vdd_x_offset + mirror_shifts[i]
+            self.add_rect(self.bottom_power_layer,
+                                 offset=vector(m9_x_offset, self.min_point),
+                                 width=self.grid_rail_width,
+                                 height=self.height)
+            for via_y in self.vdd_grid_vias:
+                self.add_inst(self.m1mtop.name, self.m1mtop,
+                              offset=vector(vdd_x_offset + via_mirror_shifts[i], via_y),
+                              mirror=mirrors[i])
+                self.connect_inst([])
+
+
+        for via_y in self.vdd_grid_vias:
+            self.add_rect(self.top_power_layer, offset=vector(self.left_vdd_x_offset, via_y),
+                          height=self.grid_rail_height,
+                          width=self.right_vdd_x_offset-self.left_vdd_x_offset)
+
+
 
         for inst in [self.precharge_array_inst, self.sense_amp_array_inst,
                      self.write_driver_array_inst, self.msf_data_in_inst,
@@ -1157,6 +1231,26 @@ class bank(design.design):
 
     def route_gnd_supply(self):
         """ Route gnd for the precharge, sense amp, write_driver, data FF, tristate """
+        # add vertical rail
+
+        offset = vector(self.gnd_x_offset, self.min_point)
+        self.add_layout_pin(text="gnd",
+                            layer="metal2",
+                            offset=offset,
+                            width=self.gnd_rail_width,
+                            height=self.height)
+        self.gnd_grid_vias = self.power_grid_vias[0::2]
+        rect_x_offset = self.gnd_x_offset + 0.5*(self.gnd_rail_width - self.grid_rail_width)
+        self.add_rect(self.bottom_power_layer,
+                      offset=vector(rect_x_offset, self.min_point),
+                      width=self.grid_rail_width,
+                      height=self.height)
+        via_x_offset = self.gnd_x_offset + 0.5*self.gnd_rail_width
+        for via_y in self.gnd_grid_vias:
+            self.add_inst(self.m2mtop.name, self.m2mtop,
+                          offset=vector(via_x_offset, via_y))
+            self.connect_inst([])
+
         # precharge is connected by abutment
         layers=("metal1", "via1", "metal2")
         contact_size = [2, 1]

@@ -318,9 +318,9 @@ class sram(design.design, sram_power_grid.Mixin):
         self.msb_decoder_position = self.msb_address_position + vector(0, module_spacing + self.msb_address.height)
 
         # Control is placed above the msb address decoder
-        # align control_logic vdd with bank's vdd
+        # align control_logic msb address
         control_vdd = self.control_logic.get_pin("vdd")
-        control_logic_x = self.bank.width - control_vdd.width()
+        control_logic_x = self.msb_address_position.x
         self.control_logic_position = vector(control_logic_x,
                                              self.msb_decoder_position.y + module_spacing + self.msb_decoder.height)
 
@@ -565,56 +565,6 @@ class sram(design.design, sram_power_grid.Mixin):
             self.add_path("metal2", [out_pin.uc(), vector(out_pin.cx(), mid_y),
                                      vector(in_pin.cx(), mid_y), in_pin.lc()])
 
-        # connect msb_address and decoder vdd pins
-        vdd_pins = self.msb_address_inst.get_pins("vdd") + self.msb_decoder_inst.get_pins("vdd")
-        bank1_vdd = max((self.bank_inst[0]).get_pins("vdd"), key=lambda x: x.rx())
-        for vdd_pin in vdd_pins:
-            if vdd_pin.layer != "metal1": continue
-            self.add_rect("metal1", height=vdd_pin.height(),
-                          width=vdd_pin.lx() - bank1_vdd.rx(),
-                          offset=vector(bank1_vdd.rx(), vdd_pin.by()))
-
-        # add metal1 ground rail to the right of msb_address and decoder
-        control_gnd = self.control_logic_inst.get_pin("gnd")
-        rail_x_offset = 2*self.m1_space + max(self.msb_address_inst.rx(), self.msb_decoder_inst.rx())
-        rail_height = control_gnd.by() - self.msb_address_inst.by()
-        bottom_gnd_extension = self.add_rect("metal1", offset=vector(rail_x_offset, self.msb_address_inst.by()),
-                                        height=rail_height, width=control_gnd.width())
-
-        gnd_pins = self.msb_address_inst.get_pins("gnd") + self.msb_decoder_inst.get_pins("gnd")
-        for gnd_pin in gnd_pins:
-            if gnd_pin.layer != "metal1": continue
-            self.add_rect("metal1", height=gnd_pin.height(),
-                          width=bottom_gnd_extension.lx() - gnd_pin.rx(),
-                          offset=vector(gnd_pin.rx(), gnd_pin.by()))
-
-        # join control_gnd with bottom_gnd_extension
-        self.add_rect("metal1", width=bottom_gnd_extension.rx()-control_gnd.rx(), height=control_gnd.width(),
-                      offset=control_gnd.lr())
-
-        m1m2 = ("metal1", "via1", "metal2")
-        contact_size = [1, 3]
-        dummy_contact = contact.contact(m1m2, dimensions=contact_size)
-        contact_height = dummy_contact.second_layer_height
-        # bottom_gnd_extension to bottom ground rail
-        self.add_rect("metal2", width=control_gnd.width(), height=bottom_gnd_extension.by() + contact_height,
-                      offset=vector(bottom_gnd_extension.lx(), 0))
-        extension_cx = bottom_gnd_extension.lx() + 0.5*bottom_gnd_extension.width
-        self.add_via_center(layers=m1m2,
-                            offset=vector(extension_cx, bottom_gnd_extension.by()-contact_height / 2),
-                            size=contact_size)
-        self.add_via(("metal2", "via2", "metal3"), size=[2, 3],
-                     offset=vector(extension_cx, 0) + vector(contact_height / 2, 0), rotate=90)
-        # control gnd to top ground rail
-        self.add_rect("metal2", width=control_gnd.width(),
-                      height=self.horz_control_bus_positions["gnd"].y - control_gnd.uy() + contact_height,
-                      offset=control_gnd.ul() - vector(0, contact_height))
-        self.add_via_center(layers=m1m2, offset=vector(control_gnd.cx(), control_gnd.uy() - contact_height / 2),
-                            size=contact_size)
-        self.add_via_center(m1m2, size=contact_size, offset=vector(control_gnd.cx(),
-                                                                   self.horz_control_bus_positions["gnd"].y),
-                            rotate=90)
-
 
     def route_single_msb_address(self):
         """ Route one MSB address bit for 2-bank SRAM """
@@ -818,11 +768,11 @@ class sram(design.design, sram_power_grid.Mixin):
         
         for n in self.control_bus_names:
             self.add_label(text=n,
-                           layer="metal2",  
+                           layer="metal4",
                            offset=self.vert_control_bus_positions[n])
         for n in self.bank_sel_bus_names:
             self.add_label(text=n,
-                           layer="metal2",  
+                           layer="metal4",
                            offset=self.vert_control_bus_positions[n])
 
     def add_single_bank_modules(self):

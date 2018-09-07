@@ -69,106 +69,35 @@ class Mixin:
         self.add_via_center(layers=("metal1", "via1", "metal2"),
                             offset=vector(control_gnd.cx(), control_gnd.uy() - 0.5 * connection_height))
 
-
-    def route_two_banks_power(self, bottom_banks):
+    def route_bank_supply_rails(self, bottom_banks):
         """ Create rails at bottom. Connect veritcal rails to top and bottom. """
-
-        m1mbottop = ContactFullStack(start_layer=0, stop_layer=1, centralize=False, dimensions=[[1, 5]])  # e.g M1-M9
-
-
-        # connect the bank MSB flop supplies and control vdd
-        vdd_pins = self.msb_address_inst.get_pins("vdd") + self.control_logic_inst.get_pins("vdd")
-        bank1_vdd = max((self.bank_inst[0]).get_pins("vdd"), key=lambda x: x.rx())
-        for vdd_pin in vdd_pins:
-            if vdd_pin.layer != "metal1": continue
-            self.add_rect("metal1", height=vdd_pin.height(),
-                          width=vdd_pin.lx() - bank1_vdd.rx(),
-                          offset=vector(bank1_vdd.rx(), vdd_pin.by()))
-
-        # connect control vdd to bank vdd
 
         # add bottom metal1 gnd rail across both banks
         self.add_rect(layer="metal1",
                       offset=vector(0, self.power_rail_pitch),
                       height=self.power_rail_width,
                       width=self.width)
-
-        # connect vdd grid rails across both banks
-        left_bank = self.bank_inst[bottom_banks[0]]
-        right_bank = self.bank_inst[bottom_banks[1]]
-
-        top_power_layer = left_bank.mod.top_power_layer
-        bottom_power_layer = left_bank.mod.bottom_power_layer
-
-        left_vdd = min(filter(lambda x: x.layer == "metal1", left_bank.get_pins("vdd")),
-                           key=lambda x: x.lx())
-        right_vdd = max(filter(lambda x: x.layer == "metal1", right_bank.get_pins("vdd")),
-                            key=lambda x: x.rx())
-        mid_vdd = max(filter(lambda x: x.layer == "metal1", left_bank.get_pins("vdd")),
-                           key=lambda x: x.lx())
-
-        rail_width = right_vdd.lx() - left_vdd.lx()
-
-        vdd_grid_rects = left_bank.mod.vdd_grid_rects
-        vdd_via_pos_y = map(lambda x: utils.transform_relative(x.offset, left_bank).y, vdd_grid_rects)
-        vdd_via_pos_y = [x - m1mbottop.second_layer_height for x in vdd_via_pos_y]  # substract since banks are mirrored
-        for via_pos_y in vdd_via_pos_y:
-            self.add_rect(bottom_power_layer, offset=vector(left_vdd.cx(), via_pos_y),
-                          height=m1mbottop.second_layer_height,
-                          width=rail_width)
-        # add vdd pin
-        self.add_layout_pin("vdd", layer=top_power_layer, offset=mid_vdd.ll(),
-                            width=mid_vdd.width(), height=mid_vdd.height())
-
-        # connect msb ground to control_logic ground
-        gnd_pins = self.msb_address_inst.get_pins("gnd")
-        control_gnd = self.control_logic_inst.get_pin("gnd")
-
-        # extend control ground to top msb ground
-        top_msb_gnd = max(gnd_pins, key=lambda x: x.uy())
-        self.add_rect("metal1", width=control_gnd.width(),
-                                  height=top_msb_gnd.uy() - control_gnd.uy(),
-                                  offset=control_gnd.ul())
-        for gnd_pin in gnd_pins:
-            if gnd_pin.layer != "metal1": continue
-            self.add_rect("metal1", height=gnd_pin.height(),
-                          width=control_gnd.lx() - gnd_pin.rx(),
-                          offset=gnd_pin.lr())
-
         # add bottom metal3 rail across both banks
         self.add_rect(layer="metal3",
                       offset=vector(0, 0),
                       height=self.power_rail_width,
                       width=self.width)
 
-        # connect gnd grid rails across both banks
-
-        control_logic_pins = map(lambda x: self.control_logic_inst.get_pin(x).by(), self.control_logic_outputs)
-        min_y = max(control_logic_pins) + 2 * self.m3_space + m1mbottop.second_layer_height
-
-        left_gnd = filter(lambda x: x.layer == "metal2", left_bank.get_pins("gnd"))[0]
-        right_gnd = filter(lambda x: x.layer == "metal2", right_bank.get_pins("gnd"))[0]
+        left_bank = self.bank_inst[bottom_banks[0]]
 
 
-        rail_width = right_gnd.lx() - left_gnd.lx()
+        top_power_layer = left_bank.mod.top_power_layer
+        # add vdd pin
+        mid_vdd = max(filter(lambda x: x.layer == "metal1", left_bank.get_pins("vdd")),
+                      key=lambda x: x.lx())
+        self.add_layout_pin("vdd", layer=top_power_layer, offset=mid_vdd.ll(),
+                            width=mid_vdd.width(), height=mid_vdd.height())
 
-        gnd_grid_rects = left_bank.mod.gnd_grid_rects
-        gnd_via_pos_y = map(lambda x: utils.transform_relative(x.offset, left_bank).y, gnd_grid_rects)
-        gnd_via_pos_y = [x - m1mbottop.second_layer_height for x in gnd_via_pos_y]
-        for via_pos_y in gnd_via_pos_y:
-            self.add_rect(bottom_power_layer, offset=vector(left_gnd.cx(), via_pos_y),
-                          height=m1mbottop.second_layer_height,
-                          width=rail_width)
-            if min_y < via_pos_y < top_msb_gnd.uy():
-                self.add_inst(m1mbottop.name, m1mbottop,
-                              offset=(control_gnd.lx(), via_pos_y))
-                self.connect_inst([])
 
         # add gnd pin
+        left_gnd = filter(lambda x: x.layer == "metal2", left_bank.get_pins("gnd"))[0]
         self.add_layout_pin("gnd", layer=top_power_layer, offset=left_gnd.ll(),
                             width=left_gnd.width(), height=left_gnd.height())
-
-
 
         # route bank vertical rails to bottom
         for i in bottom_banks:
@@ -202,7 +131,170 @@ class Mixin:
                              rotate=90,
                              size=[2, 3])
 
+    def route_two_banks_power(self, bottom_banks):
+        """ Create rails at bottom. Connect veritcal rails to top and bottom. """
+
+        self.route_bank_supply_rails(bottom_banks)
+
+        left_bank = self.bank_inst[bottom_banks[0]]
+        right_bank = self.bank_inst[bottom_banks[1]]
+
+        m1mbottop = ContactFullStack(start_layer=0, stop_layer=1, centralize=False, dimensions=[[1, 5]])  # e.g M1-M9
+
+        # connect the bank MSB flop supplies and control vdd
+        vdd_pins = self.msb_address_inst.get_pins("vdd") + self.control_logic_inst.get_pins("vdd")
+        bank1_vdd = max(left_bank.get_pins("vdd"), key=lambda x: x.rx())
+        for vdd_pin in vdd_pins:
+            if vdd_pin.layer != "metal1": continue
+            self.add_rect("metal1", height=vdd_pin.height(),
+                          width=vdd_pin.lx() - bank1_vdd.rx(),
+                          offset=vector(bank1_vdd.rx(), vdd_pin.by()))
+
+        # connect vdd grid rails across both banks
+
+        bottom_power_layer = left_bank.mod.bottom_power_layer
+
+        left_vdd = min(filter(lambda x: x.layer == "metal1", left_bank.get_pins("vdd")),
+                           key=lambda x: x.lx())
+        right_vdd = max(filter(lambda x: x.layer == "metal1", right_bank.get_pins("vdd")),
+                            key=lambda x: x.rx())
+
+        rail_width = right_vdd.lx() - left_vdd.lx()
+
+        vdd_grid_rects = left_bank.mod.vdd_grid_rects
+        vdd_via_pos_y = map(lambda x: utils.transform_relative(x.offset, left_bank).y, vdd_grid_rects)
+        vdd_via_pos_y = [x - m1mbottop.second_layer_height for x in vdd_via_pos_y]  # substract since banks are mirrored
+        for via_pos_y in vdd_via_pos_y:
+            self.add_rect(bottom_power_layer, offset=vector(left_vdd.cx(), via_pos_y),
+                          height=m1mbottop.second_layer_height,
+                          width=rail_width)
+
+        # connect msb ground to control_logic ground
+        gnd_pins = self.msb_address_inst.get_pins("gnd")
+        control_gnd = self.control_logic_inst.get_pin("gnd")
+
+        # extend control ground to top msb ground
+        top_msb_gnd = max(gnd_pins, key=lambda x: x.uy())
+        self.add_rect("metal1", width=control_gnd.width(),
+                                  height=top_msb_gnd.uy() - control_gnd.uy(),
+                                  offset=control_gnd.ul())
+        for gnd_pin in gnd_pins:
+            if gnd_pin.layer != "metal1": continue
+            self.add_rect("metal1", height=gnd_pin.height(),
+                          width=control_gnd.lx() - gnd_pin.rx(),
+                          offset=gnd_pin.lr())
+
+        # connect gnd grid rails across both banks
+
+        control_logic_pins = map(lambda x: self.control_logic_inst.get_pin(x).by(), self.control_logic_outputs)
+        min_y = max(control_logic_pins) + 2 * self.m3_space + m1mbottop.second_layer_height
+
+        left_gnd = filter(lambda x: x.layer == "metal2", left_bank.get_pins("gnd"))[0]
+        right_gnd = filter(lambda x: x.layer == "metal2", right_bank.get_pins("gnd"))[0]
+
+
+        rail_width = right_gnd.lx() - left_gnd.lx()
+
+        gnd_grid_rects = left_bank.mod.gnd_grid_rects
+        gnd_via_pos_y = map(lambda x: utils.transform_relative(x.offset, left_bank).y, gnd_grid_rects)
+        gnd_via_pos_y = [x - m1mbottop.second_layer_height for x in gnd_via_pos_y]
+        for via_pos_y in gnd_via_pos_y:
+            self.add_rect(bottom_power_layer, offset=vector(left_gnd.cx(), via_pos_y),
+                          height=m1mbottop.second_layer_height,
+                          width=rail_width)
+            if min_y < via_pos_y < top_msb_gnd.uy():
+                self.add_inst(m1mbottop.name, m1mbottop,
+                              offset=(control_gnd.lx(), via_pos_y))
+                self.connect_inst([])
+
+
     def route_four_banks_power(self):
+        self.route_bank_supply_rails(bottom_banks=[2, 3])
+
+        # connect msb_address, decoder and control_logic vdd pins
+        vdd_pins = self.msb_address_inst.get_pins("vdd") + self.msb_decoder_inst.get_pins("vdd") + \
+                   self.control_logic_inst.get_pins("vdd")
+        bank1_vdd = max((self.bank_inst[0]).get_pins("vdd"), key=lambda x: x.rx())
+        for vdd_pin in vdd_pins:
+            if vdd_pin.layer != "metal1": continue
+            self.add_rect("metal1", height=vdd_pin.height(),
+                          width=vdd_pin.lx() - bank1_vdd.rx(),
+                          offset=vector(bank1_vdd.rx(), vdd_pin.by()))
+
+        # connect msb_address, decoder and control_logic vdd pins
+        gnd_pins = self.msb_address_inst.get_pins("gnd") + self.msb_decoder_inst.get_pins("gnd")
+        gnd_pins = filter(lambda x: x.layer == "metal1", gnd_pins)
+        right_most_pin = max(gnd_pins, key=lambda x: x.rx())
+        bottom_gnd = min(gnd_pins, key=lambda x: x.by())
+        top_gnd = max(gnd_pins, key=lambda x: x.by())
+        x_extension = 2 * self.m1_space
+        for gnd_pin in gnd_pins:
+            self.add_rect("metal1", height=gnd_pin.height(),
+                          width=right_most_pin.rx() - gnd_pin.rx() + x_extension,
+                          offset=gnd_pin.lr())
+        self.add_rect("metal1", offset=vector(right_most_pin.rx() + x_extension, bottom_gnd.by()),
+                      width=bottom_gnd.height(),
+                      height=top_gnd.uy() - bottom_gnd.by())
+
+        # connect control gnd
+        control_gnd = filter(lambda x: x.layer == "metal1", self.control_logic_inst.get_pins("gnd"))[0]
+
+        m1mbottop = ContactFullStack(start_layer=0, stop_layer=1, centralize=False, dimensions=[[1, 5]])  # e.g M1-M9
+
+        top_left_bank = self.bank_inst[0]
+        bottom_left_bank = self.bank_inst[2]
+
+        bottom_power_layer = top_left_bank.mod.bottom_power_layer
+
+        left_vdd = min(filter(lambda x: x.layer == "metal1", top_left_bank.get_pins("vdd")),
+                       key=lambda x: x.lx())
+        right_vdd = max(filter(lambda x: x.layer == "metal1", self.bank_inst[1].get_pins("vdd")),
+                        key=lambda x: x.rx())
+
+        rail_width = right_vdd.lx() - left_vdd.lx()
+
+        vdd_grid_rects = bottom_left_bank.mod.vdd_grid_rects
+        vdd_via_pos_y = map(lambda x: utils.transform_relative(x.offset, bottom_left_bank).y, vdd_grid_rects)
+        vdd_via_pos_y = [x - m1mbottop.second_layer_height for x in vdd_via_pos_y]  # substract since banks are mirrored
+        vdd_grid_rects = top_left_bank.mod.vdd_grid_rects
+        vdd_via_pos_y += map(lambda x: utils.transform_relative(x.offset, top_left_bank).y, vdd_grid_rects)
+
+        for via_pos_y in vdd_via_pos_y:
+            self.add_rect(bottom_power_layer, offset=vector(left_vdd.cx(), via_pos_y),
+                          height=m1mbottop.second_layer_height,
+                          width=rail_width)
+
+        left_gnd = filter(lambda x: x.layer == "metal2", top_left_bank.get_pins("gnd"))[0]
+        right_gnd = filter(lambda x: x.layer == "metal2", self.bank_inst[1].get_pins("gnd"))[0]
+        rail_width = right_gnd.lx() - left_gnd.lx()
+        rail_height = m1mbottop.second_layer_height
+
+        gnd_grid_rects = bottom_left_bank.mod.gnd_grid_rects
+        gnd_via_pos_y = map(lambda x: utils.transform_relative(x.offset, bottom_left_bank).y, gnd_grid_rects)
+        gnd_via_pos_y = [x - m1mbottop.second_layer_height for x in gnd_via_pos_y]  # substract since banks are mirrored
+        gnd_grid_rects = top_left_bank.mod.gnd_grid_rects
+        gnd_via_pos_y += map(lambda x: utils.transform_relative(x.offset, top_left_bank).y, gnd_grid_rects)
+
+        control_logic_pins = map(lambda x: self.control_logic_inst.get_pin(x).by(), self.control_logic_outputs)
+        max_ctrl_y = max(control_logic_pins) + 2 * self.m3_space + m1mbottop.second_layer_height
+        min_ctrl_y = min(control_logic_pins) - 2 * self.m3_space - m1mbottop.second_layer_height
+
+        for via_pos_y in gnd_via_pos_y:
+            if bottom_gnd.by() + rail_height < via_pos_y < top_gnd.uy() - rail_height:
+                self.add_inst(m1mbottop.name, m1mbottop,
+                              offset=(right_most_pin.rx() + x_extension, via_pos_y))
+                self.connect_inst([])
+            elif control_gnd.by() + rail_height < via_pos_y < control_gnd.uy() - rail_height:
+                if not min_ctrl_y < via_pos_y < max_ctrl_y:
+                    self.add_inst(m1mbottop.name, m1mbottop,
+                                  offset=(control_gnd.lx(), via_pos_y))
+                    self.connect_inst([])
+            self.add_rect(bottom_power_layer, offset=vector(left_gnd.cx(), via_pos_y),
+                          height=rail_height,
+                          width=rail_width)
+
+
+
         # connect the banks to the vertical address bus
         # connect the banks to the vertical control bus
         for n in self.addr_bus_names + self.control_bus_names:
@@ -221,7 +313,7 @@ class Mixin:
                 else:
                     self.add_via_center(("metal3", "via3", "metal4"), rail_pos)
 
-        self.route_bank_supply_rails(bottom_banks=[2, 3])
+
 
         # connect top and bottom bank rails
         top_left_vdd = min(filter(lambda x: x.layer == "metal1", self.bank_inst[0].get_pins("vdd")),

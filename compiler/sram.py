@@ -360,7 +360,7 @@ class sram(design.design, sram_power_grid.Mixin):
         # Control is placed below the msb address
         # align control_logic vdd with first bank's vdd
         control_vdd = self.control_logic.get_pin("vdd")
-        control_logic_x = self.bank.width - control_vdd.width()
+        control_logic_x = self.bank.width + self.bank_to_bus_distance
         self.control_logic_position = vector(control_logic_x,
                                              self.msb_address_position.y - drc[
                                                  "pwell_to_nwell"] - self.control_logic.height)
@@ -503,7 +503,7 @@ class sram(design.design, sram_power_grid.Mixin):
                 self.add_via_center(("metal3", "via3", "metal4"), rail_pos)
 
 
-        self.route_bank_supply_rails(bottom_banks=[0,1])
+        self.route_two_banks_power(bottom_banks=[0,1])
         
         
     def route_double_msb_address(self):
@@ -618,15 +618,6 @@ class sram(design.design, sram_power_grid.Mixin):
 
     def route_single_msb_address(self):
         """ Route one MSB address bit for 2-bank SRAM """
-        
-        # connect the bank MSB flop supplies
-        vdd_pins = self.msb_address_inst.get_pins("vdd")
-        bank1_vdd = max((self.bank_inst[0]).get_pins("vdd"), key=lambda x: x.rx())
-        for vdd_pin in vdd_pins:
-            if vdd_pin.layer != "metal1": continue
-            self.add_rect("metal1", height=vdd_pin.height(),
-                          width=vdd_pin.lx()-bank1_vdd.rx(),
-                          offset=vector(bank1_vdd.rx(), vdd_pin.by()))
 
         # connect the MSB flop to the address input bus
         msb_pins = self.msb_address_inst.get_pins("din[0]")
@@ -668,41 +659,6 @@ class sram(design.design, sram_power_grid.Mixin):
         fill_width = utils.ceil(min_area / via_height)
         self.add_rect_center("metal2", width=fill_width, height=via_height, offset=via_pos)
         self.add_rect_center("metal3", width=fill_width, height=via_height, offset=via_pos)
-
-        # connect msb ground to control_logic ground
-        gnd_pins = self.msb_address_inst.get_pins("gnd")
-        control_gnd = self.control_logic_inst.get_pin("gnd")
-        # extend control ground
-        top_gnd = max(gnd_pins, key=lambda x: x.uy())
-        extension = self.add_rect("metal1", width=control_gnd.width(),
-                                  height=top_gnd.uy() - control_gnd.uy(),
-                                  offset=control_gnd.ul())
-
-        for gnd_pin in gnd_pins:
-            if gnd_pin.layer != "metal1": continue
-            self.add_rect("metal1", height=gnd_pin.height(),
-                          width=control_gnd.lx() - gnd_pin.rx(),
-                          offset=gnd_pin.lr())
-
-        m1m2 = ("metal1", "via1", "metal2")
-        contact_size = [1, 3]
-        dummy_contact = contact.contact(m1m2, dimensions=contact_size)
-        contact_height = dummy_contact.second_layer_height
-        # control gnd to bottom ground rail
-        self.add_rect("metal2", width=control_gnd.width(), height=control_gnd.by() + contact_height,
-                      offset=vector(control_gnd.lx(), 0))
-        self.add_via_center(layers=m1m2, offset=control_gnd.bc() + vector(0, contact_height / 2), size=contact_size)
-        self.add_via(("metal2", "via2", "metal3"), size=[2, 3],
-                     offset=vector(control_gnd.cx(), 0) + vector(contact_height / 2, 0), rotate=90)
-        # control gnd to top ground rail
-        self.add_rect("metal2", width=control_gnd.width(),
-                      height=self.horz_control_bus_positions["gnd"].y - extension.uy() + contact_height,
-                      offset=extension.ul() - vector(0, contact_height))
-        self.add_via_center(layers=m1m2, offset=vector(control_gnd.cx(), extension.uy() - contact_height / 2),
-                            size=contact_size)
-        self.add_via_center(m1m2, size=contact_size, offset=vector(control_gnd.cx(),
-                                                                   self.horz_control_bus_positions["gnd"].y),
-                            rotate=90)
 
 
     def connect_m2_m4_rails(self, m2_rail, m4_rail_x):

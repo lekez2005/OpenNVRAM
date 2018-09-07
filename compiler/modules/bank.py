@@ -1162,7 +1162,7 @@ class bank(design.design):
 
         while True:
             rail_top = current_y + grid_rail_height + m3_space
-            if rail_top > (self.min_point + self.height):
+            if rail_top > (self.min_point + self.height - grid_pitch): # leave space at the top
                 break
             if current_pin is not None:
                 if current_pin - self.m3_width > rail_top:
@@ -1187,6 +1187,7 @@ class bank(design.design):
         """ Route vdd for the precharge, sense amp, write_driver, data FF, tristate """
         # add vertical rails
         self.vdd_grid_vias = self.power_grid_vias[1::2]
+        self.vdd_grid_rects = []
 
         vdd_x_offsets = [self.left_vdd_x_offset, self.right_vdd_x_offset]
         mirrors = ["R0", "MY"]
@@ -1201,7 +1202,7 @@ class bank(design.design):
                                 width=self.vdd_rail_width,
                                 height=self.height)
             m9_x_offset = vdd_x_offset + mirror_shifts[i]
-            self.add_rect(self.bottom_power_layer,
+            self.add_rect(self.top_power_layer,
                                  offset=vector(m9_x_offset, self.min_point),
                                  width=self.grid_rail_width,
                                  height=self.height)
@@ -1213,9 +1214,9 @@ class bank(design.design):
 
 
         for via_y in self.vdd_grid_vias:
-            self.add_rect(self.top_power_layer, offset=vector(self.left_vdd_x_offset, via_y),
+            self.vdd_grid_rects.append(self.add_rect(self.bottom_power_layer, offset=vector(self.left_vdd_x_offset, via_y),
                           height=self.grid_rail_height,
-                          width=self.right_vdd_x_offset-self.left_vdd_x_offset)
+                          width=self.right_vdd_x_offset-self.left_vdd_x_offset))
 
 
 
@@ -1239,16 +1240,20 @@ class bank(design.design):
                             offset=offset,
                             width=self.gnd_rail_width,
                             height=self.height)
+
+        # add grid
         self.gnd_grid_vias = self.power_grid_vias[0::2]
+        self.gnd_grid_rects = []
         rect_x_offset = self.gnd_x_offset + 0.5*(self.gnd_rail_width - self.grid_rail_width)
-        self.add_rect(self.bottom_power_layer,
+        self.add_rect(self.top_power_layer,
                       offset=vector(rect_x_offset, self.min_point),
                       width=self.grid_rail_width,
                       height=self.height)
+
         via_x_offset = self.gnd_x_offset + 0.5*self.gnd_rail_width
         for via_y in self.gnd_grid_vias:
-            self.add_inst(self.m2mtop.name, self.m2mtop,
-                          offset=vector(via_x_offset, via_y))
+            self.gnd_grid_rects.append(self.add_inst(self.m2mtop.name, self.m2mtop,
+                          offset=vector(via_x_offset, via_y)))
             self.connect_inst([])
 
         # precharge is connected by abutment

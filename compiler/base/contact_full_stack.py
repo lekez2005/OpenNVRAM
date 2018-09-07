@@ -1,6 +1,7 @@
 import design
 from tech import full_stack_vias
 from vector import vector
+import copy
 
 
 class ContactFullStack(design.design):
@@ -23,22 +24,29 @@ class ContactFullStack(design.design):
         return cls._m2_stack
 
 
-    def __init__(self, start_layer=0, centralize=True):
 
-        name = "full_stack_via_M{}_M10".format(start_layer + 1)
+    def __init__(self, start_layer=0, stop_layer=-1, centralize=True, dimensions=[]):
+        dim_str = "_".join([str(item) for sublist in dimensions for item in sublist])
+        alignment = "c" if centralize else "l"
+        name = "full_stack_via_M{}_M10_{}_{}".format(start_layer + 1, alignment, dim_str)
         design.design.__init__(self, name)
 
-        via_defs = full_stack_vias
+        via_defs = copy.deepcopy(full_stack_vias)
+        for i in range(len(dimensions)):
+            via_defs[i]["dimensions"] = dimensions[i]
 
         max_height = max(map(self.get_height, via_defs))
 
         for i in range(len(via_defs)):
+            temp_start_layer = 0
+            temp_stop_layer = -1
             if i == 0:
                 temp_start_layer = start_layer
-            else:
-                temp_start_layer = 0
+            elif i == len(via_defs) - 1:
+                temp_stop_layer = stop_layer
 
-            width, height = self.create_stack(full_stack_vias[i], max_height, centralize, temp_start_layer)
+
+            width, height = self.create_stack(via_defs[i], max_height, centralize, temp_start_layer, temp_stop_layer)
             if i == 0:
                 self.first_layer_height = height
                 self.first_layer_width = width
@@ -51,8 +59,11 @@ class ContactFullStack(design.design):
     def get_height(self, params):
         return 2 * params["enclosure"][1] + max(0, params["dimensions"][1] - 1) * params["spacing"] + params["dimensions"][1] * params["width"]
 
-    def create_stack(self, params, height, centralize, start_layer=0):
+    def create_stack(self, params, height, centralize, start_layer=0, stop_layer=-1):
         """min_width and min_height prevent insufficient overlap in the intermediate layer between two stacks"""
+        layers = params["layers"]
+        if stop_layer < 0:
+            stop_layer = len(layers) - 1
 
         # retrieve parameters
         h_enc = params["enclosure"][0]
@@ -65,8 +76,8 @@ class ContactFullStack(design.design):
         width = 2*h_enc + max(0, dimensions[0]-1)*spacing + dimensions[0]*via_width
 
         # create layer rects
-        layers = params["layers"]
-        for i in range(start_layer, len(layers)):
+
+        for i in range(start_layer, stop_layer + 1):
             x_offset = -0.5*width if centralize else 0
             self.add_rect(layers[i], vector(x_offset, 0), width=width, height=height)
 
@@ -81,7 +92,7 @@ class ContactFullStack(design.design):
             origin = vector((width-via_left_to_right)*0.5, 0.5 * full_v_enc)
 
         via_pitch = spacing + via_width
-        for i in range(start_layer, len(layers)-1):
+        for i in range(start_layer, stop_layer):
             layer = params["vias"][i]
             for row in range(dimensions[1]):
                 for col in range(dimensions[0]):

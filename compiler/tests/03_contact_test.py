@@ -60,6 +60,11 @@ class contact_test(openram_test):
         m2mtop = ContactFullStack.m2mtop()
         self.local_drc_check(m2mtop)
 
+    def test_full_stack_thin_m1_m9(self):
+        from contact_full_stack import ContactFullStack
+        m1mtop = ContactFullStack(start_layer=0, stop_layer=1, centralize=False, dimensions=[[1, 5]])
+        self.local_drc_check(m1mtop)
+
         
 
 

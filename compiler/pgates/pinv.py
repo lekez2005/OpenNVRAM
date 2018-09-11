@@ -154,45 +154,35 @@ class pinv(pgate.pgate):
     def route_outputs(self):
         """ Route the output (drains) together. Optionally, routes output to edge. """
         layers=("metal1", "via1", "metal2")
-        min_output_separation = drc["min_output_separation"]
         # Get the drain pins
         nmos_drain_pin = self.nmos_inst.get_pin("D")
         pmos_drain_pin = self.pmos_inst.get_pin("D")
-        gate_pin = self.pmos_inst.get_pin("G")
 
-        output_x = pmos_drain_pin.rx()
-        if nmos_drain_pin.rx() < gate_pin.lx() + min_output_separation:
-            output_x = gate_pin.lx() + min_output_separation - self.m2_width
-            self.add_rect(layer="metal2", offset=pmos_drain_pin.lr(), height=pmos_drain_pin.height(),
-                          width=output_x-pmos_drain_pin.rx())
-            self.add_rect(layer="metal2", offset=nmos_drain_pin.lr(), height=nmos_drain_pin.height(),
-                          width=output_x-nmos_drain_pin.rx())
+        output_x = max(pmos_drain_pin.rx(), self.nmos_inst.get_pin("S").rx()) + self.m1_space
+
+        self.add_rect(layer="metal2", offset=pmos_drain_pin.lr(), height=pmos_drain_pin.height(),
+                      width=output_x-pmos_drain_pin.rx())
+        self.add_rect(layer="metal2", offset=nmos_drain_pin.lr(), height=nmos_drain_pin.height(),
+                      width=output_x-nmos_drain_pin.rx())
 
 
-        top_via = self.pmos_inst.get_pin("G").center().y - 0.5*contact.poly.second_layer_height \
-                  - self.wide_m1_space - contact.m1m2.first_layer_height
-        top_via_offset = vector(output_x - contact.m1m2.second_layer_width, top_via)
+        top_via = self.output_pos.y + contact.m1m2.first_layer_height + self.wide_m1_space
+        top_via_offset = vector(output_x, top_via)
         self.add_contact(layers, top_via_offset)
 
-        bottom_via = self.nmos_inst.get_pin("G").center().y + 0.5*contact.poly.second_layer_height \
-                     + self.wide_m1_space
-        bottom_via_offset = vector(output_x - contact.m1m2.second_layer_width, bottom_via)
+        bottom_via = self.output_pos.y - 2 * contact.m1m2.first_layer_height - self.wide_m1_space
+        bottom_via_offset = vector(output_x, bottom_via)
         self.add_contact(layers, bottom_via_offset)
 
-        nmos_drain_pos = vector(output_x-self.m2_width, nmos_drain_pin.uy())
-        pmos_drain_pos = vector(output_x-self.m2_width, pmos_drain_pin.by())
+        bot_rect_offset = vector(output_x, nmos_drain_pin.by())
+        self.add_rect(layer="metal2", width=self.m2_width, height=bottom_via_offset.y - bot_rect_offset.y,
+                      offset=bot_rect_offset)
+        self.add_rect(layer="metal2", width=self.m2_width, height=pmos_drain_pin.uy() - top_via, offset=top_via_offset)
 
-        pmos_connection_height = pmos_drain_pos.y-top_via
-        self.add_rect(layer="metal2", offset=pmos_drain_pos-vector(0, pmos_connection_height),
-                      width=self.m2_width, height=pmos_connection_height)
-        self.add_rect(layer="metal2", offset=nmos_drain_pos, width=self.m2_width, height=bottom_via-nmos_drain_pos.y)
-
-        self.add_rect(layer="metal1", offset=bottom_via_offset, width=self.m1_width,
-                      height=top_via_offset.y-bottom_via_offset.y)
-
+        self.add_rect(layer="metal1", width=self.m1_width, offset=bottom_via_offset, height=top_via - bottom_via)
 
         # Remember the mid for the output
-        mid_drain_offset = vector(output_x-0.5*self.m1_width, self.output_pos.y)
+        mid_drain_offset = vector(output_x, self.output_pos.y)
 
         if self.route_output == True:
             # This extends the output to the edge of the cell
@@ -205,7 +195,7 @@ class pinv(pgate.pgate):
             self.add_layout_pin_center_rect(text="Z",
                                             layer="metal1",
                                             height=self.output_height,
-                                            offset=mid_drain_offset)
+                                            offset=mid_drain_offset+vector(0.5*self.m1_width, 0))
 
 
     def add_well_contacts(self):

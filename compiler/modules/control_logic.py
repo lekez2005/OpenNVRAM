@@ -45,11 +45,11 @@ class control_logic(design.design):
         for pin in input_lst + output_lst + rails:
             self.add_pin(pin)
 
-        self.nand2 = pnand2()
+        self.nand2 = pnand2(1.5)
         self.add_mod(self.nand2)
         self.nand3 = pnand3()
         self.add_mod(self.nand3)
-        self.nor2 = pnor2()
+        self.nor2 = pnor2(1.5)
         self.add_mod(self.nor2)
 
         # Special gates: inverters for buffering
@@ -289,7 +289,10 @@ class control_logic(design.design):
                                      offset=self.clk_buf_offset)
         self.connect_inst(["clk_bar", "clk_buf", "vdd", "gnd"])
 
-        self.clk_inv1_offset = self.clk_bar_offset + vector(0, self.inv16.height + drc["implant_to_implant"])
+        y_space = max(drc["implant_to_implant"], 0.5*(self.inv8.rail_height + self.inv2.rail_height) +
+                      drc["metal1_to_metal1_wide2"])
+
+        self.clk_inv1_offset = self.clk_bar_offset + vector(0, self.inv16.height + y_space)
         self.clk_inv1 = self.add_inst(name="inv_clk1_bar",
                                       mod=self.inv2,
                                       offset=self.clk_inv1_offset)

@@ -220,7 +220,7 @@ class pnand2(pgate.pgate):
 
         gate_pin = self.nmos2_inst.get_pin("G")
 
-        min_output_separation = drc["min_output_separation"]
+        min_output_separation = contact.m1m2.second_layer_height + 2*self.m1_space
         output_x = gate_pin.rx() + min_output_separation
 
         self.add_contact(layers=layers, offset=nmos_pin.ll()+vector(drc["metal2_extend_via2"], 0))
@@ -230,24 +230,22 @@ class pnand2(pgate.pgate):
         self.add_rect(layer="metal2", offset=pmos_pin.ll(), height=contact.m1m2.second_layer_height,
                       width=output_x-pmos_pin.lx())
 
-        top_via = self.pmos2_inst.get_pin("G").center().y - 0.5*contact.poly.second_layer_height \
-                  - self.wide_m1_space - contact.m1m2.first_layer_height
-        top_via_offset = vector(output_x - contact.m1m2.second_layer_width, top_via)
+        top_via = self.output_pos.y + contact.m1m2.first_layer_height + self.wide_m1_space
+        top_via_offset = vector(output_x, top_via)
         self.add_contact(layers, top_via_offset)
 
-        bottom_via = self.nmos2_inst.get_pin("G").center().y + 0.5 * contact.poly.second_layer_height \
-                     + self.wide_m1_space
-        bottom_via_offset = vector(output_x - contact.m1m2.second_layer_width, bottom_via)
+        bottom_via = self.output_pos.y - 2*contact.m1m2.first_layer_height - self.wide_m1_space
+        bottom_via_offset = vector(output_x, bottom_via)
         self.add_contact(layers, bottom_via_offset)
 
-        bot_rect_offset = vector(output_x-self.m2_width, nmos_pin.by())
+        bot_rect_offset = vector(output_x, nmos_pin.by())
         self.add_rect(layer="metal2", width=self.m2_width, height=bottom_via_offset.y-bot_rect_offset.y,
                       offset=bot_rect_offset)
-        self.add_rect(layer="metal2", width=self.m2_width, height=pmos_pin.by()-top_via, offset=top_via_offset)
+        self.add_rect(layer="metal2", width=self.m2_width, height=pmos_pin.uy()-top_via, offset=top_via_offset)
 
         self.add_rect(layer="metal1", width=self.m1_width, offset=bottom_via_offset, height=top_via-bottom_via)
 
-        pin_pos = vector(output_x-0.5*self.m1_width, self.output_pos.y)
+        pin_pos = vector(output_x+0.5*self.m1_width, self.output_pos.y)
 
         self.add_layout_pin_center_rect(text="Z",
                                         layer="metal1",

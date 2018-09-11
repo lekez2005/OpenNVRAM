@@ -7,6 +7,7 @@ from math import sqrt
 import math
 from pinv import pinv
 from pnand2 import pnand2
+import utils
 from vector import vector
 from globals import OPTS
 
@@ -20,6 +21,7 @@ class wordline_driver(design.design):
         design.design.__init__(self, "wordline_driver")
 
         self.rows = rows
+        self.module_insts = []
         self.add_pins()
         self.design_layout()
         self.DRC_LVS()
@@ -47,7 +49,7 @@ class wordline_driver(design.design):
         self.inv_no_output = pinv(size=1, route_output=False)
         self.add_mod(self.inv_no_output)
         
-        self.nand2 = pnand2(size=2)
+        self.nand2 = pnand2(size=1)
         self.add_mod(self.nand2)
 
 
@@ -55,7 +57,7 @@ class wordline_driver(design.design):
 
     def offsets_of_gates(self):
         self.x_offset0 = 2*self.m1_width + 5*self.m1_space
-        self.x_offset1 = self.x_offset0 + self.inv.width
+        self.x_offset1 = self.x_offset0 + self.inv_no_output.width
         self.x_offset2 = self.x_offset1 + self.nand2.width
 
         self.width = self.x_offset2 + self.inv.width
@@ -87,20 +89,14 @@ class wordline_driver(design.design):
             if (row % 2):
                 y_offset = self.inv.height*(row + 1)
                 inst_mirror = "MX"
-                cell_dir = vector(0,-1)
-                m1tm2_rotate=270
-                m1tm2_mirror="R0"
+
             else:
                 y_offset = self.inv.height*row
                 inst_mirror = "R0"
-                cell_dir = vector(0,1)
-                m1tm2_rotate=90
-                m1tm2_mirror="MX"
 
             name_inv1_offset = [self.x_offset0, y_offset]
             nand2_offset=[self.x_offset1, y_offset]
             inv2_offset=[self.x_offset2, y_offset]
-            base_offset = vector(self.width, y_offset)
 
             # Extend vdd and gnd of wordline_driver
             yoffset = (row + 1) * self.inv.height - 0.5 * self.rail_height
@@ -121,6 +117,7 @@ class wordline_driver(design.design):
                                     mod=self.inv_no_output,
                                     offset=name_inv1_offset,
                                     mirror=inst_mirror )
+            self.module_insts.append(inv1_inst)
             self.connect_inst(["en",
                                "en_bar[{0}]".format(row),
                                "vdd", "gnd"])
@@ -133,11 +130,13 @@ class wordline_driver(design.design):
                                "in[{0}]".format(row),
                                "net[{0}]".format(row),
                                "vdd", "gnd"])
+            self.module_insts.append(nand_inst)
             # add inv2
             inv2_inst=self.add_inst(name=name_inv2,
                                 mod=self.inv,
                                     offset=inv2_offset,
                                     mirror=inst_mirror)
+            self.module_insts.append(inv2_inst)
             self.connect_inst(["net[{0}]".format(row),
                                "wl[{0}]".format(row),
                                "vdd", "gnd"])
@@ -153,11 +152,7 @@ class wordline_driver(design.design):
                                 offset=clk_offset)
 
             # first inv to nand2 A
-            zb_pos = inv1_inst.get_pin("Z").bc()
-            zu_pos = inv1_inst.get_pin("Z").uc()
-            bl_pos = nand_inst.get_pin("A").lc()
-            br_pos = nand_inst.get_pin("A").rc()
-            self.add_path("metal1", [zb_pos, zu_pos, bl_pos, br_pos])
+            self.add_path("metal1", [inv1_inst.get_pin("Z").center(), nand_inst.get_pin("A").center()])
 
             # Nand2 out to 2nd inv
             zr_pos = nand_inst.get_pin("Z").rc()
@@ -169,7 +164,10 @@ class wordline_driver(design.design):
 
             # connect the decoder input pin to nand2 B
             b_pin = nand_inst.get_pin("B")
-            b_pos = b_pin.lc()
+
+            inv_output_y = utils.transform_relative(vector(0, inv1_inst.mod.output_pos.y), inv1_inst).y
+
+            b_pos = vector(b_pin.lx(), inv_output_y)
             # needs to move down since B nand input is nearly aligned with A inv input
             en_in_space = 0.5*contact.m1m2.first_layer_height + self.wide_m1_space + 0.5*self.m2_width
             if row%2:

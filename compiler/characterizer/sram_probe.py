@@ -30,6 +30,7 @@ class SramProbe:
         self.wordline_probes = {}
         self.sense_amp_probes = {}
         self.word_driver_clk_probes = {}
+        self.probe_labels = set()
 
     def probe_bit_cells(self, address, pin_name="Q"):
         """Probe Q, QBAR of bitcell"""
@@ -68,6 +69,7 @@ class SramProbe:
             else:
                 pin_labels[i] = "Xsram.Xbank{}.Xbitcell_array.Xbit_r{}_c{}.{}".format(bank_index, row, col, pin_name)
         pin_labels.reverse()
+        self.probe_labels.update(pin_labels)
 
         if pin_name not in self.bitcell_probes:
             self.bitcell_probes[pin_name] = {}
@@ -116,6 +118,7 @@ class SramProbe:
             else:
                 pin_labels[i] = "Xsram.Xbank{}.Xbitcell_array.{}[{}]".format(bank_index, pin_name, col)
         pin_labels.reverse()
+        self.probe_labels.update(pin_labels)
         self.bitline_probes[label_key] = pin_labels
 
     def get_bitline_probes(self, address, pin_name="bl", pex_file=None):
@@ -157,6 +160,7 @@ class SramProbe:
             self.wordline_probes[label_key] = label_key
         else:
             self.wordline_probes[label_key] = "Xsram.Xbank{}.Xbitcell_array.wl[{}]".format(bank_index, row)
+        self.probe_labels.add(label_key)
 
     def get_wordline_probes(self, address, pex_file=None):
         address = self.address_to_vector(address)
@@ -192,6 +196,7 @@ class SramProbe:
                 self.sense_amp_probes[label_key] = label_key
             else:
                 pin_label = "Xsram.Xbank{}.Xsense_amp_array.{}[{}]".format(bank_index, pin_name, col)
+            self.probe_labels.add(pin_label)
             pin_labels.append(pin_label)
         self.sense_amp_probes[label_key] = pin_labels
 
@@ -215,6 +220,7 @@ class SramProbe:
             self.sram.add_label(pin_label, pin.layer, ll)
         else:
             pin_label = "Xsram.Xbank{}.Xwordline_driver.clk_buf".format(bank_index)
+        self.probe_labels.add(pin_label)
         self.word_driver_clk_probes[label_key] = pin_label
 
     def get_word_driver_clk_probes(self, bank_index, pex_file=None):
@@ -228,6 +234,7 @@ class SramProbe:
     def probe_pin(self, pin, label, module_list):
         ll, ur = utils.get_pin_rect(pin, module_list)
         self.sram.add_label(label, pin.layer, ll)
+        self.probe_labels.add(label)
 
     def extract_from_pex(self, label, pex_file=None):
         if pex_file is None:
@@ -254,7 +261,7 @@ class SramProbe:
 
         words_per_row = self.sram.words_per_row
         no_col_bits = int(np.log2(words_per_row))
-        col_address = address[:no_col_bits]
+        col_address = address[:no_col_bits] or [0]
         row_address = address[no_col_bits:]
         row = self.address_to_int(row_address)
         col_index = self.address_to_int(col_address)

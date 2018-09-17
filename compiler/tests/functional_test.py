@@ -6,6 +6,7 @@ import globals
 from globals import OPTS
 import verify
 import characterizer
+import debug
 
 
 class FunctionalTest:
@@ -62,33 +63,54 @@ class FunctionalTest:
                 banks[bank_index] = bank_inst
         for bank_index in banks:
             bank_inst = banks[bank_index]
-            probe.probe_sense_amps(bank_index, bank_inst, "bl")
-            probe.probe_sense_amps(bank_index, bank_inst, "br")
+            if self.sram.words_per_row > 1:
+                probe.probe_sense_amps(bank_index, bank_inst, "bl")
+                probe.probe_sense_amps(bank_index, bank_inst, "br")
             probe.probe_sense_amps(bank_index, bank_inst, "data")
             probe.probe_word_driver_clk(bank_index, bank_inst)
             if OPTS.use_pex:
-                probe.probe_pin(bank_inst.mod.sense_amp_array_inst.get_pin("en"), "sense_amp_en", [bank_inst])
-                probe.probe_pin(bank_inst.mod.precharge_array_inst.get_pin("en"), "precharge_en", [bank_inst])
-                probe.probe_pin(bank_inst.mod.write_driver_array_inst.get_pin("en"), "write_en", [bank_inst])
+                probe.probe_pin(bank_inst.mod.sense_amp_array_inst.get_pin("en"), "sense_amp_en_b{}".format(bank_index),
+                                [bank_inst])
+                probe.probe_pin(bank_inst.mod.precharge_array_inst.get_pin("en"), "precharge_en_b{}".format(bank_index),
+                                [bank_inst])
+                probe.probe_pin(bank_inst.mod.write_driver_array_inst.get_pin("en"), "write_en_b{}".format(bank_index),
+                                [bank_inst])
+                probe.probe_pin(bank_inst.mod.tri_gate_array_inst.get_pin("en"), "tri_en_b{}".format(bank_index),
+                                [bank_inst])
+                probe.probe_pin(bank_inst.mod.tri_gate_array_inst.get_pin("en_bar"), "tri_en_bar_b{}".format(bank_index),
+                                [bank_inst])
+                if self.sram.words_per_row > 1:
+                    probe.probe_pin(bank_inst.mod.col_mux_array_inst.get_pin("sel[0]"), "mux_sel_0_b{}".format(bank_index),
+                                    [bank_inst])
+                probe.probe_pin(bank_inst.mod.write_driver_array_inst.get_pin("data[0]"), "write_d0_b{}".format(bank_index),
+                                [bank_inst])
+                probe.probe_pin(bank_inst.mod.wordline_driver_inst.get_pin("in[0]"), "wl_drv_in0_b{}".format(bank_index),
+                                [bank_inst])
+                probe.probe_pin(bank_inst.mod.wordline_driver_inst.mod.module_insts[0].get_pin("Z"),
+                                "wl_drv_en_bar_b{}".format(bank_index),
+                                [bank_inst, bank_inst.mod.wordline_driver_inst])
+                probe.probe_pin(bank_inst.mod.wordline_driver_inst.mod.module_insts[1].get_pin("Z"),
+                                "wl_drv_net0_b{}".format(bank_index),
+                                [bank_inst, bank_inst.mod.wordline_driver_inst])
+        if OPTS.use_pex:
+            probe.probe_pin(bank_inst.get_pin("clk_bar"), "ctrl_clk_bar", [])
+            probe.probe_pin(bank_inst.get_pin("clk_buf"), "ctrl_clk_buf", [])
+            probe.probe_pin(bank_inst.get_pin("tri_en"), "ctrl_tri_en", [])
+            probe.probe_pin(bank_inst.get_pin("tri_en_bar"), "ctrl_tri_en_bar", [])
+            probe.probe_pin(bank_inst.get_pin("w_en"), "ctrl_w_en", [])
+            probe.probe_pin(bank_inst.get_pin("s_en"), "ctrl_s_en", [])
 
     def extract_probes(self):
         probe = self.probe
-        self.saved_nodes = saved_nodes = set()
-        for address in self.addresses:
-            saved_nodes.update(probe.get_bitcell_probes(address, "Q"))
-            saved_nodes.update(probe.get_bitcell_probes(address, "QBAR"))
-            saved_nodes.update(probe.get_bitline_probes(address, "bl"))
-            saved_nodes.update(probe.get_bitline_probes(address, "br"))
-            saved_nodes.update(probe.get_wordline_probes(address))
-        for bank_index in self.banks:
-            saved_nodes.update(probe.get_sense_amp_probes(bank_index, "bl"))
-            saved_nodes.update(probe.get_sense_amp_probes(bank_index, "br"))
-            saved_nodes.update(probe.get_sense_amp_probes(bank_index, "data"))
-            saved_nodes.update(probe.get_word_driver_clk_probes(bank_index))
-            if OPTS.use_pex:
-                saved_nodes.add(probe.extract_from_pex("sense_amp_en"))
-                saved_nodes.add(probe.extract_from_pex("precharge_en"))
-                saved_nodes.add(probe.extract_from_pex("write_en"))
+        if OPTS.use_pex:
+            self.saved_nodes = set()
+            for label in probe.probe_labels:
+                try:
+                    self.saved_nodes.add(probe.extract_from_pex(label))
+                except Exception, e:
+                    debug.warning(e.message)
+        else:
+            self.saved_nodes = set(probe.probe_labels)
 
 
     def run_drc_lvs_pex(self):

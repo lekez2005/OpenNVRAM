@@ -1,7 +1,6 @@
 import debug
 import design
 import math
-from tech import drc
 import contact
 from pinv import pinv
 from vector import vector
@@ -36,7 +35,6 @@ class hierarchical_predecode(design.design):
         """ Create the INV and NAND gate """
         
         self.inv = pinv()
-        self.rail_height = self.rail_height
         self.add_mod(self.inv)
         
         self.create_nand(self.number_of_inputs)
@@ -54,7 +52,7 @@ class hierarchical_predecode(design.design):
     def setup_constraints(self):
         # we are going to use horizontal vias, so use the via height
         # use a conservative douple spacing just to get rid of annoying via DRCs
-        self.m2_pitch = contact.m1m2.height + 2*self.m2_space
+        self.m2_pitch = contact.m1m2.width + self.parallel_line_space
         
         # The rail offsets are indexed by the label
         self.rails = {}
@@ -64,7 +62,8 @@ class hierarchical_predecode(design.design):
             xoffset = rail_index * self.m2_pitch + 0.5*self.m2_width
             self.rails["in[{}]".format(rail_index)]=xoffset
         # x offset for input inverters
-        self.x_off_inv_1 = self.number_of_inputs*self.m2_pitch 
+        left_s_d = self.inv.get_left_source_drain()
+        self.x_off_inv_1 = self.number_of_inputs*self.m2_pitch -left_s_d
         
         # Creating the right hand side metal2 rails for output connections
         for rail_index in range(2 * self.number_of_inputs):

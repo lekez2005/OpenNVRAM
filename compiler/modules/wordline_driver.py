@@ -59,7 +59,7 @@ class wordline_driver(design.design):
 
         self.m1m2_via_x = in_pin_width + contact.m1m2.first_layer_width
 
-        left_s_d = min(self.inv_no_output.source_positions + self.inv_no_output.drain_positions) - self.m1_width
+        left_s_d = self.inv_no_output.get_left_source_drain()
 
         self.x_offset0 = self.m1m2_via_x + self.m2_space + 0.5*contact.m1m2.first_layer_width - left_s_d
         self.x_offset1 = self.x_offset0 + self.inv_no_output.width

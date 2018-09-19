@@ -32,9 +32,11 @@ class pgate(design.design):
         self.nmos_size = self.nmos_scale * self.size
         self.pmos_size = self.beta * self.pmos_scale * self.size
 
-        track_extent = self.no_tracks * self.m2_width + (self.no_tracks - 1) * self.m2_space
-        gate_contact_height = track_extent + (contact.m1m2.second_layer_height - self.m2_width)
-        self.middle_space = gate_contact_height + 2 * self.line_end_space
+        self.gate_rail_pitch = 0.5*contact.m1m2.second_layer_height + self.line_end_space + 0.5*self.m2_width
+
+        track_extent = (self.no_tracks - 1) * self.gate_rail_pitch
+        self.middle_space = track_extent + max(contact.poly.second_layer_height, contact.m1m2.second_layer_height) + (
+                2 * self.line_end_space)
 
         min_tx_width = drc["minwidth_tx"]
 
@@ -50,9 +52,10 @@ class pgate(design.design):
 
         active_contact_space = self.poly_extend_active + self.poly_to_active + 0.5*self.well_contact_active_height
         implant_active_space = drc["ptx_implant_enclosure_active"] + 0.5*self.well_contact_implant_height
+        poly_poly_allowance = self.poly_extend_active + 0.5*drc["poly_end_to_end"]
 
-        self.top_space = max(self.top_space, active_contact_space, implant_active_space)
-        self.bottom_space = max(self.bottom_space, active_contact_space, implant_active_space)
+        self.top_space = max(self.top_space, active_contact_space, implant_active_space, poly_poly_allowance)
+        self.bottom_space = max(self.bottom_space, active_contact_space, implant_active_space, poly_poly_allowance)
 
         self.tx_height_available = tx_height_available = self.height - (self.top_space +
                                                                         self.middle_space + self.bottom_space)
@@ -318,6 +321,10 @@ class pgate(design.design):
         self.output_y = (self.active_mid_y_pmos + self.active_mid_y_nmos) / 2
         offset = vector(self.output_x + 0.5 * self.m1_width, self.output_y)
         self.add_layout_pin_center_rect("Z", "metal1", offset=offset)
+
+    def get_left_source_drain(self):
+        """Return left-most source or drain"""
+        return min(self.source_positions + self.drain_positions) - self.m1_width
 
 
 

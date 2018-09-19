@@ -61,8 +61,7 @@ class pnor2(pgate.pgate):
         self.add_ptx_inst()
 
     def connect_inputs(self):
-        m2_pitch = self.m1_width + self.m2_space
-        y_shifts = [-0.5*m2_pitch, 0.5*m2_pitch]
+        y_shifts = [-0.5*self.gate_rail_pitch, 0.5*self.gate_rail_pitch]
         pin_names = ["A", "B"]
         self.add_poly_contacts(pin_names, y_shifts)
 

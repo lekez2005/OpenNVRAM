@@ -69,10 +69,13 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.implant_enclose_active = drc["implant_enclosure_active"]
         self.implant_space = drc["implant_to_implant"]
 
+        self.minarea_metal1_contact = drc["minarea_metal1_contact"]
+
         if "metal1_to_metal1_wide" in drc:
             self.wide_m1_space = drc["metal1_to_metal1_wide"]
         else:
             self.wide_m1_space = drc["metal1_to_metal1"]
+        self.line_end_space = drc["metal1_to_metal1_wide"]
 
     def get_layout_pins(self,inst):
         """ Return a map of pin locations of the instance offset """

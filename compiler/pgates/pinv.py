@@ -3,6 +3,7 @@ import pgate
 import debug
 from tech import drc, parameter, spice, info
 from ptx import ptx
+from ptx_spice import ptx_spice
 from vector import vector
 from globals import OPTS
 from utils import round_to_grid
@@ -22,20 +23,22 @@ class pinv(pgate.pgate):
 
     unique_id = 1
     
-    def __init__(self, size=1, beta=parameter["beta"], height=bitcell.height, route_output=True, rail_offset=0.0):
+    def __init__(self, size=1, beta=parameter["beta"], height=bitcell.height, route_output=True,
+                 contact_pwell=True, contact_nwell=True):
         # We need to keep unique names because outputting to GDSII
         # will use the last record with a given name. I.e., you will
         # over-write a design in GDS if one has and the other doesn't
         # have poly connected, for example.
         name = "pinv_{}".format(pinv.unique_id)
+        if not contact_pwell:
+            name += "_no_p"
+        if not contact_nwell:
+            name += "_no_n"
         pinv.unique_id += 1
-        pgate.pgate.__init__(self, name, rail_offset)
+        pgate.pgate.__init__(self, name, height, size=size, beta=beta, contact_pwell=contact_pwell,
+                             contact_nwell=contact_nwell)
         debug.info(2, "create pinv structure {0} with size of {1}".format(name, size))
 
-        self.nmos_size = size
-        self.pmos_size = beta*size
-        self.beta = beta
-        self.height = height # Maybe minimize height if not defined in future?
         self.route_output = route_output
 
         self.add_pins()
@@ -49,169 +52,68 @@ class pinv(pgate.pgate):
         """ Adds pins for spice netlist """
         self.add_pin_list(["A", "Z", "vdd", "gnd"])
         
+
     def create_layout(self):
-        """ Calls all functions related to the generation of the layout """
+
+        self.nmos_scale = 1
+        self.pmos_scale = 1
+        self.no_tracks = 1
 
         self.determine_tx_mults()
-        self.create_ptx()
         self.setup_layout_constants()
-        self.add_supply_rails()
-        self.add_ptx()
-        self.add_well_contacts()
-        self.extend_wells(self.well_pos)
-        self.connect_rails()
-        self.route_input_gate(self.pmos_inst, self.nmos_inst, self.output_pos.y, "A",
-                              rotate=0, position="center")
-        self.route_outputs()
-        
-    def determine_tx_mults(self):
-        self.output_height = self.m1_width
-        self.min_channel = self.m1_space + max(drc["implant_to_implant"], self.output_height)
-        pgate.pgate.determine_tx_mults(self)
+        self.add_poly()
+        self.add_poly_contacts()
+        self.add_active()
+        self.calculate_source_drain_pos()
+        self.connect_to_vdd(self.source_positions)
+        self.connect_to_gnd(self.source_positions)
+        self.connect_s_or_d(self.drain_positions, self.drain_positions)
+        self.add_implants()
+        self.add_body_contacts()
+        self.add_output_pin()
+        self.add_ptx_inst()
 
-    def setup_layout_constants(self):
-        """
-        Pre-compute some handy layout parameters.
-        """
 
-        # the well width is determined the multi-finger PMOS device width plus
-        # the well contact width and half well enclosure on both sides
-        well_contact = contact.contact(layer_stack=("cont_active", "contact", "cont_metal1"), 
-                                implant_type="n",
-                                well_type="n")
-        # width of active and one side of enclosure of well around active
-        active_implant_width = well_contact.first_layer_width + drc["well_enclosure_active"]
-        self.well_width = self.pmos.width + drc["poly_dummy_to_active"] +  active_implant_width
-        self.width = self.well_width
-        # Height is an input parameter, so it is not recomputed. 
-        
 
-        
-    def create_ptx(self):
-        """ Create the PMOS and NMOS transistors. """
-        self.nmos = ptx(width=self.nmos_width,
-                        mults=self.tx_mults,
-                        tx_type="nmos",
-                        connect_poly=True,
-                        connect_active=True)
-        self.add_mod(self.nmos)
-        
-        self.pmos = ptx(width=self.pmos_width,
-                        mults=self.tx_mults,
-                        tx_type="pmos",
-                        connect_poly=True,
-                        connect_active=True)
+    def add_poly_contacts(self):
+        if self.tx_mults == 1:
+            width = utils.ceil(max(self.minarea_metal1_contact/contact.poly.second_layer_height,
+                                      self.minside_metal1_contact))
+            offset = vector(self.mid_x + 0.5*contact.poly.second_layer_width - 0.5*width, self.mid_y)
+            self.add_layout_pin_center_rect("A", "metal1", offset, width=width, height=contact.poly.second_layer_height)
+            offset = vector(self.mid_x, self.mid_y)
+            self.add_contact_center(layers=("poly", "contact", "metal1"), offset=offset)
+
+        else:
+            contact_width = contact.poly.second_layer_width
+            for i in range(len(self.poly_offsets)):
+                offset = vector(self.poly_offsets[i].x, self.mid_y)
+                self.add_contact_center(layers=("poly", "contact", "metal1"), offset=offset)
+                self.add_rect_center("metal1", offset=offset, height=contact.poly.second_layer_height,
+                                     width=contact_width)
+            min_poly = min(self.poly_offsets, key=lambda x: x.x).x
+            max_poly = max(self.poly_offsets, key=lambda x: x.x).x
+            pin_left = min_poly - 0.5*contact_width
+            pin_right = max_poly + 0.5*contact_width
+            offset = vector(0.5*(pin_left + pin_right), self.mid_y)
+            self.add_layout_pin_center_rect("A", "metal1", offset, width=pin_right-pin_left)
+
+
+
+    def add_ptx_inst(self):
+        self.pmos = ptx_spice(self.pmos_width, mults=self.tx_mults, tx_type="pmos")
+        self.add_inst(name="pinv_pmos",
+                      mod=self.pmos,
+                      offset=vector(0, 0))
         self.add_mod(self.pmos)
-        
-    def add_supply_rails(self):
-        """ Add vdd/gnd rails to the top and bottom. """
-        self.add_layout_pin_center_rect(text="gnd",
-                                        layer="metal1",
-                                        offset=vector(0.5*self.width,0),
-                                        height = self.rail_height,
-                                        width=self.width)
-
-        self.add_layout_pin_center_rect(text="vdd",
-                                        layer="metal1",
-                                        offset=vector(0.5*self.width,self.height),
-                                        height = self.rail_height,
-                                        width=self.width)
-
-    def add_ptx(self):
-        """ 
-        Add PMOS and NMOS to the layout at the upper-most and lowest position
-        to provide maximum routing in channel
-        """
-        x_offset = 0.5*(self.pmos.width-self.pmos.active_width)
-        
-        # place PMOS so that its implant aligns with cell boundary
-        # account for active_offset translation that happens after creation
-        pmos_bottom = self.height - (self.pmos.implant_rect.offset.y + self.pmos.implant_rect.height) - self.rail_offset
-        self.pmos_pos = vector(x_offset, pmos_bottom)
-        self.pmos_inst=self.add_inst(name="pinv_pmos",
-                                     mod=self.pmos,
-                                     offset=self.pmos_pos)
         self.connect_inst(["Z", "A", "vdd", "vdd"])
-
-        # place NMOS so that its implant aligns with cell boundary
-        nmos_y_offset = -self.nmos.implant_rect.offset.y + self.rail_offset
-        self.nmos_pos = vector(x_offset, nmos_y_offset)
-        self.nmos_inst=self.add_inst(name="pinv_nmos",
-                                     mod=self.nmos,
-                                     offset=self.nmos_pos)
+        self.nmos = ptx_spice(self.nmos_width, mults=self.tx_mults, tx_type="nmos")
+        self.add_inst(name="pinv_nmos",
+                      mod=self.nmos,
+                      offset=vector(0, 0))
+        self.add_mod(self.nmos)
         self.connect_inst(["Z", "A", "gnd", "gnd"])
 
-
-
-        # This will help with the wells 
-        nmos_top = self.nmos_inst.height + self.rail_offset
-        pmos_bottom = self.height - self.pmos_inst.height - self.rail_offset
-        self.output_pos = vector(0, round_to_grid(0.5*(nmos_top + pmos_bottom)))
-        self.well_pos = vector(0, round_to_grid(0.5*(nmos_top + pmos_bottom)))
-
-
-
-    def route_outputs(self):
-        """ Route the output (drains) together. Optionally, routes output to edge. """
-        layers=("metal1", "via1", "metal2")
-        # Get the drain pins
-        nmos_drain_pin = self.nmos_inst.get_pin("D")
-        pmos_drain_pin = self.pmos_inst.get_pin("D")
-
-        output_x = max(pmos_drain_pin.rx(), self.nmos_inst.get_pin("S").rx()) + self.m1_space
-
-        self.add_rect(layer="metal2", offset=pmos_drain_pin.lr(), height=pmos_drain_pin.height(),
-                      width=output_x-pmos_drain_pin.rx())
-        self.add_rect(layer="metal2", offset=nmos_drain_pin.lr(), height=nmos_drain_pin.height(),
-                      width=output_x-nmos_drain_pin.rx())
-
-
-        top_via = self.output_pos.y + contact.m1m2.first_layer_height + self.wide_m1_space
-        top_via_offset = vector(output_x, top_via)
-        self.add_contact(layers, top_via_offset)
-
-        bottom_via = self.output_pos.y - 2 * contact.m1m2.first_layer_height - self.wide_m1_space
-        bottom_via_offset = vector(output_x, bottom_via)
-        self.add_contact(layers, bottom_via_offset)
-
-        bot_rect_offset = vector(output_x, nmos_drain_pin.by())
-        self.add_rect(layer="metal2", width=self.m2_width, height=bottom_via_offset.y - bot_rect_offset.y,
-                      offset=bot_rect_offset)
-        self.add_rect(layer="metal2", width=self.m2_width, height=pmos_drain_pin.uy() - top_via, offset=top_via_offset)
-
-        self.add_rect(layer="metal1", width=self.m1_width, offset=bottom_via_offset, height=top_via - bottom_via)
-
-        # Remember the mid for the output
-        mid_drain_offset = vector(output_x, self.output_pos.y)
-
-        if self.route_output == True:
-            # This extends the output to the edge of the cell
-            output_offset = mid_drain_offset.scale(0,1) + vector(self.width,0)
-            self.add_layout_pin_center_segment(text="Z",
-                                               layer="metal1",
-                                               start=mid_drain_offset,
-                                               end=output_offset)
-        else:
-            self.add_layout_pin_center_rect(text="Z",
-                                            layer="metal1",
-                                            height=self.output_height,
-                                            offset=mid_drain_offset+vector(0.5*self.m1_width, 0))
-
-
-    def add_well_contacts(self):
-        """ Add n/p well taps to the layout and connect to supplies """
-
-        self.add_nwell_contact(self.pmos, self.pmos_pos, size=[1, 3])
-
-        self.add_pwell_contact(self.nmos, self.nmos_pos, size=[1, 3])
-
-    def connect_rails(self):
-        """ Connect the nmos and pmos to its respective power rails """
-
-        self.connect_pin_to_rail(self.nmos_inst,"S","gnd")
-
-        self.connect_pin_to_rail(self.pmos_inst,"S","vdd")
-        
 
     def input_load(self):
         return ((self.nmos_size+self.pmos_size)/parameter["min_tx_size"])*spice["min_tx_gate_c"]

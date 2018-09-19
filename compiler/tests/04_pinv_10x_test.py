@@ -23,7 +23,7 @@ class pinv_test(openram_test):
         import tech
 
         debug.info(2, "Checking 10x inverter")
-        tx = pinv.pinv(size=8)
+        tx = pinv.pinv(size=10)
         self.local_check(tx)
 
         OPTS.check_lvsdrc = True

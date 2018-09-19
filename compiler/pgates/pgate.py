@@ -70,7 +70,7 @@ class pgate(design.design):
         pmos_height_available = self.pmos_width/(self.nmos_width+self.pmos_width) * tx_height_available
 
         debug.info(2,"Height avail {0} PMOS height {1} NMOS height {2}".format(
-            tx_height_available, nmos_height_available, pmos_height_available))
+            tx_height_available, pmos_height_available, nmos_height_available))
 
 
         nmos_required_mults = max(int(math.ceil(self.nmos_width/nmos_height_available)),1)
@@ -281,9 +281,9 @@ class pgate(design.design):
 
     def add_implants(self):
         implant_x = 0.5*(self.width - self.implant_width)
-        self.add_rect("nimplant", offset=vector(implant_x, 0.5*self.well_contact_implant_height),
-                      width=self.implant_width, height=self.nimplant_height)
-        self.add_rect("pimplant", offset=vector(implant_x, self.mid_y), width=self.implant_width,
+        self.add_rect("nimplant", offset=vector(0, 0.5*self.well_contact_implant_height),
+                      width=self.width, height=self.nimplant_height)
+        self.add_rect("pimplant", offset=vector(0, self.mid_y), width=self.width,
                       height=self.pimplant_height)
         self.add_rect("nwell", offset=vector(implant_x, self.mid_y), width=self.implant_width, height=self.nwell_height)
 

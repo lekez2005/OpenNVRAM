@@ -1,6 +1,7 @@
 import hierarchy_layout
 import hierarchy_spice
 import globals
+import utils
 import verify
 import debug
 import os
@@ -33,6 +34,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                    'bitcell.bitcell',
                    'contact.contact',
                    'ptx.ptx',
+                   'ptx_spice.ptx_spice',
                    'sram.sram',
                    'hierarchical_predecode2x4.hierarchical_predecode2x4',
                    'hierarchical_predecode3x8.hierarchical_predecode3x8']
@@ -71,11 +73,10 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
         self.minarea_metal1_contact = drc["minarea_metal1_contact"]
 
-        if "metal1_to_metal1_wide" in drc:
-            self.wide_m1_space = drc["metal1_to_metal1_wide"]
-        else:
-            self.wide_m1_space = drc["metal1_to_metal1"]
-        self.line_end_space = drc["metal1_to_metal1_wide"]
+        self.wide_m1_space = drc["metal1_to_metal1_line_end"]
+        self.line_end_space = drc["metal1_to_metal1_line_end"]
+        self.parallel_line_space = drc["parallel_metal1_to_metal1"]
+        self.metal1_minwidth_fill = utils.ceil(drc["minarea_metal1_minwidth"]/self.m1_width)
 
     def get_layout_pins(self,inst):
         """ Return a map of pin locations of the instance offset """
@@ -84,7 +85,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             if i.name == inst.name:
                 break
         else:
-            debug.error("Couldn't find instance {0}".format(inst_name),-1)
+            debug.error("Couldn't find instance {0}".format(inst.name),-1)
         inst_map = inst.mod.pin_map
         return inst_map
         

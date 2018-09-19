@@ -79,7 +79,7 @@ class pinv(pgate.pgate):
         if self.tx_mults == 1:
             width = utils.ceil(max(self.minarea_metal1_contact/contact.poly.second_layer_height,
                                       self.minside_metal1_contact))
-            offset = vector(self.mid_x + 0.5*contact.poly.second_layer_width - 0.5*width, self.mid_y)
+            offset = vector(self.mid_x, self.mid_y)
             self.add_layout_pin_center_rect("A", "metal1", offset, width=width, height=contact.poly.second_layer_height)
             offset = vector(self.mid_x, self.mid_y)
             self.add_contact_center(layers=("poly", "contact", "metal1"), offset=offset)

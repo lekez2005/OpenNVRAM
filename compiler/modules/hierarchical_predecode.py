@@ -13,10 +13,11 @@ class hierarchical_predecode(design.design):
     """
     Pre 2x4 and 3x8 decoder shared code.
     """
-    def __init__(self, input_number):
+    def __init__(self, input_number, route_top_rail=True):
         self.number_of_inputs = input_number
         self.number_of_outputs = int(math.pow(2, self.number_of_inputs))
         design.design.__init__(self, name="pre{0}x{1}".format(self.number_of_inputs,self.number_of_outputs))
+        self.route_top_rail = route_top_rail
 
         c = reload(__import__(OPTS.bitcell))
         self.mod_bitcell = getattr(c, OPTS.bitcell)
@@ -36,18 +37,29 @@ class hierarchical_predecode(design.design):
         
         self.inv = pinv()
         self.add_mod(self.inv)
-        
-        self.create_nand(self.number_of_inputs)
+        self.nand = self.create_nand(self.number_of_inputs)
         self.add_mod(self.nand)
 
-    def create_nand(self,inputs):
+        if not self.route_top_rail:
+            self.top_inv = pinv(contact_pwell=False)
+            self.add_mod(self.top_inv)
+            self.top_nand = self.create_nand(self.number_of_inputs, contact_pwell=False)
+            self.add_mod(self.top_nand)
+        else:
+            self.top_inv = self.inv
+            self.top_nand = self.nand
+
+
+
+    def create_nand(self,inputs, contact_pwell=True):
         """ Create the NAND for the predecode input stage """
         if inputs==2:
-            self.nand = pnand2()
+            nand = pnand2(contact_pwell=contact_pwell)
         elif inputs==3:
-            self.nand = pnand3()
+            nand = pnand3(contact_pwell=contact_pwell)
         else:
             debug.error("Invalid number of predecode inputs.",-1)
+        return nand
             
     def setup_constraints(self):
         # we are going to use horizontal vias, so use the via height
@@ -134,9 +146,13 @@ class hierarchical_predecode(design.design):
             else:
                 y_off =(inv_num + 1)*self.inv.height
                 mirror = "MX"
-            offset = vector(self.x_off_inv_2, y_off)   
+            offset = vector(self.x_off_inv_2, y_off)
+            if inv_num < self.number_of_outputs - 1:
+                inv = self.inv
+            else:
+                inv = self.top_inv
             self.inv_inst.append(self.add_inst(name=name,
-                                               mod=self.inv,
+                                               mod=inv,
                                                offset=offset,
                                                mirror=mirror))
             self.connect_inst(["Z[{}]".format(inv_num),
@@ -158,8 +174,12 @@ class hierarchical_predecode(design.design):
                 y_off = (nand_input + 1) * self.inv.height
                 mirror = "MX"
             offset = vector(self.x_off_nand, y_off)
+            if nand_input < self.number_of_outputs - 1:
+                nand = self.nand
+            else:
+                nand = self.top_nand
             self.nand_inst.append(self.add_inst(name=name,
-                                                mod=self.nand,
+                                                mod=nand,
                                                 offset=offset,
                                                 mirror=mirror))
             self.connect_inst(connections[nand_input])

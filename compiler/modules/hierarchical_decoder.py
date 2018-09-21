@@ -51,9 +51,9 @@ class hierarchical_decoder(design.design):
         self.add_mod(self.nand3)
 
         # CREATION OF PRE-DECODER
-        self.pre2_4 = pre2x4()
+        self.pre2_4 = pre2x4(route_top_rail=False)
         self.add_mod(self.pre2_4)
-        self.pre3_8 = pre3x8()
+        self.pre3_8 = pre3x8(route_top_rail=False)
         self.add_mod(self.pre3_8)
 
     def determine_predecodes(self,num_inputs):
@@ -80,10 +80,7 @@ class hierarchical_decoder(design.design):
 
     def setup_layout_constants(self):
         # Vertical metal rail gap definition
-        self.metal2_extend_contact = (contact.m1m2.second_layer_height - contact.m1m2.contact_width) / 2
-        self.metal2_spacing = self.metal2_extend_contact  + self.m2_space
-        self.metal2_pitch = self.metal2_spacing + self.m2_width
-        self.via_shift = (contact.m1m2.second_layer_width - contact.m1m2.first_layer_width) / 2
+        self.metal2_pitch = contact.m1m2.second_layer_width + self.parallel_line_space
 
         self.predec_groups = []  # This array is a 2D array.
 

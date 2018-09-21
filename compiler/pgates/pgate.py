@@ -1,6 +1,7 @@
 import contact
 import design
 import debug
+import math
 from tech import drc, parameter
 from tech import layer as tech_layers
 from vector import vector
@@ -242,6 +243,13 @@ class pgate(design.design):
                 metal_fill_width = round_to_grid(2*(self.poly_pitch - 0.5*self.m1_width - m1_space))
                 height = utils.ceil(max(self.minarea_metal1_contact/metal_fill_width,
                                            active_cont.mod.first_layer_height))
+                if height > tx_width:
+                    via_height = contact.m1m2.first_layer_height
+                    direction = 1 if mid_y > self.mid_y else -1
+                    rect_bottom = mid_y - direction*0.5*via_height - height
+                    rect_mid = rect_bottom - direction*0.5*height
+
+                    offset = vector(offset.x, rect_mid)
                 self.add_rect_center("metal1", offset=offset, height=height,
                                      width=metal_fill_width)
         max_sd_x = max(self.drain_positions + self.source_positions)
@@ -292,30 +300,22 @@ class pgate(design.design):
 
     def add_body_contacts(self):
 
-        y_offsets = []
-        implants = []
-        pin_names = []
-
-        if self.contact_pwell:
-            y_offsets.append(0)
-            implants.append("pimplant")
-            pin_names.append("gnd")
-        if self.contact_nwell:
-            y_offsets.append(self.height)
-            implants.append("nimplant")
-            pin_names.append("vdd")
+        y_offsets = [0, self.height]
+        implants = ["pimplant", "nimplant"]
+        pin_names = ["gnd", "vdd"]
 
         for i in range(len(y_offsets)):
             y_offset = y_offsets[i]
             self.add_layout_pin_center_rect(pin_names[i], "metal1", offset=vector(self.mid_x, y_offset),
                                             width=self.width, height=self.rail_height)
-            self.add_rect_center("active", offset=vector(self.mid_x, y_offset), width=self.well_contact_active_width,
-                                 height=self.well_contact_active_height)
             self.add_rect_center(implants[i], offset=vector(self.mid_x, y_offset), width=self.implant_width,
                                  height=self.well_contact_implant_height)
-            for j in range(self.no_body_contacts):
-                x_offset = self.contact_x_start + j*self.contact_pitch
-                self.add_rect_center("contact", offset=vector(x_offset, y_offset))
+            if (i == 0 and self.contact_pwell) or (i == 1 and self.contact_nwell):
+                self.add_rect_center("active", offset=vector(self.mid_x, y_offset), width=self.well_contact_active_width,
+                                     height=self.well_contact_active_height)
+                for j in range(self.no_body_contacts):
+                    x_offset = self.contact_x_start + j*self.contact_pitch
+                    self.add_rect_center("contact", offset=vector(x_offset, y_offset))
 
     def add_output_pin(self):
         self.output_y = (self.active_mid_y_pmos + self.active_mid_y_nmos) / 2
@@ -329,18 +329,4 @@ class pgate(design.design):
 
 
 
-    def calculate_num_contacts(self, tx_width):
-        """
-        Calculates the possible number of source/drain contacts in a finger.
-        """
-        import math
-        num_contacts = int(math.ceil(tx_width/(self.contact_width + self.contact_spacing)))
-        while num_contacts > 1:
-            contact_array = contact.contact(layer_stack=("active", "contact", "metal1"),
-                              dimensions=[1, num_contacts],
-                              implant_type=None,
-                              well_type=None)
-            if contact_array.first_layer_height < tx_width and contact_array.second_layer_height < tx_width:
-                break
-            num_contacts -= 1
-        return num_contacts
+

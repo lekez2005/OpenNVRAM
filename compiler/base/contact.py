@@ -15,6 +15,10 @@ class contact(design.design):
     necessary to import layouts into Magic which requires the select to be in the same GDS
     hierarchy as the contact.
     """
+    active_layers = ("active", "contact", "metal1")
+    poly_layers = ("poly", "contact", "metal1")
+    m1m2_layers = ("metal1", "via1", "metal2")
+    m2m3_layers = ("metal2", "via2", "metal3")
     def __init__(self, layer_stack, dimensions=[1,1], implant_type=None, well_type=None):
         if implant_type or well_type:
             name = "{0}_{1}_{2}_{3}x{4}_{5}{6}".format(layer_stack[0],

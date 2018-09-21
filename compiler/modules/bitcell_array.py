@@ -32,6 +32,7 @@ class bitcell_array(design.design):
         
         self.add_pins()
         self.create_layout()
+        self.add_dummy_poly()
         self.add_layout_pins()
         self.DRC_LVS()
 
@@ -52,7 +53,7 @@ class bitcell_array(design.design):
             for row in range(self.row_size):
                 name = "bit_r{0}_c{1}".format(row, col)
 
-                if row % 2:
+                if row % 2 == 0:
                     tempy = yoffset + self.cell.height
                     dir_key = "MX"
                 else:
@@ -70,6 +71,15 @@ class bitcell_array(design.design):
                                    "gnd"])
                 yoffset += self.cell.height
             xoffset += self.cell.width
+
+    def add_dummy_poly(self):
+        leftmost, rightmost = self.get_dummy_poly(self.cell, from_gds=True)
+        poly_pitch = self.poly_width + self.poly_space
+        pos = [leftmost - poly_pitch, self.width + (self.cell.width - rightmost) + poly_pitch]
+        for x_offset in pos:
+            self.add_rect("po_dummy", offset=vector(x_offset, 0.5 * self.poly_vert_space), width=self.poly_width,
+                          height=self.height - self.poly_vert_space)
+
 
 
     def add_layout_pins(self):
@@ -134,22 +144,23 @@ class bitcell_array(design.design):
             gnd_pins = self.cell_inst[row,0].get_pins("gnd")
 
             for gnd_pin in gnd_pins:
-                if gnd_pin.layer=="metal1":
+                # only add to even rows
+                if row % 2 == 0 and gnd_pin.layer=="metal1":
                     self.add_layout_pin(text="gnd", 
                                         layer="metal1",
                                         offset=gnd_pin.ll(),
                                         width=full_width,
-                                        height=drc["minwidth_metal1"])
+                                        height=gnd_pin.height())
                 
             # add vdd label and offset
-            # only add to even rows to avoid duplicates
+            # only add to odd rows to avoid duplicates
             for vdd_pin in vdd_pins:
-                if row % 2 == 0 and vdd_pin.layer=="metal1":
+                if (row % 2 == 1 or row == 0) and vdd_pin.layer=="metal1":
                     self.add_layout_pin(text="vdd",
                                         layer="metal1",
                                         offset=vdd_pin.ll(),
                                         width=full_width,
-                                        height=drc["minwidth_metal1"])
+                                        height=vdd_pin.height())
                 
             # add wl label and offset
             self.add_layout_pin(text="wl[{0}]".format(row),

@@ -65,8 +65,8 @@ class tri_gate_array(design.design):
         for i in range(0, self.columns):
             if i % self.words_per_row != 0:
                 base = vector(i * self.tri.width, 0)
-                self.add_rect("metal1", offset=base + en_pin.ll(), width=tri_width, height=en_pin.height())
-                self.add_rect("metal1", offset=base + enbar_pin.ll(), width=tri_width, height=enbar_pin.height())
+                self.add_rect("metal2", offset=base + en_pin.ll(), width=tri_width, height=en_pin.height())
+                self.add_rect("metal2", offset=base + enbar_pin.ll(), width=tri_width, height=enbar_pin.height())
 
 
     def add_layout_pins(self):
@@ -92,17 +92,13 @@ class tri_gate_array(design.design):
         width = self.tri.width * self.columns - (self.words_per_row - 1) * self.tri.width
         en_pin = self.tri_inst[0].get_pin("en")
         self.add_layout_pin(text="en",
-                            layer="metal1",
-                            offset=en_pin.ll().scale(0, 1),
-                            width=drc["minwidth_metal1"],
-                            height=en_pin.height())
+                            layer="metal2",
+                            offset=en_pin.ll())
         
         enbar_pin = self.tri_inst[0].get_pin("en_bar")
         self.add_layout_pin(text="en_bar",
-                            layer="metal1",
-                            offset=enbar_pin.ll().scale(0, 1),
-                            width=drc["minwidth_metal1"],
-                            height=enbar_pin.height())
+                            layer="metal2",
+                            offset=enbar_pin.ll())
         
         vdd_pin = self.tri_inst[0].get_pin("vdd")
         self.add_layout_pin(text="vdd",

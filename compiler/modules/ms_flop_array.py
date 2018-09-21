@@ -33,6 +33,7 @@ class ms_flop_array(design.design):
     def create_layout(self):
         self.add_pins()
         self.create_ms_flop_array()
+        self.add_dummy_poly(self.ms, self.ms_inst.values(), self.words_per_row, from_gds=True)
         self.add_layout_pins()
         self.DRC_LVS()
 

@@ -45,6 +45,7 @@ class sense_amp_array(design.design):
 
         self.add_sense_amp()
         self.connect_rails()
+        self.add_dummy_poly(self.amp, self.amp_insts, self.words_per_row, from_gds=True)
         
 
     def add_sense_amp(self):
@@ -52,6 +53,8 @@ class sense_amp_array(design.design):
         bl_pin = self.amp.get_pin("bl")            
         br_pin = self.amp.get_pin("br")
         dout_pin = self.amp.get_pin("dout")
+
+        self.amp_insts = []
         
         for i in range(0,self.row_size,self.words_per_row):
 
@@ -61,10 +64,10 @@ class sense_amp_array(design.design):
             bl_offset = amp_position + bl_pin.ll().scale(1,0)
             br_offset = amp_position + br_pin.ll().scale(1,0)
             dout_offset = amp_position + dout_pin.ll()
-            
-            self.add_inst(name=name,
+
+            self.amp_insts.append(self.add_inst(name=name,
                           mod=self.amp,
-                          offset=amp_position)
+                          offset=amp_position))
             self.connect_inst(["bl[{0}]".format(i),"br[{0}]".format(i), 
                                "data[{0}]".format(i/self.words_per_row), 
                                "en", "vdd", "gnd"])
@@ -85,8 +88,6 @@ class sense_amp_array(design.design):
                                 offset=dout_offset,
                                 width=dout_pin.width(),
                                 height=dout_pin.height())
-                           
-
 
 
     def connect_rails(self):

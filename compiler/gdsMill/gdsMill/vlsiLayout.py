@@ -594,6 +594,19 @@ class VlsiLayout:
             print "Error: "+str(self.rootStructureName)+".cell_size information not found yet"
         return cellSizeMicron
 
+    def getShapesInLayer(self, layer, purpose=0):
+        boundaries = []
+        for boundary in self.structures[self.rootStructureName].boundaries:
+            if boundary.drawingLayer==layer and boundary.dataType==purpose:
+                left_bottom = boundary.coordinates[0]
+                right_top = boundary.coordinates[2]
+                convert = lambda x: x*self.units[0]
+
+                boundaries.append((map(convert, left_bottom), map(convert, right_top)))
+        return boundaries
+
+
+
     def measureSize(self,startStructure):
         self.rootStructureName=startStructure
         self.populateCoordinateMap()

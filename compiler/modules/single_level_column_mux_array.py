@@ -33,7 +33,6 @@ class single_level_column_mux_array(design.design):
         for i in range(self.word_size):
             self.add_pin("bl_out[{}]".format(i))
             self.add_pin("br_out[{}]".format(i))
-        self.add_pin("gnd")
 
     def create_layout(self):
         self.add_modules()
@@ -50,12 +49,12 @@ class single_level_column_mux_array(design.design):
 
     def add_modules(self):
         # FIXME: Why is this 8x?
-        self.mux = single_level_column_mux(tx_size=8)
+        self.mux = single_level_column_mux(tx_size=4)
         self.add_mod(self.mux)
 
 
     def setup_layout_constants(self):
-        self.column_addr_size = num_of_inputs = int(self.words_per_row / 2)
+        self.column_addr_size = int(self.words_per_row / 2)
         self.width = self.columns * self.mux.width
         self.m1_pitch = contact.m1m2.width + max(drc["metal1_to_metal1"],drc["metal2_to_metal2"])
         # one set of metal1 routes for select signals and a pair to interconnect the mux outputs bl/br
@@ -100,16 +99,6 @@ class single_level_column_mux_array(design.design):
                                 offset=offset,
                                 height=self.height-offset.y)
 
-            gnd_pins = mux_inst.get_pins("gnd")
-            for gnd_pin in gnd_pins:
-                # only do even colums to avoid duplicates
-                offset = gnd_pin.ll()
-                if col_num % 2 == 0: 
-                    self.add_layout_pin(text="gnd",
-                                        layer="metal2",
-                                        offset=offset.scale(1,0),
-                                        height=self.height)
-        
 
     def add_routing(self):
         self.add_horizontal_input_rail()
@@ -131,26 +120,19 @@ class single_level_column_mux_array(design.design):
 
         # shift to use the blank space to the left of the transistor implant
         sel_pos = self.mux.get_pin("sel").lx()
-        tx_implant_offset = self.mux.nmos1.offset.x + self.mux.nmos.implant_rect.offset.x
-        x_shift = sel_pos - tx_implant_offset + self.m1_width
 
-        via_y_offset = self.mux_inst[0].offset.y + self.m1_space + 0.5*contact.m1m2.first_layer_height
-        
         # Offset to the first transistor gate in the pass gate
         for col in range(self.columns):
             # which select bit should this column connect to depends on the position in the word
             sel_index = col % self.words_per_row
             # Add the column x offset to find the right select bit
-            gate_offset = self.mux_inst[col].get_pin("sel").lc()
-            gate_left = gate_offset - vector(x_shift, 0)
-            self.add_path("metal1", [gate_offset, gate_left-vector(0.5*self.m1_width, 0)])
-            via_offset = vector(gate_left.x, via_y_offset)
-            self.add_path("metal1", [gate_left, via_offset])
-            self.add_via_center(layers=("metal1", "via1", "metal2"),
-                                offset=via_offset,
-                                rotate=0)
-            sel_pos = vector(via_offset.x, self.get_pin("sel[{}]".format(sel_index)).cy())
-            self.add_path("metal2", [via_offset, sel_pos])
+
+            gate_pin = self.mux_inst[col].get_pin("sel")
+
+            sel_pos = vector(gate_pin.lx(), self.get_pin("sel[{}]".format(sel_index)).cy())
+
+            self.add_rect("metal2", offset=sel_pos, height=gate_pin.by()-sel_pos.y)
+
             self.add_via_center(layers=("metal1", "via1", "metal2"),
                                 offset=sel_pos,
                                 rotate=90)

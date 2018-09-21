@@ -21,6 +21,10 @@ class sense_amp_test(openram_test):
 
         import sense_amp_array
 
+        debug.info(2, "Testing sense_amp_array for word_size=8, words_per_row=1")
+        a = sense_amp_array.sense_amp_array(word_size=8, words_per_row=1)
+        self.local_check(a)
+
 
         debug.info(2, "Testing sense_amp_array for word_size=4, words_per_row=2")
         a = sense_amp_array.sense_amp_array(word_size=4, words_per_row=2)

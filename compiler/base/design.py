@@ -1,3 +1,4 @@
+import math
 import hierarchy_layout
 import hierarchy_spice
 import globals
@@ -6,6 +7,10 @@ import verify
 import debug
 import os
 from globals import OPTS
+from tech import drc
+from tech import layer as tech_layers
+from tech import purpose as tech_purpose
+from vector import vector
 
 
 class design(hierarchy_spice.spice, hierarchy_layout.layout):
@@ -47,10 +52,11 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         
     def setup_drc_constants(self):
         """ These are some DRC constants used in many places in the compiler."""
-        from tech import drc
+
         self.well_width = drc["minwidth_well"]
         self.poly_width = drc["minwidth_poly"]
-        self.poly_space = drc["poly_to_poly"]        
+        self.poly_space = drc["poly_to_poly"]
+        self.poly_pitch = self.poly_width + self.poly_space
         self.m1_width = drc["minwidth_metal1"]
         self.m1_space = drc["metal1_to_metal1"]        
         self.m2_width = drc["minwidth_metal2"]
@@ -77,6 +83,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.line_end_space = drc["metal1_to_metal1_line_end"]
         self.parallel_line_space = drc["parallel_metal1_to_metal1"]
         self.metal1_minwidth_fill = utils.ceil(drc["minarea_metal1_minwidth"]/self.m1_width)
+        self.poly_vert_space = drc["poly_end_to_end"]
 
     def get_layout_pins(self,inst):
         """ Return a map of pin locations of the instance offset """
@@ -88,6 +95,54 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             debug.error("Couldn't find instance {0}".format(inst.name),-1)
         inst_map = inst.mod.pin_map
         return inst_map
+
+    def calculate_num_contacts(self, tx_width):
+        """
+        Calculates the possible number of source/drain contacts in a finger.
+        """
+        import contact
+        num_contacts = int(math.ceil(tx_width/(self.contact_width + self.contact_spacing)))
+        while num_contacts > 1:
+            contact_array = contact.contact(layer_stack=("active", "contact", "metal1"),
+                              dimensions=[1, num_contacts],
+                              implant_type=None,
+                              well_type=None)
+            if contact_array.first_layer_height < tx_width and contact_array.second_layer_height < tx_width:
+                break
+            num_contacts -= 1
+        return num_contacts
+
+    def get_dummy_poly(self, cell, from_gds=True):
+        if "po_dummy" in tech_layers:
+            if from_gds:
+                rects = cell.gds.getShapesInLayer(tech_layers["po_dummy"], tech_purpose["po_dummy"])
+            else:
+                filter_match = lambda x: (x.__class__.__name__ == "rectangle" and x.layerNumber == tech_layers["po_dummy"] and
+                                   x.layerPurpose == tech_purpose["po_dummy"])
+                rects = map(lambda x: x.boundary, filter(filter_match, self.objs))
+            leftmost = min(map(lambda x: x[0], map(lambda x: x[0], rects)))
+            rightmost = max(map(lambda x: x[0], map(lambda x: x[1], rects)))
+            return (leftmost, rightmost)
+
+    def add_dummy_poly(self, cell, instances, words_per_row, from_gds=True):
+        leftmost, rightmost = self.get_dummy_poly(cell, from_gds=True)
+        if leftmost is not None:
+            x_offsets = []
+            if words_per_row > 1:
+                for inst in instances:
+                    x_offsets.append(leftmost - self.poly_pitch + inst.lx())  # left
+                    x_offsets.append(inst.rx() + (inst.width - rightmost) + self.poly_pitch) #3 right
+            else:
+                x_offsets.append(leftmost - self.poly_pitch + instances[0].lx())  # left
+                x_offsets.append(instances[-1].rx() + (instances[-1].width - rightmost) + self.poly_pitch)  # 3 right
+            inst = instances[0]
+            for x_offset in x_offsets:
+                self.add_rect("po_dummy", offset=vector(x_offset, inst.by() + 0.5 * self.poly_vert_space),
+                              width=self.poly_width,
+                              height=inst.height - self.poly_vert_space)
+
+
+
         
 
     def DRC_LVS(self, final_verification=False):

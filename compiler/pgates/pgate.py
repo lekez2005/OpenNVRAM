@@ -140,6 +140,7 @@ class pgate(design.design):
         self.pimplant_height = self.height - 0.5*self.well_contact_implant_height - self.mid_y
 
         self.nwell_height = self.height - self.mid_y + 0.5*self.well_contact_active_height + implant_enclosure
+        self.nwell_width = self.implant_width
 
         self.pmos_contacts = self.calculate_num_contacts(self.pmos_width)
         self.nmos_contacts = self.calculate_num_contacts(self.nmos_width)
@@ -154,19 +155,20 @@ class pgate(design.design):
         contact_extent = no_contacts*self.contact_pitch - self.contact_space
         self.contact_x_start = self.mid_x - 0.5*contact_extent + 0.5*self.contact_width
 
-        min_area_threshold = drc["minarea_cont_active_threshold"]
-        unused_space = self.tx_height_available - (self.pmos_width + self.nmos_width)
-        if unused_space + self.well_contact_active_height > min_area_threshold:
-            self.well_contact_active_height = utils.ceil(min_area_threshold)
-            min_active_width = utils.ceil(drc["minarea_cont_active"] / self.well_contact_active_height)
-        else:
-            min_active_width = utils.ceil(drc["minarea_cont_active_thin"]/self.well_contact_active_height)
+        # min_area_threshold = drc["minarea_cont_active_threshold"]
+        # unused_space = self.tx_height_available - (self.pmos_width + self.nmos_width)
+        # if unused_space + self.well_contact_active_height > min_area_threshold:
+        #     self.well_contact_active_height = utils.ceil(min_area_threshold)
+        #     min_active_width = utils.ceil(drc["minarea_cont_active"] / self.well_contact_active_height)
+        # else:
+        #     min_active_width = utils.ceil(drc["minarea_cont_active_thin"]/self.well_contact_active_height)
+        min_active_width = utils.ceil(drc["minarea_cont_active_thin"] / self.well_contact_active_height)
         active_width = max(2*contact.active.first_layer_vertical_enclosure + contact_extent,
                            min_active_width)
 
         # prevent minimum spacing drc
-        if self.width - active_width < drc["active_to_active"]:
-            active_width = max(active_width, self.width)
+        active_width = max(active_width, self.width)
+
         self.well_contact_active_width =active_width
 
 
@@ -226,7 +228,7 @@ class pgate(design.design):
                                     size=(1, self.nmos_contacts))
 
     def connect_positions_m2(self, positions, mid_y, tx_width, no_contacts, contact_shift):
-        m1m2_layers = ("metal1", "via1", "metal2")
+        m1m2_layers = contact.contact.m1m2_layers
         for i in range(len(positions)):
             x_offset = positions[i]
             offset = vector(x_offset, mid_y)
@@ -259,18 +261,18 @@ class pgate(design.design):
         min_drain_x = min(positions)
         offset = vector(positions[0], mid_y - 0.5 * self.m2_width)
         self.add_rect("metal2", offset=offset, width=output_x - min_drain_x)
-        offset = vector(output_x, mid_y + contact_shift)
-        self.add_contact(layers=m1m2_layers, offset=offset)
+        offset = vector(output_x + 0.5*contact.m1m2.first_layer_width, mid_y + contact_shift)
+        self.add_contact_center(layers=m1m2_layers, offset=offset)
         return output_x
 
     def connect_s_or_d(self, pmos_positions, nmos_positions):
 
         self.connect_positions_m2(positions=pmos_positions, mid_y=self.active_mid_y_pmos, tx_width=self.pmos_width,
                                   no_contacts=self.pmos_contacts,
-                                  contact_shift=0.5*self.m2_width - contact.m1m2.second_layer_height)
+                                  contact_shift=0.0)
         output_x = self.connect_positions_m2(positions=nmos_positions, mid_y=self.active_mid_y_nmos, tx_width=self.nmos_width,
                                   no_contacts=self.nmos_contacts,
-                                  contact_shift=-0.5*self.m2_width)
+                                  contact_shift=0.0)
 
         offset = vector(output_x, self.active_mid_y_nmos)
         self.add_rect("metal1", offset=offset, height=self.active_mid_y_pmos - self.active_mid_y_nmos)
@@ -296,7 +298,7 @@ class pgate(design.design):
                       width=self.width, height=self.nimplant_height)
         self.add_rect("pimplant", offset=vector(0, self.mid_y), width=self.width,
                       height=self.pimplant_height)
-        self.add_rect("nwell", offset=vector(implant_x, self.mid_y), width=self.implant_width, height=self.nwell_height)
+        self.add_rect("nwell", offset=vector(implant_x, self.mid_y), width=self.nwell_width, height=self.nwell_height)
 
     def add_body_contacts(self):
 
@@ -320,11 +322,40 @@ class pgate(design.design):
     def add_output_pin(self):
         self.output_y = (self.active_mid_y_pmos + self.active_mid_y_nmos) / 2
         offset = vector(self.output_x + 0.5 * self.m1_width, self.output_y)
-        self.add_layout_pin_center_rect("Z", "metal1", offset=offset)
+        self.add_layout_pin_center_rect("Z", "metal1", offset=offset,
+                                        height=self.active_mid_y_pmos-self.active_mid_y_nmos)
 
     def get_left_source_drain(self):
         """Return left-most source or drain"""
         return min(self.source_positions + self.drain_positions) - self.m1_width
+
+    @staticmethod
+    def equalize_nwell(module, top_left, top_right, bottom_left, bottom_right):
+        input_list = [top_left, top_right, bottom_left, bottom_right]
+
+        x_extension = lambda x: abs(0.5*(x.mod.nwell_width-x.mod.width))
+        x_extensions = map(x_extension, input_list)
+        y_height = lambda x: x.mod.height - x.mod.mid_y
+        y_heights = map(y_height, input_list)
+
+        nwell_left = min(top_left.lx() - x_extensions[0], bottom_left.lx() - x_extensions[2])
+        nwell_right = max(top_right.rx() + x_extensions[1], bottom_right.rx() + x_extensions[3])
+
+        if "X" not in top_left.mirror and top_left == bottom_left:
+            nwell_bottom = min(top_left.uy() - y_heights[0], top_right.uy() - y_heights[1])
+            nwell_top = nwell_bottom + max(top_left.mod.nwell_height, top_right.mod.nwell_height)
+        elif "X" in top_left.mirror and top_left == bottom_left:
+            nwell_top = top_left.by() + max(y_heights)
+            nwell_bottom = top_left.by()
+        else:
+            nwell_bottom = min(bottom_left.uy() - y_heights[2], bottom_right.uy() - y_heights[3])
+            nwell_top = max(top_left.by() + y_heights[0], top_right.by() + y_heights[1])
+
+        module.add_rect("nwell", offset=vector(nwell_left, nwell_bottom),
+                        width=nwell_right-nwell_left,
+                        height=nwell_top-nwell_bottom)
+
+
 
 
 

@@ -2,6 +2,7 @@ import itertools
 import geometry
 import gdsMill
 import debug
+from globals import OPTS
 from tech import drc, GDS
 from tech import layer as techlayer, layer_label_map
 try:
@@ -188,7 +189,7 @@ class layout(lef.lef):
             return self.pin_map[text][0]
         except Exception as e:
             #print e
-            self.gds_write("missing_pin.gds")
+            self.gds_write(os.path.join(OPTS.openram_temp, "missing_pin.gds"))
             debug.error("No pin found with name {0} on {1}. Saved as missing_pin.gds.".format(text,self.name),-1)
             
             

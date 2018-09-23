@@ -134,10 +134,8 @@ class hierarchical_decoder(design.design):
         else:
             self.predecoder_width = self.pre2_4.width
 
-        # put space because of drc implant spacing rules from misaligned predecoder and decoder
-        self.predecoder_decoder_space = self.inv.height
-        self.predecoder_height = self.pre2_4.height*self.no_of_pre2x4 + self.pre3_8.height*self.no_of_pre3x8  + \
-                                 self.predecoder_decoder_space
+        self.predecoder_height = self.pre2_4.height*self.no_of_pre2x4 + self.pre3_8.height*self.no_of_pre3x8
+
 
         # Calculates height and width of row-decoder 
         if (self.num_inputs == 4 or self.num_inputs == 5):
@@ -459,8 +457,7 @@ class hierarchical_decoder(design.design):
             
             # use the inverter offset even though it will be the nand's too
             (gate_offset, y_dir) = self.get_gate_offset(0, self.inv.height, num, rail_height=self.inv.rail_height)
-            if num >= self.total_number_of_predecoder_outputs:
-                gate_offset.y += self.predecoder_decoder_space
+
             # route vdd
             vdd_offset = gate_offset + self.inv.get_pin("vdd").ll().scale(1,y_dir) 
             self.add_layout_pin(text="vdd",

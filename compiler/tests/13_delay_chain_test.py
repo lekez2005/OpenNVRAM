@@ -25,6 +25,10 @@ class delay_chain_test(openram_test):
         a = delay_chain.delay_chain(fanout_list=[4, 4, 4, 4])
         self.local_check(a)
 
+        debug.info(2, "Testing delay_chain")
+        a = delay_chain.delay_chain(fanout_list=[4, 4, 4, 4], cells_per_row=3)
+        self.local_check(a)
+
         OPTS.check_lvsdrc = True
         globals.end_openram()
         

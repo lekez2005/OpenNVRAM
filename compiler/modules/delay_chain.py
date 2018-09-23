@@ -53,7 +53,7 @@ class delay_chain(design.design):
 
         self.create_inv_list()
 
-        self.inv = pinv(route_output=False, rail_offset=0.5*drc["implant_to_implant"])
+        self.inv = pinv()
         self.add_mod(self.inv)
 
         # half chain length is the width of the layout 
@@ -128,21 +128,23 @@ class delay_chain(design.design):
             self.connect_inst(args=[input, output, "vdd", "gnd"])
 
             if i != 0:
-                self.add_via_center(layers=("metal1", "via1", "metal2"),
+                self.add_via_center(layers=contact.m1m2_layers,
+                                    rotate=90,
                                     offset=cur_inv.get_pin("A").center())
 
     def add_route(self, pin1, pin2, source_inv, dest_inv):
         """ This guarantees that we route from the top to bottom row correctly. """
         pin1_pos = pin1.center()
         pin2_pos = pin2.center()
-        if pin1_pos.y == pin2_pos.y:
+        if utils.round_to_grid(pin1_pos.y - pin2_pos.y) < self.m1_width:
             self.add_path("metal2", [pin1_pos, pin2_pos])
         else:
+
             # go to cell edge, then down
-            if pin1_pos.x < pin2_pos.x: # need to go down then right
-                mid_x = source_inv.rx() - self.m2_space
+            if pin1_pos.x > 0.5*self.width:  # need to go down then right
+                mid_x = source_inv.rx() + self.m2_space
             else:
-                mid_x = source_inv.lx() + self.m2_space
+                mid_x = source_inv.lx() - self.m2_space
 
             self.add_path("metal2", [pin1_pos, vector(mid_x, pin1_pos.y),
                                      vector(mid_x, pin2_pos.y), pin2_pos])
@@ -210,15 +212,7 @@ class delay_chain(design.design):
         # output is Z pin of last inverter
         self.output_inv = self.inv_inst_list[-1]
         z_pin = self.output_inv.get_pin("Z")
-        a_pin = self.output_inv.get_pin("A")
-        if a_pin.lx() < z_pin.lx():
-            self.add_layout_pin(text="out",
-                                layer="metal1",
-                                offset=z_pin.ll().scale(1, 1),
-                                width=self.cells_per_row * self.inv.width - z_pin.lx())
-        else:
-            self.add_layout_pin(text="out",
-                                layer="metal1",
-                                offset=z_pin.ll().scale(0, 1),
-                                width=z_pin.lx())
-
+        self.add_layout_pin(text="out",
+                            layer="metal1",
+                            offset=z_pin.ll(),
+                            width=z_pin.width())

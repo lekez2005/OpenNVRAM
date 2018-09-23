@@ -166,7 +166,7 @@ class bitcell_array(design.design):
             self.add_layout_pin(text="wl[{0}]".format(row),
                                 layer="metal1",
                                 offset=wl_pin.ll(),
-                                width=full_width,
+                                width=wl_pin.width()*self.column_size,
                                 height=wl_pin.height())
 
             # increments to the next row height

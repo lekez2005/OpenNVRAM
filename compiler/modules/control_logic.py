@@ -7,6 +7,7 @@ from pinv import pinv
 from pnand2 import pnand2
 from pnand3 import pnand3
 from pnor2 import pnor2
+import pgate
 import math
 from vector import vector
 from globals import OPTS
@@ -49,24 +50,13 @@ class control_logic(design.design):
         self.add_mod(self.nand2)
         self.nand3 = pnand3()
         self.add_mod(self.nand3)
-        self.nor2 = pnor2(1.5)
-        self.add_mod(self.nor2)
+
 
         # Special gates: inverters for buffering
-        self.inv = pinv(1)
-        self.add_mod(self.inv)
-        self.inv1 = pinv(1, rail_offset=drc["implant_to_implant"])
+        self.inv1 = pinv(1)
         self.add_mod(self.inv1)
-        self.inv2 = pinv(2)
-        self.add_mod(self.inv2)
-        self.inv4 = pinv(4)
-        self.add_mod(self.inv4)
-        self.inv8 = pinv(8)
-        self.add_mod(self.inv8)
-        self.inv16 = pinv(16)
-        self.add_mod(self.inv16)
-        self.inv8_offset = pinv(8, rail_offset=drc["implant_to_implant"])
-        self.add_mod(self.inv8_offset)
+
+
 
         c = reload(__import__(OPTS.ms_flop_array))
         ms_flop_array = getattr(c, OPTS.ms_flop_array)
@@ -91,8 +81,9 @@ class control_logic(design.design):
         self.poly_contact_offset = vector(0.5*contact.poly.width,0.5*contact.poly.height)
 
         # M1/M2 routing pitch is based on contacted pitch
-        self.m1_pitch = max(contact.m1m2.width,contact.m1m2.height) + max(drc["metal1_to_metal1"],drc["metal2_to_metal2"])
-        self.m2_pitch = max(contact.m2m3.width,contact.m2m3.height) + max(drc["metal2_to_metal2"],drc["metal3_to_metal3"])
+        self.m1_pitch = self.m1_width + self.m1_space
+        self.m2_pitch = self.m2_width + self.m2_space
+        self.m3_pitch = self.m3_width + self.m3_space
 
         # Have the cell gap leave enough room to route an M2 wire.
         # Some cells may have pwell/nwell spacing problems too when the wells are different heights.
@@ -112,13 +103,15 @@ class control_logic(design.design):
         self.height = self.clk_inv1.get_pin("vdd").uy()
 
         msf_right_x = self.msf_inst.rx()
-        self.clk_bar_rail_x = msf_right_x + 2*self.m2_space
-        self.clk_buf_rail_x = self.clk_bar_rail_x + self.wide_m1_space + 1.5*self.m2_width
+        self.clk_bar_rail_x = msf_right_x + self.m2_pitch
+        self.clk_buf_rail_x = self.clk_bar_rail_x + self.m2_pitch
 
         [self.left_vdd, self.right_vdd] = sorted(self.rbl.get_pins("vdd"), key=lambda x: x.lx())
 
-        self.width = max(self.right_vdd.rx(), self.clk_buf_rail_x + 1.5*self.m2_width) +\
-                     self.wide_m1_space + self.rail_height
+
+
+        self.width = (max(self.right_vdd.rx(), self.clk_buf_rail_x + self.m2_width) +
+                     self.wide_m1_space + self.rail_height)
         
 
 
@@ -130,7 +123,6 @@ class control_logic(design.design):
         self.add_wen_buffer()
         self.add_wen()
         self.add_tri_en()
-        self.add_tri_en_bar()
         self.add_control_flops()
         self.add_clk_buffer()
 
@@ -142,7 +134,6 @@ class control_logic(design.design):
         self.route_clk()
         self.route_msf()
         self.create_output_rails()
-        self.route_tri_en_bar()
         self.route_tri_en()
         self.route_w_en()
         self.route_blk()
@@ -166,16 +157,19 @@ class control_logic(design.design):
         self.connect_inst(["rblk", "pre_s_en", "vdd", "gnd"])
 
     def add_rbl_buffer(self):
-        y_space = 4*self.m1_space
+        sen_buf = pinv(8, contact_nwell=False)
+        self.add_mod(sen_buf)
+
+        y_space = 2*self.m1_pitch
         # extra m1_width added to x_space because some rails extend past the cells
-        x_space = self.rail_height + 2*self.m1_space + self.m1_width
+        x_space = self.rail_height + self.parallel_line_space
         # BUFFER INVERTER FOR S_EN
         # input: input: pre_s_en, output: s_en
         self.s_en_offset = self.replica_bitline_offset + vector(x_space, self.replica_bitline.height + y_space)
         self.s_en = self.add_inst(name="inv_s_en",
-                                  mod=self.inv8_offset,
+                                  mod=sen_buf,
                                   mirror="MY",
-                                  offset=self.s_en_offset + vector(self.inv8_offset.width, 0))
+                                  offset=self.s_en_offset + vector(sen_buf.width, 0))
         self.connect_inst(["pre_s_en", "s_en", "vdd", "gnd"])
 
 
@@ -183,85 +177,111 @@ class control_logic(design.design):
     def add_blk(self):
 
         # input: rblk_bar, output: rblk
-        self.rblk_offset = self.s_en_offset + vector(0, self.inv1.height)
+
+        inv = pinv(1, contact_nwell=True)
+        self.add_mod(inv)
+
+        self.rblk_offset = self.s_en_offset + vector(0, inv.height)
         self.rblk = self.add_inst(name="inv_rblk",
-                                  mod=self.inv1,
+                                  mod=inv,
                                   mirror="XY",
-                                  offset=self.rblk_offset + vector(self.inv1.width, self.inv1.height))
+                                  offset=self.rblk_offset + vector(inv.width, inv.height))
         self.connect_inst(["rblk_bar", "rblk", "vdd", "gnd"])
 
         # input: OE, clk_bar,CS output: rblk_bar
-        self.rblk_bar_offset = self.rblk_offset + vector(self.inv1.width, 0)
+        self.rblk_bar_offset = self.rblk_offset + vector(inv.width, 0)
         self.rblk_bar = self.add_inst(name="nand3_rblk_bar",
                                       mod=self.nand3,
                                       mirror="XY",
                                       offset=self.rblk_bar_offset+vector(self.nand3.width, self.nand3.height))
+        pgate.pgate.equalize_nwell(self, self.rblk, self.rblk_bar, self.s_en, self.s_en)
+
         self.connect_inst(["clk_bar", "oe", "cs", "rblk_bar", "vdd", "gnd"])
 
 
     def add_wen_buffer(self):
         # BUFFER INVERTERS FOR W_EN
+        inv2 = pinv(size=2, contact_nwell=False, contact_pwell=False)
+        self.add_mod(inv2)
+        inv4 = pinv(size=4, contact_nwell=False, contact_pwell=False)
+        self.add_mod(inv4)
         # FIXME: Can we remove these two invs and size the previous one?
-        self.pre_w_en_bar_offset = self.rblk_offset + vector(0, self.inv1.height)
+        self.pre_w_en_bar_offset = self.rblk_offset + vector(0, self.rblk.height)
         self.pre_w_en_bar = self.add_inst(name="inv_pre_w_en_bar",
-                                          mod=self.inv1,
+                                          mod=inv2,
                                           offset=self.pre_w_en_bar_offset)
         self.connect_inst(["pre_w_en", "pre_w_en_bar", "vdd", "gnd"])
 
-        self.w_en_offset = self.pre_w_en_bar_offset + vector(self.inv1.width, 0)
+        self.w_en_offset = self.pre_w_en_bar_offset + vector(inv2.width, 0)
         self.w_en = self.add_inst(name="inv_w_en2",
-                                  mod=self.inv1,
+                                  mod=inv4,
                                   offset=self.w_en_offset)
         self.connect_inst(["pre_w_en_bar", "w_en", "vdd", "gnd"])
 
     def add_wen(self):
 
         # input: w_en_bar, output: pre_w_en
-        self.pre_w_en_offset = self.pre_w_en_bar_offset + vector(self.inv1.width, 2*self.inv.height)
+        self.pre_w_en_offset = self.pre_w_en_bar_offset + vector(0, self.pre_w_en_bar.height)
         self.pre_w_en = self.add_inst(name="inv_pre_w_en",
                                       mod=self.inv1,
                                       mirror="XY",
-                                      offset=self.pre_w_en_offset)
+                                      offset=self.pre_w_en_offset + vector(self.inv1.width, self.inv1.height))
         self.connect_inst(["w_en_bar", "pre_w_en", "vdd", "gnd"])
 
         # input: WE, clk_bar, CS output: w_en_bar
-        self.w_en_bar_offset = self.pre_w_en_offset + vector(self.nand3.width, 0)
+        self.w_en_bar_offset = self.pre_w_en_offset + vector(self.inv1.width, 0)
         self.w_en_bar = self.add_inst(name="nand3_w_en_bar",
                                       mod=self.nand3,
                                       mirror="XY",
-                                      offset=self.w_en_bar_offset)
+                                      offset=self.w_en_bar_offset + vector(self.nand3.width, self.nand3.height))
         self.connect_inst(["clk_bar", "cs", "we", "w_en_bar", "vdd", "gnd"])
+        pgate.pgate.equalize_nwell(self, self.pre_w_en, self.w_en_bar, self.pre_w_en_bar, self.w_en)
 
     def add_tri_en(self):
         # input: clk_buf, OE_bar output: tri_en
-        y_space = drc["implant_to_implant"]
-        self.tri_en_offset = self.pre_w_en_offset + vector(self.nor2.width-self.inv1.width, y_space)
-        self.tri_en=self.add_inst(name="nor2_tri_en",
-                                  mod=self.nor2,
-                                  mirror="MY",
-                                  offset=self.tri_en_offset)
-        self.connect_inst(["clk_buf", "oe_bar", "tri_en", "vdd", "gnd"])
+        inv2 = pinv(2, contact_pwell=False, contact_nwell=False)
+        self.add_mod(inv2)
+        inv4 = pinv(4, contact_pwell=False, contact_nwell=False)
+        self.add_mod(inv4)
+        # add buffers
+        self.tri_en_bar_offset = self.pre_w_en_offset + vector(0, self.pre_w_en.height)
+        self.tri_en_bar = self.add_inst(name="inv_tri_en_bar", mod=inv2, offset=self.tri_en_bar_offset)
+        self.connect_inst(["pre_tri_en", "tri_en_bar", "vdd", "gnd"])
 
-    def add_tri_en_bar(self):
-        #y_space = drc["implant_to_implant"]
-        y_space = 0
-        self.tri_en_bar_offset = self.tri_en_offset + vector(self.nand2.width-self.nor2.width,
-                                                             y_space + self.nand2.height+self.nor2.height)
-        self.tri_en_bar = self.add_inst(name="nand2_tri_en",
-                                        mod=self.nand2,
-                                        offset=self.tri_en_bar_offset,
+        self.tri_en_offset = self.tri_en_bar_offset + vector(self.tri_en_bar.width, 0)
+        self.tri_en = self.add_inst(name="inv_tri_en", mod=inv4, offset=self.tri_en_offset)
+        self.connect_inst(["tri_en_bar", "tri_en", "vdd", "gnd"])
+
+        inv1 = pinv(1)
+        self.add_mod(inv1)
+        pnand = pnand2(1.5)
+        self.add_mod(pnand)
+
+        self.pre_tri_en_offset = self.tri_en_bar_offset + vector(0, self.tri_en_bar.height)
+        self.pre_tri_en = self.add_inst(name="inv_pre_tri_en", mod=inv1,
+                                        offset=self.pre_tri_en_offset + vector(inv1.width, inv1.height),
                                         mirror="XY")
-        self.connect_inst(["clk_bar", "oe", "tri_en_bar", "vdd", "gnd"])
+        self.connect_inst(["pre_tri_en_bar", "pre_tri_en", "vdd", "gnd"])
+
+        self.pre_tri_en_bar_offset = self.pre_tri_en_offset + vector(self.pre_tri_en.width, 0)
+        self.pre_tri_en_bar = self.add_inst(name="nand2_pre_tri_en_bar", mod=pnand,
+                                            offset=self.pre_tri_en_bar_offset + vector(pnand.width, pnand.height),
+                                            mirror="XY")
+        self.connect_inst(["clk_bar", "oe", "pre_tri_en_bar", "vdd", "gnd"])
+
+        pgate.pgate.equalize_nwell(self, self.pre_tri_en, self.pre_tri_en_bar, self.tri_en_bar, self.tri_en)
+
 
     def add_control_flops(self):
         """ Add the control signal flops for OEb, WEb, CSb. """
-        self.h_rail_pitch = contact.m1m2.first_layer_height + self.wide_m1_space
-        y_space = 2*self.wide_m1_space + 4*self.h_rail_pitch
-        self.msf_offset = self.tri_en_bar_offset + vector(-self.nand2.width, y_space) +\
-                          vector(0, self.msf_control.height)
+        self.msf_bottom_gnd = min(self.msf_control.get_pins("gnd"), key=lambda x: x.by())
+        self.h_rail_pitch = contact.m1m2.first_layer_width + self.m1_space
+        y_space = (0.5*self.pre_tri_en.get_pin("vdd").height() + self.parallel_line_space +
+                  3*self.h_rail_pitch + 0.5*self.msf_bottom_gnd.height())
+        self.msf_offset = self.pre_tri_en_offset + vector(0, self.pre_tri_en.height + y_space)
         self.msf_inst=self.add_inst(name="msf_control",
                                     mod=self.msf_control,
-                                    offset=self.msf_offset,
+                                    offset=self.msf_offset + vector(0, self.msf_control.height),
                                     mirror="MX",
                                     rotate=0)
         # don't change this order. This pins are meant for internal connection of msf array inside the control logic.
@@ -274,96 +294,106 @@ class control_logic(design.design):
         self.connect_inst(temp)
 
     def add_clk_buffer(self):
-        """ Add the multistage clock buffer below the control flops """
+        """ Add the multistage clock buffer above the control flops """
         y_space = 5*self.m1_pitch + self.rail_height
-        # 4 stage clock buffer
-        self.clk_bar_offset = self.msf_offset + vector(0, y_space)
-        self.clk_bar = self.add_inst(name="inv_clk_bar",
-                                     mod=self.inv8,
-                                     offset=self.clk_bar_offset)
-        self.connect_inst(["clk2", "clk_bar", "vdd", "gnd"])
 
-        self.clk_buf_offset = self.clk_bar_offset + vector(self.inv8.width, 0)
+        inv20 = pinv(20)
+        self.add_mod(inv20)
+
+        # clk_buf
+        self.clk_buf_offset = self.msf_offset + vector(0, self.msf_control.height + y_space)
         self.clk_buf = self.add_inst(name="inv_clk_buf",
-                                     mod=self.inv16,
+                                     mod=inv20,
                                      offset=self.clk_buf_offset)
         self.connect_inst(["clk_bar", "clk_buf", "vdd", "gnd"])
 
-        y_space = max(drc["implant_to_implant"], 0.5*(self.inv8.rail_height + self.inv2.rail_height) +
-                      drc["metal1_to_metal1_wide2"])
+        # clk_bar
+        self.clk_bar_offset = self.clk_buf_offset + vector(0, self.clk_buf.height)
+        self.clk_bar = self.add_inst(name="inv_clk_bar",
+                                     mod=inv20,
+                                     mirror="MX",
+                                     offset=self.clk_bar_offset + vector(0, inv20.height))
+        self.connect_inst(["clk2", "clk_bar", "vdd", "gnd"])
 
-        self.clk_inv1_offset = self.clk_bar_offset + vector(0, self.inv16.height + y_space)
+        inv12 = pinv(12, contact_pwell=False)
+        self.add_mod(inv12)
+        self.clk_inv2_offset = self.clk_bar_offset + vector(0, inv20.height)
+        self.clk_inv2 = self.add_inst(name="inv_clk2",
+                                      mod=inv12,
+                                      mirror="MY",
+                                      offset=self.clk_inv2_offset+vector(inv12.width, 0))
+        self.connect_inst(["clk1_bar", "clk2", "vdd", "gnd"])
+
+        clk_inv2 = pinv(6, contact_pwell=False)
+        self.add_mod(clk_inv2)
+        self.clk_inv1_offset = self.clk_inv2_offset + vector(inv12.width, 0)
         self.clk_inv1 = self.add_inst(name="inv_clk1_bar",
-                                      mod=self.inv2,
-                                      offset=self.clk_inv1_offset)
+                                      mod=clk_inv2,
+                                      mirror="MY",
+                                      offset=self.clk_inv1_offset + vector(clk_inv2.width, 0))
         self.connect_inst(["clk", "clk1_bar", "vdd", "gnd"])
 
-        self.clk_inv2_offset = self.clk_inv1_offset + vector(self.inv2.width, 0)
-        self.clk_inv2 = self.add_inst(name="inv_clk2",
-                                      mod=self.inv4,
-                                      offset=self.clk_inv2_offset)
-        self.connect_inst(["clk1_bar", "clk2", "vdd", "gnd"])
+
 
 
     def route_clk(self):
         """ Route the clk and clk_bar signal internally """
-        self.add_path("metal1", [self.clk_inv1.get_pin("Z").center(),
-                                 vector(self.clk_inv2.get_pin("A").cx(), self.clk_inv1.get_pin("Z").cy())])
+        a_pin = self.clk_inv2.get_pin("A")
+        z_pin = self.clk_inv1.get_pin("Z")
+        self.add_rect("metal1", offset=a_pin.lr(), width=z_pin.lx() - a_pin.rx())
 
-        inv2_z_pin = self.clk_inv2.get_pin("Z")
-        contact_offset = vector(inv2_z_pin.rx()-0.5*contact.m1m2.first_layer_height, inv2_z_pin.cy())
-        self.add_contact_center(layers=self.m1m2_layers, rotate=90, offset=contact_offset)
-        inv2_gnd_pin = self.clk_inv2.get_pin("gnd")
-        clk_bar_left = self.clk_bar.lx() + self.m2_space
-        clk_bar_a_pin = self.clk_bar.get_pin("A")
+        # clk_bar input
+        a_pin = self.clk_bar.get_pin("A")
+        z_pin = self.clk_inv2.get_pin("Z")
+        mid_y = a_pin.cy()-0.5*contact.m1m2.second_layer_width
+        self.add_rect("metal2", offset=vector(z_pin.lx(), mid_y), height=z_pin.by()-mid_y)
+        self.add_rect("metal2", offset=vector(z_pin.lx(), mid_y), width=a_pin.lx()-z_pin.lx())
+        self.add_contact_center(contact.contact.m1m2_layers,
+                                offset=a_pin.lc() + vector(0.5 * contact.m1m2.second_layer_height, 0), rotate=90)
 
-        self.add_path("metal2", [vector(inv2_z_pin.rx()-0.5*self.m2_width, inv2_z_pin.by()),
-                                 vector(inv2_z_pin.rx()-0.5*self.m2_width, inv2_gnd_pin.cy()),
-                                 vector(clk_bar_left, inv2_gnd_pin.cy()),
-                                 vector(clk_bar_left, clk_bar_a_pin.cy()),
-                                 clk_bar_a_pin.center()])
-        self.add_contact_center(layers=self.m1m2_layers, offset=clk_bar_a_pin.center())
-        self.add_path("metal1", [self.clk_bar.get_pin("Z").center(),
-                                 vector(self.clk_buf.get_pin("A").cx(), self.clk_bar.get_pin("Z").cy())])
+        # clk_buf input
+        z_pin = self.clk_bar.get_pin("Z")
+        a_pin = self.clk_buf.get_pin("A")
+        vdd_pin = self.clk_bar.get_pin("vdd")
+
+        self.add_path("metal2", [
+            vector(z_pin.cx(), z_pin.by()),
+            vector(z_pin.cx(), vdd_pin.cy()),
+            vector(self.clk_buf.lx(), vdd_pin.cy()),
+            vector(self.clk_buf.lx(), a_pin.cy()),
+            vector(a_pin.lx(), a_pin.cy())
+        ])
+        self.add_contact_center(contact.contact.m1m2_layers,
+                                offset=a_pin.lc() + vector(0.5*contact.m1m2.second_layer_height, 0), rotate=90)
+
 
         # add clk and clk_bar rails
-        top = self.clk_bar.uy()
-        bottom = self.rblk_bar.by()
 
-        self.clk_bar_rail = self.left_clk_rail = self.add_rect("metal2", width=1.5*self.m2_width, height=top-bottom,
+        bottom = self.s_en.get_pin("A").cy()
+        top = self.clk_bar.get_pin("Z").by()
+        self.clk_bar_rail = self.left_clk_rail = self.add_rect("metal2", width=self.m2_width, height=top-bottom,
                                                                offset=vector(self.clk_bar_rail_x, bottom))
-        self.clk_buf_rail = self.right_clk_rail = self.add_rect("metal2", width=1.5*self.m2_width, height=top-bottom,
+        top = self.clk_buf.get_pin("Z").by()
+        self.clk_buf_rail = self.right_clk_rail = self.add_rect("metal2", width=self.m2_width, height=top-bottom,
                       offset=vector(self.clk_buf_rail_x, bottom))
 
         # route clk_bar to rail
         clk_bar_z = self.clk_bar.get_pin("Z")
-        clk_bar_y_offset = self.clk_bar.get_pin("gnd").cy() -self.rail_height - 2*self.m2_space
-        contact_offset = vector(clk_bar_z.rx() - 0.5*contact.m1m2.first_layer_height,
-                                clk_bar_z.by()+0.5*contact.m1m2.first_layer_width)
-        self.add_contact_center(self.m1m2_layers, contact_offset, rotate=90)
-        contact_offset = vector(self.clk_buf.rx() + 2 * self.m1_space + contact.m1m2.second_layer_height,
-                                clk_bar_y_offset + 0.5 * self.m2_space)
-        self.add_path("metal2", [vector(clk_bar_z.rx()-0.5*self.m2_width, clk_bar_z.cy()),
-                                 vector(clk_bar_z.rx()-0.5*self.m2_width, clk_bar_y_offset),
-                                 vector(contact_offset.x, clk_bar_y_offset)])
+        self.add_rect("metal1", offset=clk_bar_z.bc()-vector(0, 0.5*self.m2_width),
+                      width=self.clk_bar_rail_x - clk_bar_z.cx())
+        self.add_contact_center(contact.contact.m1m2_layers, offset=vector(
+            self.clk_bar_rail_x+0.5*contact.m1m2.second_layer_width, clk_bar_z.by()))
 
-        self.add_contact(self.m1m2_layers, rotate=270, offset=contact_offset)
-        self.add_path("metal1", [vector(contact_offset.x, clk_bar_y_offset),
-                                 vector(self.clk_bar_rail.offset.x+0.5*self.clk_bar_rail.width, clk_bar_y_offset)])
-        contact_offset = vector(self.clk_bar_rail.offset.x + 0.5 * self.clk_bar_rail.width,
-                                clk_bar_y_offset + 0.5 * contact.m1m2.first_layer_width)
-        self.add_contact_center(self.m1m2_layers, contact_offset, rotate=0)
-
-        # route clock buf to rail
-        clk_z = self.clk_buf.get_pin("Z")
-        contact_offset = vector(self.clk_buf_rail.offset.x + 0.5*self.clk_buf_rail.width,
-                                clk_z.by()+0.5*contact.m1m2.first_layer_width)
-        self.add_contact_center(self.m1m2_layers, contact_offset, rotate=0)
-        self.add_path("metal1", [vector(clk_z.rx(), clk_z.cy()), vector(contact_offset.x, clk_z.cy())])
+        clk_buf_z = self.clk_buf.get_pin("Z")
+        self.add_rect("metal1", offset=clk_buf_z.bc() - vector(0, 0.5 * self.m2_width),
+                      width=self.clk_buf_rail_x - clk_buf_z.cx())
+        self.add_contact_center(contact.contact.m1m2_layers, offset=vector(
+            self.clk_buf_rail_x + 0.5 * contact.m1m2.second_layer_width, clk_buf_z.by()))
 
     def route_pin_to_rail(self, pin, rail_rect, y_pos, x_pos):
-        self.add_contact_center(layers=self.m1m2_layers, offset=vector(rail_rect.offset.x + 0.5*rail_rect.width,
-                                                                y_pos))
+        self.add_contact_center(layers=self.m1m2_layers,
+                                offset=vector(rail_rect.offset.x + rail_rect.width - 0.5*contact.m1m2.second_layer_height,
+                                                                y_pos), rotate=90)
         self.add_rect("metal1", vector(x_pos, y_pos - 0.5*self.m1_width), height=self.m1_width,
                       width=rail_rect.offset.x + 0.5*rail_rect.width - x_pos)
         self.add_contact_center(layers=self.m1m2_layers, offset=vector(pin.cx(), y_pos), rotate=90)
@@ -375,7 +405,7 @@ class control_logic(design.design):
         rail_height = rail_top - rail_bottom
         rail_width = self.m2_width
         rail_pitch = rail_width + self.wide_m1_space
-        rail_offset = vector(self.clk_bar_rail.lx() - rail_pitch, rail_bottom)
+        rail_offset = vector(self.left_clk_rail.lx() - rail_pitch, rail_bottom)
         self.web_rail = self.add_rect("metal2", offset=rail_offset, height=rail_height, width=self.m2_width)
         self.csb_rail = self.add_rect("metal2", offset=rail_offset-vector(rail_pitch, -self.m1_pitch),
                                       height=rail_height-self.m1_pitch,
@@ -387,34 +417,41 @@ class control_logic(design.design):
         y_pos = self.msf_inst.uy() + self.m1_pitch
         m2_pin_lambda = lambda x: x.layer=="metal2"
         self.route_pin_to_rail(filter(m2_pin_lambda, self.msf_inst.get_pins("din[2]"))[0],
-                               self.web_rail, y_pos, self.msf_inst.lx())
+                               self.web_rail, y_pos, self.msf_inst.lx()+self.m1_space)
         self.route_pin_to_rail(filter(m2_pin_lambda, self.msf_inst.get_pins("din[1]"))[0],
-                               self.csb_rail, y_pos + self.m1_pitch, self.msf_inst.lx())
+                               self.csb_rail, y_pos + self.m1_pitch, self.msf_inst.lx()+self.m1_space)
         self.route_pin_to_rail(filter(m2_pin_lambda, self.msf_inst.get_pins("din[0]"))[0],
-                               self.oeb_rail, y_pos + 2*self.m1_pitch, self.msf_inst.lx())
+                               self.oeb_rail, y_pos + 2*self.m1_pitch, self.msf_inst.lx()+self.m1_space)
 
         msf_clk_pin = self.msf_inst.get_pin("clk")
         rail_left_x = self.clk_buf_rail.offset.x
-        self.add_rect("metal1", width=rail_left_x + 1.5*self.m2_width - msf_clk_pin.rx(), height=msf_clk_pin.height(),
+        self.add_rect("metal1", width=rail_left_x - msf_clk_pin.rx(), height=msf_clk_pin.height(),
                       offset=msf_clk_pin.lr())
         self.add_contact_center(layers=self.m1m2_layers,
-                                offset=vector(rail_left_x+0.75*self.m2_width, msf_clk_pin.by()+0.5*contact.m1m2.first_layer_height))
+                                offset=vector(rail_left_x+0.5*contact.m1m2.second_layer_width,
+                                              msf_clk_pin.cy()))
 
         # add msf output rails
         rail_width = self.m2_width
-        rail_pitch = rail_width + self.wide_m1_space
+        rail_pitch = rail_width + self.m2_space
 
         # rail_order from left to right is [oe_bar oe we cs]
-        oe_bar_bottom = self.tri_en.get_pin("B").by()
+        oe_bar_bottom = self.pre_tri_en_bar.get_pin("B").by()
         oe_bottom = self.rblk_bar.get_pin("B").by()
         we_bottom = self.w_en_bar.get_pin("C").by()
         cs_bottom = self.rblk_bar.get_pin("C").by()
-        bottoms = [oe_bar_bottom, oe_bottom, we_bottom, cs_bottom]
-        msf_outputs = [self.msf_inst.get_pin("dout[0]"), self.msf_inst.get_pin("dout_bar[0]"),
-                       self.msf_inst.get_pin("dout_bar[2]"), self.msf_inst.get_pin("dout_bar[1]")]
-        horizontal_rail_order = [3, 2, 0, 1]
-        rail_x_offset = self.left_clk_rail.lx() - len(bottoms) * rail_pitch
-        m1_y_offset = self.msf_inst.by() -2*self.wide_m1_space
+
+        we_pin = self.msf_inst.get_pin("dout_bar[2]")
+        self.we_rail = self.add_rect("metal2", offset=vector(we_pin.lx(), we_bottom),
+                                     height=we_pin.by()-we_bottom)
+
+        bottoms = [oe_bottom, cs_bottom]
+        msf_outputs = [self.msf_inst.get_pin("dout_bar[0]"),
+                       self.msf_inst.get_pin("dout_bar[1]")]
+        horizontal_rail_order = [2, 1]
+
+        rail_x_offset = self.we_rail.lx() - len(bottoms) * rail_pitch
+        m1_y_offset = self.msf_inst.by() - 0.5*self.msf_bottom_gnd.height() - (self.parallel_line_space-self.m1_space)
         vrails = [None]*len(bottoms)
         for i in range(0, len(bottoms)):
             output_pin = msf_outputs[i]
@@ -432,22 +469,27 @@ class control_logic(design.design):
             self.add_rect("metal2", offset=vector(output_pin.lx(), h_rail_offset.y),
                           height=output_pin.by()-h_rail_offset.y, width=output_pin.width())
 
-            self.add_contact(layers=self.m1m2_layers, offset=vector(output_pin.lx(), h_rail_offset.y))
+            self.add_contact(layers=self.m1m2_layers, offset=vector(output_pin.lx() + contact.m1m2.second_layer_height,
+                                                                    h_rail_offset.y),
+                             rotate=90)
             self.add_contact(layers=self.m1m2_layers, offset=vector(
-                v_rail_offset.x, h_rail_offset.y + self.m1_width - contact.m1m2.first_layer_height))
+                v_rail_offset.x + self.m2_width, h_rail_offset.y ),
+                             rotate=90)
 
-        (self.oe_bar_rail, self.oe_rail, self.we_rail, self.cs_rail) = vrails
+        (self.oe_rail, self.cs_rail) = vrails
 
     def create_output_rails(self):
         bottom = self.clk_bar_rail.by()
-        tops = [self.tri_en_bar.get_pin("Z").uy(), self.tri_en.get_pin("Z").uy(),
-                self.w_en.get_pin("Z").uy(), self.s_en.get_pin("vdd").uy()]
+        tops = [self.tri_en_bar.get_pin("gnd").cy(), self.tri_en.get_pin("Z").cy(),
+                self.w_en.get_pin("Z").cy(), self.s_en.get_pin("vdd").uy()]
+        rail_pitch = self.m2_width + self.m2_space
+        x_offsets = [self.oe_rail.offset.x-2*rail_pitch, self.oe_rail.offset.x-rail_pitch, self.we_rail.offset.x,
+                     self.cs_rail.offset.x]
         rails = [None]*4
-        rail_width = self.m2_width
-        rail_pitch = rail_width + self.wide_m1_space
+
         for i in range(len(tops)):
-            rails[i] = self.add_rect("metal2", height=tops[i]-bottom, width=rail_width,
-                                     offset=vector(self.oe_bar_rail.lx() - (i+1)*rail_pitch, bottom))
+            rails[i] = self.add_rect("metal2", height=tops[i]-bottom, width=self.m2_width,
+                                     offset=vector(x_offsets[i], bottom))
         (self.en_bar_rail, self.en_rail, self.w_en_rail, self.s_en_rail) = rails
 
 
@@ -470,60 +512,100 @@ class control_logic(design.design):
             via_y = pin.uy() - contact.m1m2.second_layer_height
         self.add_contact(layers=self.m1m2_layers, offset=vector(pin.lx(), via_y))
 
-    def route_tri_en_bar(self):
-        via_x_pos = self.tri_en_bar.rx()
-        self.route_pin_to_vertical_rail(self.tri_en_bar.get_pin("B"), self.oe_rail, via_x_pos, "top")
-        self.route_pin_to_vertical_rail(self.tri_en_bar.get_pin("A"), self.clk_bar_rail, via_x_pos, "bottom")
-        self.route_pin_to_vertical_rail(self.tri_en_bar.get_pin("Z"), self.en_bar_rail, via_x_pos+2*self.m1_space,
-                                        "center", rail_cont="horizontal")
 
     def route_tri_en(self):
-        via_x_pos = self.tri_en.rx()
-        self.route_pin_to_vertical_rail(self.tri_en.get_pin("B"), self.oe_bar_rail, via_x_pos, "bottom")
-        self.route_pin_to_vertical_rail(self.tri_en.get_pin("A"), self.clk_buf_rail, via_x_pos, "top")
-        self.route_pin_to_vertical_rail(self.tri_en.get_pin("Z"), self.en_rail, via_x_pos + 2*self.m1_space,
-                                        "center", rail_cont="horizontal")
+
+        b_pin = self.pre_tri_en_bar.get_pin("B")
+        a_pin = self.pre_tri_en_bar.get_pin("A")
+
+        # connect inputs
+        self.add_rect("metal1", offset=a_pin.ll(), width=self.clk_bar_rail.rx() - a_pin.lx())
+        self.add_contact_center(contact.contact.m1m2_layers,
+                                offset=vector(self.clk_bar_rail.lx() + 0.5*contact.m1m2.second_layer_width, a_pin.cy()))
+
+        self.add_rect("metal2", offset=b_pin.ll(), width=self.oe_rail.rx()-b_pin.lx())
+        self.add_contact_center(contact.contact.m1m2_layers, b_pin.center())
+
+        # pre_tri_en_bar to pre_tri_en
+
+        z_pin = self.pre_tri_en_bar.get_pin("Z")
+        a_pin = self.pre_tri_en.get_pin("A")
+        self.add_rect("metal1", offset=a_pin.center()-vector(0, 0.5*self.m1_width), width=z_pin.lx()-a_pin.cx())
+
+        # pre_tri_en to tri_en_bar
+
+        z_pin = self.pre_tri_en.get_pin("Z")
+        a_pin = self.tri_en_bar.get_pin("A")
+
+        offset = vector(z_pin.lx(), a_pin.cy()-0.5*self.m2_width)
+        self.add_rect("metal2", offset=offset, height=z_pin.by()-offset.y)
+        self.add_rect("metal2", offset=offset, width=a_pin.cx()-offset.x)
+        self.add_contact_center(contact.contact.m1m2_layers, offset=a_pin.center(), rotate=90)
+
+        # tri_en_bar to rail
+        z_pin = self.tri_en_bar.get_pin("Z")
+        gnd_pin = self.tri_en_bar.get_pin("gnd")
+        offset = vector(z_pin.lx(), gnd_pin.cy())
+        self.add_rect("metal2", offset=offset, height=z_pin.by()-gnd_pin.cy())
+        self.add_rect("metal2", offset=offset, width=self.en_bar_rail.lx()-offset.x+self.m2_width)
+
+        # tri_en_bar to tri_en
+        z_pin = self.tri_en_bar.get_pin("Z")
+        a_pin = self.tri_en.get_pin("A")
+        self.add_rect("metal1", offset=vector(z_pin.rx(), a_pin.cy()-0.5*self.m1_width), width=a_pin.lx()-z_pin.rx())
+        # tri_en z to rail
+        z_pin = self.tri_en.get_pin("Z")
+        self.add_rect("metal1", offset=z_pin.rc() - vector(0, 0.5*self.m1_width), width=self.en_rail.lx()-z_pin.rx())
+        self.add_contact_center(contact.contact.m1m2_layers,
+                                offset=vector(self.en_rail.lx()+0.5*contact.m1m2.second_layer_width, z_pin.cy()))
+
+
+
 
     def route_w_en(self):
         via_x_pos = self.w_en_bar.rx()
-        self.route_pin_to_vertical_rail(self.w_en_bar.get_pin("C"), self.we_rail, via_x_pos, "top")
+        self.route_pin_to_vertical_rail(self.w_en_bar.get_pin("C"), self.we_rail, via_x_pos, "center")
         self.route_pin_to_vertical_rail(self.w_en_bar.get_pin("B"), self.cs_rail, via_x_pos, "center")
-        self.route_pin_to_vertical_rail(self.w_en_bar.get_pin("A"), self.clk_bar_rail, via_x_pos, "bottom")
-        w_en_z_pin = self.w_en.get_pin("Z")
-        self.add_rect("metal1", offset=w_en_z_pin.lr(), width=self.w_en_rail.lx()-w_en_z_pin.rx())
-        self.add_contact(layers=self.m1m2_layers, offset=vector(self.w_en_rail.rx(), w_en_z_pin.by()), rotate=90)
+        self.route_pin_to_vertical_rail(self.w_en_bar.get_pin("A"), self.clk_bar_rail, via_x_pos, "center")
 
-
+        # w_en_bar to pre_w_en
         pre_w_en_a_pin = self.pre_w_en.get_pin("A")
         wen_bar_z_pin = self.w_en_bar.get_pin("Z")
 
         self.add_rect("metal1", offset=pre_w_en_a_pin.lr(), height=self.m1_width, width=wen_bar_z_pin.lx()-pre_w_en_a_pin.rx())
 
+        # pre_w_en to pre_w_en_bar
+
         pre_w_en_z_pin = self.pre_w_en.get_pin("Z")
-        self.add_contact_center(layers=self.m1m2_layers,
-                                offset=vector(pre_w_en_z_pin.rx(), pre_w_en_z_pin.cy()))
-
         pre_w_en_bar_a_pin = self.pre_w_en_bar.get_pin("A")
+        offset = vector(pre_w_en_z_pin.lx(), pre_w_en_bar_a_pin.cy()-0.5*self.m2_width)
 
-        mid_x = self.pre_w_en.lx() + self.wide_m1_space
-        self.add_path("metal2", [vector(pre_w_en_z_pin.rx(), pre_w_en_z_pin.cy()),
-                                 vector(mid_x, pre_w_en_z_pin.cy()),
-                                 vector(mid_x, pre_w_en_bar_a_pin.cy()),
-                                 vector(pre_w_en_bar_a_pin.cx(), pre_w_en_bar_a_pin.cy())])
-        self.add_contact_center(layers=self.m1m2_layers, offset=pre_w_en_bar_a_pin.center())
-
+        self.add_rect("metal2", offset=offset, height=pre_w_en_z_pin.by()-offset.y)
+        self.add_rect("metal2", offset=offset, width=pre_w_en_bar_a_pin.lx()-offset.x)
+        self.add_contact_center(layers=self.m1m2_layers,
+                                offset=vector(pre_w_en_bar_a_pin.lx()+0.5*contact.m1m2.first_layer_height,
+                                              pre_w_en_bar_a_pin.cy()), rotate=90)
+        # pre_w_en_bar to w_en
         pre_w_en_bar_z_pin = self.pre_w_en_bar.get_pin("Z")
         w_en_a_pin = self.w_en.get_pin("A")
 
-        self.add_path("metal1", [vector(pre_w_en_bar_z_pin.lx(), pre_w_en_bar_z_pin.cy()),
-                                 vector(w_en_a_pin.cx(), pre_w_en_bar_z_pin.cy())])
+        self.add_rect("metal1", offset=vector(pre_w_en_bar_z_pin.rx(), w_en_a_pin.cy()-0.5*self.m1_width),
+                      width=w_en_a_pin.lx()-pre_w_en_bar_z_pin.rx())
+
+        # w_en to rail
+        w_en_z_pin = self.w_en.get_pin("Z")
+        self.add_rect("metal1", offset=w_en_z_pin.rc() - vector(0, 0.5 * self.m1_width),
+                      width=self.w_en_rail.rx() - w_en_z_pin.rx())
+        self.add_contact_center(layers=self.m1m2_layers,
+                                offset=vector(self.w_en_rail.lx() + 0.5 * contact.m1m2.second_layer_width,
+                                              w_en_z_pin.cy()))
 
     def route_blk(self):
         # connect rblk_bar nand inputs
         via_x_pos = self.rblk_bar.rx()
-        self.route_pin_to_vertical_rail(self.rblk_bar.get_pin("C"), self.cs_rail, via_x_pos, "top")
+        self.route_pin_to_vertical_rail(self.rblk_bar.get_pin("C"), self.cs_rail, via_x_pos, "center")
         self.route_pin_to_vertical_rail(self.rblk_bar.get_pin("B"), self.oe_rail, via_x_pos, "center")
-        self.route_pin_to_vertical_rail(self.rblk_bar.get_pin("A"), self.clk_bar_rail, via_x_pos, "bottom")
+        self.route_pin_to_vertical_rail(self.rblk_bar.get_pin("A"), self.clk_bar_rail, via_x_pos, "center")
 
         # route rblk_bar to rblk
         rblk_bar_z_pin = self.rblk_bar.get_pin("Z")
@@ -532,15 +614,14 @@ class control_logic(design.design):
 
 
         # rblk to replica bitline en pin
-        mid_x = self.rblk.lx() + self.wide_m1_space
+        mid_x = self.rblk.lx() - self.m2_space
         sen_gnd = self.s_en.get_pin("gnd")
         mid_y = sen_gnd.cy()
         rblk_z_pin = self.rblk.get_pin("Z")
         en_pin = self.rbl.get_pin("en")
-        self.add_contact_center(layers=self.m1m2_layers,
-                                offset=vector(rblk_z_pin.rx(), rblk_z_pin.cy()))
-        self.add_path("metal2", [vector(rblk_z_pin.rx(), rblk_z_pin.cy()),
-                                 vector(mid_x, rblk_z_pin.cy()),
+
+        self.add_path("metal2", [vector(rblk_z_pin.rx(), rblk_z_pin.by()),
+                                 vector(mid_x, rblk_z_pin.by()),
                                  vector(mid_x, mid_y),
                                  vector(en_pin.cx(), mid_y),
                                  vector(en_pin.cx(), en_pin.by())])
@@ -549,10 +630,8 @@ class control_logic(design.design):
         s_en_a_pin = self.s_en.get_pin("A")
         rbl_out_pin = self.rbl.get_pin("out")
 
-        self.add_contact(layers=self.m1m2_layers, offset=vector(rbl_out_pin.lx(),
-                                                                rbl_out_pin.uy() - contact.m1m2.first_layer_height))
         self.add_path("metal2", [vector(rbl_out_pin.cx(), s_en_a_pin.cy()),
-                                 vector(rbl_out_pin.cx(), rbl_out_pin.uy())])
+                                 vector(rbl_out_pin.cx(), rbl_out_pin.by())])
 
         self.add_path("metal1", [vector(s_en_a_pin.center()),
                                  vector(rbl_out_pin.cx(), s_en_a_pin.cy())])
@@ -563,14 +642,16 @@ class control_logic(design.design):
 
         # route s_en output to rail
         s_en_z_pin = self.s_en.get_pin("Z")
-        self.add_contact_center(layers=self.m1m2_layers,
-                                offset=vector(s_en_z_pin.rx(), s_en_z_pin.cy()),
+        via_x = self.s_en.rx()
+        self.add_rect("metal2", offset=vector(s_en_z_pin.lx(), s_en_z_pin.uy()-0.5*self.m2_width),
+                      width=via_x-s_en_z_pin.lx())
+        self.add_contact_center(contact.contact.m1m2_layers, offset=vector(via_x+0.5*contact.m1m2.second_layer_height,
+                                                                           s_en_z_pin.uy()),
                                 rotate=90)
-        s_en_vdd = self.s_en.get_pin("vdd")
-        self.add_path("metal2", [vector(s_en_z_pin.rx()-0.5*self.m2_width, s_en_z_pin.cy()),
-                                 vector(self.s_en.rx(), s_en_z_pin.cy()),
-                                 vector(self.s_en.rx(), s_en_vdd.cy()),
-                                 vector(self.s_en_rail.rx(), s_en_vdd.cy())])
+        self.add_rect("metal1", offset=vector(via_x, s_en_z_pin.uy()-0.5*self.m2_width),
+                      width=self.s_en_rail.lx()-via_x)
+        self.add_contact_center(contact.contact.m1m2_layers,
+                                offset=vector(self.s_en_rail.lx()+0.5*contact.m1m2.second_layer_width, s_en_z_pin.uy()))
 
 
 
@@ -581,23 +662,23 @@ class control_logic(design.design):
         # extend left vdd to top
         self.vdd_rect = self.add_rect("metal1", offset=self.left_vdd.ul(),
                                       width=self.rail_height, height=self.height-self.left_vdd.uy())
-        self.pin_to_vdd(self.s_en.get_pin("vdd"), self.left_vdd)
-        self.pin_to_vdd(self.rblk.get_pin("vdd"), self.left_vdd)
-        self.pin_to_vdd(self.pre_w_en_bar.get_pin("vdd"), self.left_vdd)
-        self.pin_to_vdd(self.pre_w_en.get_pin("vdd"), self.left_vdd)
-        self.pin_to_vdd(self.tri_en.get_pin("vdd"), self.left_vdd)
-        self.pin_to_vdd(self.tri_en_bar.get_pin("vdd"), self.left_vdd)
+        self.pin_to_vdd(self.s_en.get_pin("vdd"), self.vdd_rect)
+        self.pin_to_vdd(self.rblk.get_pin("vdd"), self.vdd_rect)
+        self.pin_to_vdd(self.pre_w_en_bar.get_pin("vdd"), self.vdd_rect)
+        self.pin_to_vdd(self.pre_w_en.get_pin("vdd"), self.vdd_rect)
+        self.pin_to_vdd(self.tri_en.get_pin("vdd"), self.vdd_rect)
+        self.pin_to_vdd(self.tri_en_bar.get_pin("vdd"), self.vdd_rect)
 
         for pin in self.msf_inst.get_pins("vdd"):
             if pin.layer == "metal1":
-                self.pin_to_vdd(pin, self.left_vdd)
+                self.pin_to_vdd(pin, self.vdd_rect)
 
-        self.pin_to_vdd(self.clk_bar.get_pin("vdd"), self.left_vdd)
-        self.pin_to_vdd(self.clk_inv1.get_pin("vdd"), self.left_vdd)
+        self.pin_to_vdd(self.clk_bar.get_pin("vdd"), self.vdd_rect)
+        self.pin_to_vdd(self.clk_inv1.get_pin("vdd"), self.vdd_rect)
 
-        self.add_rect("metal1", height=self.rail_height, width=self.right_vdd.lx() - self.left_vdd.lx(),
+        self.add_rect("metal1", height=self.rail_height, width=self.right_vdd.lx() - self.vdd_rect.lx(),
                       offset=vector(0, 0))
-        self.add_rect("metal1", height=self.left_vdd.by(), width=self.rail_height, offset=vector(0, 0))
+        self.add_rect("metal1", height=self.vdd_rect.by(), width=self.rail_height, offset=vector(0, 0))
         self.add_rect("metal1", height=self.right_vdd.by(), width=self.rail_height,
                       offset=vector(self.right_vdd.lx(), 0))
 
@@ -618,7 +699,9 @@ class control_logic(design.design):
         self.pin_to_gnd(self.pre_w_en_bar.get_pin("gnd"), self.gnd_rail)
         self.pin_to_gnd(self.pre_w_en.get_pin("gnd"), self.gnd_rail)
         self.pin_to_gnd(self.tri_en.get_pin("gnd"), self.gnd_rail)
-        self.pin_to_gnd(self.tri_en_bar.get_pin("gnd"), self.gnd_rail)
+        self.pin_to_gnd(self.pre_tri_en.get_pin("gnd"), self.gnd_rail)
+        self.pin_to_gnd(self.clk_buf.get_pin("gnd"), self.gnd_rail)
+
 
         for pin in self.msf_inst.get_pins("gnd"):
             if pin.layer == "metal1":
@@ -647,8 +730,11 @@ class control_logic(design.design):
 
         # clock input
         clk_inv_a_pin = self.clk_inv1.get_pin("A")
-        self.add_contact_center(layers=self.m1m2_layers, offset=clk_inv_a_pin.center())
-        clk_in_x_offset = self.vdd_rect.rx() + self.m1_space
+        self.add_contact_center(layers=self.m1m2_layers,
+                                offset=vector(clk_inv_a_pin.lx()+0.5*contact.m1m2.second_layer_height,
+                                              clk_inv_a_pin.cy()),
+                                rotate=90)
+        clk_in_x_offset = self.vdd_rect.rx() - 0.5*self.m1_width
         self.add_rect("metal2", height=self.m2_width, width=clk_inv_a_pin.cx()-clk_in_x_offset,
                       offset=vector(clk_in_x_offset, clk_inv_a_pin.by()))
         clk_rect = self.add_rect(layer="metal2",
@@ -661,10 +747,13 @@ class control_logic(design.design):
         bottom = self.add_pin_to_bottom("clk_buf", "metal2", self.clk_buf_rail, self.clk_buf_rail.by() - self.m1_space)
         bottom = self.add_pin_to_bottom("clk_bar", "metal2", self.clk_bar_rail, bottom)
         # control outputs
-        bottom = self.add_pin_to_bottom("tri_en_bar", "metal2", self.en_bar_rail, bottom)
-        bottom = self.add_pin_to_bottom("tri_en", "metal2", self.en_rail, bottom)
         bottom = self.add_pin_to_bottom("w_en", "metal2", self.w_en_rail, bottom)
-        self.add_pin_to_bottom("s_en", "metal2", self.s_en_rail, bottom)
+        bottom = self.add_pin_to_bottom("s_en", "metal2", self.s_en_rail, bottom)
+        bottom = self.add_pin_to_bottom("tri_en", "metal2", self.en_rail, bottom)
+        self.add_pin_to_bottom("tri_en_bar", "metal2", self.en_bar_rail, bottom)
+
+
+
 
 
     def add_pin_to_bottom(self, text, layer, rail, prev_rail_y):

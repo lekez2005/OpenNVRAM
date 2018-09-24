@@ -121,7 +121,7 @@ class FunctionalTest:
         self.sram.sp_write(self.spice_file)
         self.sram.gds_write(self.gds_file)
 
-        drc_result = verify.run_drc(self.sram.name, self.gds_file, exception_group=self.sram.__class__.__name__)
+        drc_result = verify.run_drc(self.sram.name, self.gds_file, exception_group="sram")
         if drc_result:
             raise AssertionError("DRC Failed")
 

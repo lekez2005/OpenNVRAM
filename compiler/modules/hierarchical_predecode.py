@@ -16,7 +16,10 @@ class hierarchical_predecode(design.design):
     def __init__(self, input_number, route_top_rail=True):
         self.number_of_inputs = input_number
         self.number_of_outputs = int(math.pow(2, self.number_of_inputs))
-        design.design.__init__(self, name="pre{0}x{1}".format(self.number_of_inputs,self.number_of_outputs))
+        name = "pre{0}x{1}".format(self.number_of_inputs,self.number_of_outputs)
+        if route_top_rail == False:
+            name += "_no_top"
+        design.design.__init__(self, name=name)
         self.route_top_rail = route_top_rail
 
         c = reload(__import__(OPTS.bitcell))
@@ -41,9 +44,9 @@ class hierarchical_predecode(design.design):
         self.add_mod(self.nand)
 
         if not self.route_top_rail:
-            self.top_inv = pinv(contact_pwell=False)
+            self.top_inv = pinv(contact_nwell=False)
             self.add_mod(self.top_inv)
-            self.top_nand = self.create_nand(self.number_of_inputs, contact_pwell=False)
+            self.top_nand = self.create_nand(self.number_of_inputs, contact_nwell=False)
             self.add_mod(self.top_nand)
         else:
             self.top_inv = self.inv
@@ -51,12 +54,12 @@ class hierarchical_predecode(design.design):
 
 
 
-    def create_nand(self,inputs, contact_pwell=True):
+    def create_nand(self,inputs, contact_nwell=True):
         """ Create the NAND for the predecode input stage """
         if inputs==2:
-            nand = pnand2(contact_pwell=contact_pwell)
+            nand = pnand2(contact_nwell=contact_nwell)
         elif inputs==3:
-            nand = pnand3(contact_pwell=contact_pwell)
+            nand = pnand3(contact_nwell=contact_nwell)
         else:
             debug.error("Invalid number of predecode inputs.",-1)
         return nand
@@ -119,7 +122,7 @@ class hierarchical_predecode(design.design):
         self.in_inst = []
         for inv_num in range(self.number_of_inputs):
             name = "Xpre_inv[{0}]".format(inv_num)
-            if (inv_num % 2 == 0):
+            if (inv_num % 2 == 1):
                 y_off = inv_num * (self.inv.height)
                 mirror = "R0"
             else:
@@ -140,7 +143,7 @@ class hierarchical_predecode(design.design):
         self.inv_inst = []
         for inv_num in range(self.number_of_outputs):
             name = "Xpre_nand_inv[{}]".format(inv_num)
-            if (inv_num % 2 == 0):
+            if (inv_num % 2 == 1):
                 y_off = inv_num * self.inv.height
                 mirror = "R0"
             else:
@@ -167,7 +170,7 @@ class hierarchical_predecode(design.design):
         for nand_input in range(self.number_of_outputs):
             inout = str(self.number_of_inputs)+"x"+str(self.number_of_outputs)
             name = "Xpre{0}_nand[{1}]".format(inout,nand_input)
-            if (nand_input % 2 == 0):
+            if (nand_input % 2 == 1):
                 y_off = nand_input * self.inv.height
                 mirror = "R0"
             else:

@@ -76,7 +76,7 @@ class wordline_driver(design.design):
                                    width=self.m2_width,
                                    height=self.height)
         
-        self.add_layout_pin(text="gnd",
+        self.add_layout_pin(text="vdd",
                             layer="metal1",
                             offset=[0, -0.5*self.rail_height],
                             width=self.x_offset0,
@@ -87,7 +87,7 @@ class wordline_driver(design.design):
             name_nand = "wl_driver_nand{}".format(row)
             name_inv2 = "wl_driver_inv{}".format(row)
 
-            if (row % 2):
+            if (row % 2) == 0:
                 y_offset = self.inv.height*(row + 1)
                 inst_mirror = "MX"
 
@@ -101,7 +101,7 @@ class wordline_driver(design.design):
 
             # Extend vdd and gnd of wordline_driver
             yoffset = (row + 1) * self.inv.height - 0.5 * self.rail_height
-            if (row % 2):
+            if (row % 2) == 0:
                 pin_name = "gnd"
             else:
                 pin_name = "vdd"

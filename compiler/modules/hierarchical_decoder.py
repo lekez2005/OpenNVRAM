@@ -296,7 +296,7 @@ class hierarchical_decoder(design.design):
         self.nand_inst = []
         for row in range(self.rows):
             name = "DEC_NAND[{0}]".format(row)
-            if ((row % 2) == 0):
+            if ((row % 2) == 1):
                 y_off = self.predecoder_height + nand_mod.height*row
                 y_dir = 1
                 mirror = "R0"
@@ -326,7 +326,7 @@ class hierarchical_decoder(design.design):
         self.inv_inst = []
         for row in range(self.rows):
             name = "DEC_INV_[{0}]".format(row)
-            if (row % 2 == 0):
+            if (row % 2 == 1):
                 inv_row_height = self.inv.height * row
                 mirror = "R0"
                 y_dir = 1
@@ -452,27 +452,33 @@ class hierarchical_decoder(design.design):
     def route_vdd_gnd(self):
         """ Add a pin for each row of vdd/gnd which are must-connects next level up. """
 
-        for num in range(0,self.total_number_of_predecoder_outputs + self.rows):
+        for num in range(0,self.total_number_of_predecoder_outputs + self.rows + 1):
             # this will result in duplicate polygons for rails, but who cares
             
             # use the inverter offset even though it will be the nand's too
-            (gate_offset, y_dir) = self.get_gate_offset(0, self.inv.height, num, rail_height=self.inv.rail_height)
 
-            # route vdd
-            vdd_offset = gate_offset + self.inv.get_pin("vdd").ll().scale(1,y_dir) 
-            self.add_layout_pin(text="vdd",
-                                layer="metal1",
-                                offset=vdd_offset,
-                                width=self.width,
-                                height=self.inv.rail_height)
+            gate_offset = num*self.inv.height
 
-            # route gnd
-            gnd_offset = gate_offset+self.inv.get_pin("gnd").ll().scale(1,y_dir)
-            self.add_layout_pin(text="gnd",
-                                layer="metal1",
-                                offset=gnd_offset,
-                                width=self.width,
-                                height=self.inv.rail_height)
+            if (num % 2 == 0):
+                vdd_pin = self.inv.get_pin("vdd")
+                y_offset = gate_offset + vdd_pin.by() - self.inv.height
+                x_offset = vdd_pin.lx()
+                self.add_layout_pin(text="vdd",
+                                    layer="metal1",
+                                    offset=vector(x_offset, y_offset),
+                                    width=self.width,
+                                    height=self.inv.rail_height)
+
+            else:
+                gnd_pin = self.inv.get_pin("gnd")
+                y_offset = gate_offset + gnd_pin.by()
+                x_offset = gnd_pin.lx()
+                self.add_layout_pin(text="gnd",
+                                    layer="metal1",
+                                    offset=vector(x_offset, y_offset),
+                                    width=self.width,
+                                    height=self.inv.rail_height)
+
         
 
     def connect_rail(self, rail_index, pin):

@@ -33,6 +33,7 @@ class single_level_column_mux_array(design.design):
         for i in range(self.word_size):
             self.add_pin("bl_out[{}]".format(i))
             self.add_pin("br_out[{}]".format(i))
+        self.add_pin("gnd")  # TODO gnd pin
 
     def create_layout(self):
         self.add_modules()
@@ -58,8 +59,8 @@ class single_level_column_mux_array(design.design):
         self.width = self.columns * self.mux.width
         self.m1_pitch = contact.m1m2.width + max(drc["metal1_to_metal1"],drc["metal2_to_metal2"])
         # one set of metal1 routes for select signals and a pair to interconnect the mux outputs bl/br
-        # one extra route pitch is to space from the sense amp
-        self.route_height = (self.words_per_row + 3)*self.m1_pitch
+        # two extra route pitch is to space from the sense amp
+        self.route_height = (self.words_per_row + 4)*self.m1_pitch
         
 
         

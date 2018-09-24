@@ -359,8 +359,8 @@ class control_logic(design.design):
         self.add_path("metal2", [
             vector(z_pin.cx(), z_pin.by()),
             vector(z_pin.cx(), vdd_pin.cy()),
-            vector(self.clk_buf.lx(), vdd_pin.cy()),
-            vector(self.clk_buf.lx(), a_pin.cy()),
+            vector(self.clk_buf.lx()+self.m2_space, vdd_pin.cy()),
+            vector(self.clk_buf.lx()+self.m2_space, a_pin.cy()),
             vector(a_pin.lx(), a_pin.cy())
         ])
         self.add_contact_center(contact.contact.m1m2_layers,
@@ -481,7 +481,7 @@ class control_logic(design.design):
     def create_output_rails(self):
         bottom = self.clk_bar_rail.by()
         tops = [self.tri_en_bar.get_pin("gnd").cy(), self.tri_en.get_pin("Z").cy(),
-                self.w_en.get_pin("Z").cy(), self.s_en.get_pin("vdd").uy()]
+                self.w_en.get_pin("Z").cy(), self.s_en.get_pin("Z").uy()]
         rail_pitch = self.m2_width + self.m2_space
         x_offsets = [self.oe_rail.offset.x-2*rail_pitch, self.oe_rail.offset.x-rail_pitch, self.we_rail.offset.x,
                      self.cs_rail.offset.x]

@@ -4,9 +4,7 @@ from contact_full_stack import ContactFullStack
 import utils
 from vector import vector
 
-import design
 
-#class Mixin(design.design):
 class Mixin:
 
     def route_one_bank_power(self):
@@ -20,8 +18,15 @@ class Mixin:
         control_vdd = self.control_logic_inst.get_pin("vdd")
         bank_left_vdd = min(self.bank_inst.get_pins("vdd"), key=lambda x: x.lx())
 
-        max_y = min(control_logic_pins) - 2*self.m3_space - m1mbottop.second_layer_height
+        w_en_vdd = self.control_logic_inst.mod.w_en.get_pin("vdd")
+        w_en_vdd_y = utils.transform_relative(w_en_vdd.ll(), self.control_logic_inst).y
+
+
+
+        max_y = min(control_logic_pins + [w_en_vdd_y]) - 2*self.m3_space - m1mbottop.second_layer_height
         min_y = control_vdd.by()
+
+
 
         vdd_grid_bottom = map(lambda x: x.offset, self.bank_inst.mod.vdd_grid_rects)
         vdd_via_pos = map(lambda x: utils.transform_relative(x, self.bank_inst).y, vdd_grid_bottom)
@@ -57,17 +62,6 @@ class Mixin:
         self.add_layout_pin("gnd", layer=top_power_layer, offset=bank_gnd.ll(),
                             width=bank_gnd.width(), height=bank_gnd.height())
 
-
-
-
-        control_gnd = self.control_logic_inst.get_pin("gnd")
-        bank_gnd = self.bank_inst.get_pin("gnd")
-        connection_height = 3 * self.m2_width
-        connection_offset = control_gnd.ul() - vector(0, connection_height)
-        self.add_rect("metal2", height=connection_height, width=bank_gnd.lx() - control_gnd.lx(),
-                      offset=connection_offset)
-        self.add_via_center(layers=("metal1", "via1", "metal2"),
-                            offset=vector(control_gnd.cx(), control_gnd.uy() - 0.5 * connection_height))
 
     def route_bank_supply_rails(self, bottom_banks):
         """ Create rails at bottom. Connect veritcal rails to top and bottom. """

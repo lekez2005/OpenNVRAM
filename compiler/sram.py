@@ -786,9 +786,11 @@ class sram(design.design, sram_power_grid.Mixin):
         
         # Control logic is placed to the left of the blank even with the
         # decoder bottom. A small gap is in the x-dimension.
+        y_offset = 0.5*self.bank_inst.height + 0.5*self.control_logic.height
+        #y_offset = self.bank.height
         control_gap = 2*self.m3_width
         pos = vector(-control_gap - self.control_logic.width,
-                     self.bank.height)
+                     y_offset)
         self.add_control_logic(position=pos, mirror="MX")
 
         self.width = self.bank.width + self.control_logic.width + control_gap

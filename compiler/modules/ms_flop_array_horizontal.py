@@ -15,7 +15,7 @@ class ms_flop_array_horizontal(ms_flop_array):
     def add_in_out_pins(self):
         m1m2_layers = contact.contact.m1m2_layers
         via_space = self.m1_space
-        rail_pitch = self.m2_width + self.m2_space
+        rail_pitch = self.m2_width + drc["parallel_via_space"]
 
         self.m1_rail_height = 0.5*m1m2.first_layer_width + self.m1_space + self.word_size*rail_pitch - self.m2_space
         self.min_y = -via_space - 0.5*m1m2.second_layer_width - self.m1_rail_height

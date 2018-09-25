@@ -11,25 +11,38 @@ import globals
 from globals import OPTS
 import debug
 
-#@unittest.skip("SKIPPING 04_driver_test")
+
 
 class wordline_driver_test(openram_test):
 
-    def runTest(self):
+    @classmethod
+    def setUpClass(cls):
         globals.init_openram("config_20_{0}".format(OPTS.tech_name))
+
+    @classmethod
+    def tearDownClass(cls):
+        globals.end_openram()
+
+    def run_commands(self, rows, cols):
+
         global verify
         import verify
         OPTS.check_lvsdrc = False
 
         import wordline_driver
-        import tech
 
-        debug.info(2, "Checking driver")
-        tx = wordline_driver.wordline_driver(rows=8)
+        tx = wordline_driver.wordline_driver(rows=rows, no_cols=cols)
         self.local_check(tx)
 
-        OPTS.check_lvsdrc = True
-        globals.end_openram()
+    # @unittest.skip("SKIPPING 04_driver_test")
+    def test_no_buffer(self):
+        debug.info(1, "Checking driver without buffer")
+        self.run_commands(8, 8)
+
+    def test_with_buffer(self):
+        debug.info(1, "Checking driver with buffer")
+        self.run_commands(8, 32)
+
         
 # instantiate a copy of the class to actually run the test
 if __name__ == "__main__":

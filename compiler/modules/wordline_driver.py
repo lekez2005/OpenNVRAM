@@ -12,11 +12,13 @@ class wordline_driver(design.design):
     Creates a Wordline Driver
     Generates the wordline-driver to drive the bitcell
     """
+    BUFFER_THRESHOLD = 16  # no of cols above which buffer is added
 
-    def __init__(self, rows):
+    def __init__(self, rows, no_cols=16):
         design.design.__init__(self, "wordline_driver")
 
         self.rows = rows
+        self.no_cols = no_cols
         self.module_insts = []
         self.add_pins()
         self.design_layout()
@@ -42,6 +44,12 @@ class wordline_driver(design.design):
         self.inv = pinv(size=4)
         self.add_mod(self.inv)
 
+        self.buf_inv = pinv(size=8)
+        self.add_mod(self.buf_inv)
+
+        self.buf = pinv(size=16)
+        self.add_mod(self.buf)
+
         self.inv_no_output = pinv(size=1, route_output=False)
         self.add_mod(self.inv_no_output)
         
@@ -65,7 +73,13 @@ class wordline_driver(design.design):
         self.x_offset1 = self.x_offset0 + self.inv_no_output.width
         self.x_offset2 = self.x_offset1 + self.nand2.width
 
-        self.width = self.x_offset2 + self.inv.width
+
+        if self.no_cols > self.BUFFER_THRESHOLD:
+            self.x_offset3 = self.x_offset2 + self.inv.width
+            self.x_offset4 = self.x_offset3 + self.buf_inv.width
+            self.width = self.x_offset4 + self.buf.width
+        else:
+            self.width = self.x_offset2 + self.inv.width
         self.height = self.inv.height * self.rows
 
     def create_layout(self):
@@ -138,9 +152,50 @@ class wordline_driver(design.design):
                                     offset=inv2_offset,
                                     mirror=inst_mirror)
             self.module_insts.append(inv2_inst)
-            self.connect_inst(["net[{0}]".format(row),
-                               "wl[{0}]".format(row),
-                               "vdd", "gnd"])
+
+
+            # add buffers if necessary. # TODO tune buffer sizes
+            if self.no_cols <= self.BUFFER_THRESHOLD:
+                self.connect_inst(["net[{0}]".format(row),
+                                   "wl[{0}]".format(row),
+                                   "vdd", "gnd"])
+                output_inst = inv2_inst
+            else:
+                self.connect_inst(["net[{0}]".format(row),
+                                   "buf_inv[{0}]".format(row),
+                                   "vdd", "gnd"])
+                name = "wl_driver_buf_inv{}".format(row)
+                offset = vector(self.x_offset3, y_offset)
+                buf_inv_inst = self.add_inst(name=name,
+                                          mod=self.buf_inv,
+                                          offset=offset,
+                                          mirror=inst_mirror)
+                self.module_insts.append(buf_inv_inst)
+                self.connect_inst(["buf_inv[{0}]".format(row),
+                                   "buf_in[{0}]".format(row),
+                                   "vdd", "gnd"])
+
+                name = "wl_driver_buf{}".format(row)
+                offset = vector(self.x_offset4, y_offset)
+                buf_inst = self.add_inst(name=name,
+                                             mod=self.buf,
+                                             offset=offset,
+                                             mirror=inst_mirror)
+                self.module_insts.append(buf_inst)
+                self.connect_inst(["buf_in[{0}]".format(row),
+                                   "wl[{0}]".format(row),
+                                   "vdd", "gnd"])
+                output_inst = buf_inst
+
+                # route buffers
+
+                for z_pin, a_pin in [(inv2_inst.get_pin("Z"), buf_inv_inst.get_pin("A")),
+                                     (buf_inv_inst.get_pin("Z"), buf_inst.get_pin("A"))]:
+
+                    self.add_rect("metal1", offset=vector(z_pin.rx(), a_pin.cy()-0.5*self.m1_width),
+                                  width=a_pin.lx()-z_pin.rx())
+
+
 
             # en connection
             a_pin = inv1_inst.get_pin("A")
@@ -194,7 +249,7 @@ class wordline_driver(design.design):
 
 
             # output each WL on the right
-            wl_offset = inv2_inst.get_pin("Z").rc()
+            wl_offset = output_inst.get_pin("Z").rc()
             self.add_layout_pin_center_segment(text="wl[{0}]".format(row),
                                                layer="metal1",
                                                start=wl_offset,

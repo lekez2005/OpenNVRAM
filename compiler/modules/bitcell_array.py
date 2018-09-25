@@ -26,8 +26,7 @@ class bitcell_array(design.design):
         self.cell = self.mod_bitcell()
         self.add_mod(self.cell)
 
-        # We increase it by a well enclosure so the precharges don't overlap our wells
-        self.height = self.row_size*self.cell.height + drc["well_enclosure_active"]
+        self.height = self.row_size*self.cell.height
         self.width = self.column_size*self.cell.width 
         
         self.add_pins()

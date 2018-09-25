@@ -145,7 +145,7 @@ class control_logic(design.design):
 
         # leave space below to connect left and right vdd
         gnd_y = self.replica_bitline.height - self.replica_bitline.get_pin("gnd").uy() # after mirror
-        y_offset = gnd_y + 2*self.m1_space + self.rail_height
+        y_offset = gnd_y + 0.5*self.rail_height + self.parallel_line_space + self.rail_height
 
         self.replica_bitline_offset = vector(0 , y_offset)
         self.rbl=self.add_inst(name="replica_bitline",

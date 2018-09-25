@@ -120,7 +120,8 @@ class precharge(design.design):
                              width=self.implant_width, height=self.implant_height)
 
         # add nwell
-        self.add_rect("nwell", offset=vector(0, 0), width=self.width, height=self.nwell_height)
+        x_offset = - 0.5*(self.implant_width - self.width)
+        self.add_rect("nwell", offset=vector(x_offset, 0), width=self.implant_width, height=self.nwell_height)
 
         
     def connect_input_gates(self):

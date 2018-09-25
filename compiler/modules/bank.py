@@ -208,7 +208,7 @@ class bank(design.design):
                                                       word_size=self.word_size)
         self.add_mod(self.tri_gate_array)
 
-        self.wordline_driver = self.mod_wordline_driver(rows=self.num_rows)
+        self.wordline_driver = self.mod_wordline_driver(rows=self.num_rows, no_cols=self.num_cols)
         self.add_mod(self.wordline_driver)
 
         self.inv = pinv()
@@ -237,7 +237,8 @@ class bank(design.design):
 
         # The wells must be far enough apart
         # The enclosure is for the well and the spacig is to the bitcell wells
-        y_offset = self.bitcell_array.height + 2*drc["pwell_to_nwell"] + drc["well_enclosure_active"]
+        y_space = 0.5*self.precharge_array.pc_cell.well_contact_implant_height
+        y_offset = self.bitcell_array.height + y_space
         self.precharge_array_inst=self.add_inst(name="precharge_array",
                                                 mod=self.precharge_array, 
                                                 offset=vector(0,y_offset))

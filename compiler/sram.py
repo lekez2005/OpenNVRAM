@@ -21,7 +21,7 @@ class sram(design.design, sram_power_grid.Mixin):
     number of banks should be 1 , 2 or 4
     """
 
-    def __init__(self, word_size, num_words, num_banks, name):
+    def __init__(self, word_size, num_words, num_banks, name, words_per_row=None):
 
         c = reload(__import__(OPTS.control_logic))
         self.mod_control_logic = getattr(c, OPTS.control_logic)
@@ -46,6 +46,7 @@ class sram(design.design, sram_power_grid.Mixin):
         self.word_size = word_size
         self.num_words = num_words
         self.num_banks = num_banks
+        self.words_per_row = words_per_row
 
         debug.info(2, "create sram of size {0} with {1} num of words".format(self.word_size, 
                                                                              self.num_words))
@@ -97,8 +98,11 @@ class sram(design.design, sram_power_grid.Mixin):
         self.bank_side_length = sqrt(self.bank_area)
 
         # Estimate the words per row given the height of the bitcell and the square side length
-        self.tentative_num_cols = int(self.bank_side_length/self.bitcell.width)
-        self.words_per_row = self.estimate_words_per_row(self.tentative_num_cols, self.word_size)
+        if self.words_per_row is not None:
+            self.tentative_num_cols = self.words_per_row
+        else:
+            self.tentative_num_cols = int(self.bank_side_length/self.bitcell.width)
+            self.words_per_row = self.estimate_words_per_row(self.tentative_num_cols, self.word_size)
 
         # Estimate the number of rows given the tentative words per row
         self.tentative_num_rows = self.num_bits_per_bank / (self.words_per_row*self.word_size)
@@ -786,7 +790,7 @@ class sram(design.design, sram_power_grid.Mixin):
         
         # Control logic is placed to the left of the blank even with the
         # decoder bottom. A small gap is in the x-dimension.
-        y_offset = 0.5*self.bank_inst.height + 0.5*self.control_logic.height
+        y_offset = self.bank_inst.get_pin("s_en").uy() + 3*self.m3_space + self.control_logic.height
         #y_offset = self.bank.height
         control_gap = 2*self.m3_width
         pos = vector(-control_gap - self.control_logic.width,
@@ -889,13 +893,15 @@ class sram(design.design, sram_power_grid.Mixin):
             dest_pin = self.bank_inst.get_pin(pin_name)
 
             self.add_rect("metal3", offset=vector(pin_x_offset, src_pin.by()), width=src_pin.rx()-pin_x_offset)
-            self.add_via(layers=("metal2", "via2", "metal3"), offset=src_pin.lr(), rotate=90)
+            self.add_via(layers=("metal2", "via2", "metal3"), offset=src_pin.lr(), rotate=90, size=[1, 2])
+            dummy_contact = contact.contact(layer_stack=("metal3", "via3", "metal4"), dimensions=[1, 2])
             self.add_via(layers=("metal3", "via3", "metal4"),
-                         offset=vector(pin_x_offset+contact.m2m3.second_layer_height, src_pin.by()), rotate=90)
+                         offset=vector(pin_x_offset+dummy_contact.second_layer_height, src_pin.by()), rotate=90,
+                         size=[1, 2])
 
             self.add_rect("metal4", offset=vector(pin_x_offset, dest_pin.by()), height=src_pin.by()-dest_pin.by())
             self.add_via(layers=("metal3", "via3", "metal4"),
-                         offset=vector(pin_x_offset, dest_pin.by()))
+                         offset=vector(pin_x_offset, dest_pin.by()), size=[1, 2])
             self.add_rect("metal3", offset=vector(pin_x_offset, dest_pin.by()), width=dest_pin.lx()-pin_x_offset)
 
             pin_x_offset += pitch

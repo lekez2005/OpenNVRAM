@@ -12,27 +12,35 @@ class Mixin:
         m1mbottop = ContactFullStack(start_layer=0, stop_layer=1, centralize=False, dimensions=[[1, 5]]) # e.g M1-M9
         top_power_layer = self.bank_inst.mod.top_power_layer
         bottom_power_layer = self.bank_inst.mod.bottom_power_layer
+        power_via_space = 2 * self.m3_space + m1mbottop.second_layer_height
 
-        control_logic_pins = map(lambda x: self.control_logic_inst.get_pin(x).by(), self.control_logic_outputs)
+
 
         control_vdd = self.control_logic_inst.get_pin("vdd")
         bank_left_vdd = min(self.bank_inst.get_pins("vdd"), key=lambda x: x.lx())
 
-        w_en_vdd = self.control_logic_inst.mod.w_en.get_pin("vdd")
-        w_en_vdd_y = utils.transform_relative(w_en_vdd.ll(), self.control_logic_inst).y
+        def bank_shift(x):
+            return utils.transform_relative(vector(0, x), self.control_logic_inst).y
 
+        rblk_bar_vdd = bank_shift(self.control_logic_inst.mod.rblk_bar.get_pin("vdd").cy())
+        clk_buf_vdd = bank_shift(self.control_logic_inst.mod.clk_buf.get_pin("vdd").cy())
 
-
-        max_y = min(control_logic_pins + [w_en_vdd_y]) - 2*self.m3_space - m1mbottop.second_layer_height
-        min_y = control_vdd.by()
-
-
+        delay_chain_gnds = self.control_logic_inst.mod.rbl.mod.dc_inst.get_pins("gnd")
+        delay_chain_gnds = map(lambda x: utils.get_pin_rect(x, [self.control_logic_inst,
+                                                                self.control_logic_inst.mod.rbl]), delay_chain_gnds)
+        top_gnd = max(delay_chain_gnds, key=lambda x:x[1][1])[1][1]
 
         vdd_grid_bottom = map(lambda x: x.offset, self.bank_inst.mod.vdd_grid_rects)
         vdd_via_pos = map(lambda x: utils.transform_relative(x, self.bank_inst).y, vdd_grid_bottom)
-        vdd_via_pos = filter(lambda x: max_y > x > min_y, vdd_via_pos)
 
+        temp_vdd_via_pos = []
+        for via_pos in vdd_via_pos:
+            if via_pos > top_gnd + power_via_space and via_pos < self.control_logic_inst.uy():
+                temp_vdd_via_pos.append(via_pos)
+            elif via_pos > clk_buf_vdd + power_via_space and via_pos < rblk_bar_vdd - power_via_space:
+                temp_vdd_via_pos.append(via_pos)
 
+        vdd_via_pos = temp_vdd_via_pos
 
         for via_pos in vdd_via_pos:
             self.add_rect(bottom_power_layer, offset=(control_vdd.lx(), via_pos),
@@ -45,8 +53,18 @@ class Mixin:
                             width=bank_left_vdd.width(), height=bank_left_vdd.height())
 
         gnd_grid_bottom = map(lambda x: x.offset, self.bank_inst.mod.gnd_grid_rects)
+        c = map(lambda x: x.by(), self.bank_inst.mod.gnd_grid_rects)
         gnd_via_pos = map(lambda x: utils.transform_relative(x, self.bank_inst).y, gnd_grid_bottom)
-        gnd_via_pos = filter(lambda x: max_y > x > min_y, gnd_via_pos)
+
+        control_logic_pins = map(lambda x: self.control_logic_inst.get_pin(x).by(), self.control_logic_outputs)
+        temp_gnd_via_pos = []
+        for via_pos in gnd_via_pos:
+            if via_pos < min(control_logic_pins) - power_via_space:
+                temp_gnd_via_pos.append(via_pos)
+            elif via_pos > max(control_logic_pins) + power_via_space and via_pos < self.control_logic_inst.uy():
+                temp_gnd_via_pos.append(via_pos)
+        gnd_via_pos = temp_gnd_via_pos
+
 
         bank_gnd = self.bank_inst.get_pin("gnd")
         control_gnd = self.control_logic_inst.get_pin("gnd")

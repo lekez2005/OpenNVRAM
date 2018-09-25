@@ -74,7 +74,7 @@ class pnand3(pgate.pgate):
         self.pmos2_inst = self.add_inst(name="pnand3_pmos2", mod=self.pmos, offset=offset)
         self.connect_inst(["Z", "B", "vdd", "vdd"])
 
-        self.pmos3_inst = self.add_inst(name="pnand3_pmos2", mod=self.pmos, offset=offset)
+        self.pmos3_inst = self.add_inst(name="pnand3_pmos3", mod=self.pmos, offset=offset)
         self.connect_inst(["Z", "C", "vdd", "vdd"])
 
         self.nmos = ptx_spice(self.nmos_width, mults=self.tx_mults/3, tx_type="nmos")

@@ -17,6 +17,8 @@ class SequentialDelay(delay.delay):
     def __init__(self, sram, spfile, corner):
 
         delay.delay.__init__(self, sram, spfile, corner)
+        self.stim = None
+        self.measure_slew = False
 
         self.period = float(tech.spice["feasible_period"])
         self.setup_time = float(2*tech.spice["msflop_setup"])*1e-3
@@ -77,7 +79,10 @@ class SequentialDelay(delay.delay):
         self.sf.write("* Delay stimulus for period of {0}n load={1}fF slew={2}ns\n\n".format(self.period,
                                                                                              self.load,
                                                                                              self.slew))
-        self.stim = stimuli.stimuli(self.sf, self.corner)
+        if self.stim is None:
+            self.stim = stimuli.stimuli(self.sf, self.corner)
+        else:
+            self.stim.sf = self.sf
         # include files in stimulus file
         self.stim.write_include(self.trim_sp_file)
 
@@ -302,11 +307,12 @@ class SequentialDelay(delay.delay):
                                  trig_td=self.current_time,
                                  targ_name=net, targ_val=targ_val, targ_dir=targ_dir,
                                  targ_td=self.current_time + 0.5 * self.period)
-        self.stim.gen_meas_delay(meas_name=slew_name,
-                                 trig_name=net, trig_val=prev_val, trig_dir="FALL",
-                                 trig_td=self.current_time + 0.5 * self.period,
-                                 targ_name=net, targ_val=final_val, targ_dir=targ_dir,
-                                 targ_td=self.current_time + 0.5 * self.period)
+        if self.measure_slew:
+            self.stim.gen_meas_delay(meas_name=slew_name,
+                                     trig_name=net, trig_val=prev_val, trig_dir="FALL",
+                                     trig_td=self.current_time + 0.5 * self.period,
+                                     targ_name=net, targ_val=final_val, targ_dir=targ_dir,
+                                     targ_td=self.current_time + 0.5 * self.period)
 
     def setup_power_measurement(self, action, transition, address_int):
         """Write Power measurement command

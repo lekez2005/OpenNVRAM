@@ -61,6 +61,7 @@ class FunctionalTest:
             bank_index, bank_inst, _, _ = probe.decode_address(address_vec)
             if bank_index not in banks:
                 banks[bank_index] = bank_inst
+        bank_inst = None
         for bank_index in banks:
             bank_inst = banks[bank_index]
             if self.sram.words_per_row > 1:
@@ -92,7 +93,7 @@ class FunctionalTest:
                 probe.probe_pin(bank_inst.mod.wordline_driver_inst.mod.module_insts[1].get_pin("Z"),
                                 "wl_drv_net0_b{}".format(bank_index),
                                 [bank_inst, bank_inst.mod.wordline_driver_inst])
-        if OPTS.use_pex:
+        if OPTS.use_pex and bank_inst is not None:
             probe.probe_pin(bank_inst.get_pin("clk_bar"), "ctrl_clk_bar", [])
             probe.probe_pin(bank_inst.get_pin("clk_buf"), "ctrl_clk_buf", [])
             probe.probe_pin(bank_inst.get_pin("tri_en"), "ctrl_tri_en", [])
@@ -136,8 +137,11 @@ class FunctionalTest:
 
         OPTS.check_lvsdrc = old_drc_lvs
 
-    def create_delay(self, corner):
-        self.delay = sequential_delay.SequentialDelay(self.sram, self.spice_file, corner)
+    def create_delay(self, corner, delay=None):
+        if delay is None:
+            self.delay = sequential_delay.SequentialDelay(self.sram, self.spice_file, corner)
+        else:
+            self.delay = delay
         if len(self.addresses) > 0:
             address_vec = self.probe.address_to_vector(self.addresses[0])
             self.delay.probe_address = "".join(map(str, address_vec))

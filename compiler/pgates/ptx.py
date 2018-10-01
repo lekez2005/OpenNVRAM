@@ -143,7 +143,7 @@ class ptx(design.design):
         self.additional_poly = 0.0
         self.poly_height = self.tx_width + 2*self.poly_extend_active
         if self.poly_contact_layer == "metal1":
-            self.active_to_contact_center = self.wide_m1_space + max(0, 0.5*(m1m2.first_layer_height-self.tx_width)) +\
+            self.active_to_contact_center = self.line_end_space + max(0, 0.5*(m1m2.first_layer_height-self.tx_width)) +\
                                             poly_contact.second_layer_height*0.5
             poly_height = self.poly_extend_active + self.tx_width + self.active_to_contact_center + 0.5*poly_contact.first_layer_height
             self.additional_poly = poly_height - self.poly_height  # additional poly from adding poly_to_m1 via
@@ -256,7 +256,7 @@ class ptx(design.design):
         # This is the distance that we must route up or down from the center
         # of the contacts to avoid DRC violations to the other contacts
         pin_offset = vector(0, 0.5*self.active_contact.second_layer_height \
-                            + self.wide_m1_space + 0.5*self.m1_width)
+                            + self.line_end_space + 0.5*self.m1_width)
         # This is the width of a m1 extend the ends of the pin
         end_offset = vector(self.m1_width/2,0)
 
@@ -322,9 +322,9 @@ class ptx(design.design):
                                      height=metal2_fill_height)
             # source connection needs to be shifted when drain metal1 height is increased
             if metal1_area_fill is not None:
-                distance_from_mid_contact = max(abs(metal1_area_fill.by() - drain_positions[0].y), \
+                distance_from_mid_contact = max(abs(metal1_area_fill.by() - drain_positions[0].y),
                     abs(metal1_area_fill.uy() - drain_positions[0].y))
-                source_offset = vector(pin_offset.x, distance_from_mid_contact + self.wide_m1_space \
+                source_offset = vector(pin_offset.x, distance_from_mid_contact + self.line_end_space
                         + 0.5*self.m1_width).scale(source_dir,source_dir)
 
         else:

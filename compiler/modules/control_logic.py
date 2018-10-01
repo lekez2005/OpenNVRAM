@@ -111,7 +111,7 @@ class control_logic(design.design):
 
 
         self.width = (max(self.right_vdd.rx(), self.clk_buf_rail_x + self.m2_width) +
-                     self.wide_m1_space + self.rail_height)
+                     self.line_end_space + self.rail_height)
         
 
 
@@ -404,7 +404,7 @@ class control_logic(design.design):
         rail_bottom = self.msf_inst.uy() + 2*self.m2_space
         rail_height = rail_top - rail_bottom
         rail_width = self.m2_width
-        rail_pitch = rail_width + self.wide_m1_space
+        rail_pitch = rail_width + self.line_end_space
         rail_offset = vector(self.left_clk_rail.lx() - rail_pitch, rail_bottom)
         self.web_rail = self.add_rect("metal2", offset=rail_offset, height=rail_height, width=self.m2_width)
         self.csb_rail = self.add_rect("metal2", offset=rail_offset-vector(rail_pitch, -self.m1_pitch),

@@ -39,7 +39,9 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                    'bitcell.bitcell',
                    'contact.contact',
                    'ptx.ptx',
+                   'pinv.pinv',
                    'ptx_spice.ptx_spice',
+                   'signal_gate.SignalGate',
                    'sram.sram',
                    'hierarchical_predecode2x4.hierarchical_predecode2x4',
                    'hierarchical_predecode3x8.hierarchical_predecode3x8']
@@ -79,7 +81,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
         self.minarea_metal1_contact = drc["minarea_metal1_contact"]
 
-        self.wide_m1_space = drc["metal1_to_metal1_line_end"]
+        self.wide_m1_space = drc["metal1_to_metal1_wide"]
         self.line_end_space = drc["metal1_to_metal1_line_end"]
         self.parallel_line_space = drc["parallel_metal1_to_metal1"]
         self.metal1_minwidth_fill = utils.ceil(drc["minarea_metal1_minwidth"]/self.m1_width)

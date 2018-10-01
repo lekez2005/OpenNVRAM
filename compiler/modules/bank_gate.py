@@ -99,11 +99,17 @@ class BankGate(design.design):
             pin = pins[i]
             self.add_via(layers=contact.contact.m1m2_layers, offset=vector(pin.rx(), y_offsets[i]), rotate=90)
             self.add_rect("metal2", offset=vector(pin.lx(), y_offsets[i]), height=pin.by()-y_offsets[i])
-        self.add_layout_pin(ctrl_gate.signal_name, "metal1", offset=vector(0, in_rail_y), width=in_pin.lx())
+        if self.control_gates.index(ctrl_gate) == 0:
+            width = instance.get_pin("in").rx()
+            self.add_layout_pin(ctrl_gate.signal_name, "metal2", offset=vector(0, in_rail_y), width=width)
+        else:
+            self.add_layout_pin(ctrl_gate.signal_name, "metal1", offset=vector(0, in_rail_y), width=in_pin.lx())
 
     def add_bank_sel(self):
         y_offset = self.rails_y[-1] + self.rail_pitch
-        self.add_layout_pin("bank_sel", "metal1", offset=vector(0, y_offset), width=self.width)
+        self.add_rect("metal1", offset=vector(0, y_offset), width=self.width)
+        x_offset = self.module_insts[0].get_pin("en").rx()
+        self.add_layout_pin("bank_sel", "metal2", offset=vector(0, y_offset), width=x_offset)
 
     def route_all_outputs(self):
         for i in range(len(self.module_insts)):

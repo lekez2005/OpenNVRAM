@@ -1,14 +1,12 @@
 import sys
 from tech import drc, power_grid_layers
+from bank_gate import BankGate, ControlGate
 import debug
 import design
 import math
 from math import log,sqrt,ceil
 import contact
 from contact_full_stack import ContactFullStack
-from pinv import pinv
-from pnand2 import pnand2
-from pnor2 import pnor2
 import utils
 from vector import vector
 from globals import OPTS
@@ -86,7 +84,7 @@ class bank(design.design):
         self.route_msf_address()
         self.route_control_lines()
         # Add and route the bank select logic
-        self.add_bank_select()
+        self.route_bank_sel()
         self.add_control_pins()
         self.calculate_rail_vias()
         self.route_vdd_supply()
@@ -111,6 +109,7 @@ class bank(design.design):
         self.add_write_driver_array()
         self.add_msf_data_in()
         self.add_tri_gate_array()
+        self.add_bank_gate()
         self.add_wordline_and_decoder()
         self.add_msf_address()
 
@@ -139,8 +138,9 @@ class bank(design.design):
         # Number of control lines in the bus
         self.num_control_lines = 6
         # The order of the control signals on the control bus:
-        self.input_control_signals = ["clk_buf", "tri_en_bar", "tri_en", "clk_bar", "w_en", "s_en"]
-        self.control_signals = ["gated_" + str for str in self.input_control_signals]
+        self.input_control_signals = ["clk_buf", "tri_en", "w_en", "s_en"]
+        self.control_signals = map(lambda x: self.prefix + x,
+                                   ["s_en", "clk_bar", "clk_buf", "tri_en_bar", "tri_en", "w_en"])
 
         # The central bus is the column address (both polarities), row address
         if self.col_addr_size>0:
@@ -149,17 +149,22 @@ class bank(design.design):
             self.num_addr_lines = self.row_addr_size        
 
         # M1/M2 routing pitch is based on contacted pitch
-        self.m1_pitch = contact.m1m2.height + max(self.m1_space,self.m2_space)
-        self.m2_pitch = contact.m2m3.height + max(self.m2_space,self.m3_space)
+        self.m1_pitch = contact.m1m2.width + self.parallel_line_space
+        self.m2_pitch = contact.m2m3.width + self.parallel_line_space
 
         # Overall central bus gap. It includes all the column mux lines,
         # control lines, address flop to decoder lines and a GND power rail in M2
         # 1.5 pitches on the right on the right of the control lines for vias (e.g. column mux addr lines)
         self.start_of_right_central_bus = -self.m2_pitch * (self.num_control_lines + 1.5)
         # one pitch on the right on the addr lines and one on the right of the gnd rail
-        self.start_of_left_central_bus = self.start_of_right_central_bus - self.m2_pitch*(self.num_addr_lines+2) - self.gnd_rail_width
+
+        self.gnd_x_offset = self.start_of_right_central_bus - self.gnd_rail_width - self.m2_pitch
+
+        self.start_of_left_central_bus = self.gnd_x_offset - self.m2_pitch*(self.num_addr_lines+1)
         # add a pitch on each end and around the gnd rail
-        self.overall_central_bus_width = self.m2_pitch * (self.num_control_lines + self.num_addr_lines + 5) + self.gnd_rail_width
+        self.overall_central_bus_width = - self.start_of_left_central_bus + self.m2_width
+
+
 
 
 
@@ -211,8 +216,14 @@ class bank(design.design):
         self.wordline_driver = self.mod_wordline_driver(rows=self.num_rows, no_cols=self.num_cols)
         self.add_mod(self.wordline_driver)
 
-        self.inv = pinv()
-        self.add_mod(self.inv)
+        control_gates = [
+            ControlGate("s_en", [1, 2, 4]),
+            ControlGate("clk", [2, 6, 8], route_complement=True),
+            ControlGate("tri_en", [1, 3, 3], route_complement=True),
+            ControlGate("w_en", [1, 2, 4])
+        ]
+        self.bank_gate = BankGate(control_gates, contact_nwell=False)
+        self.add_mod(self.bank_gate)
         
 
     def add_bitcell_array(self):
@@ -343,15 +354,27 @@ class bank(design.design):
         temp.extend([self.prefix+"tri_en", self.prefix+"tri_en_bar", "vdd", "gnd"])
         self.connect_inst(temp)
 
+    def add_bank_gate(self):
+        """Add bank gate instance"""
+        tri_gate_vdd = self.tri_gate_array_inst.get_pin("vdd")
+        y_offset = tri_gate_vdd.by() + 0.5*self.bank_gate.rail_height - self.bank_gate.height
+        # distribute around the middle
+        x_offset = max(0, 0.5*self.bitcell_array_inst.rx() - 0.5*self.bank_gate.width) + self.bank_gate.width
+        self.bank_gate_inst = self.add_inst(name="bank_gate", mod=self.bank_gate,
+                                            offset=vector(x_offset, y_offset),
+                                            mirror="MY")
+        self.connect_inst(["bank_sel", "s_en", "clk_buf", "tri_en", "w_en"] + self.control_signals + ["vdd", "gnd"])
+
+
     def add_wordline_and_decoder(self):
         """Fill space between row decoder and wordline driver with implants/nwell to prevent drc spacing issues"""
-        self.wordline_x_offset = -(self.wordline_driver.width + self.overall_central_bus_width)
+        self.wordline_x_offset = self.gnd_x_offset - self.wordline_driver.width - self.m2_pitch
         x_space = self.line_end_space
         self.decoder_x_offset = self.wordline_x_offset - (self.decoder.row_decoder_width + x_space)
 
         # decoder inverter and wordline_driver inverters should be the same, otherwise, these calculations may need
         # to be adjusted
-        inv = self.wordline_driver.inv_no_output
+        inv = self.wordline_driver.inv1
         fill_width = inv.width + x_space
         mid_x = self.wordline_x_offset - 0.5*x_space
 
@@ -436,15 +459,14 @@ class bank(design.design):
         gap = 2*self.m2_pitch  # no need for well spacing for vertical flip flop array
 
         # The address flops go below the hierarchical decoder
-        decoder_x_offset = self.decoder.width + self.overall_central_bus_width
-        addr_x_offset = self.msf_address.width + self.overall_central_bus_width
+        addr_x_offset = self.decoder_x_offset
         # msf_address is not in the y-coord because it is rotated
         # TODO place msf_address
-        offset = vector(addr_x_offset + 2*self.m1_space,
+        offset = vector(addr_x_offset + 2*self.m1_space + contact.m1m2.first_layer_height,
                         self.decoder.predecoder_height +  gap + self.msf_address.height)
         self.msf_address_inst=self.add_inst(name="address_flop_array", 
                                             mod=self.msf_address, 
-                                            offset=offset.scale(-1,-1), 
+                                            offset=offset.scale(1,-1),
                                             rotate=0)
         temp = []
         for i in range(self.row_addr_size+self.col_addr_size):
@@ -493,193 +515,37 @@ class bank(design.design):
         temp.extend(["vdd", "gnd"])
         self.connect_inst(temp)
 
-    def add_bank_select(self):
-        """Create a bank select signal that is combined with an array of
-        NOR+INV gates to gate the control signals in case of multiple
-        banks are created in upper level SRAM module
-        """
+    def route_bank_sel(self):
+        # connect bank gate outputs outputs
+        control_to_pin = dict(zip(self.control_signals, self.control_signals))
+        control_to_pin[self.prefix + "clk_buf"] = self.prefix + "clk"
+        for control_name, pin_name in control_to_pin.iteritems():
+            if pin_name == "clk_buf":
+                pin_name = "clk"
+            v_rail_x = self.central_line_xoffset[control_name]
+            pin = self.bank_gate_inst.get_pin(pin_name)
+            self.add_rect("metal1", offset=vector(v_rail_x, pin.by()), width=pin.lx()-v_rail_x)
+            via_y = pin.cy() - 0.5*self.m1_width + 0.5*contact.m1m2.first_layer_height
+            self.add_contact_center(layers=contact.contact.m1m2_layers, offset=vector(v_rail_x, via_y))
 
-        # 4x Inverter
-        self.inv4x = pinv(4)
-        self.add_mod(self.inv4x)
-
-        self.nor2 = pnor2(size=1.2)
-        self.add_mod(self.nor2)
-
-        self.nand2 = pnand2(size=1.5)
-        self.add_mod(self.nand2)
-        
-        # left of gnd rail is the "bus start"
-        bus_start = self.gnd_x_offset - self.wide_m1_space - 0.5*contact.m1m2.first_layer_height
-        xoffset_nand =  bus_start - self.nand2.width - self.inv4x.width - drc["pwell_to_nwell"]
-        xoffset_nor =  bus_start - self.nor2.width - self.inv4x.width - drc["pwell_to_nwell"]
-        xoffset_inv = bus_start - self.inv4x.width
-        xoffset_bank_sel_inv = xoffset_nor - self.inv.width - 3*self.m2_pitch
-
-        # bank select inverter
-        self.bank_select_inv_position = vector(xoffset_bank_sel_inv, 
-                                               self.min_point)
-        # bank select inverter (must be made unique if more than one OR)
-        bank_sel_inv = self.bank_sel_inv_inst = self.add_inst(name="bank_sel_inv",
-                                   mod=self.inv, 
-                                   offset=[xoffset_bank_sel_inv,self.min_point])
-        self.connect_inst(["bank_sel", "bank_sel_bar", "vdd", "gnd"])
-        
-        # bank_sel is vertical wire
-        bank_sel_inv_pin = bank_sel_inv.get_pin("A")
-        xoffset_bank_sel = bank_sel_inv.lx() + self.m2_space
-        bank_sel_line_pos = vector(xoffset_bank_sel, self.min_point)
-        bank_sel_line_end = vector(xoffset_bank_sel, self.decoder_min_point-self.m2_pitch)
-        self.add_rect("metal2", height=bank_sel_line_pos.y-bank_sel_line_end.y, offset=bank_sel_line_end)
-        self.add_via(layers=("metal1","via1","metal2"),
-                     offset=vector(xoffset_bank_sel, bank_sel_inv_pin.cy()-0.5*contact.m1m2.second_layer_height))
-        self.add_rect("metal1", offset=vector(xoffset_bank_sel, bank_sel_inv_pin.cy()-0.5*self.m1_width),
-                      width=bank_sel_inv_pin.lx()-xoffset_bank_sel)
-
-
-        # Route the pin to the left edge as well
-        bank_sel_pin_pos=vector(self.left_vdd_x_offset, self.min_point)
-        bank_sel_pin_end=vector(bank_sel_line_pos.x, bank_sel_pin_pos.y)
-        self.add_layout_pin_center_segment(text="bank_sel",
-                                           layer="metal3",
-                                           start=bank_sel_pin_pos,
-                                           end=bank_sel_pin_end)
-        self.add_via(layers=("metal2","via2","metal3"),
-                            offset=bank_sel_pin_end-vector(0, 0.5*self.m3_width),
-                            rotate=0)
-
-        # bank_sel_bar is vertical wire
-        bank_sel_bar_pin = bank_sel_inv.get_pin("Z")
-        xoffset_bank_sel_bar = bank_sel_bar_pin.rx()
-        self.add_label_pin(text="bank_sel_bar",
-                           layer="metal2",  
-                           offset=vector(xoffset_bank_sel_bar, self.min_point), 
-                           height=2*self.inv.height)
-        self.add_via_center(layers=("metal1","via1","metal2"),
-                            offset=vector(xoffset_bank_sel_bar+0.5*contact.m1m2.first_layer_width, bank_sel_bar_pin.cy()))
-
-        logic_inst = None
-        self.gated_control_top_pos = []
-            
-        for i in range(self.num_control_lines):
-            input_name = self.input_control_signals[i]
-            gated_name = self.control_signals[i]
-            name_nand = "nand_{}".format(input_name)
-            name_nor = "nor_{}".format(input_name)
-            name_inv = "inv_{}".format(input_name)
-
-            y_offset = self.min_point + self.inv.height * i
-            if i%2:
-                y_offset += self.inv.height
-                mirror = "MX"
+        # add input pins
+        m1_extension = 0.5*contact.m1m2.second_layer_height + self.line_end_space   #space to prevent via clash
+        for pin_name in ["bank_sel"] + self.input_control_signals:
+            if pin_name == "clk_buf":
+                gate_pin_name = "clk"
             else:
-                mirror = ""
-            
-            # These require OR (nor2+inv) gates since they are active low.
-            # (writes occur on clk low)
-            if input_name in ("clk_buf", "tri_en_bar"):
-                
-                logic_inst=self.add_inst(name=name_nor, 
-                                         mod=self.nor2, 
-                                         offset=[xoffset_nor, y_offset],
-                                         mirror=mirror)
-                self.connect_inst([input_name,
-                                   "bank_sel_bar",
-                                   gated_name+"_temp_bar",
-                                   "vdd",
-                                   "gnd"])
-                xoffset_bank_signal = xoffset_bank_sel_bar
-
-                
-            # the rest are AND (nand2+inv) gates
+                gate_pin_name = pin_name
+            pin = self.bank_gate_inst.get_pin(gate_pin_name)
+            if pin.layer == "metal1":
+                self.add_rect("metal1", offset=pin.lr(), width=m1_extension)
+                via_x = pin.rx() + m1_extension + contact.m1m2.second_layer_height
+                self.add_contact(layers=contact.m1m2.layer_stack, offset=vector(via_x, pin.by()), rotate=90)
+                self.add_layout_pin(pin_name, "metal2", offset=vector(via_x, pin.by()), width=self.right_edge - via_x)
             else:
-                logic_inst=self.add_inst(name=name_nand, 
-                                         mod=self.nand2, 
-                                         offset=[xoffset_nand, y_offset],
-                                         mirror=mirror)
-                bank_sel_signal = "bank_sel"
-                self.connect_inst([input_name,
-                                   "bank_sel",
-                                   gated_name+"_temp_bar",
-                                   "vdd",
-                                   "gnd"])
-                xoffset_bank_signal = xoffset_bank_sel
-
-            # They all get inverters on the output
-            inv_inst=self.add_inst(name=name_inv, 
-                                   mod=self.inv4x, 
-                                   offset=[xoffset_inv, y_offset],
-                                   mirror=mirror)
-            self.connect_inst([gated_name+"_temp_bar",
-                               gated_name,
-                               "vdd",
-                               "gnd"])
-
-            
-            # Connect the logic output to inverter input
-            z_pin = logic_inst.get_pin("Z")
-            a_pin = inv_inst.get_pin("A")
-            self.add_rect("metal1", offset=vector(z_pin.rx(), a_pin.cy()-0.5*self.m1_width), width=a_pin.lx()-z_pin.rx())
-            
-            # Connect the inverter output to the central bus
-            inv_z = inv_inst.get_pin("Z")
-            out_pos = inv_z.rc()
-            bus_pos = vector(self.central_line_xoffset[gated_name], out_pos.y)
-            self.gated_control_top_pos.append(inv_z.uy())
-            self.add_path("metal3",[out_pos, bus_pos])
-            self.add_via_center(layers=("metal2", "via2", "metal3"),
-                                offset=bus_pos)
-            self.add_via_center(layers=contact.contact.m1m2_layers,
-                                offset=inv_z.center())
-            self.add_via_center(layers=contact.contact.m2m3_layers,
-                                offset=inv_z.center())
-            self.add_rect("metal2", width=self.via_m2_fill_height, height=self.via_m2_fill_width,
-                          offset=vector(inv_z.rx() - self.m2_width,
-                                        inv_z.cy() - 0.5 * self.via_m2_fill_width))
-            
-            # Connect the logic B input to bank_sel/bank_sel_bar
-            logic_pos = logic_inst.get_pin("B").center()
-            input_pos = vector(xoffset_bank_signal,logic_pos.y)
-            self.add_path("metal2",[logic_pos, input_pos])
-            self.add_via_center(layers=("metal1", "via1", "metal2"),
-                                offset=logic_pos,
-                                rotate=0)
-
-            
-            # Connect the logic A input to the input pin
-            logic_a = logic_inst.get_pin("A")
-            logic_pos = logic_a.lc()
-            input_pos = vector(self.left_vdd_x_offset,logic_pos.y)
-
-            self.add_contact_center(layers=contact.contact.m1m2_layers,
-                                offset=logic_a.center())
-            self.add_contact_center(contact.contact.m2m3_layers,
-                                offset=logic_a.center())
-            self.add_rect("metal2", width=self.via_m2_fill_width, height=self.via_m2_fill_height,
-                          offset=vector(logic_a.rx()-self.via_m2_fill_width,
-                                        logic_a.cy()-0.5*self.via_m2_fill_height))
-            self.add_layout_pin_center_segment(text=input_name,
-                                               layer="metal3",
-                                               start=input_pos,
-                                               end=logic_pos)
-                                
-
-
-            # Add vdd/gnd supply rails
-            gnd_pin = logic_inst.get_pin("gnd")
-            self.route_gnd_from_left(gnd_pin)
-            vdd_pin = inv_inst.get_pin("vdd")
-            self.add_rect("metal1", height=vdd_pin.height(),
-                          width=vdd_pin.rx() - self.left_vdd_x_offset,
-                          offset=vector(self.left_vdd_x_offset, vdd_pin.by()))
-
-        bank_sel_inv_gnd = bank_sel_inv.get_pin("gnd")
-        self.add_rect("metal1", height=bank_sel_inv_gnd.height(), offset=bank_sel_inv_gnd.lr(),
-                      width=logic_inst.get_pin("gnd").lx()-bank_sel_inv_gnd.rx())
+                self.add_layout_pin(pin_name, "metal2", offset=pin.lr(), width=self.right_edge - pin.rx())
 
 
 
-    
     def setup_layout_constraints(self):
         """ Calculating layout constraints, width, height etc """
 
@@ -687,15 +553,10 @@ class bank(design.design):
         #the column decoder (if there is one) or the tristate output
         #driver.
         # Leave room for the output below the tri gate.
-        tri_gate_min_point = self.tri_gate_array_inst.ll().y - 3*self.m2_pitch
-        addr_min_point = self.msf_address_inst.ll().y - 2*self.m2_pitch
-        
-        if self.col_addr_size >1:
-            self.decoder_min_point = self.col_decoder_inst.ll().y
-        else:
-            self.decoder_min_point = addr_min_point
+        bank_gate_min_point = self.bank_gate_inst.by()
+        addr_min_point = self.msf_address_inst.by()
 
-        self.min_point = min(self.decoder_min_point - self.num_control_lines * self.bitcell.height, tri_gate_min_point)
+        self.min_point = min(bank_gate_min_point, addr_min_point) - self.wide_m1_space
 
 
         # The max point is always the top of the precharge bitlines
@@ -704,18 +565,15 @@ class bank(design.design):
         self.height = self.max_point - self.min_point
         
         # Add an extra gap between the bitcell and the rail
-        self.right_vdd_x_offset = self.bitcell_array_inst.rx() + drc["metal1_to_metal1_wide2"] + self.m1_space
+        self.right_vdd_x_offset = self.bitcell_array_inst.rx() + self.wide_m1_space + self.m1_space
 
 
         # from the edge of the decoder is another 2 times minwidth metal1
         # flip flop vertical m2 vdd rails extend to the left
         self.left_vdd_x_offset = min(self.msf_address_inst.ll().x-self.m1_width, self.row_decoder_inst.ll().x) - self.vdd_rail_width - 2*self.m1_width
 
-
-        self.gnd_x_offset = self.start_of_right_central_bus - self.gnd_rail_width - self.m2_pitch
-
-
-        self.width = self.right_vdd_x_offset - self.left_vdd_x_offset + self.vdd_rail_width
+        self.right_edge = self.right_vdd_x_offset + self.vdd_rail_width
+        self.width = self.right_edge - self.left_vdd_x_offset
 
     def create_central_bus(self):
         """ Create the address, supply, and control signal central bus lines. """
@@ -737,6 +595,10 @@ class bank(design.design):
 
         # row address lines (to the left of the column mux or GND rail)
         # goes from 0 down to the bottom of the address flops
+        if self.msf_address_inst is not None:
+            data_pin_names = map("dout[{}]".format, range(self.row_addr_size))
+            addr_pins = sorted(map(self.msf_address_inst.get_pin, data_pin_names), key=lambda x: x.by())
+            rail_min_point = addr_pins[0].by()
         for i in range(self.row_addr_size):
             x_offset = self.start_of_left_central_bus + i*self.m2_pitch 
             name = "A[{}]".format(i)
@@ -744,23 +606,9 @@ class bank(design.design):
             # Add a label pin for LVS correspondence and visual help inspecting the rail.
             self.add_label_pin(text=name,
                                layer="metal2",  
-                               offset=vector(x_offset, self.decoder_min_point), 
+                               offset=vector(x_offset, rail_min_point),
                                width=self.m2_width, 
-                               height=-self.decoder_min_point)
-
-        # column mux lines if there is column mux [2 or 4 lines] (to the left of the GND rail)
-        # goes from 0 down to the min point
-        if self.col_addr_size>0:
-            for i in range(2**self.col_addr_size):
-                x_offset = self.start_of_left_central_bus + (i+self.row_addr_size)*self.m2_pitch
-                name = "sel[{}]".format(i)
-                self.central_line_xoffset[name]=x_offset + 0.5*self.m2_width
-                # Add a label pin for LVS correspondence                
-                self.add_label_pin(text=name,
-                                   layer="metal2",  
-                                   offset=vector(x_offset, self.decoder_min_point),
-                                   width=self.m2_width, 
-                                   height=-self.decoder_min_point)
+                               height=-rail_min_point - self.line_end_space)
 
 
     def route_precharge_to_bitcell_array(self):
@@ -780,7 +628,7 @@ class bank(design.design):
 
         for i in range(self.word_size):
 
-            
+
             # Connection of data_out of sense amp to data_ in of msf_data_out
             tri_gate_in = self.tri_gate_array_inst.get_pin("in[{}]".format(i)).bc()
             sa_data_out = self.sense_amp_array_inst.get_pin("data[{}]".format(i)).bc()
@@ -788,7 +636,7 @@ class bank(design.design):
             # add m2-m3 via at input of tri_gate_in
             via_offset = self.tri_gate_array_inst.get_pin("out[{}]".format(i)).ul() - vector(0, contact.m2m3.second_layer_height)
             self.add_contact(contact.contact.m2m3_layers, offset=via_offset)
-            
+
             # if we need a bend or not
             if tri_gate_in.x-sa_data_out.x>self.m2_pitch:
                 # We'll connect to the bottom of the SA pin
@@ -861,18 +709,11 @@ class bank(design.design):
                          offset=decoder_in_via)
             
             self.add_via_center(layers=("metal1", "via1", "metal2"),
-                         offset=rail_position,
-                         rotate=90)
+                         offset=rail_position)
 
         # Route the power and ground, but only BELOW the y=0 since the
         # others are connected with the wordline driver.
-        # avoid clashing with tri-state or other modules to the right's rails
-        right_instances = [self.tri_gate_array_inst, self.sense_amp_array_inst,
-                           self.msf_data_in_inst, self.write_driver_array_inst]
 
-        right_pins = []
-        for inst in right_instances:
-            right_pins += filter(lambda x: x.layer=="metal1", inst.get_pins("gnd"))
         for gnd_pin in self.row_decoder_inst.get_pins("gnd"):
             if gnd_pin.uy()>0:
                 continue
@@ -1032,15 +873,10 @@ class bank(design.design):
         # Create the address input pins
         for i in range(self.addr_size):
             msf_din_pin = self.msf_address_inst.get_pin("din[{}]".format(i))
-            msf_din_pos = msf_din_pin.ll()
-            via_pos = msf_din_pin.ll() + vector(contact.m2m3.second_layer_height, 0)
-            self.add_contact(contact.contact.m2m3_layers, offset=via_pos, rotate=90)
-
-            address_pos = vector(self.left_vdd_x_offset, msf_din_pos.y)
             self.add_layout_pin(text="ADDR[{}]".format(i),
-                                layer="metal3", 
-                                offset=address_pos, 
-                                width=msf_din_pos.x - self.left_vdd_x_offset)
+                                layer="metal4",
+                                offset=msf_din_pin.lr(),
+                                width=self.right_edge - msf_din_pin.rx())
 
 
         for i in range(self.row_addr_size):
@@ -1122,17 +958,18 @@ class bank(design.design):
         # From control signal to the module pin 
         # Connection from the central bus to the main control block crosses
         # pre-decoder and this connection is in metal3
+        # add offsets away from rails when necessary. These spaces should be tuned based on manually layout out cells
         connection = []
-        connection.append((self.prefix+"clk_bar", self.msf_data_in_inst.get_pin("clk")))
-        connection.append((self.prefix+"tri_en_bar", self.tri_gate_array_inst.get_pin("en_bar")))
-        connection.append((self.prefix+"tri_en", self.tri_gate_array_inst.get_pin("en")))
-        connection.append((self.prefix+"clk_bar", self.precharge_array_inst.get_pin("en")))
-        connection.append((self.prefix+"w_en", self.write_driver_array_inst.get_pin("en")))
-        connection.append((self.prefix+"s_en", self.sense_amp_array_inst.get_pin("en")))
-  
-        for (control_signal, pin) in connection:
+        connection.append((self.prefix+"clk_bar", self.msf_data_in_inst.get_pin("clk"), self.line_end_space))
+        connection.append((self.prefix+"tri_en_bar", self.tri_gate_array_inst.get_pin("en_bar"), 0.0))
+        connection.append((self.prefix+"tri_en", self.tri_gate_array_inst.get_pin("en"), 0.0))
+        connection.append((self.prefix+"clk_bar", self.precharge_array_inst.get_pin("en"), 0.0))
+        connection.append((self.prefix+"w_en", self.write_driver_array_inst.get_pin("en"), -self.line_end_space))
+        connection.append((self.prefix+"s_en", self.sense_amp_array_inst.get_pin("en"), 0.0))
+
+        for (control_signal, pin, via_offset) in connection:
             if pin.layer == "metal2":
-                via_pos = vector(pin.lx()-self.line_end_space, pin.by())
+                via_pos = vector(pin.lx()-self.line_end_space+0.5*contact.m1m2.second_layer_height, pin.by())
                 self.add_contact(contact.contact.m1m2_layers, offset=via_pos, rotate=90)
                 self.add_rect("metal2", offset=via_pos, width=pin.lx()-via_pos.x)
                 pin_pos = vector(via_pos.x, pin.cy())
@@ -1141,9 +978,19 @@ class bank(design.design):
 
             control_pos = vector(self.central_line_xoffset[control_signal], pin.cy())
             self.add_path("metal1", [control_pos, pin_pos])
+
+            x_offset = control_pos.x-0.5*contact.m1m2.width
+
+            if via_offset > 0.0:
+                y_offset = control_pos.y - 0.5*self.m1_width
+            else:
+                y_offset = control_pos.y + via_offset + 0.5*self.m1_width
+            self.add_rect("metal1", offset=vector(x_offset, y_offset), width=contact.m1m2.width, height=abs(via_offset))
+            control_pos.y = control_pos.y + via_offset
+
+
             self.add_via_center(layers=("metal1", "via1", "metal2"),
-                                offset=control_pos,
-                                rotate=90)
+                                offset=control_pos)
 
         # clk to msf address
         control_signal = self.prefix+"clk_buf"
@@ -1155,25 +1002,54 @@ class bank(design.design):
                             offset=control_pos,
                             rotate=0)
 
-        # clk to wordline_driver
+
+        # route clk above decoder
+        en_pin = self.wordline_driver_inst.get_pin("en")
         control_signal = self.prefix+"clk_buf"
-        pin_pos = self.wordline_driver_inst.get_pin("en").uc()
-        mid_pos = pin_pos + vector(0,self.m1_pitch)
+        pin_pos = en_pin.uc()
+
+        # prevent clash with precharge en pin
+        precharge_en = self.precharge_array_inst.get_pin("en")
+        mid_pos_y = precharge_en.uy() + self.line_end_space + contact.m1m2.first_layer_height
+
+        mid_pos = vector(en_pin.cx(), mid_pos_y)
+
         control_x_offset = self.central_line_xoffset[control_signal]
-        control_pos = vector(control_x_offset + self.m1_width, mid_pos.y)
+        control_pos = vector(control_x_offset + 0.5*self.m1_width, mid_pos.y)
         self.add_wire(("metal1","via1","metal2"),[pin_pos, mid_pos, control_pos])
         control_via_pos = vector(control_x_offset, mid_pos.y)
         self.add_via_center(layers=("metal1", "via1", "metal2"),
-                            offset=control_via_pos,
-                            rotate=90)
+                            offset=control_via_pos)
+
+        # route clk below decoder
+        bottom_wordline = self.wordline_driver_inst.by()
+        via_y = (bottom_wordline - 0.5*self.wordline_driver.rail_height - self.line_end_space -
+                   0.5*contact.m1m2.first_layer_height)
+        self.add_contact_center(layers=contact.contact.m1m2_layers, offset=vector(control_x_offset, via_y))
+        via_x = self.start_of_left_central_bus - self.parallel_line_space - 0.5*contact.m1m2.first_layer_width
+        self.add_contact_center(layers=contact.contact.m1m2_layers, offset=vector(via_x, via_y))
+        self.add_rect("metal1", offset=vector(via_x, via_y-0.5*self.m1_width), width=control_x_offset + 0.5*self.m1_width - via_x)
+        self.add_rect("metal2", offset=vector(via_x-0.5*self.m2_width, via_y), height=bottom_wordline-via_y+self.m2_width)
+        self.add_rect("metal2", offset=vector(en_pin.lx(), bottom_wordline), width=via_x-en_pin.lx())
+        self.add_rect("metal2", offset=vector(en_pin.lx(), bottom_wordline), height=en_pin.by()-bottom_wordline)
+
 
     def calculate_rail_vias(self):
         """Calculates positions of power grid rail to M1/M2 vias. Avoids internal metal3 control pins"""
         # need to avoid the metal3 control signals
-        addr_pin_names = map("ADDR[{}]".format, range(self.addr_size))
-        m3_pins = map(lambda x: self.get_pin(x).uy(), self.input_control_signals + addr_pin_names)
 
-        sorted_pins = sorted(m3_pins + self.gated_control_top_pos)
+        collisions = []
+
+
+        addr_pin_names = map("ADDR[{}]".format, range(self.addr_size))
+
+        addr_pins = sorted(map(self.get_pin, addr_pin_names), key=lambda x: x.by())
+
+        collisions.append((addr_pins[0].by(), addr_pins[-1].uy()))
+
+        control_pins = sorted(map(self.get_pin, self.input_control_signals + ["bank_sel"]), key=lambda x: x.by())
+        collisions.append((control_pins[0].by(), control_pins[-1].uy()))
+
         via_positions = []
 
 
@@ -1190,36 +1066,26 @@ class bank(design.design):
 
         grid_space = drc["power_grid_space"]
         grid_pitch = grid_space + grid_rail_height
-        m3_space = self.line_end_space
+        via_space = self.wide_m1_space
 
-        prev_y = current_y = self.min_point
-        current_pin = sorted_pins[0]
-        sorted_pins = sorted_pins[1:]
+        current_y = self.min_point
 
         # TODO finetune this -> some openings get skipped
         while True:
-            rail_top = current_y + grid_rail_height + m3_space
+            rail_top = current_y + grid_rail_height + via_space
             if rail_top > (self.min_point + self.height - grid_pitch): # leave space at the top
                 break
-            if current_pin is not None:
-                if current_pin - self.m3_width > rail_top:
-                    via_positions.append(current_y)
-                    current_y += grid_pitch
-                else:
-                    current_y = max(current_pin + m3_space, prev_y + grid_pitch)
-                    # find next pin
-                    if len(sorted_pins) > 0:
-                        current_pin = sorted_pins[0]
-                        sorted_pins = sorted_pins[1:]
-                    else:
-                        current_pin = None
-            else:
+            collide = False
+            for collision in collisions:
+                if rail_top > collision[0] and current_y - via_space < collision[1]:
+                    collide = True
+                    break
+            if not collide:
                 via_positions.append(current_y)
                 current_y += grid_pitch
-            if len(via_positions) > 0:
-                prev_y = via_positions[-1]
             else:
-                prev_y = current_y
+                current_y = collision[1] + via_space
+
         self.power_grid_vias = via_positions
 
 
@@ -1262,7 +1128,7 @@ class bank(design.design):
 
         for inst in [self.precharge_array_inst, self.sense_amp_array_inst,
                      self.write_driver_array_inst, self.msf_data_in_inst,
-                     self.tri_gate_array_inst]:
+                     self.tri_gate_array_inst, self.bank_gate_inst]:
             for vdd_pin in inst.get_pins("vdd"):
                 self.add_rect(layer="metal1", 
                               offset=vdd_pin.lr(),
@@ -1303,7 +1169,8 @@ class bank(design.design):
         dummy_contact = contact.contact(layer_stack=layers, dimensions=contact_size)
         contact_width = dummy_contact.first_layer_width + dummy_contact.first_layer_vertical_enclosure
         decoder_gnds = self.row_decoder_inst.get_pins("gnd")
-        for inst in [ self.tri_gate_array_inst, self.sense_amp_array_inst, self.msf_data_in_inst, self.write_driver_array_inst]:
+        for inst in [ self.tri_gate_array_inst, self.sense_amp_array_inst, self.msf_data_in_inst,
+                      self.write_driver_array_inst, self.bank_gate_inst]:
             for gnd_pin in inst.get_pins("gnd"):
                 if gnd_pin.layer != "metal1":
                     continue

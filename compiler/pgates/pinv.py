@@ -23,23 +23,25 @@ class pinv(pgate.pgate):
 
     unique_id = 1
     
-    def __init__(self, size=1, beta=parameter["beta"], height=bitcell.height, route_output=True,
+    def __init__(self, size=1, beta=parameter["beta"], height=bitcell.height,
                  contact_pwell=True, contact_nwell=True):
         # We need to keep unique names because outputting to GDSII
         # will use the last record with a given name. I.e., you will
         # over-write a design in GDS if one has and the other doesn't
         # have poly connected, for example.
-        name = "pinv_{}".format(pinv.unique_id)
+        name = "pinv_{}".format(size)
         if not contact_pwell:
             name += "_no_p"
         if not contact_nwell:
             name += "_no_n"
+        if not beta == parameter["beta"]:
+            name += "_b" + str(beta)
+        if not height == self.bitcell.height:
+            name += "_h" + str(height)
         pinv.unique_id += 1
         pgate.pgate.__init__(self, name, height, size=size, beta=beta, contact_pwell=contact_pwell,
                              contact_nwell=contact_nwell)
         debug.info(2, "create pinv structure {0} with size of {1}".format(name, size))
-
-        self.route_output = route_output
 
         self.add_pins()
         self.create_layout()

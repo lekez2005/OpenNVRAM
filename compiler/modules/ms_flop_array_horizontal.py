@@ -29,6 +29,10 @@ class ms_flop_array_horizontal(ms_flop_array):
 
             rail_y = self.min_y + i * rail_pitch
 
+            double_via = contact.contact(layer_stack=contact.m1m2.layer_stack, dimensions=[1, 2])
+            pin_via_offset = vector(din_pin.lx() + double_via.first_layer_height -
+                                    double_via.first_layer_vertical_enclosure, rail_y)
+
             if i < self.word_size - 1:
 
                 # via below din
@@ -47,18 +51,27 @@ class ms_flop_array_horizontal(ms_flop_array):
                 self.add_rect("metal1", offset=offset, width=din_pin.width(), height=via_offset.y-rail_y)
 
                 # m2 via
-                via_offset = vector(din_pin.cx(), rail_y + 0.5 * m1m2.second_layer_width)
-                self.add_contact_center(layers=m1m2_layers, offset=via_offset, rotate=90)
+                self.add_contact(layers=m1m2_layers, offset=pin_via_offset, size=[1, 2], rotate=90)
+
+                # add metal 2, 3 for drc min area
+                fill_width = self.metal1_minwidth_fill
+                self.add_rect("metal2", vector(din_pin.cx(), rail_y), width=fill_width)
+                self.add_rect("metal3", vector(din_pin.cx(), rail_y), width=fill_width)
             else:
                 # connect directly
                 offset = vector(din_pin.lx(), rail_y)
+                fill_width = self.metal1_minwidth_fill
+                fill_x_offset = min(self.width - fill_width, din_pin.cx())
+                self.add_rect("metal3", vector(fill_x_offset, rail_y), width=fill_width)
                 self.add_rect("metal2", width=din_pin.width(), height=din_pin.by() - rail_y, offset=offset)
 
-            # add pin
-            pin_offset = vector(0, rail_y)
-            pin_width = din_pin.cx()
+            self.add_contact(layers=contact.m2m3.layer_stack, offset=pin_via_offset, size=[1, 2], rotate=90)
+            self.add_contact(layers=contact.m3m4.layer_stack, offset=pin_via_offset, size=[1, 2], rotate=90)
 
-            self.add_layout_pin(text="din[{}]".format(i), layer="metal2", offset=pin_offset, width=pin_width)
+            # add pin
+            pin_offset = vector(din_pin.cx(), rail_y)
+            pin_width = self.width - din_pin.cx()
+            self.add_layout_pin(text="din[{}]".format(i), layer="metal4", offset=pin_offset, width=pin_width)
 
 
             dout_pin = self.ms_inst[i].get_pin("dout")

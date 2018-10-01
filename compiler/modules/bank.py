@@ -81,7 +81,8 @@ class bank(design.design):
         self.route_wordline_driver()
         self.route_row_decoder()
         self.route_column_address_lines()
-        self.route_msf_address()
+        if self.msf_address_inst is not None:
+            self.route_msf_address()
         self.route_control_lines()
         # Add and route the bank select logic
         self.route_bank_sel()
@@ -111,7 +112,11 @@ class bank(design.design):
         self.add_tri_gate_array()
         self.add_bank_gate()
         self.add_wordline_and_decoder()
-        self.add_msf_address()
+        if self.col_addr_size == 0 and self.row_decoder_inst.by() > self.bank_gate_inst.by():
+            self.add_msf_address()
+            self.column_decoder_inst = None
+        else:
+            self.msf_address_inst = None
 
     def compute_sizes(self):
         """  Computes the required sizes to create the bank """
@@ -143,10 +148,7 @@ class bank(design.design):
                                    ["s_en", "clk_bar", "clk_buf", "tri_en_bar", "tri_en", "w_en"])
 
         # The central bus is the column address (both polarities), row address
-        if self.col_addr_size>0:
-            self.num_addr_lines = 2**self.col_addr_size + self.row_addr_size
-        else:
-            self.num_addr_lines = self.row_addr_size        
+        self.num_addr_lines = self.row_addr_size
 
         # M1/M2 routing pitch is based on contacted pitch
         self.m1_pitch = contact.m1m2.width + self.parallel_line_space
@@ -200,8 +202,8 @@ class bank(design.design):
         self.add_mod(self.decoder)
 
         self.msf_address = self.mod_ms_flop_array_horizontal(name="msf_address",
-                                                  columns=self.row_addr_size+self.col_addr_size, 
-                                                  word_size=self.row_addr_size+self.col_addr_size)
+                                                  columns=self.row_addr_size,
+                                                  word_size=self.row_addr_size)
         self.add_mod(self.msf_address)
         
         self.msf_data_in = self.mod_ms_flop_array(name="msf_data_in", 
@@ -469,12 +471,9 @@ class bank(design.design):
                                             offset=offset.scale(1,-1),
                                             rotate=0)
         temp = []
-        for i in range(self.row_addr_size+self.col_addr_size):
+        for i in range(self.row_addr_size):
             temp.append("ADDR[{0}]".format(i))
-        for i in range(self.row_addr_size+self.col_addr_size):            
-            if self.col_addr_size==1 and i==self.row_addr_size:
-                temp.extend(["sel[1]","sel[0]"])
-            else:
+        for i in range(self.row_addr_size):
                 temp.extend(["A[{0}]".format(i),"A_bar[{0}]".format(i)])
         temp.append(self.prefix+"clk_buf")
         temp.extend(["vdd", "gnd"])
@@ -549,14 +548,17 @@ class bank(design.design):
     def setup_layout_constraints(self):
         """ Calculating layout constraints, width, height etc """
 
-        #The minimum point is either the bottom of the address flops,
-        #the column decoder (if there is one) or the tristate output
-        #driver.
-        # Leave room for the output below the tri gate.
+        # The minimum point is either the bottom of the address flops,
+        # the bank_gate or the column decoder
+        # driver.
+        min_points = []
         bank_gate_min_point = self.bank_gate_inst.by()
-        addr_min_point = self.msf_address_inst.by()
+        min_points.append(bank_gate_min_point)
+        if self.msf_address_inst is not None:
+            addr_min_point = self.msf_address_inst.by()
+            min_points.append(addr_min_point)
 
-        self.min_point = min(bank_gate_min_point, addr_min_point) - self.wide_m1_space
+        self.min_point = min(min_points) - self.wide_m1_space
 
 
         # The max point is always the top of the precharge bitlines
@@ -570,7 +572,7 @@ class bank(design.design):
 
         # from the edge of the decoder is another 2 times minwidth metal1
         # flip flop vertical m2 vdd rails extend to the left
-        self.left_vdd_x_offset = min(self.msf_address_inst.ll().x-self.m1_width, self.row_decoder_inst.ll().x) - self.vdd_rail_width - 2*self.m1_width
+        self.left_vdd_x_offset = self.row_decoder_inst.lx() - self.vdd_rail_width - 2*self.m1_width
 
         self.right_edge = self.right_vdd_x_offset + self.vdd_rail_width
         self.width = self.right_edge - self.left_vdd_x_offset
@@ -593,22 +595,22 @@ class bank(design.design):
                           width=self.m2_width, 
                           height=self.height)
 
-        # row address lines (to the left of the column mux or GND rail)
-        # goes from 0 down to the bottom of the address flops
+        # row address lines
+        # goes from just below row decoder to lowest msf_address_int output pin
         if self.msf_address_inst is not None:
             data_pin_names = map("dout[{}]".format, range(self.row_addr_size))
             addr_pins = sorted(map(self.msf_address_inst.get_pin, data_pin_names), key=lambda x: x.by())
             rail_min_point = addr_pins[0].by()
-        for i in range(self.row_addr_size):
-            x_offset = self.start_of_left_central_bus + i*self.m2_pitch 
-            name = "A[{}]".format(i)
-            self.central_line_xoffset[name]=x_offset + 0.5*self.m2_width
-            # Add a label pin for LVS correspondence and visual help inspecting the rail.
-            self.add_label_pin(text=name,
-                               layer="metal2",  
-                               offset=vector(x_offset, rail_min_point),
-                               width=self.m2_width, 
-                               height=-rail_min_point - self.line_end_space)
+            for i in range(self.row_addr_size):
+                x_offset = self.start_of_left_central_bus + i*self.m2_pitch
+                name = "A[{}]".format(i)
+                self.central_line_xoffset[name]=x_offset + 0.5*self.m2_width
+                # Add a label pin for LVS correspondence and visual help inspecting the rail.
+                self.add_label_pin(text=name,
+                                   layer="metal2",
+                                   offset=vector(x_offset, rail_min_point),
+                                   width=self.m2_width,
+                                   height=-rail_min_point - self.line_end_space)
 
 
     def route_precharge_to_bitcell_array(self):
@@ -892,6 +894,16 @@ class bank(design.design):
             self.add_via_center(layers=("metal1", "via1", "metal2"),
                                 offset=contact_pos)
 
+        # clk to msf address
+        control_signal = self.prefix + "clk_buf"
+        pin = self.msf_address_inst.get_pin("clk")
+        control_pos = vector(self.central_line_xoffset[control_signal], pin.cy())
+        self.add_rect("metal1", height=pin.height(), width=control_pos.x - pin.rx(),
+                      offset=pin.lr())
+        self.add_via_center(layers=("metal1", "via1", "metal2"),
+                            offset=control_pos,
+                            rotate=0)
+
         # Connect address FF gnd
         for gnd_pin in self.msf_address_inst.get_pins("gnd"):
             if gnd_pin.layer != "metal1":
@@ -992,17 +1004,6 @@ class bank(design.design):
             self.add_via_center(layers=("metal1", "via1", "metal2"),
                                 offset=control_pos)
 
-        # clk to msf address
-        control_signal = self.prefix+"clk_buf"
-        pin = self.msf_address_inst.get_pin("clk")
-        control_pos = vector(self.central_line_xoffset[control_signal], pin.cy())
-        self.add_rect("metal1", height=pin.height(), width=control_pos.x-pin.rx(),
-                      offset=pin.lr())
-        self.add_via_center(layers=("metal1", "via1", "metal2"),
-                            offset=control_pos,
-                            rotate=0)
-
-
         # route clk above decoder
         en_pin = self.wordline_driver_inst.get_pin("en")
         control_signal = self.prefix+"clk_buf"
@@ -1070,7 +1071,6 @@ class bank(design.design):
 
         current_y = self.min_point
 
-        # TODO finetune this -> some openings get skipped
         while True:
             rail_top = current_y + grid_rail_height + via_space
             if rail_top > (self.min_point + self.height - grid_pitch): # leave space at the top

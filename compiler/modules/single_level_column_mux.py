@@ -43,7 +43,7 @@ class single_level_column_mux(design.design):
         gate_contact_height = contact.poly.second_layer_height
         middle_space = gate_contact_height + 2*self.line_end_space
         # TODO tune extra_top_space. This value was selected to pass drc
-        extra_top_space = drc["metal1_to_metal1_wide2"]
+        extra_top_space = self.wide_m1_space
         top_space = self.poly_extend_active + drc["ptx_implant_enclosure_active"] + extra_top_space
 
         extra_bottom_space = 0.5*self.m2_space# to give room for sel pin

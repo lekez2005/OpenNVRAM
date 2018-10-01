@@ -50,8 +50,8 @@ class wordline_driver(design.design):
         self.buf = pinv(size=16)
         self.add_mod(self.buf)
 
-        self.inv_no_output = pinv(size=1, route_output=False)
-        self.add_mod(self.inv_no_output)
+        self.inv1 = pinv(size=1)
+        self.add_mod(self.inv1)
         
         self.nand2 = pnand2(size=1)
         self.add_mod(self.nand2)
@@ -67,10 +67,10 @@ class wordline_driver(design.design):
 
         self.m1m2_via_x = in_pin_width + contact.m1m2.first_layer_width
 
-        left_s_d = self.inv_no_output.get_left_source_drain()
+        left_s_d = self.inv1.get_left_source_drain()
 
         self.x_offset0 = self.m1m2_via_x + self.m2_space + 0.5*contact.m1m2.first_layer_width - left_s_d
-        self.x_offset1 = self.x_offset0 + self.inv_no_output.width
+        self.x_offset1 = self.x_offset0 + self.inv1.width
         self.x_offset2 = self.x_offset1 + self.nand2.width
 
 
@@ -129,7 +129,7 @@ class wordline_driver(design.design):
             
             # add inv1 based on the info above
             inv1_inst=self.add_inst(name=name_inv1,
-                                    mod=self.inv_no_output,
+                                    mod=self.inv1,
                                     offset=name_inv1_offset,
                                     mirror=inst_mirror )
             self.module_insts.append(inv1_inst)

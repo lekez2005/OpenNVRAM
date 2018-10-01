@@ -66,9 +66,10 @@ class layout(lef.lef):
         """Finds the lowest set of 2d cartesian coordinates within
         this layout"""
 
-        if len(self.objs)>0:
-            lowestx1 = min(obj.lx() for obj in self.objs if obj.name!="label")
-            lowesty1 = min(obj.by() for obj in self.objs if obj.name!="label")
+        objs = self.objs + list(itertools.chain.from_iterable(self.pin_map.values()))
+        if len(objs)>0:
+            lowestx1 = min(obj.lx() for obj in objs if obj.name!="label")
+            lowesty1 = min(obj.by() for obj in objs if obj.name!="label")
         else:
             lowestx1=lowesty1=None
         if len(self.insts)>0:
@@ -87,9 +88,10 @@ class layout(lef.lef):
         """Finds the highest set of 2d cartesian coordinates within
         this layout"""
 
-        if len(self.objs)>0:
-            highestx1 = max(obj.rx() for obj in self.objs if obj.name!="label")
-            highesty1 = max(obj.uy() for obj in self.objs if obj.name!="label")
+        objs = self.objs + list(itertools.chain.from_iterable(self.pin_map.values()))
+        if len(objs)>0:
+            highestx1 = max(obj.rx() for obj in objs if obj.name!="label")
+            highesty1 = max(obj.uy() for obj in objs if obj.name!="label")
         else:
             highestx1=highesty1=None        
         if len(self.insts)>0:            

@@ -258,7 +258,7 @@ class replica_bitline(design.design):
         m1m2_layers = ("metal1", "via1", "metal2")
         self.add_contact_center(layers=m1m2_layers, offset=in_pin.center(), rotate=90)
         mid1_x = self.en_rail_offset + 0.5*self.m1_width
-        mid2_x = self.left_vdd_offset.x + self.rail_height + 2*self.wide_m1_space
+        mid2_x = self.left_vdd_offset.x + self.rail_height + 2*self.line_end_space
         # output pin should fullfill drc requirements
 
 

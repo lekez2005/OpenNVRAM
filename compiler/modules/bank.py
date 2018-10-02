@@ -490,7 +490,7 @@ class bank(design.design):
         self.decoder_even_via_x = rightmost_rail + self.line_end_space
         self.decoder_odd_via_x = self.decoder_even_via_x + drc["parallel_via_space"] + contact.m1m2.contact_width
         gap = max(self.metal1_minwidth_fill,
-                  self.decoder_odd_via_x + contact.m1m2.second_layer_height - rightmost_rail)
+                  self.decoder_odd_via_x + contact.m1m2.second_layer_height - rightmost_rail) + self.m2_space
         y_offset = self.bank_gate_inst.by() - gap - self.column_decoder.height
         x_offset = self.bitcell_array_inst.lx() + gap
 
@@ -499,13 +499,13 @@ class bank(design.design):
                                                                y_offset + self.column_decoder.height),
                                                  mirror="XY")
         temp = []
-        for i in range(self.row_addr_size):
+        for i in range(self.row_addr_size + self.col_addr_size):
             temp.append("ADDR[{0}]".format(i))
         for i in range(self.row_addr_size):
             temp.append("A[{0}]".format(i))
         if self.col_addr_size > 0:
             for i in range(2**self.col_addr_size):
-                self.add_pin("sel[{}]".format(i))
+                temp.append("sel[{}]".format(i))
         temp.extend([self.prefix+"clk_buf", "vdd", "gnd"])
         self.connect_inst(temp)
 
@@ -542,6 +542,10 @@ class bank(design.design):
 
     def setup_layout_constraints(self):
         """ Calculating layout constraints, width, height etc """
+
+        # bend for tri gate to sense amp
+        self.bendX = 3*self.m3_width
+        self.bendY = 2*self.m3_width
 
         # The minimum point is either the bottom of the address flops,
         # the bank_gate or the column decoder
@@ -648,22 +652,14 @@ class bank(design.design):
 
             # Connection of data_out of sense amp to data_ in of msf_data_out
             tri_gate_in = self.tri_gate_array_inst.get_pin("in[{}]".format(i)).bc()
-            sa_data_out = self.sense_amp_array_inst.get_pin("data[{}]".format(i)).bc()
+            sa_data_out = self.sense_amp_array_inst.get_pin("data[{}]".format(i)).rc()
 
             # add m2-m3 via at input of tri_gate_in
             via_offset = self.tri_gate_array_inst.get_pin("out[{}]".format(i)).ul() - vector(0, contact.m2m3.second_layer_height)
             self.add_contact(contact.contact.m2m3_layers, offset=via_offset)
 
-            # if we need a bend or not
-            if tri_gate_in.x-sa_data_out.x>self.m2_pitch:
-                # We'll connect to the bottom of the SA pin
-                bendX = sa_data_out.x
-            else:
-                # We'll connect to the left of the SA pin
-                sa_data_out = self.sense_amp_array_inst.get_pin("data[{}]".format(i)).lc()
-                bendX = tri_gate_in.x - 3*self.m3_width
-
-            bendY = tri_gate_in.y - 2*self.m2_width
+            bendX = tri_gate_in.x - self.bendX
+            bendY = tri_gate_in.y - self.bendY
 
             # Connection point of M2 and M3 paths, below the tri gate and
             # to the left of the tri gate input
@@ -826,6 +822,78 @@ class bank(design.design):
         self.add_via_center(layers=("metal1", "via1", "metal2"),
                             offset=control_pos,
                             rotate=0)
+        if self.col_addr_size == 0:
+            return
+
+        # route sel pins
+        obstructions = []
+        tri_gate_in_pins = map(self.tri_gate_array_inst.get_pin,
+                               map("in[{0}]".format, range(self.word_size)))
+        m3_pitch = self.m3_width + self.m3_space
+        blocked_regions = map(lambda x: (x.lx() - self.bendX - 0.5*self.m1_width - m3_pitch,
+                                         x.rx() + m3_pitch), tri_gate_in_pins)
+
+
+        def find_no_collision(x, direction=1.0):
+            while True:
+                x += direction*self.wide_m1_space
+                clash = False
+                for blocked_region in blocked_regions:
+                    if blocked_region[0] < x < blocked_region[1]:
+                        clash = True
+                if not clash:
+                    return x
+        def find_left(x):
+            return find_no_collision(x, -1.0)
+
+        def find_right(x):
+            return find_no_collision(x, 1.0)
+
+        def connect_to_mux(pin, direction, min_x):
+            pin_name = pin.name
+            pin_number = int(pin_name[4:-1])
+
+            mid_y = pin.uy() + self.line_end_space + (pin_number % 3)*self.m2_pitch
+            self.add_rect("metal2", offset=pin.ul(), height=mid_y - pin.uy())
+            if direction == "left":
+                x_offset = find_left(pin.cx())
+                self.add_rect("metal2", offset=vector(x_offset, mid_y), width=pin.rx() - x_offset)
+            else:
+                x_offset = find_right(max(pin.cx(), min_x))
+                self.add_rect("metal2", offset=vector(pin.lx(), mid_y), width=x_offset - pin.lx())
+            self.add_contact(contact.m2m3.layer_stack, offset=vector(x_offset, mid_y))
+
+            mux_sel_pin = self.col_mux_array_inst.get_pin(pin.name)
+            self.add_rect("metal3", offset=vector(x_offset, mid_y), height=mux_sel_pin.uy() - mid_y)
+
+
+
+            # find closest middle cell
+            cell_width = self.bitcell.width
+            for i in range(self.num_cols):
+                if not i % 2**self.col_addr_size == pin_number:  # match pin index to m2 sel location
+                    continue
+                mid_cell = i*cell_width + 0.5*cell_width
+                if mid_cell > x_offset:
+                    break
+            # extend m3 to closest mid_cell
+            self.add_rect("metal3", offset=vector(x_offset, mux_sel_pin.by()), width=mid_cell - x_offset)
+            self.add_contact_center(contact.m2m3.layer_stack, offset=vector(mid_cell, mux_sel_pin.cy()), rotate=90)
+            return mid_cell
+
+        sel_pins = map(self.column_decoder_inst.get_pin, ["sel[{}]".format(i) for i in range(2**self.col_addr_size)])
+        if self.col_addr_size == 1:
+            connect_to_mux(sel_pins[0], "left", 0.0)
+            connect_to_mux(sel_pins[1], "right", 0.0)
+        else:
+            min_x = 0
+            for pin in reversed(sel_pins):
+                min_x = connect_to_mux(pin, "right", min_x)
+                min_x += 0.5*contact.m2m3.second_layer_height + self.line_end_space
+
+
+
+
 
     def route_msf_address(self):
         """ Routing the row address lines from the address ms-flop array to the row-decoder  """
@@ -1007,7 +1075,7 @@ class bank(design.design):
         collisions.append((addr_in_pins[0].by(), addr_in_pins[-1].uy()))
 
         if self.column_decoder_inst is not None:
-            addr_out_pin_names = map("dout[{}]".format, range(self.addr_size))
+            addr_out_pin_names = map("dout[{}]".format, range(self.row_addr_size))
             addr_out_pins = sorted(map(self.column_decoder_inst.get_pin, addr_out_pin_names), key=lambda x: x.by())
             collisions.append((addr_out_pins[0].by(), addr_out_pins[-1].uy()))
 

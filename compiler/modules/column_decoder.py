@@ -185,18 +185,13 @@ class ColumnDecoder(design.design):
         """Create sel pins for 1->2 decoder"""
         sel_names = ["dout[{}]".format(self.row_addr_size), "dout_bar[{}]".format(self.row_addr_size)]
         pin_names = ["sel[1]", "sel[0]"]
+        bottom_dout_pin = self.get_pin("dout[{}]".format(0)).by()
         for i in range(2):
             x_offset = self.pin_x_offset[sel_names[i]]
             y_offset = self.column_rail_y[sel_names[i]]
 
-            pin_out_x = self.gnd_connection_rx + 2*(1-i)*self.rail_pitch
-
-            self.add_rect("metal2", offset=vector(x_offset, y_offset), width=pin_out_x - x_offset + self.m2_width)
-
-            top_pin = self.get_pin("din[{}]".format(self.total_ff-1)).uy()  # top din pin
-
-            self.add_layout_pin(pin_names[i], "metal2", offset=vector(pin_out_x, y_offset),
-                                height=top_pin - y_offset)
+            self.add_layout_pin(pin_names[i], "metal2", offset=vector(x_offset, bottom_dout_pin),
+                                height=y_offset - bottom_dout_pin)
 
     def extend_dout_rails(self, right_x):
         """Add dout layout pins for row_addr_size"""
@@ -226,7 +221,9 @@ class ColumnDecoder(design.design):
             nand_mod = pnand2(size=1.5)
         else:
             nand_mod = pnand3()
+        self.add_mod(nand_mod)
         inv_mod = pinv(size=2)
+        self.add_mod(inv_mod)
 
         for i in range(self.num_sel_outputs):
             rail_names = self.get_rail_names(i)
@@ -301,9 +298,11 @@ class ColumnDecoder(design.design):
                           width=a_pin.lx() - z_pin.rx())
 
             z_pin = inv_inst.get_pin("Z")
-            pin_y = self.get_pin("din[{}]".format(self.total_ff-1)).uy()
 
-            self.add_layout_pin("sel[{}]".format(i), "metal2", offset=z_pin.ul(), height=pin_y-z_pin.uy())
+            bottom_dout_pin = self.get_pin("dout[{}]".format(0)).by()
+
+            self.add_layout_pin("sel[{}]".format(i), "metal2", offset=vector(z_pin.lx(), bottom_dout_pin),
+                                height=z_pin.by()-bottom_dout_pin)
 
     def add_power_pins(self):
         """Add gnd pin and connect flip flop vdd to decoder vdd"""

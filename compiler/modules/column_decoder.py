@@ -57,8 +57,9 @@ class ColumnDecoder(design.design):
             self.add_pin("din[{}]".format(i))
         for i in range(self.row_addr_size):
             self.add_pin("dout[{}]".format(i))
-        for i in range(2**self.col_addr_size):
-            self.add_pin("sel[{}]".format(i))
+        if self.col_addr_size > 0:
+            for i in range(2**self.col_addr_size):
+                self.add_pin("sel[{}]".format(i))
         for pin_name in ["clk", "vdd", "gnd"]:
             self.add_pin(pin_name)
 
@@ -68,6 +69,7 @@ class ColumnDecoder(design.design):
         self.route_ff_power()
         self.route_ff_outputs()
         self.route_decoders()
+        self.copy_layout_pin(self.msf_addr_inst, "clk")
 
     def add_flip_flops(self):
 

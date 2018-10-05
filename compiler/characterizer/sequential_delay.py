@@ -309,13 +309,13 @@ class SequentialDelay(delay.delay):
                                  trig_name="clk", trig_val=trig_val, trig_dir="FALL",
                                  trig_td=self.current_time,
                                  targ_name=net, targ_val=targ_val, targ_dir=targ_dir,
-                                 targ_td=self.current_time + 0.5 * self.period)
+                                 targ_td=self.current_time + self.duty_cycle * self.period)
         if self.measure_slew:
             self.stim.gen_meas_delay(meas_name=slew_name,
                                      trig_name=net, trig_val=prev_val, trig_dir="FALL",
-                                     trig_td=self.current_time + 0.5 * self.period,
+                                     trig_td=self.current_time + self.duty_cycle * self.period,
                                      targ_name=net, targ_val=final_val, targ_dir=targ_dir,
-                                     targ_td=self.current_time + 0.5 * self.period)
+                                     targ_td=self.current_time + self.duty_cycle * self.period)
 
     def setup_power_measurement(self, action, transition, address_int):
         """Write Power measurement command
@@ -342,6 +342,7 @@ class SequentialDelay(delay.delay):
         Transition is HL or LH.
         Should be called before the read command
         """
+        self.period = self.read_period
         self.setup_power_measurement("READ", self.get_transition(0, new_val), address_int)
         for i in range(self.word_size):
 
@@ -356,6 +357,7 @@ class SequentialDelay(delay.delay):
           Transition is HL or LH.
           Should be called before the write command itself
           """
+        self.period = self.write_period
         self.saved_nodes.update(address_labels)
 
         self.setup_power_measurement("WRITE", self.get_transition(0, new_val), address_int)

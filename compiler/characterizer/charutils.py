@@ -17,7 +17,7 @@ def parse_output(filename, key, find_max=True):
         full_filename="{0}xa.meas".format(OPTS.openram_temp)
     elif OPTS.spice_name == "spectre":
         full_filename = os.path.join(OPTS.openram_temp, "transient1.meas_tran")
-        re_pattern = re_pattern = r'"{0}"\s*"measReal"\s*(-?\d+.?\d*[e]?[-+]?[0-9]*\S*)\s+.*'.format(key)
+        re_pattern = re_pattern = r'"{0}"\s*"measReal"\s*((?:\d+.?\d*[e]?[-+]?[0-9]*)|(?:nan)\S*)\s+.*'.format(key)
     else:
         # ngspice/hspice using a .lis file
         full_filename="{0}{1}.lis".format(OPTS.openram_temp, filename)

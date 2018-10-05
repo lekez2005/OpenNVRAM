@@ -94,10 +94,8 @@ class FunctionalTest:
                                 "wl_drv_net0_b{}".format(bank_index),
                                 [bank_inst, bank_inst.mod.wordline_driver_inst])
         if OPTS.use_pex and bank_inst is not None:
-            probe.probe_pin(bank_inst.get_pin("clk_bar"), "ctrl_clk_bar", [])
             probe.probe_pin(bank_inst.get_pin("clk_buf"), "ctrl_clk_buf", [])
             probe.probe_pin(bank_inst.get_pin("tri_en"), "ctrl_tri_en", [])
-            probe.probe_pin(bank_inst.get_pin("tri_en_bar"), "ctrl_tri_en_bar", [])
             probe.probe_pin(bank_inst.get_pin("w_en"), "ctrl_w_en", [])
             probe.probe_pin(bank_inst.get_pin("s_en"), "ctrl_s_en", [])
 

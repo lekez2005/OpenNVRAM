@@ -41,7 +41,7 @@ class control_logic(design.design):
     def create_modules(self):
         """ add all the required modules """
         input_lst =["csb","web","oeb","clk"]
-        output_lst = ["s_en", "w_en", "tri_en", "tri_en_bar", "clk_bar", "clk_buf"]
+        output_lst = ["s_en", "w_en", "tri_en", "clk_buf"]
         rails = ["vdd", "gnd"]
         for pin in input_lst + output_lst + rails:
             self.add_pin(pin)
@@ -297,40 +297,42 @@ class control_logic(design.design):
         """ Add the multistage clock buffer above the control flops """
         y_space = 5*self.m1_pitch + self.rail_height
 
-        inv20 = pinv(20)
-        self.add_mod(inv20)
+        clk_buf_mod = pinv(20)
+        self.add_mod(clk_buf_mod)
 
         # clk_buf
         self.clk_buf_offset = self.msf_offset + vector(0, self.msf_control.height + y_space)
         self.clk_buf = self.add_inst(name="inv_clk_buf",
-                                     mod=inv20,
+                                     mod=clk_buf_mod,
                                      offset=self.clk_buf_offset)
         self.connect_inst(["clk_bar", "clk_buf", "vdd", "gnd"])
 
         # clk_bar
+        clk_bar_mod = pinv(12, contact_nwell=False)
+        self.add_mod(clk_bar_mod)
         self.clk_bar_offset = self.clk_buf_offset + vector(0, self.clk_buf.height)
         self.clk_bar = self.add_inst(name="inv_clk_bar",
-                                     mod=inv20,
+                                     mod=clk_bar_mod,
                                      mirror="MX",
-                                     offset=self.clk_bar_offset + vector(0, inv20.height))
+                                     offset=self.clk_bar_offset + vector(0, clk_bar_mod.height))
         self.connect_inst(["clk2", "clk_bar", "vdd", "gnd"])
 
-        inv12 = pinv(12, contact_pwell=False)
-        self.add_mod(inv12)
-        self.clk_inv2_offset = self.clk_bar_offset + vector(0, inv20.height)
+        clk_inv2_mod = pinv(6, contact_pwell=False)
+        self.add_mod(clk_inv2_mod)
+        self.clk_inv2_offset = self.clk_bar_offset + vector(0, clk_buf_mod.height)
         self.clk_inv2 = self.add_inst(name="inv_clk2",
-                                      mod=inv12,
+                                      mod=clk_inv2_mod,
                                       mirror="MY",
-                                      offset=self.clk_inv2_offset+vector(inv12.width, 0))
+                                      offset=self.clk_inv2_offset+vector(clk_inv2_mod.width, 0))
         self.connect_inst(["clk1_bar", "clk2", "vdd", "gnd"])
 
-        clk_inv2 = pinv(6, contact_pwell=False)
-        self.add_mod(clk_inv2)
-        self.clk_inv1_offset = self.clk_inv2_offset + vector(inv12.width, 0)
+        clk_inv1_mod = pinv(2, contact_pwell=False)
+        self.add_mod(clk_inv1_mod)
+        self.clk_inv1_offset = self.clk_inv2_offset + vector(clk_inv2_mod.width, 0)
         self.clk_inv1 = self.add_inst(name="inv_clk1_bar",
-                                      mod=clk_inv2,
+                                      mod=clk_inv1_mod,
                                       mirror="MY",
-                                      offset=self.clk_inv1_offset + vector(clk_inv2.width, 0))
+                                      offset=self.clk_inv1_offset + vector(clk_inv1_mod.width, 0))
         self.connect_inst(["clk", "clk1_bar", "vdd", "gnd"])
 
 
@@ -480,17 +482,15 @@ class control_logic(design.design):
 
     def create_output_rails(self):
         bottom = self.clk_bar_rail.by()
-        tops = [self.tri_en_bar.get_pin("gnd").cy(), self.tri_en.get_pin("Z").cy(),
-                self.w_en.get_pin("Z").cy(), self.s_en.get_pin("Z").uy()]
+        tops = [self.tri_en.get_pin("Z").cy(), self.w_en.get_pin("Z").cy(), self.s_en.get_pin("Z").uy()]
         rail_pitch = self.m2_width + self.m2_space
-        x_offsets = [self.oe_rail.offset.x-2*rail_pitch, self.oe_rail.offset.x-rail_pitch, self.we_rail.offset.x,
-                     self.cs_rail.offset.x]
-        rails = [None]*4
+        x_offsets = [self.oe_rail.offset.x-rail_pitch, self.we_rail.offset.x, self.cs_rail.offset.x]
+        rails = [None]*3
 
         for i in range(len(tops)):
             rails[i] = self.add_rect("metal2", height=tops[i]-bottom, width=self.m2_width,
                                      offset=vector(x_offsets[i], bottom))
-        (self.en_bar_rail, self.en_rail, self.w_en_rail, self.s_en_rail) = rails
+        (self.en_rail, self.w_en_rail, self.s_en_rail) = rails
 
 
     def route_pin_to_vertical_rail(self, pin, rail, via_x_pos, pos="center", rail_cont="vertical"):
@@ -541,13 +541,6 @@ class control_logic(design.design):
         self.add_rect("metal2", offset=offset, height=z_pin.by()-offset.y)
         self.add_rect("metal2", offset=offset, width=a_pin.cx()-offset.x)
         self.add_contact_center(contact.contact.m1m2_layers, offset=a_pin.center(), rotate=90)
-
-        # tri_en_bar to rail
-        z_pin = self.tri_en_bar.get_pin("Z")
-        gnd_pin = self.tri_en_bar.get_pin("gnd")
-        offset = vector(z_pin.lx(), gnd_pin.cy())
-        self.add_rect("metal2", offset=offset, height=z_pin.by()-gnd_pin.cy())
-        self.add_rect("metal2", offset=offset, width=self.en_bar_rail.lx()-offset.x+self.m2_width)
 
         # tri_en_bar to tri_en
         z_pin = self.tri_en_bar.get_pin("Z")
@@ -735,22 +728,21 @@ class control_logic(design.design):
                                               clk_inv_a_pin.cy()),
                                 rotate=90)
         clk_in_x_offset = self.vdd_rect.rx() - 0.5*self.m1_width
+        pin_y = clk_inv_a_pin.cy()-0.5*self.m2_width
         self.add_rect("metal2", height=self.m2_width, width=clk_inv_a_pin.cx()-clk_in_x_offset,
-                      offset=vector(clk_in_x_offset, clk_inv_a_pin.by()))
+                      offset=vector(clk_in_x_offset, pin_y))
         clk_rect = self.add_rect(layer="metal2",
                             width=self.m2_width,
-                            height=self.height-clk_inv_a_pin.by(),
-                            offset=vector(clk_in_x_offset, clk_inv_a_pin.by()))
+                            height=self.height-pin_y,
+                            offset=vector(clk_in_x_offset, pin_y))
         self.add_pin_to_top("clk", "metal2", clk_rect)
 
         # clock outputs
         bottom = self.add_pin_to_bottom("clk_buf", "metal2", self.clk_buf_rail, self.clk_buf_rail.by() - self.m1_space)
-        bottom = self.add_pin_to_bottom("clk_bar", "metal2", self.clk_bar_rail, bottom)
         # control outputs
         bottom = self.add_pin_to_bottom("w_en", "metal2", self.w_en_rail, bottom)
         bottom = self.add_pin_to_bottom("s_en", "metal2", self.s_en_rail, bottom)
-        bottom = self.add_pin_to_bottom("tri_en", "metal2", self.en_rail, bottom)
-        self.add_pin_to_bottom("tri_en_bar", "metal2", self.en_bar_rail, bottom)
+        self.add_pin_to_bottom("tri_en", "metal2", self.en_rail, bottom)
 
 
 

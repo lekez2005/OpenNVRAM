@@ -25,8 +25,8 @@ class ColumnDecoder(design.design):
 
         self.column_rail_y = {}  # save y location of the column addresses
         self.pin_x_offset = {}  # save x location of the flip flop pins
-        self.nand_insts = []
-        self.inv_insts = []
+        self.nand_insts = {}
+        self.inv_insts = {}
 
         self.setup_layout_constants()
         self.create_pins()
@@ -173,7 +173,7 @@ class ColumnDecoder(design.design):
             return
         else:
             self.add_instances()
-            self.extend_dout_rails(self.inv_insts[-1].rx())
+            self.extend_dout_rails(self.inv_insts[0].rx())
             self.extend_sel_rails()
             self.route_nand_inputs()
             self.route_invs()
@@ -209,7 +209,7 @@ class ColumnDecoder(design.design):
         for pin_name in rails:
             x_offset = self.pin_x_offset[pin_name]
             y_offset = self.column_rail_y[pin_name]
-            self.add_rect("metal1", offset=vector(x_offset, y_offset), width=self.inv_insts[-1].rx() - x_offset)
+            self.add_rect("metal1", offset=vector(x_offset, y_offset), width=self.inv_insts[0].rx() - x_offset)
 
 
     def add_instances(self):
@@ -225,17 +225,22 @@ class ColumnDecoder(design.design):
         inv_mod = pinv(size=2)
         self.add_mod(inv_mod)
 
-        for i in range(self.num_sel_outputs):
+        for i in reversed(range(self.num_sel_outputs)):
             rail_names = self.get_rail_names(i)
+            if len(rail_names) == 2:
+                rail_indices = [1, 0]
+            else:
+                rail_indices = [1, 0, 2]
+            rail_names = [rail_names[j] for j in rail_indices]
             sel_name = "sel[{}]".format(i)
             inv_in = "inv_in[{}]".format(i)
             nand_inst = self.add_inst("nand{}".format(i), nand_mod, offset=vector(x_offset, y_offset))
-            self.nand_insts.append(nand_inst)
-            self.connect_inst(list(reversed(rail_names)) + [inv_in, "vdd", "gnd"])
+            self.nand_insts[i] = nand_inst
+            self.connect_inst(rail_names + [inv_in, "vdd", "gnd"])
 
             x_offset += nand_mod.width
             inv_inst = self.add_inst("inv{}".format(i), inv_mod, offset=vector(x_offset, y_offset))
-            self.inv_insts.append(inv_inst)
+            self.inv_insts[i] = inv_inst
             self.connect_inst([inv_in, sel_name, "vdd", "gnd"])
 
             x_offset += inv_mod.width
@@ -275,7 +280,7 @@ class ColumnDecoder(design.design):
                 self.add_rect("metal2", offset=vector(x_offset, pin.cy()-0.5*self.m2_width),
                               width=pin.lx()-x_offset)
                 self.add_contact_center(contact.m1m2.layer_stack, offset=pin.center())
-            if len(rail_names) == 3: # nand3 C pin needs to be routed differently because of spacing rules
+            if len(rail_names) == 3:  # nand3 C pin needs to be routed differently because of spacing rules
                 rail_y = self.column_rail_y[rail_names[2]]
                 x_offset = self.nand_insts[i].rx() + 0.5*self.m2_width
                 self.add_contact(contact.m1m2.layer_stack,
@@ -307,13 +312,13 @@ class ColumnDecoder(design.design):
     def add_power_pins(self):
         """Add gnd pin and connect flip flop vdd to decoder vdd"""
         # add gnd pin
-        last_inverter = self.inv_insts[-1]
+        last_inverter = self.inv_insts[0]
         gnd_pin = last_inverter.get_pin("gnd")
         self.add_layout_pin("gnd", "metal1", offset=vector(self.gnd_connection_rx, gnd_pin.by()),
                             width=last_inverter.rx() - self.gnd_connection_rx, height=gnd_pin.height())
 
         # connect ff vdd to inverter/nand vdd
-        vdd_pin = self.nand_insts[0].get_pin("vdd")
+        vdd_pin = self.nand_insts[self.num_sel_outputs - 1].get_pin("vdd")
         self.add_rect("metal1", offset=vdd_pin.ul(), width=vdd_pin.height(), height=self.top_vdd.by() - vdd_pin.uy())
         self.add_rect("metal1", offset=self.top_vdd.lr(), height=vdd_pin.height(),
                       width=vdd_pin.lx() - self.top_vdd.rx() + vdd_pin.height())

@@ -26,6 +26,8 @@ class column_decoder_test(openram_test):
 
         global verify
         import verify
+        import design
+        design.name_map = []
         OPTS.check_lvsdrc = False
 
         import column_decoder

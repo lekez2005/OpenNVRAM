@@ -569,7 +569,8 @@ class bank(design.design):
         self.height = self.max_point - self.min_point
         
         # Add an extra gap between the bitcell and the rail
-        self.right_vdd_x_offset = self.bitcell_array_inst.rx() + self.wide_m1_space + self.m1_space
+        self.right_vdd_x_offset = (max(self.bitcell_array_inst.rx(), self.bank_gate_inst.rx() + 2*self.wide_m1_space) +
+                                   self.wide_m1_space + self.m1_space)
 
 
         # from the edge of the decoder is another 2 times minwidth metal1
@@ -888,7 +889,7 @@ class bank(design.design):
         else:
             min_x = 0
             for pin in reversed(sel_pins):
-                min_x = connect_to_mux(pin, "right", min_x)
+                min_x = connect_to_mux(pin, "left", min_x)
                 min_x += 0.5*contact.m2m3.second_layer_height + self.line_end_space
 
 
@@ -1160,6 +1161,8 @@ class bank(design.design):
         for inst in [self.precharge_array_inst, self.sense_amp_array_inst,
                      self.write_driver_array_inst, self.msf_data_in_inst,
                      self.tri_gate_array_inst, self.bank_gate_inst, self.column_decoder_inst]:
+            if inst is None:
+                continue
             for vdd_pin in inst.get_pins("vdd"):
                 self.add_rect(layer="metal1", 
                               offset=vdd_pin.lr(),
@@ -1202,6 +1205,8 @@ class bank(design.design):
         decoder_gnds = self.row_decoder_inst.get_pins("gnd")
         for inst in [ self.tri_gate_array_inst, self.sense_amp_array_inst, self.msf_data_in_inst,
                       self.write_driver_array_inst, self.bank_gate_inst, self.column_decoder_inst]:
+            if inst is None:
+                continue
             for gnd_pin in inst.get_pins("gnd"):
                 if gnd_pin.layer != "metal1":
                     continue

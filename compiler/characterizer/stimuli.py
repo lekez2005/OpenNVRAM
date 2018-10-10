@@ -247,8 +247,8 @@ class stimuli():
         self.sf.write("simulator lang=spectre\n")
         self.sf.write("simulatorOptions options reltol=1e-3 vabstol=1e-6 iabstol=1e-12 temp={0} try_fast_op=no "
             "scalem=1.0 scale=1.0 gmin={1} rforce=1 maxnotes=5 maxwarns=5 "
-            "digits=5 cols=80 pivrel=1e-3\n".format(self.temperature, tech.spice["gmin"]))
-        self.sf.write('dcOp dc write="spectre.dc" maxiters=150 maxsteps=10000 annotate=status\n')
+            "digits=5 cols=80 dc_pivot_check=yes pivrel=1e-3\n".format(self.temperature, tech.spice["gmin"]))
+        self.sf.write('dcOp dc write="spectre.dc" readns="spectre.dc" maxiters=150 maxsteps=10000 annotate=status\n')
         self.sf.write('tran tran step={} stop={}n annotate=status maxiters=5\n'.format("5p", end_time))
 
         self.sf.write('saveOptions options save=lvlpub nestlvl=1 pwr=total \n')

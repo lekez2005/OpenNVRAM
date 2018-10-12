@@ -86,6 +86,8 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.parallel_line_space = drc["parallel_metal1_to_metal1"]
         self.metal1_minwidth_fill = utils.ceil(drc["minarea_metal1_minwidth"]/self.m1_width)
         self.poly_vert_space = drc["poly_end_to_end"]
+        self.parallel_via_space = drc["parallel_via_space"]
+        self.metal1_min_enclosed_area = drc["metal1_min_enclosed_area"]
 
     def get_layout_pins(self,inst):
         """ Return a map of pin locations of the instance offset """

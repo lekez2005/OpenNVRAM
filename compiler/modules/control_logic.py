@@ -737,13 +737,12 @@ class control_logic(design.design):
                             offset=vector(clk_in_x_offset, pin_y))
         self.add_pin_to_top("clk", "metal2", clk_rect)
 
-        # clock outputs
-        bottom = self.add_pin_to_bottom("clk_buf", "metal2", self.clk_buf_rail, self.clk_buf_rail.by() - self.m1_space)
-        # control outputs
-        bottom = self.add_pin_to_bottom("w_en", "metal2", self.w_en_rail, bottom)
-        bottom = self.add_pin_to_bottom("s_en", "metal2", self.s_en_rail, bottom)
-        self.add_pin_to_bottom("tri_en", "metal2", self.en_rail, bottom)
-
+        rails = [self.clk_buf_rail, self.w_en_rail, self.s_en_rail, self.en_rail]
+        pin_names = ["clk_buf", "w_en", "s_en", "tri_en"]
+        for i in range(4):
+            rail = rails[i]
+            pin_name = pin_names[i]
+            self.add_layout_pin(pin_name, "metal2", offset=rail.ll(), height=rail.height)
 
 
 

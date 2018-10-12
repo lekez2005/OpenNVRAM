@@ -1140,10 +1140,11 @@ class bank(design.design):
                                 width=self.vdd_rail_width,
                                 height=self.height)
             m9_x_offset = vdd_x_offset + mirror_shifts[i]
-            self.add_rect(self.top_power_layer,
-                                 offset=vector(m9_x_offset, self.min_point),
-                                 width=self.grid_rail_width,
-                                 height=self.height)
+            self.add_layout_pin("vdd",
+                                layer=self.top_power_layer,
+                                offset=vector(m9_x_offset, self.min_point),
+                                width=self.grid_rail_width,
+                                height=self.height)
             for via_y in self.vdd_grid_vias:
                 self.add_inst(self.m1mtop.name, self.m1mtop,
                               offset=vector(vdd_x_offset + via_mirror_shifts[i], via_y),
@@ -1185,7 +1186,7 @@ class bank(design.design):
         self.gnd_grid_vias = self.power_grid_vias[0::2]
         self.gnd_grid_rects = []
         rect_x_offset = self.gnd_x_offset + 0.5*(self.gnd_rail_width - self.grid_rail_width)
-        self.add_rect(self.top_power_layer,
+        self.add_layout_pin("gnd", self.top_power_layer,
                       offset=vector(rect_x_offset, self.min_point),
                       width=self.grid_rail_width,
                       height=self.height)

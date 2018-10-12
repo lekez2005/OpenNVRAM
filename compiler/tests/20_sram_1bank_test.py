@@ -22,15 +22,15 @@ class sram_1bank_test(openram_test):
         import sram
 
         debug.info(1, "Single bank, no column mux with control logic")
-        a = sram.sram(word_size=4, num_words=16, num_banks=1, name="sram1")
+        a = sram.sram(word_size=16, num_words=16, num_banks=1, name="sram1")
         self.local_check(a, final_verification=True)
 
         debug.info(1, "Single bank two way column mux with control logic")
-        a = sram.sram(word_size=4, num_words=32, num_banks=1, name="sram2")
+        a = sram.sram(word_size=16, num_words=32, num_banks=1, name="sram2")
         self.local_check(a, final_verification=True)
 
         debug.info(1, "Single bank, four way column mux with control logic")
-        a = sram.sram(word_size=4, num_words=64, num_banks=1, name="sram3")
+        a = sram.sram(word_size=16, num_words=64, num_banks=1, name="sram3")
         self.local_check(a, final_verification=True)
 
         # debug.info(1, "Single bank, eight way column mux with control logic")

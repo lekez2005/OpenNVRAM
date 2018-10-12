@@ -229,11 +229,7 @@ class hierarchical_predecode(design.design):
             mid2_pos = vector(0.5*(zr_pos.x+al_pos.x), al_pos.y)
             self.add_path("metal1", [zr_pos, mid1_pos, mid2_pos, al_pos])
 
-            z_pos = self.inv_inst[num].get_pin("Z").rc()
-            self.add_layout_pin_center_segment(text="out[{}]".format(num),
-                                               layer="metal1",
-                                               start=z_pos,
-                                               end=z_pos + vector(self.inv.width - self.inv.get_pin("Z").rx(),0))
+            self.copy_layout_pin(self.inv_inst[num], "Z", "out[{}]".format(num))
 
     
     def route_input_inverters(self):

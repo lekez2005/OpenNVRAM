@@ -10,9 +10,9 @@ import sys
 # n = custom setting
 
 def check(check,str):
-    (frame, filename, line_number, function_name, lines,
-     index) = inspect.getouterframes(inspect.currentframe())[1]
     if not check:
+        (frame, filename, line_number, function_name, lines,
+         index) = inspect.getouterframes(inspect.currentframe())[1]
         print("ERROR: file {0}: line {1}: {2}".format(os.path.basename(filename),line_number,str))
         assert 0
 

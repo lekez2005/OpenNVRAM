@@ -6,7 +6,7 @@ from ptx import ptx
 from ptx_spice import ptx_spice
 from vector import vector
 from globals import OPTS
-from utils import round_to_grid
+import unique_meta
 import utils
 
 class pinv(pgate.pgate):
@@ -18,17 +18,14 @@ class pinv(pgate.pgate):
     from center of rail to rail..  The route_output will route the
     output to the right side of the cell for easier access.
     """
-    c = reload(__import__(OPTS.bitcell))
+    __metaclass__ = unique_meta.Unique
+
+    c = __import__(OPTS.bitcell)
     bitcell = getattr(c, OPTS.bitcell)
 
-    unique_id = 1
-    
-    def __init__(self, size=1, beta=parameter["beta"], height=bitcell.height,
+    @classmethod
+    def get_name(cls, size=1, beta=parameter["beta"], height=bitcell.height,
                  contact_pwell=True, contact_nwell=True):
-        # We need to keep unique names because outputting to GDSII
-        # will use the last record with a given name. I.e., you will
-        # over-write a design in GDS if one has and the other doesn't
-        # have poly connected, for example.
         name = "pinv_{}".format(size)
         if not contact_pwell:
             name += "_no_p"
@@ -36,12 +33,22 @@ class pinv(pgate.pgate):
             name += "_no_n"
         if not beta == parameter["beta"]:
             name += "_b" + str(beta)
-        if not height == self.bitcell.height:
+        if not height == cls.bitcell.height:
             name += "_h" + str(height)
-        pinv.unique_id += 1
-        pgate.pgate.__init__(self, name, height, size=size, beta=beta, contact_pwell=contact_pwell,
+        return name
+
+
+
+    def __init__(self, size=1, beta=parameter["beta"], height=bitcell.height,
+                 contact_pwell=True, contact_nwell=True):
+        # We need to keep unique names because outputting to GDSII
+        # will use the last record with a given name. I.e., you will
+        # over-write a design in GDS if one has and the other doesn't
+        # have poly connected, for example.
+
+        pgate.pgate.__init__(self, self.name, height, size=size, beta=beta, contact_pwell=contact_pwell,
                              contact_nwell=contact_nwell)
-        debug.info(2, "create pinv structure {0} with size of {1}".format(name, size))
+        debug.info(2, "create pinv structure {0} with size of {1}".format(self.name, size))
 
         self.add_pins()
         self.create_layout()

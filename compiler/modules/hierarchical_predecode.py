@@ -22,7 +22,7 @@ class hierarchical_predecode(design.design):
         design.design.__init__(self, name=name)
         self.route_top_rail = route_top_rail
 
-        c = reload(__import__(OPTS.bitcell))
+        c = __import__(OPTS.bitcell)
         self.mod_bitcell = getattr(c, OPTS.bitcell)
         self.bitcell_height = self.mod_bitcell.height
 

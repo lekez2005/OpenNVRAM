@@ -30,7 +30,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         hierarchy_spice.spice.__init__(self, name)
 
         self.setup_drc_constants()
-        
+
         # Check if the name already exists, if so, give an error
         # because each reference must be a unique name.
         # These modules ensure unique names or have no changes if they
@@ -45,13 +45,14 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                    'sram.sram',
                    'hierarchical_predecode2x4.hierarchical_predecode2x4',
                    'hierarchical_predecode3x8.hierarchical_predecode3x8']
+        ok_list = ["<class '" + class_name + "'>" for class_name in ok_list]  # new style classes mangle class names
         if name not in design.name_map:
             design.name_map.append(name)
         elif str(self.__class__) in ok_list:
             pass
         else:
             debug.error("Duplicate layout reference name {0} of class {1}. GDS2 requires names be unique.".format(name,self.__class__),-1)
-        
+
     def setup_drc_constants(self):
         """ These are some DRC constants used in many places in the compiler."""
 
@@ -60,9 +61,9 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.poly_space = drc["poly_to_poly"]
         self.poly_pitch = self.poly_width + self.poly_space
         self.m1_width = drc["minwidth_metal1"]
-        self.m1_space = drc["metal1_to_metal1"]        
+        self.m1_space = drc["metal1_to_metal1"]
         self.m2_width = drc["minwidth_metal2"]
-        self.m2_space = drc["metal2_to_metal2"]        
+        self.m2_space = drc["metal2_to_metal2"]
         self.m3_width = drc["minwidth_metal3"]
         self.m3_space = drc["metal3_to_metal3"]
         self.m4_width = drc["minwidth_metal4"]

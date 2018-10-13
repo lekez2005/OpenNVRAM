@@ -25,7 +25,7 @@ class replica_bitline(design.design):
         g = reload(__import__(OPTS.replica_bitcell))
         self.mod_replica_bitcell = getattr(g, OPTS.replica_bitcell)
 
-        c = reload(__import__(OPTS.bitcell))
+        c = __import__(OPTS.bitcell)
         self.mod_bitcell = getattr(c, OPTS.bitcell)
 
         for pin in ["en", "out", "vdd", "gnd"]:

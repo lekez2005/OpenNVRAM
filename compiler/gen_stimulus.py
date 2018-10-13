@@ -53,7 +53,7 @@ class fake_sram(sram.sram):
         self.word_size = word_size
         self.num_words = num_words
         self.num_banks = num_banks
-        c = reload(__import__(OPTS.bitcell))
+        c = __import__(OPTS.bitcell)
         self.mod_bitcell = getattr(c, OPTS.bitcell)
         self.bitcell = self.mod_bitcell()
         # to get the row, col, etc.

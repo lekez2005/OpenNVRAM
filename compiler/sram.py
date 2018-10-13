@@ -30,7 +30,7 @@ class sram(design.design, sram_power_grid.Mixin):
         c = reload(__import__(OPTS.ms_flop_array))
         self.mod_ms_flop_array = getattr(c, OPTS.ms_flop_array)
         
-        c = reload(__import__(OPTS.bitcell))
+        c = __import__(OPTS.bitcell)
         self.mod_bitcell = getattr(c, OPTS.bitcell)
         self.bitcell = self.mod_bitcell()
 

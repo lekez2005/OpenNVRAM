@@ -6,7 +6,7 @@ import debug
 import datetime
 from collections import defaultdict
 
-class lef:
+class lef(object):
     """
     SRAM LEF Class open GDS file, read pins information, obstruction
     and write them to LEF file

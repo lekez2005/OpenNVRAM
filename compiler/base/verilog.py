@@ -1,6 +1,6 @@
 import debug
 
-class verilog:
+class verilog(object):
     """ Create a behavioral Verilog file for simulation."""
 
     def verilog_write(self,verilog_name):

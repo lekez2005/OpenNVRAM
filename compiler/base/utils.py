@@ -94,9 +94,8 @@ def auto_measure_libcell(pin_list, name, units, layer):
     Return these as a set of properties including the cell width/height too.
     """
     cell_gds = OPTS.openram_tech + "gds_lib/" + str(name) + ".gds"
-    cell_vlsi = gdsMill.VlsiLayout(units=units)
-    reader = gdsMill.Gds2reader(cell_vlsi)
-    reader.loadFromFile(cell_gds)
+    cell_vlsi = gdsMill.VlsiLayout(units=units, from_file=cell_gds)
+    cell_vlsi.load_from_file()
 
     cell = {}
     measure_result = cell_vlsi.getLayoutBorder(layer)
@@ -117,9 +116,8 @@ def get_libcell_size(name, units, layer):
     bounding box or a border layer.
     """
     cell_gds = OPTS.openram_tech + "gds_lib/" + str(name) + ".gds"
-    cell_vlsi = gdsMill.VlsiLayout(units=units)
-    reader = gdsMill.Gds2reader(cell_vlsi)
-    reader.loadFromFile(cell_gds)
+    cell_vlsi = gdsMill.VlsiLayout(units=units, from_file=cell_gds)
+    cell_vlsi.load_from_file()
 
     cell = {}
     measure_result = cell_vlsi.getLayoutBorder(layer)
@@ -135,9 +133,8 @@ def get_libcell_pins(pin_list, name, units, layer):
     Return these as a rectangle layer pair for each pin.
     """
     cell_gds = OPTS.openram_tech + "gds_lib/" + str(name) + ".gds"
-    cell_vlsi = gdsMill.VlsiLayout(units=units)
-    reader = gdsMill.Gds2reader(cell_vlsi)
-    reader.loadFromFile(cell_gds)
+    cell_vlsi = gdsMill.VlsiLayout(units=units, from_file=cell_gds)
+    cell_vlsi.load_from_file()
 
     cell = {}
     for pin in pin_list:

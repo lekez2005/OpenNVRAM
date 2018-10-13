@@ -110,6 +110,8 @@ def init_openram(config_file, is_unit_test=True):
 
     import_tech()
 
+    initialize_classes()
+
 
 
 def get_tool(tool_type, preferences):
@@ -300,6 +302,10 @@ def import_tech():
     if (OPTS.temperatures == ""):
         OPTS.temperatures = tech.spice["temperatures"]
 
+def initialize_classes():
+    global OPTS
+    # only bitcell is preloaded here because most unit tests only require loading bitcell to get it's dimensions
+    reload(__import__(OPTS.bitcell))
 
 def print_time(name, now_time, last_time=None):
     """ Print a statement about the time delta. """

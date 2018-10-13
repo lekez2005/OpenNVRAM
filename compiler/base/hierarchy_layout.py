@@ -438,9 +438,8 @@ class layout(lef.lef):
         if os.path.isfile(self.gds_file):
             debug.info(3, "opening %s" % self.gds_file)
             self.is_library_cell=True
-            self.gds = gdsMill.VlsiLayout(units=GDS["unit"])
-            reader = gdsMill.Gds2reader(self.gds)
-            reader.loadFromFile(self.gds_file)
+            self.gds = gdsMill.VlsiLayout(units=GDS["unit"], from_file=self.gds_file)
+            self.gds.load_from_file()
         else:
             debug.info(4, "creating structure %s" % self.name)
             self.gds = gdsMill.VlsiLayout(name=self.name, units=GDS["unit"])

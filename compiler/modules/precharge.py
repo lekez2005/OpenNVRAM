@@ -17,7 +17,7 @@ class precharge(design.design):
         design.design.__init__(self, name)
         debug.info(2, "create single precharge cell: {0}".format(name))
 
-        c = reload(__import__(OPTS.bitcell))
+        c = __import__(OPTS.bitcell)
         self.mod_bitcell = getattr(c, OPTS.bitcell)
         self.bitcell = self.mod_bitcell()
         

@@ -31,7 +31,7 @@ class delay_chain(design.design):
         self.num_inverters = 1 + sum(fanout_list)
         self.rows = int(math.ceil(self.num_inverters / float(cells_per_row)))
         
-        c = reload(__import__(OPTS.bitcell))
+        c = __import__(OPTS.bitcell)
         self.mod_bitcell = getattr(c, OPTS.bitcell)
         self.bitcell = self.mod_bitcell()
 

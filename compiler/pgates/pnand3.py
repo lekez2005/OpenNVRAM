@@ -13,7 +13,7 @@ class pnand3(pgate.pgate):
     This model use ptx to generate a 3-input nand within a certain height.
     """
 
-    c = reload(__import__(OPTS.bitcell))
+    c = __import__(OPTS.bitcell)
     bitcell = getattr(c, OPTS.bitcell)
 
     unique_id = 1

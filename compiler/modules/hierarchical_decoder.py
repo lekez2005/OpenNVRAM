@@ -19,7 +19,7 @@ class hierarchical_decoder(design.design):
     def __init__(self, rows):
         design.design.__init__(self, "hierarchical_decoder_{0}rows".format(rows))
 
-        c = reload(__import__(OPTS.bitcell))
+        c = __import__(OPTS.bitcell)
         self.mod_bitcell = getattr(c, OPTS.bitcell)
         self.bitcell_height = self.mod_bitcell.height
 

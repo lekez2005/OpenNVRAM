@@ -4,11 +4,38 @@ import mpmath
 import gdsPrimitives
 import debug
 
-class VlsiLayout:
-    """Class represent a hierarchical layout"""
 
-    def __init__(self, name=None, units=(0.001,1e-9), libraryName = "DEFAULT.DB", gdsVersion=5):
+class UniqueMeta(type):
+
+    def __call__(cls, *args, **kwargs):
+        if "from_file" in kwargs:
+            file_name = kwargs["from_file"]
+        else:
+            file_name = None
+        if file_name is not None:
+            if file_name not in cls._cache:
+                self = cls.__new__(cls, *args, **kwargs)
+                cls.__init__(self, *args, **kwargs)
+                cls._cache[file_name] = self
+            return cls._cache[file_name]
+        else:
+            self = cls.__new__(cls, *args, **kwargs)
+            cls.__init__(self, *args, **kwargs)
+            return self
+
+    def __init__(cls, name, bases, attributes):
+        super(type, cls).__init__(name, bases, attributes)
+        cls._cache = {}
+
+class VlsiLayout():
+    """Class represent a hierarchical layout
+    if from_file is supplied, only one instance of the given file will be in memory
+    """
+    __metaclass__ = UniqueMeta
+
+    def __init__(self, name=None, units=(0.001,1e-9), libraryName = "DEFAULT.DB", gdsVersion=5, from_file=None):
         #keep a list of all the structures in this layout
+        self.from_file = from_file
         self.units = units
         #print units
         modDate = datetime.now()
@@ -58,6 +85,16 @@ class VlsiLayout:
         #temp variables used in delegate functions
         self.tempCoordinates=None
         self.tempPassFail = True
+
+    def load_from_file(self, force_reload=False):
+        if self.from_file is None:
+            debug.error("load_from_file should only be called from instances which supplied 'from_file' in the "
+                        "constructor", -1)
+        if force_reload or len(self.xyTree) == 0:
+            from gds2reader import Gds2reader
+            reader = Gds2reader(self)
+            reader.loadFromFile(self.from_file)
+
 
     def rotatedCoordinates(self,coordinatesToRotate,rotateAngle):
         #helper method to rotate a list of coordinates

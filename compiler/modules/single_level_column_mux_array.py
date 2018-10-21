@@ -4,7 +4,7 @@ from single_level_column_mux import single_level_column_mux
 import contact
 from tech import drc
 import debug
-import math
+import utils
 from vector import vector
 
 
@@ -44,12 +44,11 @@ class single_level_column_mux_array(design.design):
         highest = self.find_highest_coords()
         self.height = highest.y 
         self.add_layout_pins()
-        self.add_enclosure(self.mux_inst, "pwell")
 
         
 
     def add_modules(self):
-        # FIXME: Why is this 8x?
+        # FIXME: Why is this 4x?
         self.mux = single_level_column_mux(tx_size=4)
         self.add_mod(self.mux)
 
@@ -67,10 +66,12 @@ class single_level_column_mux_array(design.design):
     def create_array(self):
         self.mux_inst = []
 
+        (self.bitcell_offsets, tap_offsets) = utils.get_tap_positions(self.columns)
+
         # For every column, add a pass gate
         for col_num in range(self.columns):
             name = "XMUX{0}".format(col_num)
-            x_off = vector(col_num * self.mux.width, self.route_height)
+            x_off = vector(self.bitcell_offsets[col_num], self.route_height)
             self.mux_inst.append(self.add_inst(name=name,
                                                mod=self.mux,
                                                offset=x_off))
@@ -113,7 +114,7 @@ class single_level_column_mux_array(design.design):
             self.add_layout_pin(text="sel[{}]".format(j),
                                 layer="metal1",
                                 offset=offset,
-                                width=self.mux.width * self.columns,
+                                width=self.mux_inst[-1].get_pin("sel").rx(),
                                 height=contact.m1m2.width)
 
     def add_vertical_gate_rail(self):
@@ -151,7 +152,8 @@ class single_level_column_mux_array(design.design):
                 # Create the metal1 to connect the n-way mux output from the pass gate
                 # These will be located below the select lines. Yes, these are M2 width
                 # to ensure vias are enclosed and M1 min width rules.
-                width = contact.m1m2.width + self.mux.width * (self.words_per_row - 1)
+
+                width = contact.m1m2.width + self.bitcell_offsets[j + self.words_per_row - 1] - self.bitcell_offsets[j]
                 self.add_rect(layer="metal1",
                               offset=bl_out_offset,
                               width=width,

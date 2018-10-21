@@ -102,7 +102,7 @@ class Mixin:
         bank_to_ctrl_space = control_vdd.lx() - right_vdd.rx()
         parallel_space = utils.ceil(self.metal1_min_enclosed_area/bank_to_ctrl_space)
 
-        while current_y < control_vdd.uy():
+        while current_y + control_vdd.width() < control_vdd.uy():
             self.add_rect("metal1", offset=vector(right_vdd.rx(), current_y), width=control_vdd.lx() - right_vdd.rx(),
                           height=control_vdd.width())
 

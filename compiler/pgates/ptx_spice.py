@@ -16,6 +16,7 @@ class ptx_spice(ptx.ptx):
             name += "_no_p"
         if not contact_nwell:
             name += "_no_n"
+        name = name.replace(".", "_")
         design.design.__init__(self, name)
         debug.info(3, "create ptx_spice structure {0}".format(name))
 

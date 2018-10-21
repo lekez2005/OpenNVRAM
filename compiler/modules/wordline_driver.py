@@ -41,19 +41,19 @@ class wordline_driver(design.design):
         self.create_layout()
 
     def add_layout(self):
-        self.inv = pinv(size=4)
+        self.inv = pinv(size=4, align_bitcell=True)
         self.add_mod(self.inv)
 
-        self.buf_inv = pinv(size=8)
+        self.buf_inv = pinv(size=8, align_bitcell=True)
         self.add_mod(self.buf_inv)
 
-        self.buf = pinv(size=16)
+        self.buf = pinv(size=16, align_bitcell=True)
         self.add_mod(self.buf)
 
-        self.inv1 = pinv(size=1)
+        self.inv1 = pinv(size=1, align_bitcell=True)
         self.add_mod(self.inv1)
         
-        self.nand2 = pnand2(size=1)
+        self.nand2 = pnand2(size=1, align_bitcell=True)
         self.add_mod(self.nand2)
 
 

@@ -23,6 +23,15 @@ class bitcell(design.design):
         self.height = bitcell.height
         self.pin_map = bitcell.pin_map
 
+    def get_nwell_top(self):
+        return self.get_top_rect("nwell")
+
+    def get_top_rect(self, layer_):
+        from tech import layer as tech_layers
+        rects = self.gds.getShapesInLayer(tech_layers[layer_])
+
+        return max(map(lambda x: x[1], map(lambda x: x[1], rects)))
+
     def analytical_delay(self, slew, load=0, swing = 0.5):
         # delay of bit cell is not like a driver(from WL)
         # so the slew used should be 0

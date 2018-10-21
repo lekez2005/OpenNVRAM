@@ -18,11 +18,13 @@ class pnand3(pgate.pgate):
 
     unique_id = 1
     
-    def __init__(self, size=1, height=bitcell.height, contact_pwell=True, contact_nwell=True):
+    def __init__(self, size=1, height=pgate.pgate.get_default_height(), contact_pwell=True, contact_nwell=True,
+                 align_bitcell=False):
         """ Creates a cell for a simple 3 input nand """
         name = "pnand3_{0}".format(pnand3.unique_id)
         pnand3.unique_id += 1
-        pgate.pgate.__init__(self, name, height, size=size, contact_pwell=contact_pwell, contact_nwell=contact_nwell)
+        pgate.pgate.__init__(self, name, height, size=size, contact_pwell=contact_pwell, contact_nwell=contact_nwell,
+                             align_bitcell=align_bitcell)
         debug.info(2, "create pnand3 structure {0} with size of {1}".format(name, size))
 
         self.add_pins()
@@ -39,6 +41,12 @@ class pnand3(pgate.pgate):
         self.nmos_scale = 2.5  # should ideally be 3 but need to implement multi-finger
         self.pmos_scale = 1
         self.no_tracks = 3
+
+        if OPTS.use_body_taps and self.align_bitcell:
+            # TODO tune this based on bitcell height. Reduce factors if bitcell too short
+            shrink = 0.7
+            self.pmos_scale *= shrink
+            self.nmos_scale *= shrink
 
         self.determine_tx_mults()
         # FIXME: Allow multiple fingers

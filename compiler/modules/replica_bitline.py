@@ -91,10 +91,11 @@ class replica_bitline(design.design):
         self.gnd_offset = vector(2*self.m1_space + max(self.rbl_inv_offset.x + self.inv.width,
                                                  self.delay_chain_offset.x + self.delay_chain.width), 0)
         self.wl_x_offset = self.gnd_offset.x + self.rail_height + gnd_space
-        bitcell_x_offset = self.wl_x_offset + self.m1_width + self.line_end_space - self.bitcell.get_pin("vdd").lx()
 
-        self.bitcell_offset = vector(bitcell_x_offset, self.bottom_y_offset)
-        self.rbl_offset = self.bitcell_offset + vector(0, self.replica_bitcell.height)
+        rbl_x_offset = self.wl_x_offset + self.m1_width + self.line_end_space - self.bitcell.get_pin("vdd").lx()
+
+        self.bitcell_offset = vector(rbl_x_offset + self.rbl.bitcell_offsets[0], self.bottom_y_offset)
+        self.rbl_offset = vector(rbl_x_offset, self.bitcell_offset.y + self.replica_bitcell.height)
 
         self.delayed_rail_x = self.gnd_offset.x - self.parallel_line_space - self.m1_width
 
@@ -277,22 +278,27 @@ class replica_bitline(design.design):
         
     def route_vdd(self):
         # Add two vertical rails, one to the left of the delay chain and one to the right of the replica cells
-        right_vdd_start = vector(self.rbc_inst.get_pin("gnd").rx() + self.m1_space, 0)
+        if self.dc_inst.uy() > self.rbl_inst.uy():
+            vdd_height = self.dc_inst.uy() + 0.5*self.rail_height + self.parallel_line_space + self.rail_height
+        else:
+            bitcell_vdd_extension = self.bitcell.get_pin("vdd").uy() - self.bitcell.height
+            vdd_height = self.rbl_inst.uy() + bitcell_vdd_extension
+        right_vdd_start = vector(self.rbc_inst.get_pin("gnd").rx() + self.line_end_space, 0)
 
         # It is the height of the entire RBL and bitcell
         self.right_vdd = self.add_layout_pin(text="vdd",
                             layer="metal1",
                             offset=right_vdd_start,
                             width=self.rail_height,
-                            height=self.rbl.height+self.rbl_offset.y)
+                            height=vdd_height)
 
         # Connect the vdd pins of the bitcell load directly to vdd
         vdd_pins = self.rbl_inst.get_pins("vdd")
         for pin in vdd_pins:
             self.add_rect(layer="metal1",
                           offset=pin.lr(),
-                          width=right_vdd_start.x-pin.rx(),
-                          height=self.rail_height)
+                          width=right_vdd_start.x-pin.rx()+self.rail_height,
+                          height=pin.height())
 
         # Also connect the replica bitcell vdd pin to vdd
         pin = self.rbc_inst.get_pin("vdd")
@@ -303,11 +309,15 @@ class replica_bitline(design.design):
                       height=self.rail_height)
 
         # Add a second vdd pin. No need for full length. It is must connect at the next level.
-        self.add_layout_pin(text="vdd",
+        self.left_vdd = self.add_layout_pin(text="vdd",
                             layer="metal1",
-                            offset=vector(0, self.left_vdd_offset.y),
+                            offset=vector(0, 0),
                             width=self.rail_height+self.left_vdd_offset.x,
-                            height=self.dc_inst.uy())
+                            height=vdd_height)
+
+        # connect left vdd to right vdd
+        self.add_rect("metal1", offset=self.left_vdd.ul() - vector(0, self.rail_height), height=self.rail_height,
+                      width=self.right_vdd.rx() - self.left_vdd.lx())
 
         # Connect the vdd pins of the delay chain
         vdd_pins = self.dc_inst.get_pins("vdd")
@@ -334,7 +344,7 @@ class replica_bitline(design.design):
                             layer="metal1",
                             offset=self.gnd_offset,
                             width=self.rail_height,
-                            height=max(self.dc_inst.uy(), self.rbl_inst.uy()))
+                            height=max(self.dc_inst.uy(), self.rbl_inst.uy()-0.5*self.rail_height - self.wide_m1_space))
 
         # connect bitcell wordlines to gnd
         for row in range(self.bitcell_loads):
@@ -370,7 +380,7 @@ class replica_bitline(design.design):
             offset = pin.lr()
             self.add_rect(layer="metal1",
                           offset=offset,
-                          width=self.gnd_offset.x-offset.x,
+                          width=self.gnd_offset.x - offset.x + self.rail_height,
                           height=pin.height())
         inv_pin = self.rbl_inv_inst.get_pin("gnd")
         self.add_rect(layer="metal1",

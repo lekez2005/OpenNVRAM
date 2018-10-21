@@ -6,7 +6,6 @@ import contact
 from pinv import pinv
 from pnand2 import pnand2
 from pnand3 import pnand3
-from pnor2 import pnor2
 import pgate
 import math
 from vector import vector
@@ -38,13 +37,16 @@ class control_logic(design.design):
 
         self.add_lvs_correspondence_points()
 
-    def create_modules(self):
-        """ add all the required modules """
-        input_lst =["csb","web","oeb","clk"]
+    def add_pins(self):
+        input_lst = ["csb", "web", "oeb", "clk"]
         output_lst = ["s_en", "w_en", "tri_en", "clk_buf"]
         rails = ["vdd", "gnd"]
         for pin in input_lst + output_lst + rails:
             self.add_pin(pin)
+
+    def create_modules(self):
+        """ add all the required modules """
+        self.add_pins()
 
         self.nand2 = pnand2(1.5)
         self.add_mod(self.nand2)
@@ -56,14 +58,7 @@ class control_logic(design.design):
         self.inv1 = pinv(1)
         self.add_mod(self.inv1)
 
-
-
-        c = reload(__import__(OPTS.ms_flop_array))
-        ms_flop_array = getattr(c, OPTS.ms_flop_array)
-        self.msf_control = ms_flop_array(name="msf_control",
-                                         columns=3,
-                                         word_size=3)
-        self.add_mod(self.msf_control)
+        self.create_flops()
 
         c = reload(__import__(OPTS.replica_bitline))
         replica_bitline = getattr(c, OPTS.replica_bitline)
@@ -73,6 +68,15 @@ class control_logic(design.design):
         bitcell_loads = int(math.ceil(self.num_rows / 5.0))
         self.replica_bitline = replica_bitline(delay_stages, delay_fanout, bitcell_loads)
         self.add_mod(self.replica_bitline)
+
+    def create_flops(self):
+        c = reload(__import__(OPTS.ms_flop_array))
+        ms_flop_array = getattr(c, OPTS.ms_flop_array)
+        self.msf_control = ms_flop_array(name="msf_control",
+                                         columns=3,
+                                         word_size=3)
+        self.add_mod(self.msf_control)
+
 
 
     def setup_layout_offsets(self):
@@ -143,9 +147,7 @@ class control_logic(design.design):
     def add_rbl(self):
         """ Add the replica bitline """
 
-        # leave space below to connect left and right vdd
-        gnd_y = self.replica_bitline.height - self.replica_bitline.get_pin("gnd").uy() # after mirror
-        y_offset = gnd_y + 0.5*self.rail_height + self.parallel_line_space + self.rail_height
+        y_offset = self.replica_bitline.height - self.replica_bitline.get_pin("gnd").uy() # after mirror
 
         self.replica_bitline_offset = vector(0 , y_offset)
         self.rbl=self.add_inst(name="replica_bitline",
@@ -669,11 +671,8 @@ class control_logic(design.design):
         self.pin_to_vdd(self.clk_bar.get_pin("vdd"), self.vdd_rect)
         self.pin_to_vdd(self.clk_inv1.get_pin("vdd"), self.vdd_rect)
 
-        self.add_rect("metal1", height=self.rail_height, width=self.right_vdd.lx() - self.vdd_rect.lx(),
-                      offset=vector(0, 0))
         self.add_rect("metal1", height=self.vdd_rect.by(), width=self.rail_height, offset=vector(0, 0))
-        self.add_rect("metal1", height=self.right_vdd.by(), width=self.rail_height,
-                      offset=vector(self.right_vdd.lx(), 0))
+
 
     def pin_to_gnd(self, pin, gnd):
         self.add_rect("metal1", height=pin.height(), width=gnd.lx()-pin.rx(), offset=vector(pin.rx(), pin.by()))

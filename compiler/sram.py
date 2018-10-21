@@ -767,8 +767,7 @@ class sram(design.design, sram_power_grid.Mixin):
             temp.append("bank_sel[{0}]".format(bank_num))
         else:
             temp.append("vdd")
-        temp.extend(["s_en", "w_en", "tri_en_bar", "tri_en",
-                     "clk_bar","clk_buf" , "vdd", "gnd"])
+        temp.extend(["s_en", "w_en", "tri_en", "clk_buf", "vdd", "gnd"])
         self.connect_inst(temp)
 
         return bank_inst

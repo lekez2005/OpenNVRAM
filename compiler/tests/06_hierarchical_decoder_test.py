@@ -22,6 +22,8 @@ class hierarchical_decoder_test(openram_test):
         import hierarchical_decoder
         import tech
 
+        tech.drc_exceptions["hierarchical_decoder"] = tech.drc_exceptions["latchup"] + tech.drc_exceptions["min_nwell"]
+
         # Doesn't require hierarchical decoder
         # debug.info(1, "Testing 4 row sample for hierarchical_decoder")
         # a = hierarchical_decoder.hierarchical_decoder(rows=4)

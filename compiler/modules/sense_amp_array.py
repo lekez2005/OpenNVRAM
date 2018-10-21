@@ -3,6 +3,7 @@ from tech import drc
 from vector import vector
 import debug
 from globals import OPTS
+import utils
 
 class sense_amp_array(design.design):
     """
@@ -24,7 +25,6 @@ class sense_amp_array(design.design):
         self.row_size = self.word_size * self.words_per_row
 
         self.height = self.amp.height
-        self.width = self.amp.width * self.word_size * self.words_per_row
 
         self.add_pins()
         self.create_layout()
@@ -54,12 +54,15 @@ class sense_amp_array(design.design):
         br_pin = self.amp.get_pin("br")
         dout_pin = self.amp.get_pin("dout")
 
+        (bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.row_size)
+
+
         self.amp_insts = []
         
         for i in range(0,self.row_size,self.words_per_row):
 
             name = "sa_d{0}".format(i)
-            amp_position = vector(self.amp.width * i, 0)
+            amp_position = vector(bitcell_offsets[i], 0)
             
             bl_offset = amp_position + bl_pin.ll().scale(1,0)
             br_offset = amp_position + br_pin.ll().scale(1,0)
@@ -88,6 +91,8 @@ class sense_amp_array(design.design):
                                 offset=dout_offset,
                                 width=dout_pin.width(),
                                 height=dout_pin.height())
+
+        self.width = self.amp_insts[-1].rx()
 
 
     def connect_rails(self):

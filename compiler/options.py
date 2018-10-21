@@ -59,6 +59,7 @@ class options(optparse.Values):
     supply_voltages = ""
     temperatures = ""
     process_corners = ""
+    use_body_taps = True  # bitcell does not include body taps so insert body taps between bitcells
     
 
     # These are the default modules that can be over-riden
@@ -83,4 +84,5 @@ class options(optparse.Values):
     replica_bitcell = "replica_bitcell"
     bitcell = "bitcell"
     delay_chain = "delay_chain"
+    body_tap = "body_tap"
 

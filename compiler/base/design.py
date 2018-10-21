@@ -35,20 +35,21 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         # because each reference must be a unique name.
         # These modules ensure unique names or have no changes if they
         # aren't unique
-        ok_list = ['ms_flop.ms_flop',
-                   'bitcell.bitcell',
-                   'contact.contact',
-                   'ptx.ptx',
-                   'pinv.pinv',
-                   'ptx_spice.ptx_spice',
-                   'signal_gate.SignalGate',
-                   'sram.sram',
-                   'hierarchical_predecode2x4.hierarchical_predecode2x4',
-                   'hierarchical_predecode3x8.hierarchical_predecode3x8']
-        ok_list = ["<class '" + class_name + "'>" for class_name in ok_list]  # new style classes mangle class names
+        ok_list = ['ms_flop',
+                   'bitcell',
+                   'body_tap'
+                   'cam_bitcell',
+                   'contact',
+                   'ptx',
+                   'pinv',
+                   'ptx_spice',
+                   'SignalGate',
+                   'sram',
+                   'hierarchical_predecode2x4',
+                   'hierarchical_predecode3x8']
         if name not in design.name_map:
             design.name_map.append(name)
-        elif str(self.__class__) in ok_list:
+        elif self.__class__.__name__ in ok_list:
             pass
         else:
             debug.error("Duplicate layout reference name {0} of class {1}. GDS2 requires names be unique.".format(name,self.__class__),-1)
@@ -75,6 +76,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         
         self.poly_to_active = drc["poly_to_active"]
         self.poly_extend_active = drc["poly_extend_active"]
+        self.poly_to_field_poly = drc["poly_to_field_poly"]
         self.contact_to_gate = drc["contact_to_gate"]
         self.well_enclose_active = drc["well_enclosure_active"]
         self.implant_enclose_active = drc["implant_enclosure_active"]
@@ -136,10 +138,16 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             if words_per_row > 1:
                 for inst in instances:
                     x_offsets.append(leftmost - self.poly_pitch + inst.lx())  # left
-                    x_offsets.append(inst.rx() + (inst.width - rightmost) + self.poly_pitch) #3 right
+                    x_offsets.append(inst.rx() + (inst.width - rightmost) + self.poly_pitch)  # right
             else:
                 x_offsets.append(leftmost - self.poly_pitch + instances[0].lx())  # left
                 x_offsets.append(instances[-1].rx() + (instances[-1].width - rightmost) + self.poly_pitch)  # 3 right
+            if hasattr(self, "tap_offsets") and len(self.tap_offsets) > 0:
+                tap_width = utils.get_body_tap_width()
+                tap_offsets = self.tap_offsets
+                for offset in tap_offsets:
+                    x_offsets.append((instances[-1].width - rightmost) + self.poly_pitch + offset)  # left
+                    x_offsets.append(offset + tap_width + leftmost - self.poly_pitch)
             inst = instances[0]
             for x_offset in x_offsets:
                 self.add_rect("po_dummy", offset=vector(x_offset, inst.by() + 0.5 * self.poly_vert_space),

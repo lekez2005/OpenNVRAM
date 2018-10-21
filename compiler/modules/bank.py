@@ -12,8 +12,6 @@ import utils
 from vector import vector
 from globals import OPTS
 
-from hierarchical_predecode2x4 import hierarchical_predecode2x4 as pre2x4
-from hierarchical_predecode3x8 import hierarchical_predecode3x8 as pre3x8
 
 class bank(design.design):
     """
@@ -23,14 +21,7 @@ class bank(design.design):
 
     def __init__(self, word_size, num_words, words_per_row, num_banks=1, name=""):
 
-        mod_list = ["tri_gate", "bitcell", "decoder", "ms_flop_array", "ms_flop_array_horizontal", "wordline_driver",
-                    "bitcell_array",   "sense_amp_array",    "precharge_array",
-                    "column_mux_array", "write_driver_array", "tri_gate_array"]
-        for mod_name in mod_list:
-            config_mod_name = getattr(OPTS, mod_name)
-            class_file = reload(__import__(config_mod_name))
-            mod_class = getattr(class_file , config_mod_name)
-            setattr (self, "mod_"+mod_name, mod_class)
+        self.set_modules(self.get_module_list())
 
         if name == "":
             name = "bank_{0}_{1}".format(word_size, num_words)
@@ -69,14 +60,14 @@ class bank(design.design):
         for i in range(self.addr_size):
             self.add_pin("ADDR[{0}]".format(i))
 
-        for pin in ["bank_sel", "s_en","w_en","tri_en_bar","tri_en",
-                    "clk_bar","clk_buf","vdd","gnd"]:
+        for pin in ["bank_sel", "s_en", "w_en", "tri_en", "clk_buf", "vdd", "gnd"]:
             self.add_pin(pin)
 
     def route_layout(self):
         """ Create routing amoung the modules """
         self.create_central_bus()
         self.route_precharge_to_bitcell_array()
+        self.connect_bitlines()
         self.route_sense_amp_to_trigate()
         self.route_tri_gate_out()
         self.route_wordline_driver()
@@ -92,6 +83,19 @@ class bank(design.design):
         self.calculate_rail_vias()
         self.route_vdd_supply()
         self.route_gnd_supply()
+
+    @staticmethod
+    def get_module_list():
+        return ["tri_gate", "bitcell", "decoder", "ms_flop_array", "ms_flop_array_horizontal", "wordline_driver",
+                    "bitcell_array", "sense_amp_array", "precharge_array",
+                    "column_mux_array", "write_driver_array", "tri_gate_array"]
+
+    def set_modules(self, mod_list):
+        for mod_name in mod_list:
+            config_mod_name = getattr(OPTS, mod_name)
+            class_file = reload(__import__(config_mod_name))
+            mod_class = getattr(class_file, config_mod_name)
+            setattr(self, "mod_"+mod_name, mod_class)
         
     def add_modules(self):
         """ Add modules. The order should not matter! """
@@ -101,10 +105,7 @@ class bank(design.design):
         if self.col_addr_size > 0:
             # The m2 width is because the 6T cell may have vias on the boundary edge for
             # overlapping when making the array
-            self.column_mux_height = self.column_mux_array.height + 0.5*self.m2_width
             self.add_column_mux_array()
-        else:
-            self.column_mux_height = 0
 
         self.add_sense_amp_array()
         self.add_write_driver_array()
@@ -177,6 +178,9 @@ class bank(design.design):
         """ Create all the modules using the class loader """
         self.tri = self.mod_tri_gate()
         self.bitcell = self.mod_bitcell()
+
+        nwell_top = self.bitcell.get_nwell_top()
+        self.nwell_extension = nwell_top - self.bitcell.height  # extension of nwell above bitcell
         
         self.bitcell_array = self.mod_bitcell_array(cols=self.num_cols,
                                                     rows=self.num_rows)
@@ -209,7 +213,8 @@ class bank(design.design):
         
         self.msf_data_in = self.mod_ms_flop_array(name="msf_data_in", 
                                                   columns=self.num_cols, 
-                                                  word_size=self.word_size)
+                                                  word_size=self.word_size,
+                                                  align_bitcell=True)
         self.add_mod(self.msf_data_in)
         
         self.tri_gate_array = self.mod_tri_gate_array(columns=self.num_cols, 
@@ -218,7 +223,13 @@ class bank(design.design):
 
         self.wordline_driver = self.mod_wordline_driver(rows=self.num_rows, no_cols=self.num_cols)
         self.add_mod(self.wordline_driver)
+        self.create_bank_gate()
 
+
+        self.column_decoder = ColumnDecoder(self.row_addr_size, self.col_addr_size)
+        self.add_mod(self.column_decoder)
+
+    def create_bank_gate(self):
         control_gates = [
             ControlGate("s_en", [1, 2, 4]),
             ControlGate("clk", [2, 6, 8], route_complement=True),
@@ -227,10 +238,6 @@ class bank(design.design):
         ]
         self.bank_gate = BankGate(control_gates, contact_nwell=False)
         self.add_mod(self.bank_gate)
-
-        self.column_decoder = ColumnDecoder(self.row_addr_size, self.col_addr_size)
-        self.add_mod(self.column_decoder)
-        
 
     def add_bitcell_array(self):
         """ Adding Bitcell Array """
@@ -252,9 +259,9 @@ class bank(design.design):
     def add_precharge_array(self):
         """ Adding Precharge """
 
-        # The wells must be far enough apart
-        # The enclosure is for the well and the spacig is to the bitcell wells
-        y_space = 0.5*self.precharge_array.pc_cell.well_contact_implant_height
+        nwell_top = self.bitcell.get_nwell_top()
+        nwell_extension = nwell_top - self.bitcell.height
+        y_space = nwell_extension
         y_offset = self.bitcell_array.height + y_space
         self.precharge_array_inst=self.add_inst(name="precharge_array",
                                                 mod=self.precharge_array, 
@@ -269,7 +276,10 @@ class bank(design.design):
     def add_column_mux_array(self):
         """ Adding Column Mux when words_per_row > 1 . """
 
-        y_offset = self.column_mux_height
+
+        y_space = self.nwell_extension + self.implant_space
+
+        y_offset = self.column_mux_array.height + y_space
         self.col_mux_array_inst=self.add_inst(name="column_mux_array",
                                               mod=self.column_mux_array,
                                               offset=vector(0,y_offset).scale(-1,-1))
@@ -287,11 +297,18 @@ class bank(design.design):
 
     def add_sense_amp_array(self):
         """ Adding Sense amp  """
+        if self.col_addr_size > 0:
+            y_offset = self.col_mux_array_inst.by() - self.sense_amp_array.height
+        else:
+            # TODO this is quite specific to the sense amp layout.
+            # It assumes there is a well contact above the sense amp and the implant for this sense amp is
+            # drc["minwidth_implant"] wide
+            y_space = self.nwell_extension + drc["minwidth_implant"] + drc["same_nwell_to_nwell"]
+            y_offset = - (y_space + self.sense_amp_array.height)
 
-        y_offset = self.column_mux_height + self.sense_amp_array.height
         self.sense_amp_array_inst=self.add_inst(name="sense_amp_array",
                                                 mod=self.sense_amp_array,
-                                                offset=vector(0,y_offset).scale(-1,-1))
+                                                offset=vector(0,y_offset).scale(-1, 1))
         temp = []
         for i in range(self.word_size):
             temp.append("data_out[{0}]".format(i))
@@ -308,10 +325,10 @@ class bank(design.design):
     def add_write_driver_array(self):
         """ Adding Write Driver  """
 
-        y_offset = self.sense_amp_array.height + self.column_mux_height + self.write_driver_array.height
+        y_offset = self.sense_amp_array_inst.by() - self.write_driver_array.height
         self.write_driver_array_inst=self.add_inst(name="write_driver_array", 
                                                    mod=self.write_driver_array, 
-                                                   offset=vector(0,y_offset).scale(-1,-1))
+                                                   offset=vector(0,y_offset).scale(-1,1))
 
         temp = []
         for i in range(self.word_size):
@@ -329,11 +346,10 @@ class bank(design.design):
     def add_msf_data_in(self):
         """ data_in flip_flop """
 
-        y_offset= self.sense_amp_array.height + self.column_mux_height \
-                  + self.write_driver_array.height + self.msf_data_in.height
+        y_offset= self.write_driver_array_inst.by() - self.msf_data_in.height
         self.msf_data_in_inst=self.add_inst(name="data_in_flop_array", 
                                             mod=self.msf_data_in, 
-                                            offset=vector(0,y_offset).scale(-1,-1))
+                                            offset=vector(0,y_offset).scale(-1,1))
 
         temp = []
         for i in range(self.word_size):
@@ -346,11 +362,10 @@ class bank(design.design):
 
     def add_tri_gate_array(self):
         """ data tri gate to drive the data bus """
-        y_offset = self.sense_amp_array.height+self.column_mux_height \
-                   + self.write_driver_array.height + self.msf_data_in.height 
+        y_offset = self.msf_data_in_inst.by()
         self.tri_gate_array_inst=self.add_inst(name="tri_gate_array", 
                                               mod=self.tri_gate_array, 
-                                               offset=vector(0,y_offset).scale(-1,-1),
+                                               offset=vector(0,y_offset).scale(-1, 1),
                                                mirror="MX")
         temp = []
         for i in range(self.word_size):
@@ -387,15 +402,20 @@ class bank(design.design):
         contact_implant_height = inv.well_contact_implant_height
 
         cont_pimp_y = 0
-        nimp_y = 0.5 * contact_implant_height + 0.5 * inv.nimplant_height
+        nimp_y = inv.mid_y - 0.5 * inv.nimplant_height
         pimp_y = inv.mid_y + 0.5 * inv.pimplant_height
         cont_nimp_y = inv.height
-        nwell_y = pwell_y = inv.mid_y + 0.5 * inv.nwell_height
+        nwell_y = inv.mid_y + 0.5 * inv.nwell_height
 
         layers = ["pimplant", "nimplant", "pimplant", "nimplant", "nwell"]
-        y_mids = [cont_pimp_y, cont_nimp_y, pimp_y, nimp_y, nwell_y, pwell_y]
+        y_mids = [cont_pimp_y, cont_nimp_y, pimp_y, nimp_y, nwell_y, nwell_y]
         heights = [contact_implant_height, contact_implant_height, inv.pimplant_height, inv.nimplant_height,
                    inv.nwell_height, inv.nwell_height]
+
+        if OPTS.use_body_taps:
+            layers_index = range(2, len(layers))
+        else:
+            layers_index = range(len(layers))
 
         # tx_implant_extension = 0
         # contact_implant_extension = 0.5*(inv.implant_width - inv.width)
@@ -405,12 +425,27 @@ class bank(design.design):
 
         for row in range(self.decoder.rows):
             y_offset = row * inv.height
-            for i in range(len(layers)):
+            for i in layers_index:
                 if row % 2 == 1:
                     mid_y = y_offset + y_mids[i]
                 else:
                     mid_y = y_offset + inv.height - y_mids[i]
                 self.add_rect_center(layers[i], offset=vector(mid_x, mid_y), width=fill_width, height=heights[i])
+            if OPTS.use_body_taps:
+                # extend nwell to bitcells
+                body_tap = self.bitcell_array.body_tap
+                x_offset = self.wordline_x_offset + self.wordline_driver.width
+                output_inv = self.wordline_driver.module_insts[-1].mod
+                nwell_height = output_inv.nwell_height
+                if row % 2 == 0:
+                    well_y = y_offset + (output_inv.height - output_inv.mid_y) - nwell_height
+                else:
+                    well_y = y_offset + output_inv.mid_y
+                self.add_rect("nwell", offset=vector(x_offset, well_y), height=nwell_height,
+                              width=self.bitcell_array_inst.lx() + 0.5*body_tap.width - x_offset)
+
+
+        # extend nwell to bitcells
         self.add_row_decoder()
         self.add_wordline_driver()
 
@@ -543,6 +578,8 @@ class bank(design.design):
     def setup_layout_constraints(self):
         """ Calculating layout constraints, width, height etc """
 
+        (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.num_cols)
+
         # bend for tri gate to sense amp
         self.bendX = 3*self.m3_width
         self.bendY = 2*self.m3_width
@@ -579,6 +616,20 @@ class bank(design.design):
 
         self.right_edge = self.right_vdd_x_offset + self.vdd_rail_width
         self.width = self.right_edge - self.left_vdd_x_offset
+
+    def connect_bitlines(self):
+        if self.col_addr_size > 0:
+            dest_instance = self.col_mux_array_inst
+        else:
+            dest_instance = self.sense_amp_array_inst
+        # connect bl, br to bitcell pins
+        for i in range(self.num_cols):
+            for pin_name in ["bl[{}]", "br[{}]"]:
+                col_pin_name = pin_name.format(i)
+                bitcell_pin = self.bitcell_array_inst.get_pin(col_pin_name)
+                dest_pin = dest_instance.get_pin(col_pin_name)
+                self.add_rect(dest_pin.layer, offset=dest_pin.ul(), height=bitcell_pin.by() - dest_pin.uy(),
+                              width=dest_pin.width())
 
     def create_central_bus(self):
         """ Create the address, supply, and control signal central bus lines. """
@@ -751,9 +802,7 @@ class bank(design.design):
             # The mid guarantees we exit the input cell to the right.
             driver_wl_pos = self.wordline_driver_inst.get_pin("wl[{}]".format(i)).rc()
             bitcell_wl_pos = self.bitcell_array_inst.get_pin("wl[{}]".format(i)).lc()
-            mid1 = driver_wl_pos.scale(0.5,1)+bitcell_wl_pos.scale(0.5,0)
-            mid2 = driver_wl_pos.scale(0.5,0)+bitcell_wl_pos.scale(0.5,1)
-            self.add_path("metal1", [driver_wl_pos, mid1, mid2, bitcell_wl_pos])
+            self.add_path("metal1", [vector(driver_wl_pos.x, bitcell_wl_pos.y), bitcell_wl_pos])
 
         
         # route the gnd rails, add contact to rail as well
@@ -870,11 +919,12 @@ class bank(design.design):
 
 
             # find closest middle cell
+
             cell_width = self.bitcell.width
-            for i in range(self.num_cols):
-                if not i % 2**self.col_addr_size == pin_number:  # match pin index to m2 sel location
+            for j in range(self.num_cols):
+                if not j % 2**self.col_addr_size == pin_number:  # match pin index to m2 sel location
                     continue
-                mid_cell = i*cell_width + 0.5*cell_width
+                mid_cell = self.bitcell_offsets[j] + 0.5*cell_width
                 if mid_cell > x_offset:
                     break
             # extend m3 to closest mid_cell

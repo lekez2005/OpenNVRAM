@@ -1,7 +1,7 @@
 import contact
 import design
 import debug
-import math
+from globals import OPTS
 from tech import drc, parameter
 from tech import layer as tech_layers
 from vector import vector
@@ -14,14 +14,31 @@ class pgate(design.design):
     This is a module that implements some shared functions for parameterized gates.
     """
 
-    def __init__(self, name, height, size=1, beta=parameter["beta"], contact_pwell=True, contact_nwell=True):
+    c = __import__(OPTS.bitcell)
+    bitcell = getattr(c, OPTS.bitcell)
+
+    def __init__(self, name, height, size=1, beta=parameter["beta"], contact_pwell=True, contact_nwell=True,
+                 align_bitcell=False):
         """ Creates a generic cell """
         design.design.__init__(self, name)
+        if align_bitcell:
+            height = pgate.bitcell.height
         self.beta = beta
         self.size = size
         self.contact_pwell = contact_pwell
         self.contact_nwell = contact_nwell
         self.height = height
+        self.align_bitcell = align_bitcell
+
+    @staticmethod
+    def get_default_height():
+        c = __import__(OPTS.bitcell)
+        bitcell = getattr(c, OPTS.bitcell)
+        if OPTS.use_body_taps:
+            default_height = drc["pgate_height"]
+        else:
+            default_height = bitcell.height
+        return default_height
 
 
     def determine_tx_mults(self):
@@ -57,6 +74,11 @@ class pgate(design.design):
 
         self.top_space = max(self.top_space, active_contact_space, implant_active_space, poly_poly_allowance)
         self.bottom_space = max(self.bottom_space, active_contact_space, implant_active_space, poly_poly_allowance)
+
+        if self.align_bitcell and OPTS.use_body_taps:
+            self.top_space = self.bottom_space = self.poly_extend_active + 0.5*self.poly_to_field_poly
+            self.middle_space = max(contact.poly.second_layer_height, contact.m1m2.second_layer_height,
+                                    contact.m2m3.second_layer_height, drc["pgate_contact_height"]) + 2 * self.line_end_space
 
         self.tx_height_available = tx_height_available = self.height - (self.top_space +
                                                                         self.middle_space + self.bottom_space)
@@ -246,10 +268,16 @@ class pgate(design.design):
                 height = utils.ceil(max(self.minarea_metal1_contact/metal_fill_width,
                                            active_cont.mod.first_layer_height))
                 if height > tx_width:
-                    via_height = contact.m1m2.first_layer_height
                     direction = 1 if mid_y > self.mid_y else -1
-                    rect_bottom = mid_y - direction*0.5*via_height - height
-                    rect_mid = rect_bottom - direction*0.5*height
+                    if OPTS.use_body_taps and self.align_bitcell:
+                        if mid_y > self.mid_y:
+                            rect_mid = mid_y - 0.5*contact.m1m2.second_layer_height + 0.5*height
+                        else:
+                            rect_mid = mid_y + 0.5*contact.m1m2.second_layer_height - 0.5*height
+                    else:
+                        via_height = contact.m1m2.first_layer_height
+                        rect_bottom = mid_y - direction*0.5*via_height - height
+                        rect_mid = rect_bottom - direction*0.5*height
 
                     offset = vector(offset.x, rect_mid)
                 self.add_rect_center("metal1", offset=offset, height=height,
@@ -282,9 +310,20 @@ class pgate(design.design):
         fill_height = (self.middle_space - 2 * self.line_end_space)
         min_width = utils.ceil(self.minarea_metal1_contact / fill_height)
         fill_width = max(contact.poly.second_layer_width, min_width)
+
+        if OPTS.use_body_taps and self.align_bitcell:  # all contacts are centralized and x shifted for min drc fill
+            y_shifts = [0.0]*len(y_shifts)
+            x_shift = 0.5*contact.poly.second_layer_width - 0.5*fill_width
+            if len(self.poly_offsets) == 1:
+                x_shifts = [0.0]
+            else:
+                x_shifts = [x*x_shift for x in [1, 0, -1]]
+        else:
+            x_shifts = [0.0]*3
+
         for i in range(len(self.poly_offsets)):
             x_offset = self.poly_offsets[i].x
-            offset = vector(x_offset, self.mid_y)
+            offset = vector(x_offset + x_shifts[i], self.mid_y)
             self.add_rect_center("metal1", offset=offset, width=fill_width, height=fill_height)
 
             offset = vector(x_offset, self.mid_y + y_shifts[i])
@@ -294,7 +333,15 @@ class pgate(design.design):
 
     def add_implants(self):
         implant_x = 0.5*(self.width - self.implant_width)
-        self.add_rect("nimplant", offset=vector(0, 0.5*self.well_contact_implant_height),
+        if self.align_bitcell and OPTS.use_body_taps:
+            self.extra_implant = max(0.0, drc["ptx_implant_enclosure_active"] - 0.5*self.poly_to_field_poly)
+            nimplant_y = -self.extra_implant
+            self.nimplant_height = self.mid_y + self.extra_implant
+            self.pimplant_height = self.nwell_height = self.height - self.mid_y + self.extra_implant
+
+        else:
+            nimplant_y = 0.5*self.well_contact_implant_height
+        self.add_rect("nimplant", offset=vector(0, nimplant_y),
                       width=self.width, height=self.nimplant_height)
         self.add_rect("pimplant", offset=vector(0, self.mid_y), width=self.width,
                       height=self.pimplant_height)
@@ -303,16 +350,26 @@ class pgate(design.design):
     def add_body_contacts(self):
 
         y_offsets = [0, self.height]
-        implants = ["pimplant", "nimplant"]
         pin_names = ["gnd", "vdd"]
+
+        if self.align_bitcell and OPTS.use_body_taps:
+            for i in range(len(y_offsets)):
+                y_offset = y_offsets[i]
+                self.add_layout_pin_center_rect(pin_names[i], "metal1", offset=vector(self.mid_x, y_offset),
+                                                width=self.width, height=self.rail_height)
+            return
+
+
+        implants = ["pimplant", "nimplant"]
 
         for i in range(len(y_offsets)):
             y_offset = y_offsets[i]
             self.add_layout_pin_center_rect(pin_names[i], "metal1", offset=vector(self.mid_x, y_offset),
                                             width=self.width, height=self.rail_height)
-            self.add_rect_center(implants[i], offset=vector(self.mid_x, y_offset), width=self.implant_width,
-                                 height=self.well_contact_implant_height)
+
             if (i == 0 and self.contact_pwell) or (i == 1 and self.contact_nwell):
+                self.add_rect_center(implants[i], offset=vector(self.mid_x, y_offset), width=self.implant_width,
+                                     height=self.well_contact_implant_height)
                 self.add_rect_center("active", offset=vector(self.mid_x, y_offset), width=self.well_contact_active_width,
                                      height=self.well_contact_active_height)
                 for j in range(self.no_body_contacts):

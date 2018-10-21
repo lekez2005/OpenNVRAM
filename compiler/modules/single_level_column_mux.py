@@ -156,7 +156,7 @@ class single_level_column_mux(design.design):
         self.add_layout_pin(text="bl",
                             layer="metal2",
                             offset=offset,
-                            height=self.height-via_y+0.5*self.m2_width)
+                            height=self.height-via_y)
         self.add_rect("metal2", offset=offset-vector(0, 0.5*self.m2_width), width=self.drain_x[0]-bl_x)
 
         via_y = self.active_mid_y_top - 0.5 * self.ptx_width + 0.5 * contact.m1m2.second_layer_height
@@ -172,7 +172,7 @@ class single_level_column_mux(design.design):
         self.add_layout_pin(text="br",
                             layer="metal2",
                             offset=offset,
-                            height=self.height - via_y + 0.5*self.m2_width)
+                            height=self.height - via_y)
         self.add_rect("metal2", offset=vector(self.drain_x[0], via_y-0.5 * self.m2_width),
                       width=br_x - self.drain_x[0] + self.m2_width)
 

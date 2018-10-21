@@ -28,6 +28,15 @@ class dff_array_test(openram_test):
         debug.info(2, "Testing ms_flop_array for columns=16, word_size=8")
         a = ms_flop_array.ms_flop_array(columns=16, word_size=8)
         self.local_check(a)
+
+        debug.info(2, "Testing ms_flop_array for columns=64, word_size=64 aligned to bitcell")
+        a = ms_flop_array.ms_flop_array(columns=128, word_size=128, align_bitcell=True)
+        self.local_check(a)
+
+        debug.info(2, "Testing ms_flop_array for columns=64, word_size=32 aligned to bitcell")
+        a = ms_flop_array.ms_flop_array(columns=128, word_size=64, align_bitcell=True)
+        self.local_check(a)
+
         
         OPTS.check_lvsdrc = True
         globals.end_openram()

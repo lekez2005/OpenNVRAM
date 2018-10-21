@@ -3,6 +3,7 @@ import design
 from tech import drc, spice
 from vector import vector
 from globals import OPTS
+import utils
 
 
 
@@ -26,9 +27,17 @@ class bitcell_array(design.design):
         self.cell = self.mod_bitcell()
         self.add_mod(self.cell)
 
+        self.add_right_dummy = True
+        self.add_left_dummy = True
+
+        if OPTS.use_body_taps:
+            c = __import__(OPTS.body_tap)
+            self.mod_body_tap = getattr(c, OPTS.body_tap)
+            self.body_tap = self.mod_body_tap()
+            self.add_mod(self.body_tap)
+
         self.height = self.row_size*self.cell.height
-        self.width = self.column_size*self.cell.width 
-        
+
         self.add_pins()
         self.create_layout()
         self.add_dummy_poly()
@@ -45,36 +54,57 @@ class bitcell_array(design.design):
         self.add_pin("gnd")
 
     def create_layout(self):
-        xoffset = 0.0
+        (self.bitcell_offsets, tap_offsets) = utils.get_tap_positions(self.column_size)
+        self.width = self.bitcell_offsets[-1] + self.cell.width
+        if len(tap_offsets) > 0:
+            self.add_left_dummy = False
+            if tap_offsets[-1] < self.bitcell_offsets[-1]:  # add right dummy
+                self.add_right_dummy = True
+            else:
+                self.add_right_dummy = False
+                self.width = tap_offsets[-1] + self.body_tap.width
+
+
         self.cell_inst = {}
-        for col in range(self.column_size):
-            yoffset = 0.0
-            for row in range(self.row_size):
+        yoffset = 0.0
+        for row in range(self.row_size):
+
+            if row % 2 == 0:
+                tempy = yoffset + self.cell.height
+                dir_key = "MX"
+            else:
+                tempy = yoffset
+                dir_key = ""
+            for col in range(self.column_size):
                 name = "bit_r{0}_c{1}".format(row, col)
 
-                if row % 2 == 0:
-                    tempy = yoffset + self.cell.height
-                    dir_key = "MX"
-                else:
-                    tempy = yoffset
-                    dir_key = ""
+
 
                 self.cell_inst[row,col]=self.add_inst(name=name,
                                                       mod=self.cell,
-                                                      offset=[xoffset, tempy],
+                                                      offset=[self.bitcell_offsets[col], tempy],
                                                       mirror=dir_key)
                 self.connect_inst(["bl[{0}]".format(col),
                                    "br[{0}]".format(col),
                                    "wl[{0}]".format(row),
                                    "vdd",
                                    "gnd"])
-                yoffset += self.cell.height
-            xoffset += self.cell.width
+            for x_offset in tap_offsets:
+                self.add_inst(name=self.body_tap.name, mod=self.body_tap, offset=vector(x_offset, tempy),
+                              mirror=dir_key)
+                self.connect_inst([])
+
+            yoffset += self.cell.height
 
     def add_dummy_poly(self):
+
         leftmost, rightmost = self.get_dummy_poly(self.cell, from_gds=True)
         poly_pitch = self.poly_width + self.poly_space
-        pos = [leftmost - poly_pitch, self.width + (self.cell.width - rightmost) + poly_pitch]
+        pos = []
+        if self.add_left_dummy:
+            pos.append(leftmost - poly_pitch)
+        if self.add_right_dummy:
+            pos.append(self.width + (self.cell.width - rightmost) + poly_pitch)
         for x_offset in pos:
             self.add_rect("po_dummy", offset=vector(x_offset, 0.5 * self.poly_vert_space), width=self.poly_width,
                           height=self.height - self.poly_vert_space)
@@ -148,7 +178,7 @@ class bitcell_array(design.design):
                     self.add_layout_pin(text="gnd", 
                                         layer="metal1",
                                         offset=gnd_pin.ll(),
-                                        width=full_width,
+                                        width=full_width - gnd_pin.lx(),
                                         height=gnd_pin.height())
                 
             # add vdd label and offset
@@ -158,7 +188,7 @@ class bitcell_array(design.design):
                     self.add_layout_pin(text="vdd",
                                         layer="metal1",
                                         offset=vdd_pin.ll(),
-                                        width=full_width,
+                                        width=full_width - vdd_pin.lx(),
                                         height=vdd_pin.height())
                 
             # add wl label and offset

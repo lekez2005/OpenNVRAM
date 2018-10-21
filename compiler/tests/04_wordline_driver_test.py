@@ -25,6 +25,9 @@ class wordline_driver_test(openram_test):
 
     def run_commands(self, rows, cols):
 
+        import tech
+        tech.drc_exceptions["wordline_driver"] = tech.drc_exceptions["latchup"] + tech.drc_exceptions["min_nwell"]
+
         global verify
         import verify
         OPTS.check_lvsdrc = False

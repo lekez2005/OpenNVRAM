@@ -27,8 +27,13 @@ class pinv_test(openram_test):
         self.local_check(tx)
 
         debug.info(2, "Checking 1x size without well contacts")
-        tech.drc_exceptions["pinv"] = ["LUP.6"]
+        tech.drc_exceptions["pinv"] = tech.drc_exceptions["latchup"]
         tx = pinv.pinv(size=1, contact_nwell=False, contact_pwell=False)
+        self.local_drc_check(tx)
+
+        debug.info(2, "Checking 1x bitcell pitch matched")
+        tech.drc_exceptions["pinv"] = tech.drc_exceptions["latchup"] + tech.drc_exceptions["min_nwell"]
+        tx = pinv.pinv(size=1, contact_nwell=False, contact_pwell=False, align_bitcell=True)
         self.local_drc_check(tx)
 
         OPTS.check_lvsdrc = True

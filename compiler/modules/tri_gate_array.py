@@ -3,6 +3,7 @@ from tech import drc
 import design
 from tech import layer as tech_layers
 from tech import purpose as tech_purpose
+import utils
 from vector import vector
 from globals import OPTS
 
@@ -25,7 +26,6 @@ class tri_gate_array(design.design):
         self.word_size = word_size
 
         self.words_per_row = self.columns / self.word_size
-        self.width = (self.columns / self.words_per_row) * self.tri.width
         self.height = self.tri.height
         
         self.create_layout()
@@ -50,26 +50,31 @@ class tri_gate_array(design.design):
 
     def create_array(self):
         """add tri gate to the array """
+        (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
         self.tri_inst = {}
         for i in range(0,self.columns,self.words_per_row):
             name = "Xtri_gate{0}".format(i)
-            base = vector(i*self.tri.width, 0)
+            base = vector(self.bitcell_offsets[i], 0)
             self.tri_inst[i]=self.add_inst(name=name,
                                            mod=self.tri,
                                            offset=base)
             self.connect_inst(["in[{0}]".format(i/self.words_per_row),
                                "out[{0}]".format(i/self.words_per_row),
                                "en", "en_bar", "vdd", "gnd"])
+        self.width = self.tri_inst[i].rx()
 
     def connect_en_pins(self):
-        tri_width = self.tri.width
-        enbar_pin = self.tri_inst[0].get_pin("en_bar")
-        en_pin = self.tri_inst[0].get_pin("en")
-        for i in range(0, self.columns):
-            if i % self.words_per_row != 0:
-                base = vector(i * self.tri.width, 0)
-                self.add_rect("metal2", offset=base + en_pin.ll(), width=tri_width, height=en_pin.height())
-                self.add_rect("metal2", offset=base + enbar_pin.ll(), width=tri_width, height=enbar_pin.height())
+        previous_index = 0
+        for i in range(1, self.columns):
+            if i % self.words_per_row == 0:
+                right_x_offset = self.bitcell_offsets[previous_index] + self.tri.width
+                for pin_name in ["en", "en_bar"]:
+                    prev_pin = self.tri_inst[previous_index].get_pin(pin_name)
+                    current_pin = self.tri_inst[i].get_pin(pin_name)
+                    width = max(current_pin.lx() - right_x_offset, self.m2_width) # prevent zero area rect when pins align
+                    self.add_rect(current_pin.layer, offset=vector(right_x_offset, prev_pin.by()),
+                                  width=width)
+                previous_index = i
 
     def fill_implants_and_nwell(self):
 
@@ -113,7 +118,8 @@ class tri_gate_array(design.design):
 
 
 
-        width = self.tri.width * self.columns - (self.words_per_row - 1) * self.tri.width
+        last_instance_key = max(map(int, self.tri_inst.keys()))
+        width = self.tri_inst[last_instance_key].rx()
         en_pin = self.tri_inst[0].get_pin("en")
         self.add_layout_pin(text="en",
                             layer="metal2",

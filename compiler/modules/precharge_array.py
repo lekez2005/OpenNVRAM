@@ -3,6 +3,7 @@ import debug
 from tech import drc
 from vector import vector
 from precharge import precharge
+import utils
 
 
 class precharge_array(design.design):
@@ -20,7 +21,6 @@ class precharge_array(design.design):
         self.pc_cell = precharge(name="precharge", size=size)
         self.add_mod(self.pc_cell)
 
-        self.width = self.columns * self.pc_cell.width
         self.height = self.pc_cell.height
 
         self.add_pins()
@@ -53,9 +53,10 @@ class precharge_array(design.design):
 
     def add_insts(self):
         """Creates a precharge array by horizontally tiling the precharge cell"""
+        (bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
         for i in range(self.columns):
             name = "pre_column_{0}".format(i)
-            offset = vector(self.pc_cell.width * i, 0)
+            offset = vector(bitcell_offsets[i], 0)
             inst=self.add_inst(name=name,
                           mod=self.pc_cell,
                           offset=offset)
@@ -73,4 +74,5 @@ class precharge_array(design.design):
                                 height=bl_pin.height())
             self.connect_inst(["bl[{0}]".format(i), "br[{0}]".format(i),
                                "en", "vdd"])
+        self.width = inst.rx()
 

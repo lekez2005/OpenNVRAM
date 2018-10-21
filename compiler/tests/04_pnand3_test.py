@@ -28,6 +28,11 @@ class pnand3_test(openram_test):
         tx = pnand3.pnand3(size=1)
         self.local_check(tx)
 
+        debug.info(2, "Checking 3-input bitcell pitch matched nand gate")
+        tech.drc_exceptions["pnand3"] = tech.drc_exceptions["latchup"] + tech.drc_exceptions["min_nwell"]
+        tx = pnand3.pnand3(size=1, align_bitcell=True)
+        self.local_drc_check(tx)
+
         OPTS.check_lvsdrc = True
         globals.end_openram()
         

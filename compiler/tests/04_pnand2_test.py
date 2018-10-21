@@ -28,6 +28,11 @@ class pnand2_test(openram_test):
         tx = pnand2.pnand2(size=1)
         self.local_check(tx)
 
+        debug.info(2, "Checking 1x size bitcell pitch matched")
+        tech.drc_exceptions["pnand2"] = tech.drc_exceptions["latchup"] + tech.drc_exceptions["min_nwell"]
+        tx = pnand2.pnand2(size=1, align_bitcell=True)
+        self.local_drc_check(tx)
+
         OPTS.check_lvsdrc = True
         globals.end_openram()
         

@@ -1,6 +1,6 @@
 import debug
 import design
-from contact import contact, m1m2
+import utils
 from vector import vector
 from globals import OPTS
 
@@ -11,7 +11,7 @@ class ms_flop_array(design.design):
     hierdecoder
     """
 
-    def __init__(self, columns, word_size, name=""):
+    def __init__(self, columns, word_size, name="", align_bitcell=False):
         self.columns = columns
         self.word_size = word_size
         if name=="":
@@ -24,9 +24,9 @@ class ms_flop_array(design.design):
         self.ms = self.mod_ms_flop("ms_flop")
         self.add_mod(self.ms)
 
-        self.width = self.columns * self.ms.width
         self.height = self.ms.height
         self.words_per_row = self.columns / self.word_size
+        self.align_bitcell = align_bitcell
 
         self.create_layout()
 
@@ -48,10 +48,15 @@ class ms_flop_array(design.design):
         self.add_pin("gnd")
 
     def create_ms_flop_array(self):
+        if self.align_bitcell:
+            (bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
+        else:
+            bitcell_offsets = [i * self.ms.width for i in range(self.columns)]
+            self.tap_offsets = []
         self.ms_inst={}
         for i in range(0,self.columns,self.words_per_row):
             name = "Xdff{0}".format(i)
-            base = vector(i * self.ms.width, 0)
+            base = vector(bitcell_offsets[i], 0)
             mirror = "R0"
             self.ms_inst[i/self.words_per_row]=self.add_inst(name=name,
                                                              mod=self.ms,
@@ -62,6 +67,7 @@ class ms_flop_array(design.design):
                                "dout_bar[{0}]".format(i/self.words_per_row),
                                "clk",
                                "vdd", "gnd"])
+        self.width = self.ms_inst[i/self.words_per_row].rx()
 
     def add_layout_pins(self):
 

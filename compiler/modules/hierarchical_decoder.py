@@ -8,6 +8,7 @@ from pnand3 import pnand3
 from pinv import pinv 
 from hierarchical_predecode2x4 import hierarchical_predecode2x4 as pre2x4
 from hierarchical_predecode3x8 import hierarchical_predecode3x8 as pre3x8
+import utils
 from vector import vector
 from globals import OPTS
 
@@ -43,11 +44,11 @@ class hierarchical_decoder(design.design):
         self.route_vdd_gnd()
 
     def add_modules(self):
-        self.inv = pinv()
+        self.inv = pinv(align_bitcell=True)
         self.add_mod(self.inv)
-        self.nand2 = pnand2()
+        self.nand2 = pnand2(align_bitcell=True)
         self.add_mod(self.nand2)
-        self.nand3 = pnand3()
+        self.nand3 = pnand3(align_bitcell=True)
         self.add_mod(self.nand3)
 
         # CREATION OF PRE-DECODER
@@ -351,6 +352,18 @@ class hierarchical_decoder(design.design):
 
     def route_decoder(self):
         """ Route the nand to inverter in the decoder and add the pins. """
+        if OPTS.use_body_taps:
+            implant_left = self.nand_inst[0].lx()
+            if len(self.pre3x8_inst) > 0:
+                predec_module = self.pre3_8
+            else:
+                predec_module = self.pre2_4
+            pre_module_width = predec_module.inv_inst[0].width + predec_module.nand_inst[0].width
+            implant_width = max(self.nand_inst[0].width + self.inv_inst[0].width, pre_module_width)
+            implant_height = drc["minwidth_implant"] + self.implant_space
+            y_offset = self.nand_inst[0].by() - implant_height
+            self.add_rect("pimplant", offset=vector(implant_left, y_offset), height=implant_height,
+                          width=implant_width)
 
         for row in range(self.rows):
 
@@ -438,46 +451,59 @@ class hierarchical_decoder(design.design):
                         row_index = row_index + 1
 
     def connect_rail_m2(self, rail_index, pin):
-        max_rail = max(self.rail_x_offsets)
-        layers = ("metal1", "via1", "metal2")
-        via_x = max_rail + 2 * self.m1_space + 0.5 * contact.m1m2.first_layer_height
-        via_offset = vector(via_x, pin.cy())
-        rail_offset = vector(self.rail_x_offsets[rail_index], pin.cy())
-        self.add_via_center(layers=layers, offset=rail_offset, rotate=0)
-        self.add_path("metal1", [rail_offset, via_offset])
-        self.add_via_center(layers=layers, offset=via_offset, rotate=90)
-        self.add_path("metal2", [via_offset, pin.center()])
-        self.add_via_center(layers=layers, offset=pin.center(), rotate=0)
+
+
+        if pin.name == "A":  # connect directly with M1
+            rail_offset = vector(self.rail_x_offsets[rail_index], pin.cy())
+            self.add_path("metal1", [rail_offset, pin.center()])
+            self.add_via_center(layers=contact.m1m2.layer_stack, offset=rail_offset, rotate=0)
+        else:
+            max_rail = max(self.rail_x_offsets)
+            via_x = max_rail + 2 * self.m1_space + 0.5 * contact.m1m2.first_layer_height
+            if pin.name == "B":
+                rail_offset = vector(self.rail_x_offsets[rail_index], pin.cy())
+                self.add_via_center(layers=contact.m2m3.layer_stack, offset=rail_offset, rotate=0)
+                via_offset = vector(via_x, pin.cy())
+                self.add_path("metal3", [rail_offset, via_offset])
+                # add metal3 fill , fill up since C pin will be below if applicable
+                min_height = self.metal1_minwidth_fill
+                fill_height = max(0, min_height - via_offset.x - rail_offset.x)
+                self.add_rect("metal3", offset=vector(rail_offset.x - 0.5*self.m3_width,
+                                                      pin.cy() + 0.5*contact.m2m3.second_layer_height),
+                              height=fill_height)
+
+                self.add_via_center(layers=contact.m2m3.layer_stack, offset=via_offset, rotate=90)
+                self.add_path("metal2", [via_offset, pin.center()])
+                self.add_via_center(layers=contact.m1m2.layer_stack, offset=pin.center(), rotate=0)
+            else:
+                rail_y = pin.cy() - 0.5*contact.m2m3.second_layer_height - self.line_end_space - 0.5*self.m3_width
+                rail_offset = vector(self.rail_x_offsets[rail_index], rail_y)
+                self.add_via_center(layers=contact.m2m3.layer_stack, offset=rail_offset, rotate=0)
+                self.add_path("metal3", [rail_offset, vector(pin.rx(), rail_y)])
+                self.add_path("metal3", [vector(pin.cx(), rail_y), pin.center()])
+                self.add_via_center(layers=contact.m1m2.layer_stack, offset=pin.center(), rotate=0)
+                self.add_via_center(layers=contact.m2m3.layer_stack, offset=pin.center(), rotate=0)
+                fill_height = contact.m2m3.second_layer_height
+                fill_width = utils.ceil(drc["minarea_metal1_minwidth"]/fill_height)
+                offset = vector(pin.lx() - 0.5*self.m2_width, pin.cy() - 0.5*fill_height)
+                self.add_rect("metal2", offset=offset, width=fill_width, height=fill_height)
+
+    def copy_power_pin(self, pin):
+        self.add_layout_pin(text=pin.name,
+                            layer=pin.layer,
+                            offset=vector(0, pin.by()),
+                            width=self.width,
+                            height=pin.height())
 
     def route_vdd_gnd(self):
         """ Add a pin for each row of vdd/gnd which are must-connects next level up. """
-
-        for num in range(0,self.total_number_of_predecoder_outputs + self.rows + 1):
-            # this will result in duplicate polygons for rails, but who cares
-            
-            # use the inverter offset even though it will be the nand's too
-
-            gate_offset = num*self.inv.height
-
-            if (num % 2 == 0):
-                vdd_pin = self.inv.get_pin("vdd")
-                y_offset = gate_offset + vdd_pin.by() - self.inv.height
-                x_offset = vdd_pin.lx()
-                self.add_layout_pin(text="vdd",
-                                    layer="metal1",
-                                    offset=vector(x_offset, y_offset),
-                                    width=self.width,
-                                    height=self.inv.rail_height)
-
-            else:
-                gnd_pin = self.inv.get_pin("gnd")
-                y_offset = gate_offset + gnd_pin.by()
-                x_offset = gnd_pin.lx()
-                self.add_layout_pin(text="gnd",
-                                    layer="metal1",
-                                    offset=vector(x_offset, y_offset),
-                                    width=self.width,
-                                    height=self.inv.rail_height)
+        for i in range(0, len(self.nand_inst), 2) + [-1]:
+            inst = self.nand_inst[i]
+            self.copy_power_pin(inst.get_pin("vdd"))
+            self.copy_power_pin(inst.get_pin("gnd"))
+        for predecoder in self.pre2x4_inst + self.pre3x8_inst:
+            for pin in predecoder.get_pins("vdd") + predecoder.get_pins("gnd"):
+                self.copy_power_pin(pin)
 
         
 

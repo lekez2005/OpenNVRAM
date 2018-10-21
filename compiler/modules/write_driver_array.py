@@ -4,6 +4,7 @@ from tech import drc
 import debug
 from vector import vector
 from globals import OPTS
+import utils
 
 class write_driver_array(design.design):
     """
@@ -24,7 +25,6 @@ class write_driver_array(design.design):
         self.word_size = word_size
         self.words_per_row = columns / word_size
 
-        self.width = self.columns * self.driver.width
         self.height = self.height = self.driver.height
         
         self.add_pins()
@@ -46,10 +46,11 @@ class write_driver_array(design.design):
         self.add_layout_pins()
 
     def create_write_array(self):
+        (bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
         self.driver_insts = {}
         for i in range(0,self.columns,self.words_per_row):
             name = "Xwrite_driver{}".format(i)
-            base = vector(i * self.driver.width,0)
+            base = vector(bitcell_offsets[i], 0)
             
             self.driver_insts[i/self.words_per_row]=self.add_inst(name=name,
                                                                   mod=self.driver,
@@ -59,6 +60,7 @@ class write_driver_array(design.design):
                                "bl[{0}]".format(i/self.words_per_row),
                                "br[{0}]".format(i/self.words_per_row),
                                "en", "vdd", "gnd"])
+        self.width = self.driver_insts[i/self.words_per_row].rx()
 
 
     def add_layout_pins(self):

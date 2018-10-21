@@ -469,9 +469,10 @@ class layout(lef.lef):
             i.gds_write_file(newLayout)
         for i in self.objs:
             i.gds_write_file(newLayout)
-        for pin_name in self.pin_map.keys():
-            for pin in self.pin_map[pin_name]:
-                pin.gds_write_file(newLayout)
+        if not self.is_library_cell:
+            for pin_name in self.pin_map.keys():
+                for pin in self.pin_map[pin_name]:
+                    pin.gds_write_file(newLayout)
         self.visited = True
 
     def gds_write(self, gds_name):

@@ -165,7 +165,7 @@ class Gds2reader:
                     print "Mask: "+mask
             elif(idBits==('\x03','\x05')):  #this is also wrong b/c python doesn't natively have an 8 byte float
                 userUnits=self.ieeeDoubleFromIbmData(record[2]+record[3]+record[4]+record[5]+record[6]+record[7]+record[8]+record[9])
-                dbUnits=self.ieeeDoubleFromIbmData
+                dbUnits=self.ieeeDoubleFromIbmData(record[10]+record[11]+record[12]+record[13]+record[14]+record[15]+record[16]+record[17])
                 self.layoutObject.info["units"] = (userUnits,dbUnits)
 	
                 #print "userUnits %s"%((record[2]+record[3]+record[4]+record[5]+record[6]+record[7]+record[8]+record[9])).encode("hex")

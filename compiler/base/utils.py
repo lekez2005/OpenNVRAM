@@ -94,8 +94,9 @@ def get_tap_positions(num_columns):
         bitcell_offsets = [i*bitcell.width for i in range(num_columns)]
         return bitcell_offsets, []
 
-    c = __import__(OPTS.body_tap)
-    body_tap = getattr(c, OPTS.body_tap)
+    import body_tap as mod_body_tap
+
+    body_tap = mod_body_tap.body_tap
 
     cells_spacing = math.ceil(0.9*tech.drc["latchup_spacing"]/bitcell.width)
     tap_width = body_tap.width

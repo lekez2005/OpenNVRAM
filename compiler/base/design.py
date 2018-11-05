@@ -36,8 +36,9 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         # These modules ensure unique names or have no changes if they
         # aren't unique
         ok_list = ['ms_flop',
+                   'ms_flop_horz_pitch',
                    'bitcell',
-                   'body_tap'
+                   'body_tap',
                    'cam_bitcell',
                    'contact',
                    'ptx',
@@ -119,14 +120,21 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             num_contacts -= 1
         return num_contacts
 
+    def get_layer_shapes(self, layer, purpose="drawing"):
+        filter_match = lambda x: (
+                    x.__class__.__name__ == "rectangle" and x.layerNumber == tech_layers[layer] and
+                    x.layerPurpose == tech_purpose[purpose])
+        return filter(filter_match, self.objs)
+
+
     def get_dummy_poly(self, cell, from_gds=True):
         if "po_dummy" in tech_layers:
             if from_gds:
                 rects = cell.gds.getShapesInLayer(tech_layers["po_dummy"], tech_purpose["po_dummy"])
             else:
-                filter_match = lambda x: (x.__class__.__name__ == "rectangle" and x.layerNumber == tech_layers["po_dummy"] and
-                                   x.layerPurpose == tech_purpose["po_dummy"])
-                rects = map(lambda x: x.boundary, filter(filter_match, self.objs))
+                shapes = self.get_layer_shapes("po_dummy", "po_dummy")
+                rects = map(lambda x: x.boundary, shapes)
+
             leftmost = min(map(lambda x: x[0], map(lambda x: x[0], rects)))
             rightmost = max(map(lambda x: x[0], map(lambda x: x[1], rects)))
             return (leftmost, rightmost)

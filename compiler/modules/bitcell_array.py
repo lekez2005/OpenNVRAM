@@ -1,3 +1,4 @@
+import body_tap
 import debug
 import design
 from tech import drc, spice
@@ -31,9 +32,7 @@ class bitcell_array(design.design):
         self.add_left_dummy = True
 
         if OPTS.use_body_taps:
-            c = __import__(OPTS.body_tap)
-            self.mod_body_tap = getattr(c, OPTS.body_tap)
-            self.body_tap = self.mod_body_tap()
+            self.body_tap = body_tap.body_tap()
             self.add_mod(self.body_tap)
 
         self.height = self.row_size*self.cell.height
@@ -174,7 +173,7 @@ class bitcell_array(design.design):
 
             for gnd_pin in gnd_pins:
                 # only add to even rows
-                if row % 2 == 0 and gnd_pin.layer=="metal1":
+                if gnd_pin.layer=="metal1":
                     self.add_layout_pin(text="gnd", 
                                         layer="metal1",
                                         offset=gnd_pin.ll(),

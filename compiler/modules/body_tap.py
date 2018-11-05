@@ -1,5 +1,6 @@
 import design
 import debug
+from globals import OPTS
 import utils
 from tech import GDS, layer
 import unique_meta
@@ -14,10 +15,12 @@ class body_tap(design.design):
 
     __metaclass__ = unique_meta.Unique
 
-    (width, height) = utils.get_libcell_size("body_tap", GDS["unit"], layer["boundary"])
+    name = OPTS.body_tap
+
+    (width, height) = utils.get_libcell_size(name, GDS["unit"], layer["boundary"])
 
     def __init__(self):
-        design.design.__init__(self, "body_tap")
+        design.design.__init__(self, self.name)
         debug.info(2, "Create body tap")
 
         self.width = body_tap.width
@@ -25,4 +28,4 @@ class body_tap(design.design):
 
     @classmethod
     def get_name(cls):
-        return "body_tap"
+        return cls.name

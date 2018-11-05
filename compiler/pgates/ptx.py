@@ -104,7 +104,7 @@ class ptx(design.design):
             self.implant_type = "p"
             self.well_type = "n"
         else:
-            self.error("Invalid transitor type.",-1)
+            debug.error("Invalid transitor type.", -1)
             
             
         # This is not actually instantiated but used for calculations
@@ -289,7 +289,7 @@ class ptx(design.design):
                 rect_width = max(utils.ceil(self.minarea_metal1_contact/rect_height), self.active_contact.second_layer_width)
             
             for a in drain_positions:
-                contact=self.add_contact_center(layers=("metal1", "via1", "metal2"),
+                self.add_contact_center(layers=("metal1", "via1", "metal2"),
                             offset=a,
                             size=(1, 1),
                             implant_type=None,
@@ -308,7 +308,7 @@ class ptx(design.design):
                 drain_pin_width = drain_positions[-1][0]-drain_positions[0][0] + self.metal2_width
                 self.add_layout_pin(text="D",
                                     layer="metal2",
-                                    offset=drain_positions[0]-vector(0.5*self.metal2_width, 0.5*self.metal2_width),
+                                    offset=drain_positions[0]-vector(0.5*self.metal2_width, 0.5*m1m2.second_layer_height),
                                     width=drain_pin_width,
                                     height=m1m2.second_layer_height)
             else:

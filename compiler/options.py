@@ -13,8 +13,10 @@ class options(optparse.Values):
     # This is the name of the technology.
     tech_name = ""
     # This is the temp directory where all intermediate results are stored.
-    openram_temp = os.environ["SCRATCH"] + "/openram/openram_{0}_temp/".format(os.getpid())
-    #openram_temp = '/scratch/ota2/openram/openram_136599_temp/'
+    # openram_temp = os.environ["SCRATCH"] + "/openram/openram_{0}_temp/".format(os.getpid())
+    openram_temp = '/scratch/ota2/openram/openram_136599_temp/'
+    # openram_temp = '/scratch/ota2/openram/openram_cam/'
+    # openram_temp = '/scratch/ota2/openram/openram_13_temp/'
 
     spice_file = os.path.join(openram_temp, 'temp.sp')
     pex_spice = os.path.join(openram_temp, 'pex.sp')
@@ -60,13 +62,17 @@ class options(optparse.Values):
     temperatures = ""
     process_corners = ""
     use_body_taps = True  # bitcell does not include body taps so insert body taps between bitcells
+
+    spectre_format = "psfxl"
     
 
     # These are the default modules that can be over-riden
     decoder = "hierarchical_decoder"
+    col_decoder = "column_decoder"
     ms_flop = "ms_flop"
     ms_flop_array = "ms_flop_array"
     ms_flop_array_horizontal = "ms_flop_array_horizontal"
+    ms_flop_horz_pitch = "ms_flop_horz_pitch"
     dff = "dff"
     dff_array = "dff_array"
     control_logic = "control_logic"

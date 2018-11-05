@@ -14,9 +14,8 @@ class openram_test(unittest.TestCase):
         import verify
         self.assertFalse(verify.run_drc(w.name, tempgds, exception_group=w.__class__.__name__))
 
-        files = glob.glob(OPTS.openram_temp + '*')
-        for f in files:
-            os.remove(f)        
+        if OPTS.purge_temp:
+            self.cleanup()  
     
     def local_check(self, a, final_verification=False):
 

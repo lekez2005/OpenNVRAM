@@ -13,10 +13,8 @@ class options(optparse.Values):
     # This is the name of the technology.
     tech_name = ""
     # This is the temp directory where all intermediate results are stored.
-    # openram_temp = os.environ["SCRATCH"] + "/openram/openram_{0}_temp/".format(os.getpid())
-    openram_temp = '/scratch/ota2/openram/openram_136599_temp/'
-    # openram_temp = '/scratch/ota2/openram/openram_cam/'
-    # openram_temp = '/scratch/ota2/openram/openram_13_temp/'
+    openram_temp = os.environ["SCRATCH"] + "/openram/openram_{0}_temp/".format(os.getpid())
+    #openram_temp = '/scratch/ota2/openram/openram_136599_temp/'
 
     spice_file = os.path.join(openram_temp, 'temp.sp')
     pex_spice = os.path.join(openram_temp, 'pex.sp')

@@ -101,6 +101,9 @@ class hierarchical_predecode(design.design):
 
     def create_rails(self):
         """ Create all of the rails for the inputs and vdd/gnd/inputs_bar/inputs """
+        # extend rail to highest pin
+        highest_pin = "C" if self.number_of_inputs == 3 else "B"
+        top_space = self.nand.height - self.nand.get_pin(highest_pin).uy()
         for label in self.rails.keys():
             # these are not primary inputs, so they shouldn't have a
             # label or LVS complains about different names on one net
@@ -114,7 +117,7 @@ class hierarchical_predecode(design.design):
                 self.add_rect(layer="metal2",
                               offset=vector(self.rails[label] - 0.5*self.m2_width, 0), 
                               width=self.m2_width,
-                              height=self.height - 2*self.m2_space)
+                              height=self.height - top_space)
 
     def add_input_inverters(self):
         """ Create the input inverters to invert input signals for the decode stage. """

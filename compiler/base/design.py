@@ -1,4 +1,5 @@
 import math
+import copy
 import hierarchy_layout
 import hierarchy_spice
 import globals
@@ -126,6 +127,65 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                     x.layerPurpose == tech_purpose[purpose])
         return filter(filter_match, self.objs)
 
+    def get_gds_layer_shapes(self, cell, layer, purpose="drawing"):
+        return cell.gds.getShapesInLayer(tech_layers[layer], tech_purpose[purpose])
+
+    def get_poly_fills(self, cell):
+        poly_dummies = self.get_gds_layer_shapes(cell, "po_dummy", "po_dummy")
+        poly_rects = self.get_gds_layer_shapes(cell, "poly")
+
+        # only polys with active layer interaction need to be filled
+        polys = []
+        actives = self.get_gds_layer_shapes(cell, "active")
+        for poly_rect in poly_rects:
+            mid_point = 0.5 * (poly_rect[0][1] + poly_rect[1][1])
+            for active in actives:
+                if (poly_rect[0][0] > active[0][0] and poly_rect[1][0] < active[1][0]  # contained in x_direction
+                        and active[0][1] < mid_point < active[1][1]):
+                    polys.append(poly_rect)
+
+
+        fills = []
+        for poly_rect in polys:
+            x_offset = poly_rect[0][0]
+            potential_fills = [-2, 2]  # need -2 and +2 poly pitches from current x offset filled
+            mid_point = 0.5 * (poly_rect[0][1] + poly_rect[1][1]) # y midpoint
+            for candidate in polys + poly_dummies:
+                if not candidate[0][1] < mid_point < candidate[1][1]:  # not on the same row
+                    continue
+                integer_space = int(round((candidate[0][0] - x_offset)/self.poly_pitch)) # space away from current poly
+                if integer_space in potential_fills:
+                    potential_fills.remove(integer_space)
+            for potential_fill in potential_fills:  # fill unfilled spaces
+                fill_copy = copy.deepcopy(poly_rect)
+                x_space = potential_fill * self.poly_pitch
+                fill_copy[0][0] += x_space
+                fill_copy[1][0] += x_space
+                fills.append(fill_copy)
+        # make the fills unique by x_offset by combining fills with the same x offset
+        fills = list(sorted(fills, key=lambda x: x[0][0]))
+        merged_fills = {"left": [], "right": []}
+
+        def add_to_merged(fill):
+            if fill[0][0] < 0.5*cell.width:
+                merged_fills["left"].append(fill)
+            else:
+                merged_fills["right"].append(fill)
+        if len(fills) > 0:
+            current_fill = copy.deepcopy(fills[0])
+            x_offset = utils.ceil(current_fill[0][0])
+            for fill in fills:
+                if utils.ceil(fill[0][0]) == x_offset:
+                    current_fill[0][1] = min(fill[0][1], current_fill[0][1])
+                    current_fill[1][1] = max(fill[1][1], current_fill[1][1])
+                else:
+                    add_to_merged(current_fill)
+                    current_fill = fill
+                    x_offset = utils.ceil(current_fill[0][0])
+            add_to_merged(current_fill)
+        return merged_fills
+
+
 
     def get_dummy_poly(self, cell, from_gds=True):
         if "po_dummy" in tech_layers:
@@ -140,27 +200,29 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             return (leftmost, rightmost)
 
     def add_dummy_poly(self, cell, instances, words_per_row, from_gds=True):
-        leftmost, rightmost = self.get_dummy_poly(cell, from_gds=True)
-        if leftmost is not None:
-            x_offsets = []
+        cell_fills = self.get_poly_fills(cell)
+
+        def add_fill(x_offset, direction="left"):
+            for rect in cell_fills[direction]:
+                self.add_rect("po_dummy", offset=vector(x_offset + rect[0][0], rect[0][1]),
+                              width=self.poly_width, height=rect[1][1] - rect[0][1])
+
+        if len(cell_fills.values()) > 0:
             if words_per_row > 1:
                 for inst in instances:
-                    x_offsets.append(leftmost - self.poly_pitch + inst.lx())  # left
-                    x_offsets.append(inst.rx() + (inst.width - rightmost) + self.poly_pitch)  # right
+                    add_fill(inst.lx(), "left")
+                    add_fill(inst.lx(), "right")
             else:
-                x_offsets.append(leftmost - self.poly_pitch + instances[0].lx())  # left
-                x_offsets.append(instances[-1].rx() + (instances[-1].width - rightmost) + self.poly_pitch)  # 3 right
+                add_fill(instances[0].lx(), "left")
+                add_fill(instances[-1].lx(), "right")
             if hasattr(self, "tap_offsets") and len(self.tap_offsets) > 0:
                 tap_width = utils.get_body_tap_width()
                 tap_offsets = self.tap_offsets
                 for offset in tap_offsets:
-                    x_offsets.append((instances[-1].width - rightmost) + self.poly_pitch + offset)  # left
-                    x_offsets.append(offset + tap_width + leftmost - self.poly_pitch)
-            inst = instances[0]
-            for x_offset in x_offsets:
-                self.add_rect("po_dummy", offset=vector(x_offset, inst.by() + 0.5 * self.poly_vert_space),
-                              width=self.poly_width,
-                              height=inst.height - self.poly_vert_space)
+                    if offset > tap_width:
+                        add_fill(offset - instances[-1].width, "right")
+                        add_fill(offset + tap_width, "left")
+
 
 
 

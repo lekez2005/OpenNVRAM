@@ -56,16 +56,16 @@ class BankGate(design.design):
         self.add_instances()
 
         self.width = self.module_insts[-1].rx()
-        if len(self.top_pins) == 0:
-            self.height = self.module_insts[-1].uy()
-        else:
-            self.height = self.top_pins[-1].uy()
 
         self.add_bank_sel()
 
         self.route_all_outputs()
         self.add_power_pins()
         self.add_rail_fills()
+        if len(self.top_pins) == 0:
+            self.height = self.module_insts[-1].uy()
+        else:
+            self.height = self.top_pins[-1].uy()
 
     def setup_layout_constants(self):
         num_bottom_complements = len(filter(lambda x: x.route_complement, self.right_outputs))

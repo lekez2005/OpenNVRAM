@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python2.7
 """
 Run a regresion test on a wordline_driver array
@@ -35,6 +36,25 @@ class bank_gate_test(openram_test):
         control_gates = [
             ControlGate("s_en", [2]),
             ControlGate("clk", [2, 6, 8], route_complement=True),
+            ControlGate("w_en", [3])
+        ]
+
+        gate = BankGate(control_gates)
+        self.local_check(gate)
+
+    def test_left_output(self):
+        debug.info(1, "Checking bank gate")
+
+        global verify
+        import verify
+        OPTS.check_lvsdrc = False
+
+        from bank_gate import BankGate
+        from bank_gate import ControlGate
+        control_gates = [
+            ControlGate("s_en", [2]),
+            ControlGate("clk", [2, 6, 8], route_complement=True, output_dir="left"),
+            ControlGate("sig2", [2, 6, 8], route_complement=False, output_dir="left"),
             ControlGate("w_en", [3])
         ]
 

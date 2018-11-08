@@ -6,10 +6,11 @@ from vector import vector
 
 
 class ControlGate:
-    def __init__(self, signal_name, buffer_stages, route_complement=False):
+    def __init__(self, signal_name, buffer_stages, route_complement=False, output_dir="right"):
         self.signal_name = signal_name
         self.buffer_stages = buffer_stages
         self.route_complement = route_complement
+        self.output_dir = output_dir
 
 class BankGate(design.design):
     """
@@ -19,6 +20,8 @@ class BankGate(design.design):
     """
     def __init__(self, control_gates, contact_pwell=True, contact_nwell=True):
         self.control_gates = control_gates  # type: list[ControlGate]
+        self.left_outputs = filter(lambda gate: gate.output_dir == "left", control_gates)
+        self.right_outputs = filter(lambda gate: gate.output_dir == "right", control_gates)
         self.contact_pwell = contact_pwell
         self.contact_nwell = contact_nwell
         name = "bank_gate"
@@ -27,6 +30,10 @@ class BankGate(design.design):
 
         self.x_offset = 0.0
         self.rail_index = 0
+
+        self.output_rail_top_index = 0
+        self.top_pins = []
+
         self.rails_y = []  # keep track of y offset of rails
         self.module_insts = []
         self.create_pins()
@@ -49,7 +56,10 @@ class BankGate(design.design):
         self.add_instances()
 
         self.width = self.module_insts[-1].rx()
-        self.height = self.module_insts[-1].uy()
+        if len(self.top_pins) == 0:
+            self.height = self.module_insts[-1].uy()
+        else:
+            self.height = self.top_pins[-1].uy()
 
         self.add_bank_sel()
 
@@ -58,13 +68,16 @@ class BankGate(design.design):
         self.add_rail_fills()
 
     def setup_layout_constants(self):
-        num_complements = len(filter(lambda x: x.route_complement, self.control_gates))
+        num_bottom_complements = len(filter(lambda x: x.route_complement, self.right_outputs))
+        num_top_complements = len(filter(lambda x: x.route_complement, self.left_outputs))
         self.rail_pitch = self.m1_width + self.parallel_line_space
 
-        self.num_rails = (1 +  # bank_sel
-                          len(self.control_gates) + num_complements)
+        self.num_bottom_rails = (1 +  # bank_sel
+                                 max(len(self.control_gates), len(self.right_outputs)) + num_bottom_complements)
 
-        self.bank_sel_y = (self.num_rails - 1) * self.rail_pitch
+        self.num_top_rails = len(self.left_outputs) + num_top_complements
+
+        self.bank_sel_y = (self.num_bottom_rails - 1) * self.rail_pitch
         self.instances_y = self.bank_sel_y + self.rail_pitch + 0.5*self.rail_height
 
 
@@ -81,7 +94,7 @@ class BankGate(design.design):
             self.module_insts.append(instance)
             self.route_input(instance, ctrl_gate)
 
-            self.rail_index += 1 + int(ctrl_gate.route_complement)
+            self.rail_index += 1 + int(ctrl_gate.route_complement and ctrl_gate.output_dir == "right")
 
             self.x_offset += sig_gate.width
 
@@ -113,9 +126,13 @@ class BankGate(design.design):
 
     def route_all_outputs(self):
         for i in range(len(self.module_insts)):
-            self.route_output(self.module_insts[i], self.control_gates[i], self.rails_y[i])
+            ctrl_gate = self.control_gates[i]
+            if ctrl_gate.output_dir == "right":
+                self.route_right_output(self.module_insts[i], self.control_gates[i], self.rails_y[i])
+            else:
+                self.route_left_output(self.module_insts[i], self.control_gates[i])
 
-    def route_output(self, instance, ctrl_gate, y_offset):
+    def route_right_output(self, instance, ctrl_gate, y_offset):
         out_pin = instance.get_pin("out")
         out_inv = instance.get_pin("out_inv")
 
@@ -143,6 +160,30 @@ class BankGate(design.design):
                          rotate=90)
         pin_name = "gated_" + ctrl_gate.signal_name
         self.add_layout_pin(pin_name, "metal1", offset=vector(x_offset, y_offset), width=self.width - x_offset)
+
+    def route_left_output(self, instance, ctrl_gate):
+
+
+        pins = [instance.get_pin("out"), instance.get_pin("out_inv")]
+        output_names = ["gated_" + ctrl_gate.signal_name, "gated_{}_bar".format(ctrl_gate.signal_name)]
+        if ctrl_gate.route_complement:
+            indices = [1, 0]
+        else:
+            indices = [0]
+        for index in indices:
+            pin = pins[index]
+            output_name = output_names[index]
+            if len(self.top_pins) == 0:
+                y_offset = self.module_insts[0].uy()
+            else:
+                y_offset = self.top_pins[-1].by() + self.rail_pitch
+
+            self.add_rect("metal2", offset=pin.ul(), width=pin.width(), height=y_offset - pin.uy() + self.m2_width)
+            self.top_pins.append(self.add_layout_pin(output_name, "metal2", offset=vector(0, y_offset), width=pin.lx()))
+
+
+
+
 
 
     def add_power_pins(self):

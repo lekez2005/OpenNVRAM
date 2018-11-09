@@ -69,7 +69,7 @@ class matchline_precharge(design.design):
             vdd_bottom = active_rect.offset.y + active_rect.height + self.line_end_space
         else:
             vdd_bottom = self.ptx.get_pin("S").by()
-        vdd_center = vdd_bottom + 0.5*self.rail_height
+        vdd_center = vdd_bottom + 0.5 * self.bitcell.get_pin("vdd").height()
         y_offset = self.height - vdd_center
 
         self.ptx_offset = vector(x_offset, y_offset)
@@ -143,8 +143,9 @@ class matchline_precharge(design.design):
             source_pin = self.ptx_inst.get_pin("S")
             self.add_rect("metal1", offset=source_pin.ul(), width=source_pin.width(),
                           height=self.height - source_pin.uy())
-        self.add_layout_pin("vdd", "metal1", offset=vector(0, self.height - 0.5*self.rail_height),
-                            width=self.width, height=self.rail_height)
+        vdd_height = self.bitcell.get_pin("vdd").height()
+        self.add_layout_pin("vdd", "metal1", offset=vector(0, self.height - 0.5*vdd_height),
+                            width=self.width, height=vdd_height)
 
         # ml pin -> assumes bitcell ML pin is on M3 and flop din pin on M2
         bitcell_ml = self.bitcell.get_pin("ML")

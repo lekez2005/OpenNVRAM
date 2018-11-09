@@ -225,7 +225,12 @@ class wordline_driver(design.design):
             # needs to move down since B nand input is nearly aligned with A inv input
             en_in_space = 0.5*(contact.m1m2.first_layer_height + contact.poly.second_layer_height) + self.line_end_space
 
-            input_offset = vector(0,clk_offset.y + en_in_space)
+            if row % 2 == 0:
+                up_or_down = en_in_space
+            else:
+                up_or_down = -en_in_space
+
+            input_offset = vector(0,clk_offset.y + up_or_down)
             mid_via_offset = vector(self.m1m2_via_x+0.5*contact.m1m2.second_layer_width, input_offset.y)
             # must under the clk line in M1
             self.add_layout_pin_center_segment(text="in[{0}]".format(row),

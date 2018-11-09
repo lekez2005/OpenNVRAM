@@ -76,6 +76,7 @@ class options(optparse.Values):
     control_logic = "control_logic"
     bitcell_array = "bitcell_array"
     sense_amp = "sense_amp"
+    sense_amp_mod = "sense_amp"
     sense_amp_array = "sense_amp_array"
     precharge_array = "precharge_array"
     column_mux_array = "single_level_column_mux_array"

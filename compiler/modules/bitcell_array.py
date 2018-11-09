@@ -28,9 +28,6 @@ class bitcell_array(design.design):
         self.cell = self.mod_bitcell()
         self.add_mod(self.cell)
 
-        self.add_right_dummy = True
-        self.add_left_dummy = True
-
         if OPTS.use_body_taps:
             self.body_tap = body_tap.body_tap()
             self.add_mod(self.body_tap)
@@ -39,7 +36,7 @@ class bitcell_array(design.design):
 
         self.add_pins()
         self.create_layout()
-        self.add_dummy_poly()
+        self.add_dummies()
         self.add_layout_pins()
         self.DRC_LVS()
 
@@ -95,7 +92,8 @@ class bitcell_array(design.design):
 
             yoffset += self.cell.height
 
-    def add_dummy_poly(self):
+
+    def add_dummies(self):
 
         leftmost, rightmost = self.get_dummy_poly(self.cell, from_gds=True)
         poly_pitch = self.poly_width + self.poly_space

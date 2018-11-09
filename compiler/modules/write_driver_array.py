@@ -25,7 +25,7 @@ class write_driver_array(design.design):
         self.word_size = word_size
         self.words_per_row = columns / word_size
 
-        self.height = self.height = self.driver.height
+        self.height = self.driver.height
         
         self.add_pins()
         self.create_layout()
@@ -43,34 +43,55 @@ class write_driver_array(design.design):
 
     def create_layout(self):
         self.create_write_array()
+        self.add_dummy_poly(self.driver, self.driver_insts, 1, from_gds=True)
+        self.fill_array_layer(self.driver_insts, "nwell", self.driver)
+        
+        self.fill_array_layer(self.driver_insts, "pimplant", self.driver)
+        self.fill_array_layer(self.driver_insts, "nimplant", self.driver)
         self.add_layout_pins()
+
+    def get_connections(self, i):
+        return ["data[{0}]".format(i/self.words_per_row),
+                               "bl[{0}]".format(i/self.words_per_row),
+                               "br[{0}]".format(i/self.words_per_row),
+                               "en", "vdd", "gnd"]
+
 
     def create_write_array(self):
         (bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
-        self.driver_insts = {}
+        self.driver_insts = []
         for i in range(0,self.columns,self.words_per_row):
             name = "Xwrite_driver{}".format(i)
             base = vector(bitcell_offsets[i], 0)
             
-            self.driver_insts[i/self.words_per_row]=self.add_inst(name=name,
-                                                                  mod=self.driver,
-                                                                  offset=base)
+            self.driver_insts.append(self.add_inst(name=name, mod=self.driver, offset=base))
 
-            self.connect_inst(["data[{0}]".format(i/self.words_per_row),
-                               "bl[{0}]".format(i/self.words_per_row),
-                               "br[{0}]".format(i/self.words_per_row),
-                               "en", "vdd", "gnd"])
-        self.width = self.driver_insts[i/self.words_per_row].rx()
+            self.connect_inst(self.get_connections(i))
+        self.width = self.driver_insts[-1].rx()
 
 
-    def add_layout_pins(self):
+    def add_common_pins(self):
         for i in range(self.word_size):
             din_pin = self.driver_insts[i].get_pin("din")
             self.add_layout_pin(text="data[{0}]".format(i),
-                                layer="metal2",
+                                layer=din_pin.layer,
                                 offset=din_pin.ll(),
                                 width=din_pin.width(),
                                 height=din_pin.height())
+        pin_names = ["en", "vdd", "gnd"]
+        for pin_name in pin_names:
+            pins = self.driver_insts[0].get_pins(pin_name)
+            for pin in pins:
+                self.add_layout_pin(text=pin.name,
+                                    layer=pin.layer,
+                                    offset=pin.ll().scale(0, 1),
+                                    width=self.width,
+                                    height=pin.height())
+
+
+    def add_layout_pins(self):
+        self.add_common_pins()
+        for i in range(self.word_size):
             bl_pin = self.driver_insts[i].get_pin("bl")            
             self.add_layout_pin(text="bl[{0}]".format(i),
                                 layer="metal2",
@@ -84,27 +105,6 @@ class write_driver_array(design.design):
                                 offset=br_pin.ll(),
                                 width=br_pin.width(),
                                 height=br_pin.height())
-                           
 
-        self.add_layout_pin(text="en",
-                            layer="metal1",
-                            offset=self.driver_insts[0].get_pin("en").ll().scale(0,1),
-                            width=self.width,
-                            height=drc['minwidth_metal1'])
-
-        vdd_pin = self.driver_insts[0].get_pin("vdd")
-        self.add_layout_pin(text="vdd",
-                            layer="metal1",
-                            offset=vdd_pin.ll().scale(0,1),
-                            width=self.width,
-                            height=vdd_pin.height())
-
-        gnd_pins = self.driver_insts[0].get_pins("gnd")
-        for gnd_pin in gnd_pins:
-            self.add_layout_pin(text="gnd",
-                                layer="metal1",
-                                offset=gnd_pin.ll().scale(0,1),
-                                width=self.width,
-                                height=gnd_pin.height())
                        
 

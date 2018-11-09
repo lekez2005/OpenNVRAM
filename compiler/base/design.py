@@ -138,11 +138,23 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         polys = []
         actives = self.get_gds_layer_shapes(cell, "active")
         for poly_rect in poly_rects:
-            mid_point = 0.5 * (poly_rect[0][1] + poly_rect[1][1])
             for active in actives:
                 if (poly_rect[0][0] > active[0][0] and poly_rect[1][0] < active[1][0]  # contained in x_direction
-                        and active[0][1] < mid_point < active[1][1]):
+                        and poly_rect[0][1] < active[0][1] and poly_rect[1][1] > active[1][1]):
                     polys.append(poly_rect)
+        if len(polys) == 0 and len(poly_dummies) == 2: # this may be a composite cell. In which case dummy polys should be added to guide
+            result = {}
+            left = copy.deepcopy(min(poly_dummies, key=lambda rect: rect[0][0]))
+            left[0][0] -= self.poly_pitch
+            left[1][0] -= self.poly_pitch
+            result["left"] = [left]
+            right = copy.deepcopy(max(poly_dummies, key=lambda rect: rect[0][0]))
+            right[0][0] += self.poly_pitch
+            right[1][0] += self.poly_pitch
+            result["right"] = [right]
+            return result
+
+
 
 
         fills = []
@@ -222,6 +234,29 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                     if offset > tap_width:
                         add_fill(offset - instances[-1].width, "right")
                         add_fill(offset + tap_width, "left")
+
+    def fill_array_layer(self, layer, cell):
+        if not (hasattr(self, "tap_offsets") and len(self.tap_offsets) > 0):
+            return
+
+        if layer in tech_purpose:
+            purpose = tech_purpose[layer]
+        else:
+            purpose = tech_purpose["drawing"]
+        rects = cell.gds.getShapesInLayer(tech_layers[layer], purpose=purpose)
+        tap_offsets = self.tap_offsets[1:] # first tap offset doesn't have to be filled
+        tap_width = utils.get_body_tap_width()
+
+        for rect in rects:
+            (ll, ur) = rect
+            # only right hand side  needs to be extended
+            if ur[0] >= cell.width:
+                right_extension = ur[0] - cell.width
+                for tap_offset in tap_offsets:
+                    self.add_rect(layer, offset=vector(tap_offset, ll[1]), height=ur[1] - ll[1],
+                                  width=tap_width + right_extension)
+
+
 
 
 

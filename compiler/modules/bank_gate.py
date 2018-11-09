@@ -119,7 +119,7 @@ class BankGate(design.design):
             self.add_layout_pin(ctrl_gate.signal_name, "metal1", offset=vector(0, in_rail_y), width=in_pin.lx())
 
     def add_bank_sel(self):
-        y_offset = self.rails_y[-1] + self.rail_pitch
+        y_offset = self.bank_sel_y
         self.add_rect("metal1", offset=vector(0, y_offset), width=self.width)
         x_offset = self.module_insts[0].get_pin("en").rx()
         self.add_layout_pin("bank_sel", "metal2", offset=vector(0, y_offset), width=x_offset)

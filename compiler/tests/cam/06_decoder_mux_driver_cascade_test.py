@@ -1,138 +1,120 @@
 #!/usr/bin/env python2.7
 """
-Run a regresion test on ml precharge array
+Run a regresion test on mux array and a horizontal casecade of decoder, address mux and wordline driver in order
 """
 import sys
 
 from cam_test_base import CamTestBase, run_tests
 import globals
-args = sys.argv
+argv = sys.argv
 (OPTS, _) = globals.parse_args()
-sys.argv = args
+sys.argv = argv
 globals.init_openram("config_cam_{}".format(OPTS.tech_name))
 
 import debug
 import design
-from globals import OPTS
+import numpy as np
 from unittest import skip
 
 
-class ArrayCascade(design.design):
+class DecoderMuxDriverCascade(design.design):
     """
-    Creates cascade of bitcell, precharge and flops
+    Creates cascade of decoder, mux and wordline driver
     """
-    def __init__(self, rows, ml_size=1):
-        design.design.__init__(self, "ml_cascade")
+    def __init__(self, rows, cols=8):
+        design.design.__init__(self, "address_mux_cascade")
         debug.info(1, "Creating {0}".format(self.name))
 
-        from modules.cam import ml_precharge_array
-        from modules.cam import cam_bitcell_array
-        from modules.cam import tag_flop_array
+        from modules.cam import address_mux_array
+        from modules import hierarchical_decoder
+        from modules import wordline_driver
+
         from vector import vector
 
         self.add_pin_list(["vdd", "gnd"])
 
-        bitcell_array = cam_bitcell_array.cam_bitcell_array(1, rows)
-        self.add_mod(bitcell_array)
+        decoder = hierarchical_decoder.hierarchical_decoder(rows)
+        self.add_mod(decoder)
 
-        ml_array = ml_precharge_array.ml_precharge_array(rows, ml_size)
-        self.add_mod(ml_array)
+        driver = wordline_driver.wordline_driver(rows, cols)
+        self.add_mod(driver)
 
-        tag_flops = tag_flop_array.tag_flop_array(rows)
-        self.add_mod(tag_flops)
+        mux_array = address_mux_array.address_mux_array(rows)
+        self.add_mod(mux_array)
 
-        # add bitcell array
-        bitcell_offset = vector(0, 0)
-        bitcell_array_inst = self.add_inst("bitcell_array", bitcell_array, offset=bitcell_offset)
-        args = ["bl[0]", "br[0]", "sl[0]", "slb[0]"]
+        # add decoder
+        decoder_offset = vector(0, -decoder.predecoder_height)
+        decoder_inst = self.add_inst("decoder", decoder, offset=decoder_offset)
+        args = []
+        for addr_bit in range(int(np.log2(rows))):
+            args.append("A[{0}]".format(addr_bit))
         for row in range(rows):
-            args.append("wl[{}]".format(row))
-            args.append("ml[{}]".format(row))
+            args.append("decode[{0}]".format(row))
         args.extend(["vdd", "gnd"])
         self.connect_inst(args)
 
-        # ml precharge
-        ml_offset = bitcell_offset + vector(bitcell_array.width, 0)
-        self.add_inst("ml_array", ml_array, offset=ml_offset)
-        args = ["precharge_bar"]
-        args.extend(["ml[{}]".format(row) for row in range(rows)])
-        args.append("vdd")
+        # address_mux
+        mux_offset = vector(decoder.row_decoder_width, 0)
+        self.add_inst("mux_array", mux_array, offset=mux_offset)
+        args = []
+        for row in range(rows):
+            args.append("dec[{0}]".format(row))
+            args.append("tag[{0}]".format(row))
+            args.append("mux_out[{0}]".format(row))
+        args.extend(["sel", "sel_bar", "sel_all", "sel_all_bar", "vdd", "gnd"])
         self.connect_inst(args)
 
-        # tag flops
-        tags_offset = ml_offset + vector(ml_array.width, 0)
-        tags_inst = self.add_inst("tag_flops", tag_flops, offset=tags_offset)
-        args = ["ml[{0}]".format(row) for row in range(rows)]
-        for i in range(rows):
-            args.append("dout[{0}]".format(i))
-            args.append("dout_bar[{0}]".format(i))
-        args.extend(["clk", "vdd", "gnd"])
+        # wordline driver
+        driver_offset = mux_offset + vector(mux_array.width, 0)
+        self.add_inst("wordline_driver", driver, offset=driver_offset)
+        args = []
+        for row in range(rows):
+            args.append("wl_in[{0}]".format(row))
+        for row in range(rows):
+            args.append("wl[{0}]".format(row))
+        args.extend(["driver_en", "vdd", "gnd"])
         self.connect_inst(args)
 
-        self.copy_layout_pin(bitcell_array_inst, "vdd", "vdd")
-        self.copy_layout_pin(bitcell_array_inst, "gnd", "gnd")
+        self.copy_layout_pin(decoder_inst, "vdd", "vdd")
+        self.copy_layout_pin(decoder_inst, "gnd", "gnd")
 
 
-
-
-
-
-class MlPrechargeArrayTest(CamTestBase):
+class DecoderMuxDriverCascadeTest(CamTestBase):
 
     def setUp(self):
-        super(MlPrechargeArrayTest, self).setUp()
+        super(DecoderMuxDriverCascadeTest, self).setUp()
         import tech
-        tech.drc_exceptions["matchline_precharge"] = tech.drc_exceptions["latchup"] + tech.drc_exceptions["min_nwell"]
-        tech.drc_exceptions["ml_precharge_array"] = tech.drc_exceptions["latchup"] + tech.drc_exceptions["min_nwell"]
+        tech.drc_exceptions["hierarchical_decoder"] = tech.drc_exceptions["latchup"] + tech.drc_exceptions["min_nwell"]
+        tech.drc_exceptions["hierarchical_decoder"] = tech.drc_exceptions["latchup"] + tech.drc_exceptions["min_nwell"]
+        tech.drc_exceptions["wordline_driver"] = tech.drc_exceptions["latchup"] + tech.drc_exceptions["min_nwell"]
+        tech.drc_exceptions["wordline_driver"] = tech.drc_exceptions["latchup"] + tech.drc_exceptions["min_nwell"]
 
+    def test_decoder(self):
+        from modules import hierarchical_decoder
+        debug.info(2, "Checking decoder array")
+        decoder = hierarchical_decoder.hierarchical_decoder(16)
+        self.local_drc_check(decoder)
 
-    def test_min_width_cell(self):
-        from modules.cam import matchline_precharge
-        debug.info(2, "Checking matchline precharge cell")
-        cell = matchline_precharge.matchline_precharge()
-        self.local_drc_check(cell)
+    def test_address_mux_array(self):
+        from modules.cam import address_mux_array
+        debug.info(2, "Checking address mux array")
+        mux_array = address_mux_array.address_mux_array(16)
+        self.local_check(mux_array)
 
-    def test_multiple_fingers_cell(self):
-        from modules.cam import matchline_precharge
-        from tech import parameter
-        c = __import__(OPTS.bitcell)
-        mod_bitcell = getattr(c, OPTS.bitcell)
-        bitcell = mod_bitcell()
-        debug.info(2, "Checking matchline precharge cell")
-        cell = matchline_precharge.matchline_precharge(size=(1.2*bitcell.height)/parameter["min_tx_size"])
-        self.local_drc_check(cell)
+    def test_wordline_driver_array(self):
+        from modules.wordline_driver import wordline_driver
+        driver = wordline_driver(16, no_cols=8)
+        debug.info(2, "Checking wordline driver array")
+        self.local_drc_check(driver)
 
-    def test_precharge_array(self):
-        """Test standalone array for drc issues"""
-        from modules.cam import ml_precharge_array
-        rows = 16
-        debug.info(2, "Checking matchline precharge array with {} rows")
-        array = ml_precharge_array.ml_precharge_array(rows=rows, size=3)
-        self.local_drc_check(array)
+    def test_cascade_2x4_predecode(self):
+        debug.info(2, "Checking cascade with 2x4 predecode")
+        cascade = DecoderMuxDriverCascade(16, 8)
+        self.local_check(cascade)
 
-
-    def test_array_bitcell_flops_single_finger(self):
-        """
-        Create array of bitcells, ml_precharge and tag flops cascade
-        Since the tag flops should contain body contacts, both drc and lvs should pass for the cascade
-        """
-        cascade = ArrayCascade(8, 1)
-        self.local_check(cascade, final_verification=False)
-
-    def test_array_bitcell_flops_multi_finger(self):
-        """
-        Create array of bitcells, ml_precharge and tag flops cascade
-        Since the tag flops should contain body contacts, both drc and lvs should pass for the cascade
-        """
-        from tech import parameter
-        c = __import__(OPTS.bitcell)
-        mod_bitcell = getattr(c, OPTS.bitcell)
-        bitcell = mod_bitcell()
-        debug.info(2, "Checking matchline precharge cell")
-        size = (1.2 * bitcell.height) / parameter["min_tx_size"]
-        cascade = ArrayCascade(8, size)
-
-        self.local_check(cascade, final_verification=False)
-
+    def test_cascade_3x8_predecode(self):
+        debug.info(2, "Checking cascade with 3x8 predecode")
+        cascade = DecoderMuxDriverCascade(32, 8)
+        self.local_check(cascade)
 
 run_tests(__name__)

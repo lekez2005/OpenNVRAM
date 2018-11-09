@@ -31,7 +31,6 @@ class bank(design.design):
         self.word_size = word_size
         self.num_words = num_words
         self.words_per_row = words_per_row
-        self.num_banks = num_banks
 
         # The local control signals are gated when we have bank select logic,
         # so this prefix will be added to all of the input signals.
@@ -225,19 +224,22 @@ class bank(design.design):
         self.add_mod(self.wordline_driver)
         self.create_bank_gate()
 
+        self.create_column_decoder()
 
-        self.column_decoder = ColumnDecoder(self.row_addr_size, self.col_addr_size)
-        self.add_mod(self.column_decoder)
 
     def create_bank_gate(self):
         control_gates = [
             ControlGate("s_en", [1, 2, 4]),
-            ControlGate("clk", [2, 6, 8], route_complement=True),
+            ControlGate("clk", [2, 6, 12, 24, 24], route_complement=True),
             ControlGate("tri_en", [1, 3, 3], route_complement=True),
             ControlGate("w_en", [1, 2, 4])
         ]
         self.bank_gate = BankGate(control_gates, contact_nwell=False)
         self.add_mod(self.bank_gate)
+
+    def create_column_decoder(self):
+        self.column_decoder = ColumnDecoder(self.row_addr_size, self.col_addr_size)
+        self.add_mod(self.column_decoder)
 
     def add_bitcell_array(self):
         """ Adding Bitcell Array """
@@ -295,8 +297,7 @@ class bank(design.design):
         temp.append("gnd")
         self.connect_inst(temp)
 
-    def add_sense_amp_array(self):
-        """ Adding Sense amp  """
+    def get_sense_amp_offset(self):
         if self.col_addr_size > 0:
             y_offset = self.col_mux_array_inst.by() - self.sense_amp_array.height
         else:
@@ -305,10 +306,14 @@ class bank(design.design):
             # drc["minwidth_implant"] wide
             y_space = self.nwell_extension + drc["minwidth_implant"] + drc["same_nwell_to_nwell"]
             y_offset = - (y_space + self.sense_amp_array.height)
+        return vector(0,y_offset).scale(-1, 1)
 
+    def add_sense_amp_array(self):
+        """ Adding Sense amp  """
+        self.sense_amp_array_offset = self.get_sense_amp_offset()
         self.sense_amp_array_inst=self.add_inst(name="sense_amp_array",
                                                 mod=self.sense_amp_array,
-                                                offset=vector(0,y_offset).scale(-1, 1))
+                                                offset=self.sense_amp_array_offset)
         temp = []
         for i in range(self.word_size):
             temp.append("data_out[{0}]".format(i))
@@ -318,7 +323,7 @@ class bank(design.design):
             else:
                 temp.append("bl_out[{0}]".format(i))
                 temp.append("br_out[{0}]".format(i))
-                
+
         temp.extend([self.prefix+"s_en", "vdd", "gnd"])
         self.connect_inst(temp)
 
@@ -343,10 +348,13 @@ class bank(design.design):
         temp.extend([self.prefix+"w_en", "vdd", "gnd"])
         self.connect_inst(temp)
 
+    def get_msf_data_in_y_offset(self):
+        return self.write_driver_array_inst.by() - self.msf_data_in.height
+
     def add_msf_data_in(self):
         """ data_in flip_flop """
 
-        y_offset= self.write_driver_array_inst.by() - self.msf_data_in.height
+        y_offset = self.get_msf_data_in_y_offset()
         self.msf_data_in_inst=self.add_inst(name="data_in_flop_array", 
                                             mod=self.msf_data_in, 
                                             offset=vector(0,y_offset).scale(-1,1))
@@ -360,9 +368,12 @@ class bank(design.design):
         temp.extend([self.prefix+"clk_bar", "vdd", "gnd"])
         self.connect_inst(temp)
 
+    def get_tri_gate_offset(self):
+        return self.msf_data_in_inst.by()
+
     def add_tri_gate_array(self):
         """ data tri gate to drive the data bus """
-        y_offset = self.msf_data_in_inst.by()
+        y_offset = self.get_tri_gate_offset()
         self.tri_gate_array_inst=self.add_inst(name="tri_gate_array", 
                                               mod=self.tri_gate_array, 
                                                offset=vector(0,y_offset).scale(-1, 1),
@@ -445,7 +456,6 @@ class bank(design.design):
                               width=self.bitcell_array_inst.lx() + 0.5*body_tap.width - x_offset)
 
 
-        # extend nwell to bitcells
         self.add_row_decoder()
         self.add_wordline_driver()
 
@@ -604,18 +614,25 @@ class bank(design.design):
         self.max_point = self.precharge_array_inst.uy()
 
         self.height = self.max_point - self.min_point
-        
-        # Add an extra gap between the bitcell and the rail
-        self.right_vdd_x_offset = (max(self.bitcell_array_inst.rx(), self.bank_gate_inst.rx() + 2*self.wide_m1_space) +
-                                   self.wide_m1_space + self.m1_space)
 
+        self.compute_width()
+        
+
+
+    def compute_width(self):
+        # Add an extra gap between the bitcell and the rail
+        self.right_vdd_x_offset = (
+                    max(self.bitcell_array_inst.rx(), self.bank_gate_inst.rx() + 2 * self.wide_m1_space) +
+                    self.wide_m1_space + self.m1_space)
 
         # from the edge of the decoder is another 2 times minwidth metal1
         # flip flop vertical m2 vdd rails extend to the left
-        self.left_vdd_x_offset = self.row_decoder_inst.lx() - self.vdd_rail_width - 2*self.m1_width
+        self.left_vdd_x_offset = self.row_decoder_inst.lx() - self.vdd_rail_width - 2 * self.m1_width
 
         self.right_edge = self.right_vdd_x_offset + self.vdd_rail_width
         self.width = self.right_edge - self.left_vdd_x_offset
+
+
 
     def connect_bitlines(self):
         if self.col_addr_size > 0:
@@ -1111,13 +1128,8 @@ class bank(design.design):
         self.add_rect("metal2", offset=vector(en_pin.lx(), bottom_wordline), width=via_x-en_pin.lx())
         self.add_rect("metal2", offset=vector(en_pin.lx(), bottom_wordline), height=en_pin.by()-bottom_wordline)
 
-
-    def calculate_rail_vias(self):
-        """Calculates positions of power grid rail to M1/M2 vias. Avoids internal metal3 control pins"""
-        # need to avoid the metal3 control signals
-
+    def get_collisions(self):
         collisions = []
-
 
         addr_in_pin_names = map("ADDR[{}]".format, range(self.addr_size))
 
@@ -1132,6 +1144,15 @@ class bank(design.design):
 
         control_pins = sorted(map(self.get_pin, self.input_control_signals + ["bank_sel"]), key=lambda x: x.by())
         collisions.append((control_pins[0].by(), control_pins[-1].uy()))
+        return collisions
+
+
+
+    def calculate_rail_vias(self):
+        """Calculates positions of power grid rail to M1/M2 vias. Avoids internal metal3 control pins"""
+        # need to avoid the metal3 control signals
+
+        collisions = self.get_collisions()
 
         via_positions = []
 

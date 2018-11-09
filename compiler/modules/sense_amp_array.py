@@ -17,7 +17,7 @@ class sense_amp_array(design.design):
 
         c = reload(__import__(OPTS.sense_amp))
         self.mod_sense_amp = getattr(c, OPTS.sense_amp)
-        self.amp = self.mod_sense_amp("sense_amp")
+        self.amp = self.mod_sense_amp(OPTS.sense_amp_mod)
         self.add_mod(self.amp)
 
         self.word_size = word_size
@@ -46,6 +46,8 @@ class sense_amp_array(design.design):
         self.add_sense_amp()
         self.connect_rails()
         self.add_dummy_poly(self.amp, self.amp_insts, self.words_per_row, from_gds=True)
+        self.fill_array_layer(self.amp_insts, "nwell", self.amp)
+        
         
 
     def add_sense_amp(self):

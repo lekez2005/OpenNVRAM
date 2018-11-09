@@ -98,35 +98,31 @@ def get_tap_positions(num_columns):
 
     body_tap = mod_body_tap.body_tap
 
-    cells_spacing = math.ceil(0.9*tech.drc["latchup_spacing"]/bitcell.width)
+    cells_spacing = int(math.ceil(0.9*tech.drc["latchup_spacing"]/bitcell.width))
     tap_width = body_tap.width
     i = 0
     tap_positions = []
-    while i < math.ceil(num_columns/2.0):
+    while i < num_columns - 1:
         tap_positions.append(i)
-        tap_positions.append(num_columns - i)
         i += cells_spacing
-    tap_positions = list(sorted(tap_positions))
     x_offset = 0.0
     positions_index = 0
     bitcell_offsets = [None]*num_columns
-    tap_offsets = [None]*len(tap_positions)
+    tap_offsets = []
     for i in range(num_columns):
-        if i == tap_positions[positions_index]:
-            tap_offsets[positions_index] = x_offset
+        if positions_index < len(tap_positions) - 1 and i == tap_positions[positions_index]:
+            tap_offsets.append(x_offset)
             x_offset += tap_width
             positions_index += 1
         bitcell_offsets[i] = x_offset
         x_offset += bitcell.width
-    tap_offsets[-1] = x_offset
     if ((tap_offsets[-1] - tap_offsets[-2])/bitcell.width) < cells_spacing:
         tap_offsets = tap_offsets[:-1]
     return bitcell_offsets, tap_offsets
 
 
 def get_body_tap_width():
-    c = __import__(OPTS.body_tap)
-    body_tap = getattr(c, OPTS.body_tap)
+    from body_tap import body_tap
     return body_tap().width
 
 

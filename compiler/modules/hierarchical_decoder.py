@@ -24,6 +24,12 @@ class hierarchical_decoder(design.design):
         self.mod_bitcell = getattr(c, OPTS.bitcell)
         self.bitcell_height = self.mod_bitcell.height
 
+        self.use_flops = OPTS.decoder_flops
+        if self.use_flops:
+            self.predec_in = "flop_in[{}]"
+        else:
+            self.predec_in = "in[{}]"
+
         self.pre2x4_inst = []
         self.pre3x8_inst = []
 
@@ -52,9 +58,9 @@ class hierarchical_decoder(design.design):
         self.add_mod(self.nand3)
 
         # CREATION OF PRE-DECODER
-        self.pre2_4 = pre2x4(route_top_rail=False)
+        self.pre2_4 = pre2x4(route_top_rail=False, use_flops=self.use_flops)
         self.add_mod(self.pre2_4)
-        self.pre3_8 = pre3x8(route_top_rail=False)
+        self.pre3_8 = pre3x8(route_top_rail=False, use_flops=self.use_flops)
         self.add_mod(self.pre3_8)
 
     def determine_predecodes(self,num_inputs):
@@ -116,6 +122,8 @@ class hierarchical_decoder(design.design):
 
         for j in range(self.rows):
             self.add_pin("decode[{0}]".format(j))
+        if self.use_flops:
+            self.add_pin("clk")
         self.add_pin("vdd")
         self.add_pin("gnd")
 
@@ -159,6 +167,28 @@ class hierarchical_decoder(design.design):
             
         for i in range(self.no_of_pre3x8):
             self.add_pre3x8(i)
+        if self.use_flops:
+            if len(self.pre2x4_inst) > 0:
+                predecoder = self.pre2x4_inst[0]
+                if len(self.pre3x8_inst) > 0:
+                    top_pin = self.pre3x8_inst[0].get_pin("clk")
+                    bot_pin = self.pre2x4_inst[-1].get_pin("clk")
+                    self.add_rect("metal2", offset=vector(bot_pin.ul() - vector(0, self.m2_width)),
+                                  width=top_pin.rx() - bot_pin.lx())
+                    self.add_rect("metal2", offset=vector(top_pin.lx(), bot_pin.uy()),
+                                  height=top_pin.by() - bot_pin.uy())
+
+                    if len(self.pre2x4_inst) > 1:  # connect the clk rails
+                        clk_pin = self.pre2x4_inst[0].get_pin("clk")
+                        self.add_rect("metal2", offset=clk_pin.ul(),
+                                      height=self.pre2x4_inst[-1].get_pin("clk").uy() - clk_pin.uy())
+            else:
+                predecoder = self.pre3x8_inst[0]
+                if len(self.pre3x8_inst) > 0:
+                    clk_pin = predecoder.get_pin("clk")
+                    self.add_rect("metal2", offset=clk_pin.ul(),
+                                  height=self.pre3x8_inst[-1].get_pin("clk").by() - clk_pin.uy())
+            self.copy_layout_pin(predecoder, "clk", "clk")
 
     def add_pre2x4(self,num):
         """ Add a 2x4 predecoder """
@@ -178,6 +208,8 @@ class hierarchical_decoder(design.design):
             pins.append("A[{0}]".format(input_index + index_off1))
         for output_index in range(4):
             pins.append("out[{0}]".format(output_index + index_off2))
+        if self.use_flops:
+            pins.append("clk")
         pins.extend(["vdd", "gnd"])
 
         self.pre2x4_inst.append(self.add_inst(name="pre[{0}]".format(num),
@@ -194,10 +226,10 @@ class hierarchical_decoder(design.design):
         """ Add the input pins to the 2x4 predecoder """
 
         for i in range(2):
-            pin = self.pre2x4_inst[num].get_pin("in[{}]".format(i))
+            pin = self.pre2x4_inst[num].get_pin(self.predec_in.format(i))
             pin_offset = pin.ll()
             
-            pin = self.pre2_4.get_pin("in[{}]".format(i))
+            pin = self.pre2_4.get_pin(self.predec_in.format(i))
             self.add_layout_pin(text="A[{0}]".format(i + 2*num ),
                                 layer="metal2", 
                                 offset=pin_offset,
@@ -225,6 +257,8 @@ class hierarchical_decoder(design.design):
             pins.append("A[{0}]".format(input_index + in_index_offset))
         for output_index in range(8):
             pins.append("out[{0}]".format(output_index + out_index_offset))
+        if self.use_flops:
+            pins.append("clk")
         pins.extend(["vdd", "gnd"])
 
         self.pre3x8_inst.append(self.add_inst(name="pre3x8[{0}]".format(num), 
@@ -240,7 +274,7 @@ class hierarchical_decoder(design.design):
         """ Add the input pins to the 3x8 predecoder at the given offset """
 
         for i in range(3):            
-            pin = self.pre3x8_inst[num].get_pin("in[{}]".format(i))
+            pin = self.pre3x8_inst[num].get_pin(self.predec_in.format(i))
             pin_offset = pin.ll()
             self.add_layout_pin(text="A[{0}]".format(i + 3*num + 2*self.no_of_pre2x4),
                                 layer="metal2", 

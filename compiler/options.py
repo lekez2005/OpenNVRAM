@@ -95,4 +95,8 @@ class options(optparse.Values):
     # buffer stages
     control_logic_clk_buffer_stages = [2, 6, 16, 24]  # buffer stages for control logic clk_bar and clk_buf
     control_logic_logic_buffer_stages = [2.5, 8]  # buffer stages for control logic outputs except clks
+    bank_gate_buffers = {  # buffers for bank gate. "default" used for unspecified signals
+        "default": [2, 4, 8],
+        "clk": [2, 6, 12, 24, 24]
+    }
 

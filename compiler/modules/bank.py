@@ -229,10 +229,10 @@ class bank(design.design):
 
     def create_bank_gate(self):
         control_gates = [
-            ControlGate("s_en", [1, 2, 4]),
-            ControlGate("clk", [2, 6, 12, 24, 24], route_complement=True),
-            ControlGate("tri_en", [1, 3, 3], route_complement=True),
-            ControlGate("w_en", [1, 2, 4])
+            ControlGate("s_en"),
+            ControlGate("clk",  route_complement=True),
+            ControlGate("tri_en",  route_complement=True),
+            ControlGate("w_en")
         ]
         self.bank_gate = BankGate(control_gates, contact_nwell=False)
         self.add_mod(self.bank_gate)

@@ -57,16 +57,16 @@ class CamBlock(bank.bank):
         control_gates = [
 
             # left
-            ControlGate("s_en", [1, 4, 8], route_complement=True, output_dir="left"),
-            ControlGate("search_en", [1, 2, 4], output_dir="left"),
-            ControlGate("w_en", [1, 2, 4], output_dir="left"),
-            ControlGate("latch_tags", [1, 2, 4], output_dir="left"),
-            ControlGate("matchline_chb", [1, 2, 4], output_dir="left"),
+            ControlGate("s_en", route_complement=True, output_dir="left"),
+            ControlGate("search_en", output_dir="left"),
+            ControlGate("w_en", output_dir="left"),
+            ControlGate("latch_tags", output_dir="left"),
+            ControlGate("matchline_chb", output_dir="left"),
 
             # right
-            ControlGate("mw_en", [1, 2, 4], route_complement=True),
-            ControlGate("sel_all", [2, 6, 8], route_complement=True),
-            ControlGate("clk", [2, 6, 8], route_complement=True)  # to buffer the clk
+            ControlGate("mw_en", route_complement=True),
+            ControlGate("sel_all", route_complement=True),
+            ControlGate("clk", route_complement=True)  # to buffer the clk
         ]
         self.bank_gate = BankGate(control_gates, contact_nwell=True)
         self.input_control_signals = [ctrl_gate.signal_name for ctrl_gate in control_gates]

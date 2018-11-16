@@ -1,14 +1,18 @@
 import contact
 import debug
 import design
+from globals import OPTS
 from signal_gate import SignalGate
 from vector import vector
 
 
 class ControlGate:
-    def __init__(self, signal_name, buffer_stages, route_complement=False, output_dir="right"):
+    def __init__(self, signal_name, route_complement=False, output_dir="right"):
         self.signal_name = signal_name
-        self.buffer_stages = buffer_stages
+        if signal_name in OPTS.bank_gate_buffers:
+            self.buffer_stages = OPTS.bank_gate_buffers[signal_name]
+        else:
+            self.buffer_stages = OPTS.bank_gate_buffers["default"]
         self.route_complement = route_complement
         self.output_dir = output_dir
 

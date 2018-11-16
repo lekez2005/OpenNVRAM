@@ -1,8 +1,6 @@
 from bank_gate import BankGate
 import contact
 from signal_gate import SignalGate
-from pnand2 import pnand2
-from pinv import pinv
 from vector import vector
 
 

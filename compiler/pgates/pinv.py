@@ -25,7 +25,7 @@ class pinv(pgate.pgate):
 
     @classmethod
     def get_name(cls, size=1, beta=parameter["beta"], height=pgate.pgate.get_default_height(),
-                 contact_pwell=True, contact_nwell=True, align_bitcell=False):
+                 contact_pwell=True, contact_nwell=True, align_bitcell=False, same_line_inputs=False):
         name = "pinv_{}".format(size)
         if align_bitcell:
             height = pinv.bitcell.height
@@ -39,19 +39,21 @@ class pinv(pgate.pgate):
             name += "_h_" + str(height).replace(".", "_")
         if align_bitcell:
             name += "_align"
+        if same_line_inputs:
+            name += "bend_x"
         return name
 
 
 
     def __init__(self, size=1, beta=parameter["beta"], height=pgate.pgate.get_default_height(),
-                 contact_pwell=True, contact_nwell=True, align_bitcell=False):
+                 contact_pwell=True, contact_nwell=True, align_bitcell=False, same_line_inputs=False):
         # We need to keep unique names because outputting to GDSII
         # will use the last record with a given name. I.e., you will
         # over-write a design in GDS if one has and the other doesn't
         # have poly connected, for example.
 
         pgate.pgate.__init__(self, self.name, height, size=size, beta=beta, contact_pwell=contact_pwell,
-                             contact_nwell=contact_nwell, align_bitcell=align_bitcell)
+                             contact_nwell=contact_nwell, align_bitcell=align_bitcell, same_line_inputs=same_line_inputs)
         debug.info(2, "create pinv structure {0} with size of {1}".format(self.name, size))
 
         self.add_pins()

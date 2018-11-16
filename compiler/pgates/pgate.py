@@ -18,7 +18,7 @@ class pgate(design.design):
     bitcell = getattr(c, OPTS.bitcell)
 
     def __init__(self, name, height, size=1, beta=parameter["beta"], contact_pwell=True, contact_nwell=True,
-                 align_bitcell=False):
+                 align_bitcell=False, same_line_inputs=True):
         """ Creates a generic cell """
         design.design.__init__(self, name)
         if align_bitcell:
@@ -29,6 +29,7 @@ class pgate(design.design):
         self.contact_nwell = contact_nwell
         self.height = height
         self.align_bitcell = align_bitcell
+        self.same_line_inputs = same_line_inputs
 
     @staticmethod
     def get_default_height():
@@ -39,6 +40,20 @@ class pgate(design.design):
         else:
             default_height = bitcell.height
         return default_height
+
+    def shrink_if_needed(self):
+        # TODO tune this based on bitcell height. Reduce factors if bitcell too short
+        _nmos_scale = self.nmos_scale
+        _pmos_scale = self.pmos_scale
+        shrink_factors = [1, 0.9, 0.8, 0.7, 0.6]
+        for shrink_factor in shrink_factors:
+            self.pmos_scale = _pmos_scale * shrink_factor
+            self.nmos_scale = _nmos_scale * shrink_factor
+            try:
+                self.determine_tx_mults()
+                break
+            except AssertionError:
+                continue
 
 
     def determine_tx_mults(self):
@@ -77,8 +92,9 @@ class pgate(design.design):
 
         if self.align_bitcell and OPTS.use_body_taps:
             self.top_space = self.bottom_space = self.poly_extend_active + 0.5*self.poly_to_field_poly
-            self.middle_space = max(contact.poly.second_layer_height, contact.m1m2.second_layer_height,
-                                    contact.m2m3.second_layer_height, drc["pgate_contact_height"]) + 2 * self.line_end_space
+            if self.same_line_inputs:
+                self.middle_space = max(contact.poly.second_layer_height, contact.m1m2.second_layer_height,
+                                        contact.m2m3.second_layer_height, drc["pgate_contact_height"]) + 2 * self.line_end_space
 
         self.tx_height_available = tx_height_available = self.height - (self.top_space +
                                                                         self.middle_space + self.bottom_space)
@@ -269,7 +285,7 @@ class pgate(design.design):
                                            active_cont.mod.first_layer_height))
                 if height > tx_width:
                     direction = 1 if mid_y > self.mid_y else -1
-                    if OPTS.use_body_taps and self.align_bitcell:
+                    if OPTS.use_body_taps and self.align_bitcell and self.same_line_inputs:
                         if mid_y > self.mid_y:
                             rect_mid = mid_y - 0.5*contact.m1m2.second_layer_height + 0.5*height
                         else:
@@ -311,7 +327,7 @@ class pgate(design.design):
         min_width = utils.ceil(self.minarea_metal1_contact / fill_height)
         fill_width = max(contact.poly.second_layer_width, min_width)
 
-        if OPTS.use_body_taps and self.align_bitcell:  # all contacts are centralized and x shifted for min drc fill
+        if OPTS.use_body_taps and self.align_bitcell and self.same_line_inputs:  # all contacts are centralized and x shifted for min drc fill
             y_shifts = [0.0]*len(y_shifts)
             x_shift = 0.5*contact.poly.second_layer_width - 0.5*fill_width
             if len(self.poly_offsets) == 1:

@@ -34,9 +34,9 @@ class bank_gate_test(openram_test):
         from bank_gate import BankGate
         from bank_gate import ControlGate
         control_gates = [
-            ControlGate("s_en", [2]),
-            ControlGate("clk", [2, 6, 8], route_complement=True),
-            ControlGate("w_en", [3])
+            ControlGate("s_en"),
+            ControlGate("clk", route_complement=True),
+            ControlGate("w_en")
         ]
 
         gate = BankGate(control_gates)
@@ -52,10 +52,10 @@ class bank_gate_test(openram_test):
         from bank_gate import BankGate
         from bank_gate import ControlGate
         control_gates = [
-            ControlGate("s_en", [2]),
-            ControlGate("clk", [2, 6, 8], route_complement=True, output_dir="left"),
-            ControlGate("sig2", [2, 6, 8], route_complement=False, output_dir="left"),
-            ControlGate("w_en", [3])
+            ControlGate("s_en"),
+            ControlGate("clk", route_complement=True, output_dir="left"),
+            ControlGate("sig2", route_complement=False, output_dir="left"),
+            ControlGate("w_en")
         ]
 
         gate = BankGate(control_gates)

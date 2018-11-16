@@ -62,6 +62,7 @@ class options(optparse.Values):
     use_body_taps = True  # bitcell does not include body taps so insert body taps between bitcells
 
     spectre_format = "psfxl"
+    decoder_flops = False
     
 
     # These are the default modules that can be over-riden
@@ -90,4 +91,8 @@ class options(optparse.Values):
     bitcell = "bitcell"
     delay_chain = "delay_chain"
     body_tap = "body_tap"
+
+    # buffer stages
+    control_logic_clk_buffer_stages = [2, 6, 16, 24]  # buffer stages for control logic clk_bar and clk_buf
+    control_logic_logic_buffer_stages = [2.5, 8]  # buffer stages for control logic outputs except clks
 

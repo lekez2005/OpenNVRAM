@@ -30,7 +30,7 @@ class CamBlock(bank.bank):
             self.add_pin("dec_out[{0}]".format(i))
 
         for pin in ["block_sel", "clk_buf", "s_en", "w_en", "search_en",
-                    "matchline_chb", "mw_en", "sel_all", "latch_tags", "vdd", "gnd"]:
+                    "matchline_chb", "mw_en", "sel_all", "latch_tags", self.prefix + "clk_buf", "vdd", "gnd"]:
             self.add_pin(pin)
 
 
@@ -338,13 +338,42 @@ class CamBlock(bank.bank):
             Rail(self.prefix + "sel_all", self.address_mux_array_inst.get_pin("sel_all")),
             Rail(self.prefix + "sel_all_bar", self.address_mux_array_inst.get_pin("sel_all_bar"))
         ]
-        for rail in rails:
+
+        decoder_overlap = self.decoder.width - self.decoder.row_decoder_width
+        decoder_clash = decoder_overlap + self.decoder.num_inputs * self.m2_pitch + self.line_end_space
+
+        rail_start = self.address_mux_array_inst.lx() + decoder_clash + self.wide_m1_space
+
+        # sort pins by height
+        sorted_rails = sorted(rails[1:], key=lambda x: x.dest_pin.by())
+        via_space = contact.m2m3.second_layer_height
+        wordline_y = sorted_rails[-1].dest_pin.by() + via_space
+        sorted_rails.append(rails[0])
+
+
+        for i in range(len(rails)):
+            rail = sorted_rails[i]
             dest_pin = rail.dest_pin
             gate_pin = self.bank_gate_inst.get_pin(rail.gate_pin)
-            self.rail_lines[rail.gate_pin] = dest_pin.lx()
-            offset = vector(dest_pin.lx(), gate_pin.by())
+            if rail.gate_pin == self.prefix + "clk":
+                rail_y = wordline_y
+                self.add_contact(contact.m2m3.layer_stack, offset=vector(dest_pin.lx(), rail_y))
+            else:
+                rail_y = dest_pin.by()
+            x_offset = rail_start + i * self.m2_pitch
+            self.add_rect("metal3", offset=vector(dest_pin.lx(), rail_y), width=x_offset - dest_pin.lx())
+
+            mid_y = 0.5 * (rail_y + gate_pin.by())
+            self.add_rect("metal3", offset=vector(x_offset, mid_y), height=rail_y + self.m3_width - mid_y)
+
+            self.add_contact(contact.m2m3.layer_stack, offset=vector(x_offset, mid_y))
+            self.add_rect("metal2", offset=vector(x_offset, gate_pin.by()), height=mid_y - gate_pin.by())
+
+
+            self.rail_lines[rail.gate_pin] = x_offset
+            offset = vector(x_offset, gate_pin.by())
             self.add_rect("metal1", offset=offset, width=gate_pin.lx() - dest_pin.lx())
-            self.add_rect("metal2", offset=offset, height=dest_pin.by() - gate_pin.by())
+            self.add_rect("metal2", offset=offset, height=mid_y - gate_pin.by())
             self.add_contact(contact.m1m2.layer_stack, offset=offset)
 
         # mask, data flops and precharge en
@@ -365,6 +394,12 @@ class CamBlock(bank.bank):
                              rotate=90)
             self.add_contact(contact.m1m2.layer_stack, offset=vector(x_offset, dest_pin.by()))
             self.add_rect("metal1", offset=vector(x_offset, dest_pin.by()), width=dest_pin.lx() - x_offset)
+
+        # gated_clk_buf pins
+        x_offset = self.rail_lines[self.prefix + "clk"]
+        self.add_layout_pin(self.prefix + "clk_buf", "metal1",
+                            offset=vector(x_offset, gate_pin.by()), width=gate_pin.lx() - x_offset)
+
 
     def route_wordline_driver(self):
         """ Connecting Wordline driver output to Bitcell WL connection  """
@@ -426,7 +461,7 @@ class CamBlock(bank.bank):
 
     def route_vdd_supply(self):
         self.vdd_grid_vias = self.power_grid_vias[1::2]
-        self.vdd_grid_rects = []
+        self.vdd_via_insts = []
 
         offset = vector(self.right_vdd_x_offset, self.min_point)
         self.add_layout_pin(text="vdd",
@@ -441,9 +476,9 @@ class CamBlock(bank.bank):
                             width=self.grid_rail_width,
                             height=self.height)
         for via_y in self.vdd_grid_vias:
-            self.add_inst(self.m1mtop.name, self.m1mtop,
+            self.vdd_via_insts.append(self.add_inst(self.m1mtop.name, self.m1mtop,
                           offset=vector(self.right_vdd_x_offset + self.vdd_rail_width, via_y),
-                          mirror="MY")
+                          mirror="MY"))
             self.connect_inst([])
 
         for inst in [self.precharge_array_inst, self.sense_amp_array_inst, self.sl_driver_array_inst,

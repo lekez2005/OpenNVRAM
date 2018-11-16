@@ -102,22 +102,24 @@ def get_tap_positions(num_columns):
     tap_width = body_tap.width
     i = 0
     tap_positions = []
-    while i < num_columns - 1:
+    while i <= num_columns:
         tap_positions.append(i)
         i += cells_spacing
+    if tap_positions[-1] == num_columns:
+        tap_positions[-1] = num_columns - 1  # prevent clash with cells to the right of bitcell array
+    if len(tap_positions) >= 3:
+        tap_positions = [tap_positions[0]] + tap_positions[2:-2:2] + [tap_positions[-1]]
     x_offset = 0.0
     positions_index = 0
     bitcell_offsets = [None]*num_columns
     tap_offsets = []
     for i in range(num_columns):
-        if positions_index < len(tap_positions) - 1 and i == tap_positions[positions_index]:
+        if positions_index < len(tap_positions) and i == tap_positions[positions_index]:
             tap_offsets.append(x_offset)
             x_offset += tap_width
             positions_index += 1
         bitcell_offsets[i] = x_offset
         x_offset += bitcell.width
-    if ((tap_offsets[-1] - tap_offsets[-2])/bitcell.width) < cells_spacing:
-        tap_offsets = tap_offsets[:-1]
     return bitcell_offsets, tap_offsets
 
 

@@ -46,7 +46,7 @@ class sense_amp_array(design.design):
         self.add_sense_amp()
         self.connect_rails()
         self.add_dummy_poly(self.amp, self.amp_insts, self.words_per_row, from_gds=True)
-        self.fill_array_layer(self.amp_insts, "nwell", self.amp)
+        self.fill_array_layer("nwell", self.amp)
         
         
 

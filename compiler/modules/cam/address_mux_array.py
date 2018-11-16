@@ -72,11 +72,23 @@ class address_mux_array(design.design):
                 self.copy_layout_pin(mux_inst, "gnd", "gnd")
 
         mux_inst = self.mux_insts[0]
+        m3_pitch = 0.5 * contact.m1m2.second_layer_height + 0.5*self.m3_width + self.line_end_space
+        via_to_pin = 0.5 * (contact.m1m2.second_layer_height - self.m3_width)
+        # place sel pins below in[0]
+        in_pin_y = mux_inst.get_pin("in[0]").by()
+        sel_y = in_pin_y - self.line_end_space - contact.m1m2.second_layer_height
 
         pins = ["sel", "sel_bar", "sel_all_bar", "sel_all"]
+        y_positions = [sel_y, sel_y - m3_pitch, sel_y + m3_pitch, sel_y + 2*m3_pitch]
 
         for i in range(4):
-            self.copy_layout_pin(mux_inst, pins[i], pins[i])
+            pin = mux_inst.get_pin(pins[i])
+            y_pos = y_positions[i]
 
+            if y_pos < pin.by():
+                self.add_rect("metal2", offset=vector(pin.lx(), y_pos), height=pin.by() - y_pos)
+            self.add_contact(contact.m2m3.layer_stack, offset=vector(pin.lx(), y_pos))
+            self.add_layout_pin(pins[i], "metal3", offset=vector(pin.lx(), y_pos + via_to_pin),
+                                width=self.width - pin.lx())
 
 

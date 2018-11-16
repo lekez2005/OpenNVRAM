@@ -97,14 +97,23 @@ class bitcell_array(design.design):
 
         leftmost, rightmost = self.get_dummy_poly(self.cell, from_gds=True)
         poly_pitch = self.poly_width + self.poly_space
-        pos = []
+        x_offsets = []
         if self.add_left_dummy:
-            pos.append(leftmost - poly_pitch)
+            x_offsets.append(leftmost - poly_pitch)
         if self.add_right_dummy:
-            pos.append(self.width + (self.cell.width - rightmost) + poly_pitch)
-        for x_offset in pos:
-            self.add_rect("po_dummy", offset=vector(x_offset, 0.5 * self.poly_vert_space), width=self.poly_width,
-                          height=self.height - self.poly_vert_space)
+            x_offsets.append(self.width + (self.cell.width - rightmost) + poly_pitch)
+        cell_fills = self.get_poly_fills(self.cell)
+        left_dummies = cell_fills["left"]
+        dummy_height = left_dummies[0][1][1] - left_dummies[0][0][1]
+        for i in range(self.row_size):
+            y_base = i * self.cell.height
+            if i % 2 == 0:
+                y_offset = y_base + self.cell.height - left_dummies[0][1][1]
+            else:
+                y_offset = y_base + left_dummies[0][0][1]
+            for x_offset in x_offsets:
+                self.add_rect("po_dummy", offset=vector(x_offset, y_offset), width=self.poly_width,
+                              height=dummy_height)
 
 
 

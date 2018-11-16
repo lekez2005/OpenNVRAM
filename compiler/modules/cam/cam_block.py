@@ -1,4 +1,5 @@
-from bank_gate import ControlGate, BankGate
+from bank_gate import ControlGate
+from cam_bank_gate import CamBankGate
 from collections import namedtuple
 import contact
 from modules import bank
@@ -29,8 +30,8 @@ class CamBlock(bank.bank):
         for i in range(self.num_rows):
             self.add_pin("dec_out[{0}]".format(i))
 
-        for pin in ["block_sel", "clk_buf", "s_en", "w_en", "search_en",
-                    "matchline_chb", "mw_en", "sel_all", "latch_tags", self.prefix + "clk_buf", "vdd", "gnd"]:
+        for pin in ["sel_all_banks", "block_sel", "clk_buf", "s_en", "w_en", "search_en",
+                    "matchline_chb", "mw_en", "sel_all_rows", "latch_tags", self.prefix + "clk_buf", "vdd", "gnd"]:
             self.add_pin(pin)
 
 
@@ -65,10 +66,10 @@ class CamBlock(bank.bank):
 
             # right
             ControlGate("mw_en", route_complement=True),
-            ControlGate("sel_all", route_complement=True),
+            ControlGate("sel_all_rows", route_complement=True),
             ControlGate("clk", route_complement=True)  # to buffer the clk
         ]
-        self.bank_gate = BankGate(control_gates, contact_nwell=True)
+        self.bank_gate = CamBankGate(control_gates, contact_nwell=True)
         self.input_control_signals = [ctrl_gate.signal_name for ctrl_gate in control_gates]
         self.add_mod(self.bank_gate)
 
@@ -144,7 +145,7 @@ class CamBlock(bank.bank):
         # add input pins
         m1_extension = 0.5 * contact.m1m2.second_layer_height + self.line_end_space  # space to prevent via clash
         stagger = True
-        for pin_name in ["bank_sel"] + self.input_control_signals:
+        for pin_name in ["sel_all_banks", "bank_sel"] + self.input_control_signals:
             pin = self.bank_gate_inst.get_pin(pin_name)
             if pin_name == "clk":
                 layout_name = "clk_buf"
@@ -160,9 +161,10 @@ class CamBlock(bank.bank):
                 else:
                     via_x = pin.rx() + contact.m1m2.second_layer_height
                     stagger = True
-
-                self.add_contact(layers=contact.m1m2.layer_stack, offset=vector(via_x, pin.by()), rotate=90)
-                self.add_layout_pin(layout_name, "metal2", offset=vector(via_x, pin.by()), width=self.right_edge - via_x)
+                if not pin_name == "bank_sel":
+                    self.add_contact(layers=contact.m1m2.layer_stack, offset=vector(via_x, pin.by()), rotate=90)
+                pin_x = via_x - contact.m1m2.second_layer_height
+                self.add_layout_pin(layout_name, "metal2", offset=vector(pin_x, pin.by()), width=self.right_edge - pin_x)
             else:
                 self.add_layout_pin(layout_name, "metal2", offset=pin.lr(), width=self.right_edge - pin.rx())
 
@@ -192,7 +194,9 @@ class CamBlock(bank.bank):
             self.add_contact(contact.m2m3.layer_stack, offset=mask_in_flop.ll())
 
     def route_write_driver_inputs(self):
-        """Connect data flip flop outputs to write driver data pin and mask flip flop outputs to write driver mask pin"""
+        """
+        Connect data flip flop outputs to write driver data pin and mask flip flop outputs to write driver mask pin
+        """
 
         for i in range(self.word_size):
             # route mask
@@ -335,8 +339,8 @@ class CamBlock(bank.bank):
             Rail(self.prefix + "clk", self.wordline_driver_inst.get_pin("en")),
             Rail(self.prefix + "mw_en", self.address_mux_array_inst.get_pin("sel")),
             Rail(self.prefix + "mw_en_bar", self.address_mux_array_inst.get_pin("sel_bar")),
-            Rail(self.prefix + "sel_all", self.address_mux_array_inst.get_pin("sel_all")),
-            Rail(self.prefix + "sel_all_bar", self.address_mux_array_inst.get_pin("sel_all_bar"))
+            Rail(self.prefix + "sel_all_rows", self.address_mux_array_inst.get_pin("sel_all")),
+            Rail(self.prefix + "sel_all_rows_bar", self.address_mux_array_inst.get_pin("sel_all_bar"))
         ]
 
         decoder_overlap = self.decoder.width - self.decoder.row_decoder_width
@@ -660,9 +664,10 @@ class CamBlock(bank.bank):
         self.bank_gate_inst = self.add_inst(name="bank_gate", mod=self.bank_gate,
                                             offset=vector(x_offset, y_offset),
                                             mirror="MY")
-        temp = (["block_sel", "s_en", "search_en", "w_en", "latch_tags", "matchline_chb", "mw_en", "sel_all", "clk_buf"]
+        temp = (["sel_all_banks", "block_sel", "s_en", "search_en", "w_en", "latch_tags", "matchline_chb", "mw_en",
+                 "sel_all_rows", "clk_buf"]
                 + [self.prefix + x for x in ["s_en_bar", "s_en", "search_en", "w_en", "latch_tags", "matchline_chb",
-                                             "mw_en_bar", "mw_en", "sel_all_bar", "sel_all", "clk_bar", "clk_buf"]] +
+                                             "mw_en_bar", "mw_en", "sel_all_rows_bar", "sel_all_rows", "clk_bar", "clk_buf"]] +
                 ["vdd", "gnd"])
 
         self.connect_inst(temp)
@@ -713,8 +718,8 @@ class CamBlock(bank.bank):
             temp.append("wl_in[{0}]".format(i))
         temp.append(self.prefix + "mw_en")
         temp.append(self.prefix + "mw_en_bar")
-        temp.append(self.prefix + "sel_all")
-        temp.append(self.prefix + "sel_all_bar")
+        temp.append(self.prefix + "sel_all_rows")
+        temp.append(self.prefix + "sel_all_rows_bar")
         temp.append("vdd")
         temp.append("gnd")
 

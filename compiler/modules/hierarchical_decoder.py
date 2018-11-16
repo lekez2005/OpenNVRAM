@@ -178,10 +178,10 @@ class hierarchical_decoder(design.design):
                     self.add_rect("metal2", offset=vector(top_pin.lx(), bot_pin.uy()),
                                   height=top_pin.by() - bot_pin.uy())
 
-                    if len(self.pre2x4_inst) > 1:  # connect the clk rails
-                        clk_pin = self.pre2x4_inst[0].get_pin("clk")
-                        self.add_rect("metal2", offset=clk_pin.ul(),
-                                      height=self.pre2x4_inst[-1].get_pin("clk").uy() - clk_pin.uy())
+                if len(self.pre2x4_inst) > 1:  # connect the clk rails
+                    clk_pin = self.pre2x4_inst[0].get_pin("clk")
+                    self.add_rect("metal2", offset=clk_pin.ul(),
+                                  height=self.pre2x4_inst[-1].get_pin("clk").uy() - clk_pin.uy())
             else:
                 predecoder = self.pre3x8_inst[0]
                 if len(self.pre3x8_inst) > 0:

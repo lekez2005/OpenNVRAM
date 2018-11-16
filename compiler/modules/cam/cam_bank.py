@@ -60,8 +60,8 @@ class CamBank(design.design):
         for i in range(self.addr_size):
             self.add_pin("ADDR[{0}]".format(i))
 
-        for pin in ["bank_sel", "clk_buf", "s_en", "w_en", "search_en", "matchline_chb",
-                    "mw_en", "sel_all", "latch_tags", "vdd", "gnd"]:
+        for pin in ["sel_all_banks", "bank_sel", "clk_buf", "s_en", "w_en", "search_en", "matchline_chb",
+                    "mw_en", "sel_all_rows", "latch_tags", "vdd", "gnd"]:
             self.add_pin(pin)
 
     def create_layout(self):
@@ -116,8 +116,8 @@ class CamBank(design.design):
             for i in range(self.num_rows):
                 temp.append("dec_out[{0}]".format(i))
 
-            temp.extend(["bank_sel", "clk_buf", "s_en", "w_en", "search_en", "matchline_chb", "mw_en",
-                         "sel_all", "latch_tags", "block_gated_clk", "vdd", "gnd"])
+            temp.extend(["sel_all_banks", "bank_sel", "clk_buf", "s_en", "w_en", "search_en", "matchline_chb", "mw_en",
+                         "sel_all_rows", "latch_tags", "block_gated_clk", "vdd", "gnd"])
             self.connect_inst(temp)
         self.left_block = self.block_insts[0]
 
@@ -267,13 +267,14 @@ class CamBank(design.design):
         self.copy_layout_pin(self.left_block, "vdd", "vdd")
         self.copy_layout_pin(self.left_block, "gnd", "gnd")
         self.copy_layout_pin(self.left_block, "block_sel", "bank_sel")
+        self.copy_layout_pin(self.left_block, "sel_all_banks", "sel_all_banks")
         self.copy_layout_pin(self.left_block, "clk_buf", "clk_buf")
         self.copy_layout_pin(self.left_block, "s_en", "s_en")
         self.copy_layout_pin(self.left_block, "w_en", "w_en")
         self.copy_layout_pin(self.left_block, "search_en", "search_en")
         self.copy_layout_pin(self.left_block, "matchline_chb", "matchline_chb")
         self.copy_layout_pin(self.left_block, "mw_en", "mw_en")
-        self.copy_layout_pin(self.left_block, "sel_all", "sel_all")
+        self.copy_layout_pin(self.left_block, "sel_all_rows", "sel_all_rows")
         self.copy_layout_pin(self.left_block, "latch_tags", "latch_tags")
         for i in range(self.word_size):
             for name_template in ["MASK[{}]", "DATA[{}]"]:

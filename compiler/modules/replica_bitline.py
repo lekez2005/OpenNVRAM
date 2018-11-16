@@ -3,7 +3,6 @@ import design
 from tech import drc
 from pinv import pinv
 import contact
-from bitcell_array import bitcell_array
 from ptx import ptx
 import utils
 from vector import vector
@@ -27,6 +26,9 @@ class replica_bitline(design.design):
 
         c = __import__(OPTS.bitcell)
         self.mod_bitcell = getattr(c, OPTS.bitcell)
+
+        c = __import__(OPTS.bitcell_array)
+        self.mod_bitcell_array = getattr(c, OPTS.bitcell_array)
 
         for pin in ["en", "out", "vdd", "gnd"]:
             self.add_pin(pin)
@@ -107,7 +109,7 @@ class replica_bitline(design.design):
         self.add_mod(self.bitcell)
 
         # This is the replica bitline load column that is the height of our array
-        self.rbl = bitcell_array(name="bitline_load", cols=1, rows=self.bitcell_loads)
+        self.rbl = self.mod_bitcell_array(name="bitline_load", cols=1, rows=self.bitcell_loads)
         self.add_mod(self.rbl)
 
         # FIXME: The FO and depth of this should be tuned
@@ -278,11 +280,14 @@ class replica_bitline(design.design):
         
     def route_vdd(self):
         # Add two vertical rails, one to the left of the delay chain and one to the right of the replica cells
+
         if self.dc_inst.uy() > self.rbl_inst.uy():
-            vdd_height = self.dc_inst.uy() + 0.5*self.rail_height + self.parallel_line_space + self.rail_height
+            top = self.dc_inst.uy()
         else:
-            bitcell_vdd_extension = self.bitcell.get_pin("vdd").uy() - self.bitcell.height
-            vdd_height = self.rbl_inst.uy() + bitcell_vdd_extension
+            gnd_extension = max(0, -self.bitcell.get_pin("gnd").by())
+            top = self.rbl_inst.uy() + gnd_extension
+        vdd_height = top + 0.5 * self.rail_height + self.parallel_line_space + self.rail_height
+
         right_vdd_start = vector(self.rbc_inst.get_pin("gnd").rx() + self.line_end_space, 0)
 
         # It is the height of the entire RBL and bitcell
@@ -344,7 +349,7 @@ class replica_bitline(design.design):
                             layer="metal1",
                             offset=self.gnd_offset,
                             width=self.rail_height,
-                            height=max(self.dc_inst.uy(), self.rbl_inst.uy()-0.5*self.rail_height - self.wide_m1_space))
+                            height=max(self.dc_inst.uy(), self.rbl_inst.uy()))
 
         # connect bitcell wordlines to gnd
         for row in range(self.bitcell_loads):

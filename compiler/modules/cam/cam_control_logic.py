@@ -15,6 +15,7 @@ class cam_control_logic(control_logic.control_logic):
         self.add_modules()
         self.calculate_rail_positions()
         self.add_routing()
+        self.add_layout_pins()
 
 
     def create_modules(self):
@@ -71,18 +72,30 @@ class cam_control_logic(control_logic.control_logic):
         pass
 
     def add_layout_pins(self):
-        pass
+        sorted_names = sorted(self.output_names, key=lambda x: self.rails[x])
+        pin_height = 2*self.m3_width
+        y_base = self.bottom_outputs + 2*self.m2_width
+        for i in range(len(sorted_names)):
+            pin_name = sorted_names[i]
+            y_offset = y_base - i*self.v_rail_pitch
+            x_offset = self.left_vdd.rx() + self.wide_m1_space + i*self.v_rail_pitch
+            rail_x = self.rails[pin_name]
 
-    def add_lvs_correspondence_points(self):
-        pass
+            self.add_rect("metal2", offset=vector(rail_x, y_offset), height=self.bottom_outputs - y_offset)
+
+            self.add_rect("metal3", offset=vector(x_offset, y_offset), width=rail_x - x_offset)
+            self.add_contact(contact.m2m3.layer_stack, offset=vector(rail_x, y_offset))
+            self.add_layout_pin(pin_name, "metal3", offset=vector(x_offset, y_offset - pin_height),
+                                height=pin_height)
+
 
 
     def add_pins(self):
         input_lst = ["csb", "web", "oeb", "seb", "mwb", "bcastb", "clk"]
-        output_lst = ["clk_buf", "s_en", "w_en", "search_en", "mw_en", "sel_all_banks", "sel_all_rows",
-                      "latch_tags", "ml_chb"]
-        rails = ["vdd", "gnd"]
-        for pin in input_lst + output_lst + rails:
+        self.output_names = ["clk_buf", "s_en", "w_en", "search_en", "mw_en", "sel_all_banks", "sel_all_rows",
+                      "latch_tags", "matchline_chb"]
+        power_pins = ["vdd", "gnd"]
+        for pin in input_lst + self.output_names + power_pins:
             self.add_pin(pin)
 
     def create_flops(self):
@@ -139,7 +152,7 @@ class cam_control_logic(control_logic.control_logic):
         """chb =  se nand clk"""
         offset = self.pre_search_en.ul() + vector(0, self.logic_buffer.height)
         self.ml_chb_buffer = self.add_inst("ml_buffer", mod=self.logic_buffer, offset=offset, mirror="MX")
-        self.connect_inst(["pre_ml_chb", "ml_chb", "vdd", "gnd"])
+        self.connect_inst(["pre_ml_chb", "matchline_chb", "vdd", "gnd"])
 
         offset = self.ml_chb_buffer.ul() + vector(self.nand3.width, 0)
         self.pre_ml_chb = self.add_inst("pre_ml_chb", mod=self.nand2, offset=offset, mirror="MY")
@@ -253,7 +266,7 @@ class cam_control_logic(control_logic.control_logic):
                 ["clk", "mw_en"],
                 ["bcast_bar", "sel_all_banks"],
                 ["mw_bar", "clk_bar_cs"],
-                ["se_bar", "ml_chb"],
+                ["se_bar", "matchline_chb"],
 
                 ["se", "search_en"],
                 ["mw"],
@@ -268,15 +281,15 @@ class cam_control_logic(control_logic.control_logic):
                 ["clk_bar"],
                 ["clk_buf"]
             ]
-        v_rail_pitch = self.m2_width + self.parallel_line_space
+        self.v_rail_pitch = self.m2_width + self.parallel_line_space
         flop_rail_start = self.oeb_csb_web_inst.rx() + contact.m1m2.second_layer_height + 2*self.line_end_space
         self.rail_start = (flop_rail_start + (len(["csb", "web", "oeb", "seb", "mwb", "bcastb", "se_neg_ff"])
-                           - len(rail_names)) * v_rail_pitch)
+                           - len(rail_names)) * self.v_rail_pitch)
         rail_x = self.rail_start
         for rail_name_list in rail_names:
             for name in rail_name_list:
                 self.rails[name] = rail_x
-            rail_x += v_rail_pitch
+            rail_x += self.v_rail_pitch
 
         self.clk_bar_rail_x = self.rails["clk_bar"]
         self.clk_buf_rail_x = self.rails["clk_buf"]
@@ -293,7 +306,7 @@ class cam_control_logic(control_logic.control_logic):
     def route_clk(self):
         super(cam_control_logic, self).route_clk()
         # clk_buf pin
-        self.add_layout_pin("clk_buf", "metal2", width=self.m2_width,
+        self.add_rect("metal2", width=self.m2_width,
                             height=self.clk_buf.get_pin("Z").by()-self.bottom_outputs,
                             offset=vector(self.clk_buf_rail_x, self.bottom_outputs))
         # clock input
@@ -462,7 +475,7 @@ class cam_control_logic(control_logic.control_logic):
         self.add_rect("metal1", offset=vector(out_pin.lx(), y_offset), width=x_offset - out_pin.lx())
         self.add_contact(contact.m1m2.layer_stack,
                          offset=vector(x_offset, out_pin.by() + self.m2_width - contact.m1m2.second_layer_height))
-        self.add_layout_pin("sel_all_rows", "metal2", offset=vector(x_offset, self.bottom_outputs),
+        self.add_rect("metal2", offset=vector(x_offset, self.bottom_outputs),
                             height=y_offset - self.bottom_outputs)
 
     def route_clk_bar_cs(self):
@@ -516,7 +529,7 @@ class cam_control_logic(control_logic.control_logic):
         self.add_rect("metal1", offset=vector(out_pin.lx(), y_offset), width=x_offset - out_pin.lx())
         self.add_contact(contact.m1m2.layer_stack,
                          offset=vector(x_offset, out_pin.by() + self.m2_width - contact.m1m2.second_layer_height))
-        self.add_layout_pin("mw_en", "metal2", offset=vector(x_offset, self.bottom_outputs),
+        self.add_rect("metal2", offset=vector(x_offset, self.bottom_outputs),
                             height=y_offset - self.bottom_outputs)
 
     def route_latch_tags(self):
@@ -536,7 +549,7 @@ class cam_control_logic(control_logic.control_logic):
                                         via_x_pos, "center")
         self.route_pin_to_vertical_rail_m1(self.pre_ml_chb.get_pin("A"), self.rails["se"])
         self.route_output_to_buffer(self.pre_ml_chb.get_pin("Z"), self.ml_chb_buffer)
-        self.route_buffer_output(self.ml_chb_buffer, "ml_chb")
+        self.route_buffer_output(self.ml_chb_buffer, "matchline_chb")
 
     def route_search_en(self):
         via_x_pos = self.pre_search_en_bar.rx()
@@ -581,7 +594,7 @@ class cam_control_logic(control_logic.control_logic):
 
     def route_blk(self):
         super(cam_control_logic, self).route_blk()
-        self.add_layout_pin("s_en", "metal2", offset=vector(self.rails["s_en"], self.bottom_outputs),
+        self.add_rect("metal2", offset=vector(self.rails["s_en"], self.bottom_outputs),
                             height=self.s_en.get_pin("Z").uy() - self.bottom_outputs)
 
     def route_power(self):
@@ -658,8 +671,8 @@ class cam_control_logic(control_logic.control_logic):
         self.add_rect("metal1", offset=out_pin.rc(), width=self.rails[rail_name] - out_pin.rx())
         self.add_contact(contact.m1m2.layer_stack, offset=vector(self.rails[rail_name], out_pin.cy()
                                                                  - 0.5*contact.m1m2.second_layer_height))
-        self.add_layout_pin(rail_name, "metal2", offset=vector(self.rails[rail_name], self.bottom_outputs),
-                            height=out_pin.cy()-self.bottom_outputs)
+        self.add_rect("metal2", offset=vector(self.rails[rail_name], self.bottom_outputs),
+                      height=out_pin.cy()-self.bottom_outputs)
 
     def route_pin_to_vertical_rail_m1(self, pin, rail_x):
         self.add_contact_center(layers=self.m1m2_layers, offset=vector(rail_x + 0.5*contact.m1m2.second_layer_width,

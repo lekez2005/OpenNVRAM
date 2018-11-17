@@ -840,6 +840,8 @@ class sram(design.design, sram_power_grid.Mixin):
                            layer=bank_sel_pin.layer,
                            offset=bank_sel_pin.ll())
 
+    def get_control_logic_names(self):
+        return ["s_en", "w_en", "tri_en", "clk_buf" ]
 
     def add_single_bank_modules(self):
         """ 
@@ -847,12 +849,11 @@ class sram(design.design, sram_power_grid.Mixin):
         logic. 
         """
 
-        self.control_logic_names = ["s_en", "w_en", "tri_en", "clk_buf" ]
-        
         # No orientation or offset
         self.bank_inst = self.add_bank(0, [0, 0], -1, 1)
 
-        bottom_control_pin = min(map(self.bank_inst.get_pin, self.control_logic_names + ["bank_sel"]), key=lambda x: x.by())
+        bottom_control_pin = min(map(self.bank_inst.get_pin, self.get_control_logic_names() + ["bank_sel"]),
+                                 key=lambda x: x.by())
 
         y_offset = bottom_control_pin.by() - self.wide_m1_space - self.control_logic.height
         x_offset = self.bank_inst.rx() + self.wide_m1_space
@@ -943,9 +944,9 @@ class sram(design.design, sram_power_grid.Mixin):
 
         # route control logic output pins to bank control inputs
 
-        control_logic_pins = map(self.control_logic_inst.get_pin, self.control_logic_names)
+        control_logic_pins = map(self.control_logic_inst.get_pin, self.get_control_logic_names())
 
-        pitch = self.m4_width + 2*self.m4_width
+        pitch = self.m3_width + 2*self.m3_width
 
         pin_x_offset = self.control_logic_inst.rx() - 2*pitch
         for i in range(len(control_logic_pins)):

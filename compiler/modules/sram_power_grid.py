@@ -65,8 +65,12 @@ class Mixin:
 
         temp_vdd_via_pos = []
         for via_pos in vdd_via_pos:
-            if rblk_bar_vdd + power_via_space < via_pos < clk_bar_gnd - power_via_space:
-                temp_vdd_via_pos.append(via_pos)
+            if 'X' in self.control_logic_inst.mirror:
+                if clk_bar_gnd + power_via_space < via_pos < rblk_bar_vdd - power_via_space:
+                    temp_vdd_via_pos.append(via_pos)
+            else:
+                if rblk_bar_vdd + power_via_space < via_pos < clk_bar_gnd - power_via_space:
+                    temp_vdd_via_pos.append(via_pos)
 
         vdd_via_pos = temp_vdd_via_pos
 

@@ -71,7 +71,13 @@ class CamBank(design.design):
         self.calculate_rail_offsets()
         self.route_row_decoder()
         self.route_vdd_gnd()
+        self.copy_block_properties()
         self.add_layout_pins()
+
+    def copy_block_properties(self):
+        """Copy properties defined in block and used in cam module"""
+        self.bottom_power_layer = self.cam_block.bottom_power_layer
+        self.top_power_layer = self.cam_block.top_power_layer
 
 
 

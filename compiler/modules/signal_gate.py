@@ -3,6 +3,7 @@ import design
 import debug
 from pinv import pinv
 from pnand2 import pnand2
+from pnor2 import pnor2
 from vector import vector
 
 
@@ -11,13 +12,16 @@ class SignalGate(design.design):
     Gates a signal based on bank sel. The gated output is buffered based on the buffer sizes input list.
     The last output is labeled out and the penultimate output is labelled out_bar regardless of number of buffer stages
     """
-    def __init__(self, buffer_stages, contact_pwell=True, contact_nwell=True):
+    def __init__(self, buffer_stages, contact_pwell=True, contact_nwell=True, logic="and"):
         if buffer_stages is None or len(buffer_stages) < 1:
             debug.error("There should be at least one buffer stage", 1)
         self.buffer_stages = buffer_stages
         self.contact_pwell = contact_pwell
         self.contact_nwell = contact_nwell
+        self.logic = logic
         name = "signal_gate_" + "_".join(map(str, buffer_stages))
+        if not logic == "and":
+            name += "_{}".format(logic)
         design.design.__init__(self, name)
         debug.info(2, "Create signal gate with stages: [{}] ".format(",".join(map(str, buffer_stages))))
         self.x_offset = 0.0
@@ -38,7 +42,7 @@ class SignalGate(design.design):
 
 
     def create_layout(self):
-        self.add_nand()
+        self.add_logic()
         self.add_buffers()
         self.add_out_pins()
         self.add_power_pins()
@@ -64,29 +68,35 @@ class SignalGate(design.design):
 
             self.x_offset += inv.width
 
-    def add_nand(self):
-        """Add nand2 instance and connect the input pins"""
-        self.nand2 = pnand2(1, contact_nwell=self.contact_nwell, contact_pwell=self.contact_pwell)
-        self.add_mod(self.nand2)
+    def add_logic(self):
+        """Add nand2 or nor2 instance and connect the input pins"""
+        if self.logic == "and":
+            self.logic_mod = pnand2(1, contact_nwell=self.contact_nwell, contact_pwell=self.contact_pwell)
+        else:
+            self.logic_mod = pnor2(1, contact_nwell=self.contact_nwell, contact_pwell=self.contact_pwell)
+        self.add_mod(self.logic_mod)
 
-        self.nand_inst = self.add_inst(name=self.nand2.name, mod=self.nand2, offset=vector(self.x_offset, 0))
-        self.module_insts.append(self.nand_inst)
+        self.logic_inst = self.add_inst(name=self.logic_mod.name, mod=self.logic_mod, offset=vector(self.x_offset, 0))
+        self.module_insts.append(self.logic_inst)
         nand_out = self.get_out_pin()
         self.out_names.append(nand_out)
         self.connect_inst(["in", "en", nand_out, "vdd", "gnd"])
 
         # connect input pins
-        pins = sorted([self.nand_inst.get_pin("A"), self.nand_inst.get_pin("B")], key=lambda x: x.cy(), reverse=True)
+        pins = sorted([self.logic_inst.get_pin("A"), self.logic_inst.get_pin("B")], key=lambda x: x.cy(), reverse=True)
         pin_names = ["en", "in"]
         rail_x = self.x_offset + 0.5*self.m2_width
         for i in range(len(pins)):
             pin = pins[i]
             self.add_rect("metal2", offset=vector(rail_x, pin.cy() - 0.5 * self.m2_width), width=pin.cx() - rail_x)
-            self.add_contact_center(layers=contact.contact.m1m2_layers, offset=pin.center())
+            if i == 1 and self.logic == "or":
+                self.add_contact(contact.m1m2.layer_stack, offset=pin.lr(), rotate=90)
+            else:
+                self.add_contact_center(layers=contact.contact.m1m2_layers, offset=pin.center())
             self.add_layout_pin(pin_names[i], "metal2", offset=vector(rail_x, 0), height=pin.cy())
             rail_x += self.parallel_line_space + self.m2_width
 
-        self.x_offset += self.nand2.width
+        self.x_offset += self.logic_mod.width
 
     def add_out_pins(self):
         pin_names = ["out_inv", "out"]

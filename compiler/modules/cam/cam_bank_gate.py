@@ -20,7 +20,7 @@ class CamBankGate(BankGate):
 
     def add_instances(self):
         self.bank_sel_name = "sel"
-        sig_gate = SignalGate([2])
+        sig_gate = SignalGate([2], logic="or")
         self.add_mod(sig_gate)
         self.bank_sel = self.add_inst("bank_and", mod=sig_gate, offset=vector(self.x_offset, self.instances_y))
         self.connect_inst(["bank_sel", "sel_all_banks", self.bank_sel_name, "sel_bar", "vdd", "gnd"])

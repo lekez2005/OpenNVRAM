@@ -297,31 +297,31 @@ class hierarchical_decoder(design.design):
         """ Add a column of NAND gates for final decode """
         
         # Row Decoder NAND GATE array for address inputs <5.
-        if (self.num_inputs == 4 or self.num_inputs == 5):
+        if len(self.predec_groups) == 2:
             self.add_nand_array(nand_mod=self.nand2)
             # FIXME: Can we convert this to the connect_inst with checks?
-            for i in range(len(self.predec_groups[0])):
-                for j in range(len(self.predec_groups[1])):
+            for j in range(len(self.predec_groups[1])):
+                for i in range(len(self.predec_groups[0])):
                     pins =["out[{0}]".format(i),
                            "out[{0}]".format(j + len(self.predec_groups[0])),
-                           "Z[{0}]".format(len(self.predec_groups[1])*i + j),
+                           "Z[{0}]".format(len(self.predec_groups[0])*j + i),
                            "vdd", "gnd"]
                     self.connect_inst(args=pins, check=False)
 
         # Row Decoder NAND GATE array for address inputs >5.
-        elif (self.num_inputs > 5):
+        else:
             self.add_nand_array(nand_mod=self.nand3,
                                 correct=drc["minwidth_metal1"])
             # This will not check that the inst connections match.
-            for i in range(len(self.predec_groups[0])):
+            for k in range(len(self.predec_groups[2])):
                 for j in range(len(self.predec_groups[1])):
-                    for k in range(len(self.predec_groups[2])):
-                        Z_index = len(self.predec_groups[1])*len(self.predec_groups[2]) * i \
-                                  + len(self.predec_groups[2])*j + k
+                    for i in range(len(self.predec_groups[0])):
+                        row = len(self.predec_groups[1])*len(self.predec_groups[0]) * k \
+                                  + len(self.predec_groups[0])*j + i
                         pins = ["out[{0}]".format(i),
                                 "out[{0}]".format(j + len(self.predec_groups[0])),
                                 "out[{0}]".format(k + len(self.predec_groups[0]) + len(self.predec_groups[1])),
-                                "Z[{0}]".format(Z_index),
+                                "Z[{0}]".format(row),
                                 "vdd", "gnd"]
                         self.connect_inst(args=pins, check=False)
 
@@ -464,21 +464,21 @@ class hierarchical_decoder(design.design):
         Inputs of NAND2/NAND3 gates come from different groups.
         For example for these groups [ [0,1,2,3] ,[4,5,6,7],
         [8,9,10,11,12,13,14,15] ] the first NAND3 inputs are connected to
-        [0,4,8] and second NAND3 is connected to [0,4,9]  ........... and the
+        [0,4,8] and second NAND3 is connected to [1,4,8]  ........... and the
         128th NAND3 is connected to [3,7,15]
         """
         row_index = 0
-        if (self.num_inputs == 4 or self.num_inputs == 5):
-            for index_A in self.predec_groups[0]:
-                for index_B in self.predec_groups[1]:
+        if len(self.predec_groups) == 2:
+            for index_B in self.predec_groups[1]:
+                for index_A in self.predec_groups[0]:
                     self.connect_rail_m2(index_A, self.nand_inst[row_index].get_pin("A"))
                     self.connect_rail_m2(index_B, self.nand_inst[row_index].get_pin("B"))
                     row_index = row_index + 1
 
-        elif (self.num_inputs > 5):
-            for index_A in self.predec_groups[0]:
+        else:
+            for index_C in self.predec_groups[2]:
                 for index_B in self.predec_groups[1]:
-                    for index_C in self.predec_groups[2]:
+                    for index_A in self.predec_groups[0]:
                         self.connect_rail_m2(index_A, self.nand_inst[row_index].get_pin("A"))
                         self.connect_rail_m2(index_B, self.nand_inst[row_index].get_pin("B"))
                         self.connect_rail_m2(index_C, self.nand_inst[row_index].get_pin("C"))

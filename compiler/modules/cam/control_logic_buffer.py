@@ -13,6 +13,8 @@ class ControlLogicBuffer(design.design):
         if not contact_pwell:
             name += "_no_pwell"
 
+        name = name.replace(".", "_")
+
         design.design.__init__(self, name)
 
         debug.info(2, "Create control logic buffer of size {}-{}".format(buffers[0], buffers[1]))

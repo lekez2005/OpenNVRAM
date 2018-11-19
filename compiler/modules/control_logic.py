@@ -6,6 +6,7 @@ import contact
 from pinv import pinv
 from pnand2 import pnand2
 from pnand3 import pnand3
+from pnor2 import pnor2
 import pgate
 import math
 from vector import vector
@@ -53,6 +54,9 @@ class control_logic(design.design):
         self.add_mod(self.nand2)
         self.nand3 = pnand3()
         self.add_mod(self.nand3)
+
+        self.nor2 = pnor2()
+        self.add_mod(self.nor2)
 
 
         # Special gates: inverters for buffering

@@ -115,7 +115,7 @@ class cam_control_logic(control_logic.control_logic):
         self.connect_inst(["pre_w_en", "w_en", "vdd", "gnd"])
 
     def add_wen(self):
-        """wen is enabled for both write and multi-write"""
+        """wen is enabled for either write or multi-write"""
 
         # AND of mw_we and clk_bar_cs
         offset = self.w_en_buffer.ul() + vector(self.inv1.width, self.inv1.height)
@@ -125,12 +125,12 @@ class cam_control_logic(control_logic.control_logic):
         self.pre_w_en_bar = self.add_inst("pre_w_en_bar", mod=self.nand2, offset=offset, mirror="XY")
         self.connect_inst(["mw_we", "clk_bar_cs", "pre_w_en_bar", "vdd", "gnd"])
 
-        # AND of mw and we to form mw_we
+        # OR of mw_bar and we_bar to form mw_we
         offset = self.pre_w_en.ul() + vector(self.inv1.width, 0)
         self.mw_we = self.add_inst("mw_we", mod=self.inv1, offset=offset, mirror="MY")
         self.connect_inst(["mw_we_bar", "mw_we", "vdd", "gnd"])
-        offset = self.mw_we.lr() + vector(self.nand2.width, 0)
-        self.mw_we_bar = self.add_inst("mw_we_bar", mod=self.nand2, offset=offset, mirror="MY")
+        offset = self.mw_we.lr() + vector(self.nor2.width, 0)
+        self.mw_we_bar = self.add_inst("mw_we_bar", mod=self.nor2, offset=offset, mirror="MY")
         self.connect_inst(["mw", "we", "mw_we_bar", "vdd", "gnd"])
 
     def add_search_en(self):

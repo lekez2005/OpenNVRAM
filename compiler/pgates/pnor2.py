@@ -18,11 +18,11 @@ class pnor2(pgate.pgate):
 
     unique_id = 1
     
-    def __init__(self, size=1, height=bitcell.height):
+    def __init__(self, size=1, height=pgate.pgate.get_default_height(), contact_pwell=True, contact_nwell=True):
         """ Creates a cell for a simple 2 input nor """
         name = "pnor2_{0}".format(pnor2.unique_id)
         pnor2.unique_id += 1
-        pgate.pgate.__init__(self, name, height, size=size)
+        pgate.pgate.__init__(self, name, height, size=size, contact_pwell=contact_pwell, contact_nwell=contact_nwell)
         debug.info(2, "create pnor2 structure {0} with size of {1}".format(name, size))
 
         self.add_pins()

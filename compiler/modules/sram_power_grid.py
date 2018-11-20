@@ -259,23 +259,8 @@ class Mixin:
                           offset=gnd_pin.lr())
 
 
-
-    def route_four_banks_power(self):
-
-        m1mbottop = self.route_control_logic_power()
-
-        self.route_bank_supply_rails(m1mbottop)
-
-        # connect msb_address, decoder and control_logic vdd pins
-        vdd_pins = self.msb_address_inst.get_pins("vdd") + self.msb_decoder_inst.get_pins("vdd")
-        bank1_vdd = max(self.get_m1_vdd(self.bank_inst[0]), key=lambda x: x.rx())
-        for vdd_pin in vdd_pins:
-            if vdd_pin.layer != "metal1": continue
-            self.add_rect("metal1", height=vdd_pin.height(),
-                          width=vdd_pin.lx() - bank1_vdd.rx(),
-                          offset=vector(bank1_vdd.rx(), vdd_pin.by()))
-
-        # connect msb_address, decoder and control_logic vdd pins
+    def connect_address_decoder_control_gnd(self):
+        # connect msb_address, decoder and control_logic gnd pins
         gnd_pins = self.msb_address_inst.get_pins("gnd") + self.msb_decoder_inst.get_pins("gnd")
         gnd_pins = filter(lambda x: x.layer == "metal1", gnd_pins)
         right_most_pin = max(gnd_pins, key=lambda x: x.rx())
@@ -295,6 +280,23 @@ class Mixin:
                       height=top_gnd.uy() - control_gnd.uy())
         self.add_rect("metal1", offset=vector(x_offset, control_gnd.uy()), height=bottom_gnd.height(),
                       width=control_gnd.rx() - x_offset)
+
+    def route_four_banks_power(self):
+
+        m1mbottop = self.route_control_logic_power()
+
+        self.route_bank_supply_rails(m1mbottop)
+
+        # connect msb_address, decoder and control_logic vdd pins
+        vdd_pins = self.msb_address_inst.get_pins("vdd") + self.msb_decoder_inst.get_pins("vdd")
+        bank1_vdd = max(self.get_m1_vdd(self.bank_inst[0]), key=lambda x: x.rx())
+        for vdd_pin in vdd_pins:
+            if vdd_pin.layer != "metal1": continue
+            self.add_rect("metal1", height=vdd_pin.height(),
+                          width=vdd_pin.lx() - bank1_vdd.rx(),
+                          offset=vector(bank1_vdd.rx(), vdd_pin.by()))
+
+        self.connect_address_decoder_control_gnd()
 
 
         top_vdd = self.bank_inst[2].get_pins("vdd")[0]  # any top vdd, their bottoms should be aligned

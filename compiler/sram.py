@@ -207,7 +207,6 @@ class sram(design.design, sram_power_grid.Mixin):
 
         self.compute_two_bank_logic_locs()
         self.add_two_bank_logic()
-
         self.add_horizontal_busses()
 
         self.width = self.bank_inst[1].ur().x
@@ -218,20 +217,23 @@ class sram(design.design, sram_power_grid.Mixin):
     def route_shared_banks(self):
         """ Route the shared signals for two and four bank configurations. """
         # connect the data output to the data bus
-        for n in self.data_bus_names:
+        self.route_data_bus(self.data_bus_names, self.data_bus_positions, contact.m2m3.layer_stack)
+        # create the input control pins
+        for n in self.control_logic_inputs:
+            self.copy_layout_pin(self.control_logic_inst, n.lower(), n)
+
+    def route_data_bus(self, bus_names, bus_positions, via_layers):
+        # connect the data output to the data bus
+        for n in bus_names:
             for i in range(self.num_banks):
                 pin = self.bank_inst[i].get_pin(n)
                 if i < 2:
                     pin_pos = pin.uc()
                 else:
                     pin_pos = pin.bc()
-                rail_pos = vector(pin_pos.x, self.data_bus_positions[n].y)
+                rail_pos = vector(pin_pos.x, bus_positions[n].y)
                 self.add_path("metal3", [pin_pos, rail_pos])
-                self.add_via_center(("metal2", "via2", "metal3"), rail_pos, rotate=90)
-
-        # create the input control pins
-        for n in self.control_logic_inputs:
-            self.copy_layout_pin(self.control_logic_inst, n.lower(), n)
+                self.add_via_center(via_layers, rail_pos, rotate=90)
 
         
             
@@ -327,6 +329,11 @@ class sram(design.design, sram_power_grid.Mixin):
         self.addr_bus_x = self.bank_sel_x - self.m2_pitch * self.bank_addr_size
         self.control_bus_x = self.bank_sel_x + self.m2_pitch * self.num_banks
 
+    def get_precharge_vdd_to_top(self):
+        """Distance from precharge vdd to top of bank"""
+        precharge_vdd = self.bank.precharge_array_inst.get_pin("vdd")
+        return (self.bank.height - precharge_vdd.uy(), precharge_vdd.height())
+
 
 
     def bank_offsets(self):
@@ -334,9 +341,8 @@ class sram(design.design, sram_power_grid.Mixin):
 
         self.compute_bus_sizes()
 
-        precharge_vdd = self.bank.precharge_array_inst.get_pin("vdd")
-        vdd_to_top = self.bank.height - precharge_vdd.uy()
-        self.bank_y_offset = self.power_rail_pitch + self.power_rail_width - vdd_to_top - precharge_vdd.height()
+        (vdd_to_top, vdd_height) = self.get_precharge_vdd_to_top()
+        self.bank_y_offset = self.power_rail_pitch + self.power_rail_width - vdd_to_top - vdd_height
 
         self.data_bus_offset = vector(0, self.bank_y_offset + self.bank.height + self.bank_to_bus_distance)
         self.supply_bus_offset = vector(0, self.data_bus_offset.y + self.data_bus_height)
@@ -411,16 +417,21 @@ class sram(design.design, sram_power_grid.Mixin):
         self.msb_bank_sel_addr = "ADDR[{}]".format(self.addr_size-1)
         self.connect_inst([self.msb_bank_sel_addr,"bank_sel[1]","bank_sel[0]","clk_buf", "vdd", "gnd"])
 
+    def get_msb_address_locations(self):
+        return self.msb_address_position + vector(0, self.msb_address.height), "MX"
+
     def add_four_bank_logic(self):
         """ Add the control and MSB decode/bank select logic for four banks """
 
 
         self.add_control_logic(position=self.control_logic_position)
 
+        offset, mirror = self.get_msb_address_locations()
+
         self.msb_address_inst = self.add_inst(name="msb_address",
                                               mod=self.msb_address,
-                                              offset=self.msb_address_position + vector(0, self.msb_address.height),
-                                              mirror="MX")
+                                              offset=offset,
+                                              mirror=mirror)
 
         self.msb_bank_sel_addr = ["ADDR[{}]".format(i) for i in range(self.addr_size-2,self.addr_size,1)]        
         temp = list(self.msb_bank_sel_addr)
@@ -529,7 +540,7 @@ class sram(design.design, sram_power_grid.Mixin):
                 path_start = bank_sel_pin.rc()
             else:
                 path_start = bank_sel_pin.lc()
-                if i == 1: # prevent via spacing issueeeeee
+                if i == 1: # prevent via spacing issue
                     m2m3_via_offset.y -= self.wide_m1_space
                     self.add_rect("metal2", offset=m2m3_via_offset, height=bank_sel_pin.by() - m2m3_via_offset.y)
                 elif i == 3:

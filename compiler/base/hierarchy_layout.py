@@ -67,9 +67,10 @@ class layout(lef.lef):
         this layout"""
 
         objs = self.objs + list(itertools.chain.from_iterable(self.pin_map.values()))
+        objs = filter(lambda x: not x.name == "label", objs)
         if len(objs)>0:
-            lowestx1 = min(obj.lx() for obj in objs if obj.name!="label")
-            lowesty1 = min(obj.by() for obj in objs if obj.name!="label")
+            lowestx1 = min(obj.lx() for obj in objs)
+            lowesty1 = min(obj.by() for obj in objs)
         else:
             lowestx1=lowesty1=None
         if len(self.insts)>0:
@@ -89,9 +90,10 @@ class layout(lef.lef):
         this layout"""
 
         objs = self.objs + list(itertools.chain.from_iterable(self.pin_map.values()))
+        objs = filter(lambda x: not x.name == "label", objs)
         if len(objs)>0:
-            highestx1 = max(obj.rx() for obj in objs if obj.name!="label")
-            highesty1 = max(obj.uy() for obj in objs if obj.name!="label")
+            highestx1 = max(obj.rx() for obj in objs)
+            highesty1 = max(obj.uy() for obj in objs)
         else:
             highestx1=highesty1=None        
         if len(self.insts)>0:            

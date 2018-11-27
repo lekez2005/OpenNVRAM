@@ -1,14 +1,13 @@
-import sys,re,shutil
+import shutil
 import debug
 import tech
-import math
 import stimuli
 from trim_spice import trim_spice
 import charutils as ch
-import utils
 from globals import OPTS
 
-class delay():
+
+class delay(object):
     """Functions to measure the delay and power of an SRAM at a given address and
     data bit.
 

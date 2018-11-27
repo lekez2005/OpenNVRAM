@@ -301,12 +301,8 @@ class bank(design.design):
         if self.col_addr_size > 0:
             y_offset = self.col_mux_array_inst.by() - self.sense_amp_array.height
         else:
-            # TODO this is quite specific to the sense amp layout.
-            # It assumes there is a well contact above the sense amp and the implant for this sense amp is
-            # drc["minwidth_implant"] wide
-            y_space = self.nwell_extension + drc["minwidth_implant"] + drc["same_nwell_to_nwell"]
-            y_offset = - (y_space + self.sense_amp_array.height)
-        return vector(0,y_offset).scale(-1, 1)
+            y_offset = - self.sense_amp_array.height
+        return vector(0, y_offset).scale(-1, 1)
 
     def add_sense_amp_array(self):
         """ Adding Sense amp  """

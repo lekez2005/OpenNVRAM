@@ -8,7 +8,7 @@ import debug
 class CamControlLogicTest(CamTestBase):
 
     def test_control_logic_buffer(self):
-        from modules.cam import control_logic_buffer
+        from modules import control_logic_buffer
         debug.info(2, "Test control logic buffer")
 
         cell = control_logic_buffer.ControlLogicBuffer([3, 8])

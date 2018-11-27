@@ -1,6 +1,5 @@
 import contact
 import control_logic
-import control_logic_buffer
 from globals import OPTS
 import utils
 from vector import vector
@@ -16,21 +15,6 @@ class cam_control_logic(control_logic.control_logic):
         self.calculate_rail_positions()
         self.add_routing()
         self.add_layout_pins()
-
-
-    def create_modules(self):
-        """Create modules"""
-        super(cam_control_logic, self).create_modules()
-        self.create_logic_buffers()
-
-    def create_logic_buffers(self):
-        self.logic_buffer = control_logic_buffer.ControlLogicBuffer(OPTS.control_logic_logic_buffer_stages,
-                                                                    contact_nwell=False, contact_pwell=False)
-        self.add_mod(self.logic_buffer)
-
-        self.logic_buffer_cont_pwell = control_logic_buffer.ControlLogicBuffer(OPTS.control_logic_logic_buffer_stages,
-                                                                          contact_nwell=False, contact_pwell=True)
-        self.add_mod(self.logic_buffer_cont_pwell)
 
     def add_modules(self):
         self.add_rbl()
@@ -109,10 +93,7 @@ class cam_control_logic(control_logic.control_logic):
                                        word_size=1)
         self.add_mod(self.msf_control)
 
-    def add_wen_buffer(self):
-        offset = self.rblk_offset + vector(0, self.rblk.height)
-        self.w_en_buffer = self.add_inst("w_en_buffer", mod=self.logic_buffer, offset=offset)
-        self.connect_inst(["pre_w_en", "w_en", "vdd", "gnd"])
+
 
     def add_wen(self):
         """wen is enabled for either write or multi-write"""
@@ -653,17 +634,6 @@ class cam_control_logic(control_logic.control_logic):
         self.add_contact(contact.m1m2.layer_stack,
                          offset=vector(rail_x, y_offset + self.m1_width - contact.m1m2.second_layer_height))
 
-    def route_output_to_buffer(self, output_pin, buffer_instance):
-        in_pin = buffer_instance.get_pin("in")
-
-        self.add_path("metal2", [vector(output_pin.cx(), output_pin.by()),
-                                 vector(output_pin.cx(), buffer_instance.uy()),
-                                 vector(buffer_instance.lx(), buffer_instance.uy()),
-                                 vector(buffer_instance.lx(), in_pin.cy()),
-                                 in_pin.lc()])
-        self.add_contact(contact.m1m2.layer_stack, offset=vector(in_pin.lx() + contact.m1m2.second_layer_height,
-                                                                 in_pin.cy() - 0.5*contact.m1m2.second_layer_width),
-                         rotate=90)
 
     def route_buffer_output(self, buffer_instance, rail_name):
 

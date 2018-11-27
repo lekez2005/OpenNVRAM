@@ -49,14 +49,14 @@ class ms_flop_array(design.design):
 
     def create_ms_flop_array(self):
         if self.align_bitcell:
-            (bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
+            (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
         else:
-            bitcell_offsets = [i * self.ms.width for i in range(self.columns)]
+            self.bitcell_offsets = [i * self.ms.width for i in range(self.columns)]
             self.tap_offsets = []
         self.ms_inst={}
         for i in range(0,self.columns,self.words_per_row):
             name = "Xdff{0}".format(i)
-            base = vector(bitcell_offsets[i], 0)
+            base = vector(self.bitcell_offsets[i], 0)
             mirror = "R0"
             self.ms_inst[i/self.words_per_row]=self.add_inst(name=name,
                                                              mod=self.ms,

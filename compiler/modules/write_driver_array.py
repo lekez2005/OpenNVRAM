@@ -44,10 +44,10 @@ class write_driver_array(design.design):
     def create_layout(self):
         self.create_write_array()
         self.add_dummy_poly(self.driver, self.driver_insts, 1, from_gds=True)
-        self.fill_array_layer("nwell", self.driver)
+        self.fill_array_layer("nwell", self.driver, self.driver_insts)
         
-        self.fill_array_layer("pimplant", self.driver)
-        self.fill_array_layer("nimplant", self.driver)
+        self.fill_array_layer("pimplant", self.driver, self.driver_insts)
+        self.fill_array_layer("nimplant", self.driver, self.driver_insts)
         self.add_layout_pins()
 
     def get_connections(self, i):
@@ -58,11 +58,11 @@ class write_driver_array(design.design):
 
 
     def create_write_array(self):
-        (bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
+        (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
         self.driver_insts = []
         for i in range(0,self.columns,self.words_per_row):
             name = "Xwrite_driver{}".format(i)
-            base = vector(bitcell_offsets[i], 0)
+            base = vector(self.bitcell_offsets[i], 0)
             
             self.driver_insts.append(self.add_inst(name=name, mod=self.driver, offset=base))
 

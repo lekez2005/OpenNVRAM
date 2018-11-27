@@ -235,7 +235,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                         add_fill(offset - instances[-1].width, "right")
                         add_fill(offset + tap_width, "left")
 
-    def fill_array_layer(self, layer, cell):
+    def fill_array_layer(self, layer, cell, module_insts=[]):
         if not (hasattr(self, "tap_offsets") and len(self.tap_offsets) > 0):
             return
 
@@ -255,6 +255,12 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                 for tap_offset in tap_offsets:
                     self.add_rect(layer, offset=vector(tap_offset, ll[1]), height=ur[1] - ll[1],
                                   width=tap_width + right_extension)
+                for i in range(1, len(module_insts)):
+                    current_inst = module_insts[i]
+                    prev_inst = module_insts[i-1]
+                    self.add_rect(layer, offset=vector(prev_inst.rx() + right_extension, ll[1]), height=ur[1] - ll[1],
+                                  width=current_inst.lx() - prev_inst.rx())
+
 
 
 

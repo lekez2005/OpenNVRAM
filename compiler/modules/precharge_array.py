@@ -53,10 +53,10 @@ class precharge_array(design.design):
 
     def add_insts(self):
         """Creates a precharge array by horizontally tiling the precharge cell"""
-        (bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
+        (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
         for i in range(self.columns):
             name = "pre_column_{0}".format(i)
-            offset = vector(bitcell_offsets[i], 0)
+            offset = vector(self.bitcell_offsets[i], 0)
             inst=self.add_inst(name=name,
                           mod=self.pc_cell,
                           offset=offset)

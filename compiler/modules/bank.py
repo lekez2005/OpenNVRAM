@@ -569,15 +569,18 @@ class bank(design.design):
 
         # add input pins
         m1_extension = 0.5*contact.m1m2.second_layer_height + self.line_end_space   #space to prevent via clash
-        for pin_name in ["bank_sel"] + self.input_control_signals:
+        stagger_width = contact.m1m2.second_layer_height
+        pin_names = ["bank_sel"] + self.input_control_signals
+        for i in range(len(pin_names)):
+            pin_name = pin_names[i]
             if pin_name == "clk_buf":
                 gate_pin_name = "clk"
             else:
                 gate_pin_name = pin_name
             pin = self.bank_gate_inst.get_pin(gate_pin_name)
             if pin.layer == "metal1":
-                self.add_rect("metal1", offset=pin.lr(), width=m1_extension)
-                via_x = pin.rx() + m1_extension + contact.m1m2.second_layer_height
+                via_x = pin.rx() + m1_extension + contact.m1m2.second_layer_height + (i % 2)*stagger_width
+                self.add_rect("metal1", offset=pin.lr(), width=via_x - pin.rx())
                 self.add_contact(layers=contact.m1m2.layer_stack, offset=vector(via_x, pin.by()), rotate=90)
                 self.add_layout_pin(pin_name, "metal2", offset=vector(via_x, pin.by()), width=self.right_edge - via_x)
             else:
@@ -597,7 +600,7 @@ class bank(design.design):
         # The minimum point is either the bottom of the address flops,
         # the bank_gate or the column decoder
         # driver.
-        min_points = []
+        min_points = [self.row_decoder_inst.by()]
         bank_gate_min_point = self.bank_gate_inst.by()
         min_points.append(bank_gate_min_point)
         if self.msf_address_inst is not None:

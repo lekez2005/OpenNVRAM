@@ -46,7 +46,7 @@ class sense_amp_array(design.design):
         self.add_sense_amp()
         self.connect_rails()
         self.add_dummy_poly(self.amp, self.amp_insts, self.words_per_row, from_gds=True)
-        self.fill_array_layer("nwell", self.amp)
+        self.fill_array_layer("nwell", self.amp, self.amp_insts)
         
         
 
@@ -56,7 +56,7 @@ class sense_amp_array(design.design):
         br_pin = self.amp.get_pin("br")
         dout_pin = self.amp.get_pin("dout")
 
-        (bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.row_size)
+        (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.row_size)
 
 
         self.amp_insts = []
@@ -64,7 +64,7 @@ class sense_amp_array(design.design):
         for i in range(0,self.row_size,self.words_per_row):
 
             name = "sa_d{0}".format(i)
-            amp_position = vector(bitcell_offsets[i], 0)
+            amp_position = vector(self.bitcell_offsets[i], 0)
             
             bl_offset = amp_position + bl_pin.ll().scale(1,0)
             br_offset = amp_position + br_pin.ll().scale(1,0)

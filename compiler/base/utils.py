@@ -108,7 +108,7 @@ def get_tap_positions(num_columns):
     if tap_positions[-1] == num_columns:
         tap_positions[-1] = num_columns - 1  # prevent clash with cells to the right of bitcell array
     if len(tap_positions) >= 3:
-        tap_positions = [tap_positions[0]] + tap_positions[1:-2:2] + [tap_positions[-1]]
+        tap_positions = [tap_positions[0]] + tap_positions[1:-1:2] + [tap_positions[-1]]
     tap_positions = list(sorted(set(tap_positions)))
     x_offset = 0.0
     positions_index = 0

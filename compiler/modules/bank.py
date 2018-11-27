@@ -1171,7 +1171,7 @@ class bank(design.design):
         grid_pitch = grid_space + grid_rail_height
         via_space = self.wide_m1_space
 
-        current_y = self.min_point
+        current_y = self.min_point + 2*self.wide_m1_space # leave space for potential routes at the bottom
 
         while True:
             rail_top = current_y + grid_rail_height + via_space

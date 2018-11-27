@@ -164,7 +164,7 @@ class Mixin:
                               height=gnd_pin.uy(),  # route to the top bank
                               width=gnd_pin.width())
                 # Add vias at top
-                self.add_contact_center(contact.m2m3.layer_stack,
+                bottom_contact = self.add_contact_center(contact.m2m3.layer_stack,
                                         offset=vector(gnd_pin.cx(), gnd_pin.uy() - 0.5 * self.m2_width),
                                         size=[1, 2], rotate=90)
 
@@ -172,8 +172,8 @@ class Mixin:
                                         offset=vector(gnd_pin.cx(), self.horz_control_bus_positions["gnd"].y),
                                         size=[1, 3], rotate=90)
 
-                self.add_rect("metal3", offset=gnd_pin.ul(), width=gnd_pin.width(),
-                              height=self.horz_control_bus_positions["gnd"].y - gnd_pin.uy())
+                self.add_rect("metal3", offset=vector(gnd_pin.lx(), bottom_contact.by()), width=gnd_pin.width(),
+                              height=self.horz_control_bus_positions["gnd"].y - bottom_contact.by())
 
                 # Add vias at bottom
                 right_rail_pos = vector(gnd_pin.lr().x, 0)

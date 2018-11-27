@@ -258,6 +258,8 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                 for i in range(1, len(module_insts)):
                     current_inst = module_insts[i]
                     prev_inst = module_insts[i-1]
+                    if current_inst.lx() == prev_inst.rx():
+                        continue
                     self.add_rect(layer, offset=vector(prev_inst.rx() + right_extension, ll[1]), height=ur[1] - ll[1],
                                   width=current_inst.lx() - prev_inst.rx())
 

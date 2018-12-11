@@ -104,9 +104,9 @@ def init_openram(config_file, is_unit_test=True):
 
     debug.info(1,"Initializing OpenRAM...")
 
-    setup_paths()
-    
     read_config(config_file, is_unit_test)
+
+    setup_paths()
 
     import_tech()
 

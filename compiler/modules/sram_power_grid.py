@@ -299,7 +299,7 @@ class Mixin:
         self.connect_address_decoder_control_gnd()
 
 
-        top_vdd = self.bank_inst[2].get_pins("vdd")[0]  # any top vdd, their bottoms should be aligned
+        top_vdd = max(self.bank_inst[2].get_pins("vdd"), key=lambda x: x.by())
         for i in [0, 1]:
             bank_inst = self.bank_inst[i]
             for pin in bank_inst.get_pins("vdd") + filter(lambda x: not x.layer == "metal2", bank_inst.get_pins("gnd")):

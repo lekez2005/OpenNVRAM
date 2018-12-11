@@ -36,7 +36,7 @@ class SignalGate(design.design):
         self.add_pin("en")
         self.add_pin("in")
         self.add_pin("out")
-        self.add_pin("out_bar")
+        self.add_pin("out_inv")
         self.add_pin("vdd")
         self.add_pin("gnd")
 
@@ -119,7 +119,7 @@ class SignalGate(design.design):
     def get_out_pin(self):
         no_modules = len(self.module_insts)
         if no_modules == self.total_instances - 1:
-            return "out_bar"
+            return "out_inv"
         elif no_modules == self.total_instances:
             return "out"
         else:

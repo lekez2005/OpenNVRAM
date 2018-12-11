@@ -8,7 +8,7 @@ import tech
 import utils
 
 
-class SramProbe:
+class SramProbe(object):
     """
     Define methods to probe internal SRAM nets given address info
     Mostly geared towards extracted simulations since node names aren't preserved during extraction
@@ -51,8 +51,8 @@ class SramProbe:
             elif pin_name == "QBAR":
                 pin = self.qbar_pin
             else:
-                pin = \
-                utils.get_libcell_pins([pin_name], "cell_6t", tech.GDS["unit"], tech.layer["boundary"]).get(pin_name)[0]
+                pin = utils.get_libcell_pins([pin_name], "cell_6t", tech.GDS["unit"],
+                                             tech.layer["boundary"]).get(pin_name)[0]
         else:
             pin = None
 
@@ -60,14 +60,13 @@ class SramProbe:
         for i in range(self.sram.word_size):
             col = i * self.sram.words_per_row + self.address_to_int(col_index)
             if OPTS.use_pex:
-                ll, ur = utils.get_pin_rect(pin, [bank_inst, bank_inst.mod.bitcell_array_inst,
-                                                  bank_inst.mod.bitcell_array_inst.mod.cell_inst[row, col]])
+                ll, ur = self.get_bitcell_pin(pin, bank_inst, row, col)
                 pin_loc = [0.5 * (ll[0] + ur[0]), 0.5 * (ll[1] + ur[1])]
                 pin_label = "{}_b{}r{}c{}".format(pin_name, bank_index, row, col)
                 self.sram.add_label(pin_label, pin.layer, pin_loc, zoom=0.025)
                 pin_labels[i] = pin_label
             else:
-                pin_labels[i] = "Xsram.Xbank{}.Xbitcell_array.Xbit_r{}_c{}.{}".format(bank_index, row, col, pin_name)
+                pin_labels[i] = self.get_bitcell_label(bank_index, row, col, pin_name)
         pin_labels.reverse()
         self.probe_labels.update(pin_labels)
 
@@ -75,8 +74,15 @@ class SramProbe:
             self.bitcell_probes[pin_name] = {}
         self.bitcell_probes[pin_name][address_int] = pin_labels
 
+    def get_bitcell_pin(self, pin, bank_inst, row, col):
+        return utils.get_pin_rect(pin, [bank_inst, bank_inst.mod.bitcell_array_inst,
+                                              bank_inst.mod.bitcell_array_inst.mod.cell_inst[row, col]])
+
+    def get_bitcell_label(self, bank_index, row, col, pin_name):
+        return "Xsram.Xbank{}.Xbitcell_array.Xbit_r{}_c{}.{}".format(bank_index, row, col, pin_name)
+
     def get_bitcell_probes(self, address, pin_name="Q", pex_file=None):
-        """Retrieve somulation probe name based on extracted file"""
+        """Retrieve simulation probe name based on extracted file"""
         address = self.address_to_vector(address)
         address_int = self.address_to_int(address)
 
@@ -109,17 +115,25 @@ class SramProbe:
         for i in range(self.sram.word_size):
             col = i * self.sram.words_per_row + self.address_to_int(col_index)
             if OPTS.use_pex:
-                pin = bank_inst.mod.bitcell_array_inst.get_pin("{}[{}]".format(pin_name, col))
-                ll, ur = utils.get_pin_rect(pin, [bank_inst])
+                pin, ll, ur = self.get_bitline_pin(pin_name, bank_inst, col)
                 pin_loc = [0.5 * (ll[0] + ur[0]), 0.5 * (ll[1] + ur[1])]
                 pin_label = "{}_b{}c{}".format(pin_name, bank_index, col)
                 self.sram.add_label(pin_label, pin.layer, pin_loc, zoom=0.05)
                 pin_labels[i] = pin_label
             else:
-                pin_labels[i] = "Xsram.Xbank{}.Xbitcell_array.{}[{}]".format(bank_index, pin_name, col)
+                pin_labels[i] = self.get_bitline_label(bank_index, pin_name, col)
         pin_labels.reverse()
         self.probe_labels.update(pin_labels)
         self.bitline_probes[label_key] = pin_labels
+
+    def get_bitline_label(self, bank_index, pin_name, col):
+        return "Xsram.Xbank{}.Xbitcell_array.{}[{}]".format(bank_index, pin_name, col)
+
+    def get_bitline_pin(self, pin_name, bank_inst, col):
+        pin = bank_inst.mod.bitcell_array_inst.get_pin("{}[{}]".format(pin_name, col))
+        ll, ur = utils.get_pin_rect(pin, [bank_inst])
+        return pin, ll, ur
+
 
     def get_bitline_probes(self, address, pin_name="bl", pex_file=None):
         """Retrieve simulation probe names based on extracted file"""
@@ -145,7 +159,7 @@ class SramProbe:
                 """
 
         address = self.address_to_vector(address)
-        bank_index, bank_inst, row, _ = self.decode_address(address)
+        bank_index, bank_inst, row, col_index = self.decode_address(address)
 
         label_key = "wl_b{}_r{}".format(bank_index, row)
 
@@ -153,14 +167,21 @@ class SramProbe:
             return
 
         if OPTS.use_pex:
-            pin = bank_inst.mod.bitcell_array_inst.get_pin("wl[{}]".format(row))
-            ll, ur = utils.get_pin_rect(pin, [bank_inst])
+            pin, ll, ur = self.get_wordline_pin(bank_inst, row, col_index)
             pin_loc = [0.5 * (ll[0] + ur[0]), 0.5 * (ll[1] + ur[1])]
             self.sram.add_label(label_key, pin.layer, pin_loc)
             self.wordline_probes[label_key] = label_key
         else:
-            self.wordline_probes[label_key] = "Xsram.Xbank{}.Xbitcell_array.wl[{}]".format(bank_index, row)
-        self.probe_labels.add(label_key)
+            self.wordline_probes[label_key] = self.get_wordline_label(bank_index, row, col_index)
+        self.probe_labels.add(self.wordline_probes[label_key])
+
+    def get_wordline_label(self, bank_index, row, col_index):
+        return "Xsram.Xbank{}.Xbitcell_array.wl[{}]".format(bank_index, row)
+
+    def get_wordline_pin(self, bank_inst, row, col_index):
+        pin = bank_inst.mod.bitcell_array_inst.get_pin("wl[{}]".format(row))
+        ll, ur = utils.get_pin_rect(pin, [bank_inst])
+        return pin, ll, ur
 
     def get_wordline_probes(self, address, pex_file=None):
         address = self.address_to_vector(address)
@@ -219,7 +240,7 @@ class SramProbe:
             pin_label = label_key
             self.sram.add_label(pin_label, pin.layer, ll)
         else:
-            pin_label = "Xsram.Xbank{}.Xwordline_driver.clk_buf".format(bank_index)
+            pin_label = "Xsram.Xbank{}.Xwordline_driver.en".format(bank_index)
         self.probe_labels.add(pin_label)
         self.word_driver_clk_probes[label_key] = pin_label
 
@@ -231,6 +252,38 @@ class SramProbe:
         else:
             return [probe_name]
 
+    def add_misc_bank_probes(self, bank_inst, bank_index):
+        if OPTS.use_pex:
+            self.probe_pin(bank_inst.mod.sense_amp_array_inst.get_pin("en"), "sense_amp_en_b{}".format(bank_index),
+                            [bank_inst])
+            self.probe_pin(bank_inst.mod.precharge_array_inst.get_pin("en"), "precharge_en_b{}".format(bank_index),
+                            [bank_inst])
+            self.probe_pin(bank_inst.mod.write_driver_array_inst.get_pin("en"), "write_en_b{}".format(bank_index),
+                            [bank_inst])
+            self.probe_pin(bank_inst.mod.tri_gate_array_inst.get_pin("en"), "tri_en_b{}".format(bank_index),
+                            [bank_inst])
+            self.probe_pin(bank_inst.mod.tri_gate_array_inst.get_pin("en_bar"), "tri_en_bar_b{}".format(bank_index),
+                            [bank_inst])
+            if self.sram.words_per_row > 1:
+                self.probe_pin(bank_inst.mod.col_mux_array_inst.get_pin("sel[0]"), "mux_sel_0_b{}".format(bank_index),
+                                [bank_inst])
+            self.probe_pin(bank_inst.mod.write_driver_array_inst.get_pin("data[0]"), "write_d0_b{}".format(bank_index),
+                            [bank_inst])
+            self.probe_pin(bank_inst.mod.wordline_driver_inst.get_pin("in[0]"), "wl_drv_in0_b{}".format(bank_index),
+                            [bank_inst])
+            self.probe_pin(bank_inst.mod.wordline_driver_inst.mod.module_insts[0].get_pin("Z"),
+                            "wl_drv_en_bar_b{}".format(bank_index),
+                            [bank_inst, bank_inst.mod.wordline_driver_inst])
+            self.probe_pin(bank_inst.mod.wordline_driver_inst.mod.module_insts[1].get_pin("Z"),
+                            "wl_drv_net0_b{}".format(bank_index),
+                            [bank_inst, bank_inst.mod.wordline_driver_inst])
+
+    def add_misc_probes(self, bank_inst):
+        self.probe_pin(bank_inst.get_pin("clk_buf"), "clk_buf", [])
+        self.probe_pin(bank_inst.get_pin("tri_en"), "ctrl_tri_en", [])
+        self.probe_pin(bank_inst.get_pin("w_en"), "ctrl_w_en", [])
+        self.probe_pin(bank_inst.get_pin("s_en"), "ctrl_s_en", [])
+
     def probe_pin(self, pin, label, module_list):
         ll, ur = utils.get_pin_rect(pin, module_list)
         self.sram.add_label(label, pin.layer, ll)
@@ -239,7 +292,7 @@ class SramProbe:
     def extract_from_pex(self, label, pex_file=None):
         if pex_file is None:
             pex_file = self.pex_file
-        pattern = "\sN_{}\S+_[gsd]".format(label)
+        pattern = "\sN_{}_\S+_[gsd]".format(label)
         match = check_output(["grep", "-m1", "-o", "-E", pattern, pex_file])
         if match and match.strip():
             return 'Xsram.' + match.strip()

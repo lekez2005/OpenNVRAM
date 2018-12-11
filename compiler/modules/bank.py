@@ -185,7 +185,7 @@ class bank(design.design):
                                                     rows=self.num_rows)
         self.add_mod(self.bitcell_array)
 
-        self.precharge_array = self.mod_precharge_array(columns=self.num_cols)
+        self.precharge_array = self.mod_precharge_array(columns=self.num_cols, size=OPTS.precharge_size)
         self.add_mod(self.precharge_array)
 
         if(self.col_addr_size > 0):
@@ -596,7 +596,9 @@ class bank(design.design):
         # The minimum point is either the bottom of the address flops,
         # the bank_gate or the column decoder
         # driver.
-        min_points = [self.row_decoder_inst.by()]
+        min_points = []
+        if hasattr(self, "row_decoder_inst"):
+            min_points.append(self.row_decoder_inst.by())
         bank_gate_min_point = self.bank_gate_inst.by()
         min_points.append(bank_gate_min_point)
         if self.msf_address_inst is not None:

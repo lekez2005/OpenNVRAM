@@ -16,9 +16,6 @@ class CamBank(design.design):
 
     def __init__(self, word_size, num_words, words_per_row, name=""):
 
-        c = __import__(OPTS.col_decoder)
-        self.mod_col_decoder = getattr(c, 'ColumnDecoder')
-
         if name == "":
             name = "bank_{0}_{1}".format(word_size, num_words)
         design.design.__init__(self, name)
@@ -80,7 +77,6 @@ class CamBank(design.design):
         self.top_power_layer = self.cam_block.top_power_layer
 
 
-
     def create_modules(self):
 
         self.cam_block = cam_block.CamBlock(self.word_size, self.num_rows, 1, 1, "cam_block")
@@ -92,9 +88,6 @@ class CamBank(design.design):
         self.cam_y_shift = -self.cam_block.min_point
 
         self.row_decoder = self.cam_block.decoder
-
-        self.column_decoder = self.mod_col_decoder(self.row_addr_size, self.col_addr_size)
-        self.add_mod(self.column_decoder)
 
     def add_modules(self):
         predecoder_to_address_mux = self.row_decoder.predecoder_height - self.cam_block.address_mux_array_inst.offset[1]
@@ -204,7 +197,15 @@ class CamBank(design.design):
 
         # connect clk
         block_clk = self.left_block.get_pin(self.prefix + "clk_buf")
-        decoder_clk = self.row_decoder_inst.get_pin("clk")
+        decoder_clks = self.row_decoder_inst.get_pins("clk")
+        if len(decoder_clks) > 1:  # TODO fix clk order
+            same_y = filter(lambda x: x.by() < block_clk.by() < x.uy(), decoder_clks)
+            if len(same_y) > 0:
+                decoder_clk = same_y[0]
+            else:
+                decoder_clk = decoder_clks[0]
+        else:
+            decoder_clk = decoder_clks[0]
         offset = vector(decoder_clk.lx(), block_clk.by())
 
         clk_rail_x = self.cam_block.rail_lines[self.prefix + "clk"]
@@ -213,7 +214,11 @@ class CamBank(design.design):
 
         self.add_rect("metal3", offset=offset, width=clk_rail_x - decoder_clk.lx())
         self.add_contact(contact.m2m3.layer_stack, offset=offset)
-        self.add_rect("metal2", offset=offset, height=decoder_clk.by() - offset.y)
+
+        if block_clk.uy() < decoder_clk.by():
+            self.add_rect("metal2", offset=offset, height=decoder_clk.by() - offset.y)
+
+        decoder_clk = min(decoder_clks, key=lambda x: x.by())
 
         # connect gnd pins
         highest_address_pin = self.row_decoder_inst.get_pin("A[{}]".format(self.addr_size-1))

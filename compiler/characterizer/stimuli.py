@@ -118,13 +118,13 @@ class stimuli():
             self.sf.write(pmos_access_string.format(i,
                                                     "test"+self.vdd_name,
                                                     self.pmos_name,
-                                                    2 * self.tx_width,
+                                                    20 * self.tx_width,
                                                     self.tx_length))
             nmos_access_string="mn{0} DATA[{0}] acc_en_inv D[{0}] {1} {2} w={3}u l={4}u\n"
             self.sf.write(nmos_access_string.format(i,
                                                     "test"+self.gnd_name,
                                                     self.nmos_name,
-                                                    2 * self.tx_width,
+                                                    10 * self.tx_width,
                                                     self.tx_length))
 
     def gen_pulse(self, sig_name, v1, v2, offset, period, t_rise, t_fall):
@@ -252,6 +252,7 @@ class stimuli():
         self.sf.write('tran tran step={} stop={}n annotate=status maxiters=5\n'.format("5p", end_time))
 
         self.sf.write('saveOptions options save=lvlpub nestlvl=1 pwr=total \n')
+        #self.sf.write('saveOptions options save=all nestlvl=1 pwr=total \n')
 
 
         self.sf.write("simulator lang=spice\n")
@@ -323,12 +324,13 @@ class stimuli():
             extra_options = ""
             if OPTS.use_pex:
                 # postlayout is more aggressive than +parasitics
-                # extra_options += " +dcopt +postlayout "
-                extra_options += " +dcopt +parasitics=20 "
-            cmd = "{0} -64 {1} -format psfascii -raw {2} +aps {3} ".format(OPTS.spice_exe,
-                                                                          temp_stim,
-                                                                          OPTS.openram_temp,
-                                                                          extra_options)
+                extra_options += " +dcopt +postlayout "
+                # extra_options += " +dcopt +parasitics=20 "
+            cmd = "{0} -64 {1} -format {2} -raw {3} ++aps {4} ".format(OPTS.spice_exe,
+                                                                      temp_stim,
+                                                                      OPTS.spectre_format,
+                                                                      OPTS.openram_temp,
+                                                                      extra_options)
             valid_retcode = 0
         else:
             # ngspice 27+ supports threading with "set num_threads=4" in the stimulus file or a .spiceinit 

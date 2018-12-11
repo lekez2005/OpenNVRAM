@@ -103,19 +103,18 @@ class Cam(sram.sram):
         self.route_four_banks_power()
 
     def connect_lower_address_pins(self):
-        base_y = (min(self.data_bus_positions.values(), key=lambda x: x[1])[1] - self.bank_addr_size * self.m4_pitch -
-                  self.wide_m1_space)
+        min_bus_y = min(self.data_bus_positions.values(), key=lambda x: x[1])[1]
+        base_y = min_bus_y - self.bank_addr_size * self.m4_pitch - self.wide_m1_space
         for i in range(self.bank_addr_size):
             addr_name = "ADDR[{}]".format(i)
             left_pin = self.bank_inst[0].get_pin(addr_name)
             right_pin = self.bank_inst[1].get_pin(addr_name)
-            rail_y = base_y + i * self.m4_pitch
+            rail_y = base_y + (self.bank_addr_size - i) * self.m4_pitch
             for pin in [left_pin, right_pin]:
-                self.add_rect("metal3", offset=vector(pin.lx(), min(base_y, rail_y)),
-                              height=self.metal1_minwidth_fill)
+                self.add_rect("metal3", offset=vector(pin.lx(), rail_y), height=min_bus_y-rail_y)
                 self.add_rect("metal2", offset=pin.ul(), height=rail_y - pin.uy())
-                self.add_contact(contact.m2m3.layer_stack, offset=(pin.lx(), rail_y))
-                self.add_contact(contact.m3m4.layer_stack, offset=(pin.lx(), rail_y))
+                self.add_contact(contact.m2m3.layer_stack, offset=(pin.lx(), rail_y - contact.m2m3.second_layer_height))
+                self.add_contact(contact.m3m4.layer_stack, offset=(pin.lx(), rail_y - contact.m3m4.second_layer_height))
 
             self.add_layout_pin(addr_name, layer="metal4", offset=vector(left_pin.lx(), rail_y - self.m4_width),
                                 width=right_pin.rx() - left_pin.lx())

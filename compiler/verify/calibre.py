@@ -287,7 +287,7 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
     return total_errors
 
 
-def run_pex(cell_name, gds_name, sp_name, output=None):
+def run_pex(cell_name, gds_name, sp_name, output=None, run_drc_lvs=True, correct_port_order=True):
     """Run pex on a given top-level name which is
        implemented in gds_name and sp_name. """
     debug.info(1, "Run PEX for {}".format(cell_name))
@@ -297,7 +297,7 @@ def run_pex(cell_name, gds_name, sp_name, output=None):
 
     # check if lvs report has been done
     # if not run drc and lvs
-    if not os.path.isfile(os.path.join(OPTS.openram_temp, cell_name + ".lvs.report")):
+    if run_drc_lvs and not os.path.isfile(os.path.join(OPTS.openram_temp, cell_name + ".lvs.report")):
         run_drc(cell_name, gds_name)
         run_lvs(cell_name, gds_name, sp_name)
 
@@ -356,7 +356,8 @@ def run_pex(cell_name, gds_name, sp_name, output=None):
     out_errors = len(stdouterrors)
 
     assert(os.path.isfile(output))
-    correct_port(cell_name, output, sp_name)
+    if correct_port_order:
+        correct_port(cell_name, output, sp_name)
 
     return out_errors
 

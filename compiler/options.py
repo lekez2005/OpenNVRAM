@@ -99,4 +99,5 @@ class options(optparse.Values):
         "default": [2, 4, 8],
         "clk": [2, 6, 12, 24, 24]
     }
+    precharge_size = 2
 

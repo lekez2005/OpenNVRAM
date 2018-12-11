@@ -46,7 +46,10 @@ class FunctionalTest:
         if addresses is None:
             addresses = [0]
         self.addresses = addresses
-        self.probe = probe = sram_probe.SramProbe(self.sram, self.pex_file)
+        if self.probe is None:
+            self.probe = probe = sram_probe.SramProbe(self.sram, self.pex_file)
+        else:
+            probe = self.probe
         for address in addresses:
             probe.probe_bit_cells(address, "QBAR")
             probe.probe_bit_cells(address, "Q")
@@ -70,34 +73,10 @@ class FunctionalTest:
             probe.probe_sense_amps(bank_index, bank_inst, "data")
             probe.probe_word_driver_clk(bank_index, bank_inst)
             if OPTS.use_pex:
-                probe.probe_pin(bank_inst.mod.sense_amp_array_inst.get_pin("en"), "sense_amp_en_b{}".format(bank_index),
-                                [bank_inst])
-                probe.probe_pin(bank_inst.mod.precharge_array_inst.get_pin("en"), "precharge_en_b{}".format(bank_index),
-                                [bank_inst])
-                probe.probe_pin(bank_inst.mod.write_driver_array_inst.get_pin("en"), "write_en_b{}".format(bank_index),
-                                [bank_inst])
-                probe.probe_pin(bank_inst.mod.tri_gate_array_inst.get_pin("en"), "tri_en_b{}".format(bank_index),
-                                [bank_inst])
-                probe.probe_pin(bank_inst.mod.tri_gate_array_inst.get_pin("en_bar"), "tri_en_bar_b{}".format(bank_index),
-                                [bank_inst])
-                if self.sram.words_per_row > 1:
-                    probe.probe_pin(bank_inst.mod.col_mux_array_inst.get_pin("sel[0]"), "mux_sel_0_b{}".format(bank_index),
-                                    [bank_inst])
-                probe.probe_pin(bank_inst.mod.write_driver_array_inst.get_pin("data[0]"), "write_d0_b{}".format(bank_index),
-                                [bank_inst])
-                probe.probe_pin(bank_inst.mod.wordline_driver_inst.get_pin("in[0]"), "wl_drv_in0_b{}".format(bank_index),
-                                [bank_inst])
-                probe.probe_pin(bank_inst.mod.wordline_driver_inst.mod.module_insts[0].get_pin("Z"),
-                                "wl_drv_en_bar_b{}".format(bank_index),
-                                [bank_inst, bank_inst.mod.wordline_driver_inst])
-                probe.probe_pin(bank_inst.mod.wordline_driver_inst.mod.module_insts[1].get_pin("Z"),
-                                "wl_drv_net0_b{}".format(bank_index),
-                                [bank_inst, bank_inst.mod.wordline_driver_inst])
+                probe.add_misc_bank_probes(bank_inst, bank_index)
         if OPTS.use_pex and bank_inst is not None:
-            probe.probe_pin(bank_inst.get_pin("clk_buf"), "ctrl_clk_buf", [])
-            probe.probe_pin(bank_inst.get_pin("tri_en"), "ctrl_tri_en", [])
-            probe.probe_pin(bank_inst.get_pin("w_en"), "ctrl_w_en", [])
-            probe.probe_pin(bank_inst.get_pin("s_en"), "ctrl_s_en", [])
+            probe.add_misc_probes(bank_inst)
+
 
     def extract_probes(self):
         probe = self.probe
@@ -107,7 +86,7 @@ class FunctionalTest:
                 try:
                     self.saved_nodes.add(probe.extract_from_pex(label))
                 except Exception, e:
-                    debug.warning(e.message)
+                    debug.warning("Probe {} not found in extracted netlist".format(label))
         else:
             self.saved_nodes = set(probe.probe_labels)
 
@@ -154,7 +133,8 @@ class FunctionalTest:
         for address in self.addresses:
             addr_map_list.append({
                 "address": address,
-                "net_names": self.probe.get_bitcell_probes(address, "Q")
+                #"net_names": self.probe.get_bitcell_probes(address, "Q")
+                "net_names": []
             })
 
         self.delay.set_stimulus_params(addr_map_list, list(self.saved_nodes))

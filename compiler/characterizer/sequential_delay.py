@@ -14,18 +14,20 @@ class SequentialDelay(delay.delay):
     Extends the delay class to provide functionality for testing multiple addresses
     """
 
-    def __init__(self, sram, spfile, corner):
+    def __init__(self, sram, spfile, corner, initialize=True):
 
         delay.delay.__init__(self, sram, spfile, corner)
         self.stim = None
         self.measure_slew = False
 
-        self.read_period = self.write_period = self.period = float(tech.spice["feasible_period"])
+        if hasattr(OPTS, 'feasible_period'):
+            feasible_period = OPTS.feasible_period
+        else:
+            feasible_period = float(tech.spice["feasible_period"])
+        self.read_period = self.write_period = self.period = feasible_period
         self.duty_cycle = 0.5
         self.setup_time = float(2*tech.spice["msflop_setup"])*1e-3
         self.slew = float(2*tech.spice["rise_time"])
-
-        self.gmin = 1e-13  # put gmin resistor at probe points to prevent Cadence from removing them as dangling nodes
 
         self.current_time = 0
 
@@ -46,14 +48,14 @@ class SequentialDelay(delay.delay):
 
         self.v_data = {}  # saves PWL command for each voltage source
         self.v_comments = {}
-        self.q_address_pins = {} # for each address to be probed, contains list of Q pins
+        self.q_address_pins = {}  # for each address to be probed, contains list of Q pins
         self.probe_points = []
         self.probes_dict = {}
         self.saved_nodes = set()
         self.measure_commands = []
         self.command_comments = []
-
-        self.initialize_output()
+        if initialize:
+            self.initialize_output()
 
     def set_stimulus_params(self, addresses, saved_nodes=None, reset_address=1):
         """Set address and nodes to be saved"""
@@ -92,8 +94,19 @@ class SequentialDelay(delay.delay):
 
         self.initialize_output()
 
+        self.generate_steps()
 
+        for node in self.saved_nodes:
+            self.sf.write(".plot V({0}) \n".format(node))
 
+        self.finalize_output()
+
+        # run until the end of the cycle time
+        self.stim.write_control(self.current_time + self.period)
+
+        self.sf.close()
+
+    def generate_steps(self):
         for addr_dict in self.addresses:
             address = self.convert_address(addr_dict["address"])
             reset_address_vec = [int(not x) for x in address]
@@ -119,15 +132,6 @@ class SequentialDelay(delay.delay):
             self.setup_read_delay(address_int, data)
             self.read_data(address)
 
-        for node in self.saved_nodes:
-            self.sf.write(".plot V({0}) \n".format(node))
-
-        self.finalize_output()
-
-        # run until the end of the cycle time
-        self.stim.write_control(self.current_time + self.period)
-
-        self.sf.close()
 
     def write_generic_stimulus(self):
         """ Overrides super class method to use internal logic for measurement setup
@@ -164,14 +168,16 @@ class SequentialDelay(delay.delay):
 
         for key in self.control_sigs:
             curr_val = getattr(self, key)
-            self.v_data[key] = "V{0} {0} 0 PWL ( 0, {1}v, ".format(key, curr_val*self.vdd_voltage)
-            self.v_comments[key] = "* (time, data): [ (0, {}), ".format(curr_val)
+            # self.v_data[key] = "V{0} {0} 0 PWL ( 0, {1}v, ".format(key, curr_val*self.vdd_voltage)
+            self.v_data[key] = "V{0} {0} 0 PWL ( ".format(key)
+            self.v_comments[key] = "* (time, data): [ "
 
         for key in ["clk"] + self.bus_sigs:
-            self.v_data[key] = "V{0} {0} 0 PWL ( 0, {1}v, ".format(key, 0)
-            self.v_comments[key] = "* (time, data): [ (0, 0), "
-
-        self.current_time += min(self.read_period, self.write_period)
+            # self.v_data[key] = "V{0} {0} 0 PWL ( 0, {1}v, ".format(key, 0)
+            self.v_data[key] = "V{0} {0} 0 PWL ( ".format(key)
+            self.v_comments[key] = "* (time, data): [ "
+        self.current_time = self.setup_time + 0.5*self.slew
+        self.update_output()
 
     def finalize_output(self):
         """Complete pwl statements"""
@@ -231,13 +237,13 @@ class SequentialDelay(delay.delay):
         self.current_time += (1-self.duty_cycle) * self.period
 
 
-
     def write_data(self, address_vec, data, comment=""):
-        """Write data to an address. Data can be integer or binary vector. Address is binary vector"""
-        self.address = address_vec
-        self.data = self.convert_data(data)
-        self.command_comments.append("* t = {} Write {} to {} {} \n".format(self.current_time, self.data,
-                                                                            self.address, comment))
+        """Write data to an address. Data can be integer or binary vector. Address is binary MSB first vector"""
+        self.command_comments.append("* t = {} Write {} to {} {} \n".format(self.current_time, data,
+                                                                            address_vec, comment))
+        self.address = list(reversed(address_vec))
+        self.data = list(reversed(self.convert_data(data)))
+
         self.acc_en = self.web = 0
         self.acc_en_inv = 1
         self.oeb = 1
@@ -246,10 +252,11 @@ class SequentialDelay(delay.delay):
         self.update_output()
 
     def read_data(self, address_vec, comment=""):
-        """Read from an address. Address is a binary vector"""
+        """Read from an address. Address is a binary MSB first vector"""
         # self.measure_write(address, data)
-        self.address = address_vec
         self.command_comments.append("* t = {} Read {} {} \n".format(self.current_time, address_vec, comment))
+        self.address = list(reversed(address_vec))
+
         self.acc_en = self.web = 1
         self.acc_en_inv = 0
         self.oeb = 0
@@ -277,7 +284,7 @@ class SequentialDelay(delay.delay):
 
     def convert_data(self, data):
         """Convert data integer to binary list MSB first"""
-        if type(data) == int:
+        if isinstance(data, (int, long)):
             return list(map(int, np.binary_repr(data, self.word_size)))
         elif type(data) == list and len(data) == self.word_size:
             return data
@@ -288,31 +295,35 @@ class SequentialDelay(delay.delay):
         max_val = 2**self.word_size - 1
         return data ^ max_val
 
-    def setup_delay_measurement(self, transition, net, delay_name, slew_name):
+    def setup_delay_measurement(self, transition, net, delay_name, slew_name, bl_net=None, bl_name=None):
         """Write measurement command. Transition is HL or LH.
         delay name is name to be used the delay measurement
         slew_name is name to be used for slew measurement
         """
         if transition == "LH":
             targ_dir = "RISE"
-            prev_val = 0.1 * self.vdd_voltage
             final_val = 0.9 * self.vdd_voltage
         elif transition == "HL":
             targ_dir = "FALL"
-            prev_val = 0.9 * self.vdd_voltage
             final_val = 0.1 * self.vdd_voltage
         else:
             debug.error("Invalid transition direction {} specified".format(transition), -1)
             return
-        trig_val = targ_val = 0.5 * self.vdd_voltage
+        trig_val = 0.5 * self.vdd_voltage
         self.stim.gen_meas_delay(meas_name=delay_name,
                                  trig_name="clk", trig_val=trig_val, trig_dir="FALL",
                                  trig_td=self.current_time,
-                                 targ_name=net, targ_val=targ_val, targ_dir=targ_dir,
+                                 targ_name=net, targ_val=final_val, targ_dir=targ_dir,
                                  targ_td=self.current_time + self.duty_cycle * self.period)
+        if bl_name and bl_net:
+            self.stim.gen_meas_delay(meas_name=bl_name,
+                                     trig_name="clk", trig_val=trig_val, trig_dir="RISE",
+                                     trig_td=self.current_time - 0.1*self.period,
+                                     targ_name=bl_net, targ_val=0.9*self.vdd_voltage, targ_dir="RISE",
+                                     targ_td=self.current_time + 0.1*self.period)
         if self.measure_slew:
             self.stim.gen_meas_delay(meas_name=slew_name,
-                                     trig_name=net, trig_val=prev_val, trig_dir="FALL",
+                                     trig_name=net, trig_val=trig_val, trig_dir="FALL",
                                      trig_td=self.current_time + self.duty_cycle * self.period,
                                      targ_name=net, targ_val=final_val, targ_dir=targ_dir,
                                      targ_td=self.current_time + self.duty_cycle * self.period)
@@ -337,7 +348,7 @@ class SequentialDelay(delay.delay):
         else:
             return "LH"
 
-    def setup_read_delay(self, address_int, new_val):
+    def setup_read_delay(self, address_int, new_val, bl_labels=None):
         """Set up read delay measurement for each bit in address.
         Transition is HL or LH.
         Should be called before the read command
@@ -345,14 +356,20 @@ class SequentialDelay(delay.delay):
         self.period = self.read_period
         self.setup_power_measurement("READ", self.get_transition(0, new_val), address_int)
         for i in range(self.word_size):
+            if bl_labels is not None:
+                bl_label = bl_labels[i]
+            else:
+                bl_label = None
+            bl_name = "BL_READ_RISE_{}_{}".format(self.current_time, i)
 
             net = "D[{}]".format(i)
-            transition = self.get_transition(i, new_val)
+            transition = self.get_transition(self.word_size-i, new_val)
             self.setup_delay_measurement(transition, net,
                                    delay_name="R_DELAY_{}_a{}_d{}".format(transition, address_int, i),
-                                   slew_name="R_SLEW_{}_a{}_d{}".format(transition, address_int, i))
+                                   slew_name="R_SLEW_{}_a{}_d{}".format(transition, address_int, i),
+                                         bl_net=bl_label, bl_name=bl_name)
 
-    def setup_write_delay(self, address_int, new_val, address_labels):
+    def setup_write_delay(self, address_int, new_val, address_labels, bl_labels=None):
         """Set up write delay measurement for each bit in address
           Transition is HL or LH.
           Should be called before the write command itself
@@ -363,8 +380,14 @@ class SequentialDelay(delay.delay):
         self.setup_power_measurement("WRITE", self.get_transition(0, new_val), address_int)
         for i in range(self.word_size):
             label = address_labels[i]
-            transition = self.get_transition(i, new_val)
+            if bl_labels is not None:
+                bl_label = bl_labels[i]
+            else:
+                bl_label = None
+            bl_name = "BL_WRITE_RISE_{}_{}".format(self.current_time, i)
+            transition = self.get_transition(self.word_size-i, new_val)
             self.setup_delay_measurement(transition, label,
                                    delay_name="W_DELAY_{}_a{}_{}".format(transition, address_int, label),
-                                   slew_name="W_SLEW_{}_a{}_{}".format(transition, address_int, label))
+                                   slew_name="W_SLEW_{}_a{}_{}".format(transition, address_int, label),
+                                         bl_net=bl_label, bl_name=bl_name)
 

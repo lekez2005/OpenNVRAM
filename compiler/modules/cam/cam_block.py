@@ -7,7 +7,7 @@ import utils
 from vector import vector
 
 
-class CamBlock(bank.bank):
+class cam_block(bank.bank):
     """
     Generate a CAM block
     CAM banks are divided into blocks with word_size columns.
@@ -19,8 +19,14 @@ class CamBlock(bank.bank):
     @staticmethod
     def get_module_list():
         sram_modules = bank.bank.get_module_list()
-        cam_modules = ["address_mux_array", "sl_driver_array", "ml_precharge_array", "tag_flop_array"]
+        cam_modules = ["address_mux_array", "sl_driver_array", "ml_precharge_array", "tag_flop_array",
+                       "search_sense_amp_array"]
         return sram_modules + cam_modules
+
+    @staticmethod
+    def get_control_pin_names():
+        return ["sel_all_banks", "block_sel", "clk_buf", "s_en", "w_en", "search_en",
+                    "matchline_chb", "mw_en", "sel_all_rows", "latch_tags", "search_ref"]
 
     def add_pins(self):
         for i in range(self.word_size):
@@ -30,13 +36,12 @@ class CamBlock(bank.bank):
         for i in range(self.num_rows):
             self.add_pin("dec_out[{0}]".format(i))
 
-        for pin in ["sel_all_banks", "block_sel", "clk_buf", "s_en", "w_en", "search_en",
-                    "matchline_chb", "mw_en", "sel_all_rows", "latch_tags", self.prefix + "clk_buf", "vdd", "gnd"]:
+        for pin in self.get_control_pin_names() + [self.prefix + "clk_buf", "vdd", "gnd"]:
             self.add_pin(pin)
 
 
     def create_modules(self):
-        super(CamBlock, self).create_modules()
+        super(cam_block, self).create_modules()
 
         self.address_mux_array = self.mod_address_mux_array(rows=self.num_rows)
         self.add_mod(self.address_mux_array)
@@ -50,6 +55,9 @@ class CamBlock(bank.bank):
         self.tag_flop_array = self.mod_tag_flop_array(rows=self.num_rows)
         self.add_mod(self.tag_flop_array)
 
+        self.search_sense_amp_array = self.mod_search_sense_amp_array(rows=self.num_rows)
+        self.add_mod(self.search_sense_amp_array)
+
     def create_column_decoder(self):
         """column decoders are created at the bank level if needed"""
         pass
@@ -59,9 +67,9 @@ class CamBlock(bank.bank):
 
             # left
             ControlGate("s_en", route_complement=True, output_dir="left"),
-            ControlGate("search_en", output_dir="left"),
-            ControlGate("w_en", output_dir="left"),
             ControlGate("latch_tags", output_dir="left"),
+            ControlGate("w_en", output_dir="left"),
+            ControlGate("search_en", output_dir="left"),
             ControlGate("matchline_chb", output_dir="left"),
 
             # right
@@ -108,6 +116,7 @@ class CamBlock(bank.bank):
         self.route_right_controls()
         self.route_left_controls()
         self.route_wordline_driver()
+        self.route_search_sense_amp()
         self.route_tag_flops()
 
         self.calculate_rail_vias()
@@ -169,7 +178,7 @@ class CamBlock(bank.bank):
                 self.add_layout_pin(layout_name, "metal2", offset=pin.lr(), width=self.right_edge - pin.rx())
 
     def route_tri_gate_out(self):
-        super(CamBlock, self).route_tri_gate_out()
+        super(cam_block, self).route_tri_gate_out()
         for i in range(self.word_size):
             tri_gate_out = self.tri_gate_array_inst.get_pin("out[{}]".format(i))
             self.add_contact(contact.m2m3.layer_stack,
@@ -256,9 +265,9 @@ class CamBlock(bank.bank):
 
         rails = [
             Rail(self.prefix + "matchline_chb", self.ml_precharge_array_inst.get_pin("precharge_bar"), "up"),
-            Rail(self.prefix + "latch_tags", self.tag_flop_array_inst.get_pin("clk"), "up"),
-            Rail(self.prefix + "w_en", self.write_driver_array_inst.get_pin("en"), "left"),
             Rail(self.prefix + "search_en", self.sl_driver_array_inst.get_pin("en"), "left"),
+            Rail(self.prefix + "w_en", self.write_driver_array_inst.get_pin("en"), "left"),
+            Rail(self.prefix + "latch_tags", self.tag_flop_array_inst.get_pin("clk"), "up"),
             Rail(self.prefix + "s_en", self.sense_amp_array_inst.get_pin("en"), "left")
             ]
         x_offset = self.ml_precharge_array_inst.get_pin("precharge_bar").lx() + self.line_end_space
@@ -267,17 +276,18 @@ class CamBlock(bank.bank):
             gate_pin = self.bank_gate_inst.get_pin(rail.gate_pin)
             dest_pin = rail.dest_pin
             self.add_rect("metal2", offset=gate_pin.lr(), width=x_offset + self.m2_width - gate_pin.rx())
-            self.add_rect("metal2", offset=vector(x_offset, gate_pin.by() + self.m2_width),
-                          height=dest_pin.by() - gate_pin.by())
 
             if rail.direction == "up":
-                if dest_pin.lx() == x_offset:
-                    pass
-                elif dest_pin.lx() < x_offset:
-                    self.add_rect("metal2", offset=dest_pin.ll(), width=x_offset - dest_pin.lx())
-                else:
-                    self.add_rect("metal2", offset=vector(x_offset, dest_pin.by()), width=dest_pin.rx() - x_offset)
+                mid_y = dest_pin.by() - self.wide_m1_space - self.m2_width
+                self.add_path("metal2", [
+                    vector(x_offset + 0.5*self.m2_width, gate_pin.by()),
+                    vector(x_offset + 0.5*self.m2_width, mid_y),
+                    vector(dest_pin.cx(), mid_y),
+                    vector(dest_pin.cx(), dest_pin.by())
+                ])
             elif rail.direction == "left":
+                self.add_rect("metal2", offset=vector(x_offset, gate_pin.by() + self.m2_width),
+                              height=dest_pin.by() - gate_pin.by())
                 via_x = dest_pin.rx() + self.line_end_space
                 if rail.gate_pin == self.prefix + "w_en": # move away from ground pin
                     via_y = dest_pin.uy() + self.line_end_space + 0.5 * contact.m1m2.second_layer_height
@@ -405,10 +415,17 @@ class CamBlock(bank.bank):
                             offset=vector(x_offset, gate_pin.by()), width=gate_pin.lx() - x_offset)
 
 
+    def route_wordline_out(self):
+        # we don't care about bends after connecting to the input pin, so let the path code decide.
+        for i in range(self.num_rows):
+            # The mid guarantees we exit the input cell to the right.
+            driver_wl_pos = self.wordline_driver_inst.get_pin("wl[{}]".format(i)).rc()
+            bitcell_wl_pos = self.bitcell_array_inst.get_pin("wl[{}]".format(i)).lc()
+            self.add_path("metal1", [vector(driver_wl_pos.x, bitcell_wl_pos.y), bitcell_wl_pos])
+
     def route_wordline_driver(self):
         """ Connecting Wordline driver output to Bitcell WL connection  """
 
-        # we don't care about bends after connecting to the input pin, so let the path code decide.
         for i in range(self.num_rows):
             # The pre/post is to access the pin from "outside" the cell to avoid DRCs
             address_mux_pin = self.address_mux_array_inst.get_pin("out[{}]".format(i))
@@ -420,10 +437,8 @@ class CamBlock(bank.bank):
                 self.add_rect("metal1", offset=vector(address_mux_pin.rx(), driver_in_pin.by()),
                               height=address_mux_pin.uy() - driver_in_pin.by())
 
-            # The mid guarantees we exit the input cell to the right.
-            driver_wl_pos = self.wordline_driver_inst.get_pin("wl[{}]".format(i)).rc()
-            bitcell_wl_pos = self.bitcell_array_inst.get_pin("wl[{}]".format(i)).lc()
-            self.add_path("metal1", [vector(driver_wl_pos.x, bitcell_wl_pos.y), bitcell_wl_pos])
+
+        self.route_wordline_out()
 
         # route the gnd rails, add contact to rail as well
         for gnd_pin in self.wordline_driver_inst.get_pins("gnd"):
@@ -436,6 +451,56 @@ class CamBlock(bank.bank):
             self.add_rect("metal1", height=vdd_pin.height(),
                           offset=vector(vdd_pin.rx(), vdd_pin.by()),
                           width=self.bitcell_array_inst.lx() - vdd_pin.rx())
+
+    def route_search_sense_amp(self):
+
+        for row in range(self.num_rows):
+            # precharge ml pin to sense_amp ml pin
+            ml_name = "ml[{}]".format(row)
+            precharge_ml = self.ml_precharge_array_inst.get_pin(ml_name)
+            sense_amp_ml = self.search_sense_inst.get_pin(ml_name)
+            x_offset = sense_amp_ml.lx() + 0.5*self.m3_width
+            self.add_path("metal3", [
+                precharge_ml.rc(),
+                vector(x_offset, precharge_ml.cy()),
+                vector(x_offset, sense_amp_ml.cy())
+            ])
+
+            # dout to tag flops
+            amp_dout = self.search_sense_inst.get_pin("dout[{}]".format(row))
+            tag_din = self.tag_flop_array_inst.get_pin("din[{}]".format(row))
+            if row % 2 == 0:
+                y_offset = amp_dout.by()
+            else:
+                y_offset = amp_dout.uy() - contact.m2m3.second_layer_height
+            self.add_contact(contact.m2m3.layer_stack, offset=vector(amp_dout.lx(), y_offset))
+            y_offset = y_offset + 0.5*contact.m2m3.second_layer_height
+            x_offset = tag_din.lx() + 0.5*self.m3_width
+            self.add_path("metal3", [
+                vector(amp_dout.cx(), y_offset),
+                vector(x_offset, y_offset),
+                vector(x_offset, tag_din.cy())
+            ])
+            self.add_contact(contact.m2m3.layer_stack,
+                             offset=tag_din.ll() + vector(contact.m2m3.second_layer_height, 0),
+                             rotate=90)
+
+        # route enable pin
+        en_pin = self.search_sense_inst.get_pin("en")
+        x_offset = self.rail_lines[self.prefix + "search_en"] + 0.5*self.m2_width
+        y_offset = self.sl_driver_array_inst.get_pin("en").by()
+        self.add_path("metal2", [
+            vector(x_offset, y_offset),
+            vector(x_offset, en_pin.by()),
+            vector(en_pin.rx(), en_pin.by())
+        ])
+
+        # route vcomp pin
+        vcomp_pin = self.search_sense_inst.get_pin("vcomp")
+        self.add_contact(contact.m2m3.layer_stack, vcomp_pin.ll())
+        self.add_layout_pin("search_ref", "metal3", offset=vector(vcomp_pin.lx(), self.min_point),
+                            height=vcomp_pin.by() - self.min_point)
+
 
     def route_tag_flops(self):
         for row in range(self.num_rows):
@@ -541,7 +606,7 @@ class CamBlock(bank.bank):
 
 
     def compute_sizes(self):
-        super(CamBlock, self).compute_sizes()
+        super(cam_block, self).compute_sizes()
 
         self.control_signals = map(lambda x: self.prefix + x,
                                    ["s_en", "clk_bar", "clk_buf", "tri_en_bar", "tri_en", "w_en"])
@@ -575,7 +640,7 @@ class CamBlock(bank.bank):
     def add_bitcell_array(self):
         """ Adding Bitcell Array """
 
-        self.bitcell_array_inst=self.add_inst(name="bitcell_array",
+        self.bitcell_array_inst = self.add_inst(name="bitcell_array",
                                               mod=self.bitcell_array,
                                               offset=vector(0,0))
         temp = []
@@ -664,9 +729,9 @@ class CamBlock(bank.bank):
         self.bank_gate_inst = self.add_inst(name="bank_gate", mod=self.bank_gate,
                                             offset=vector(x_offset, y_offset),
                                             mirror="MY")
-        temp = (["sel_all_banks", "block_sel", "s_en", "search_en", "w_en", "latch_tags", "matchline_chb", "mw_en",
+        temp = (["sel_all_banks", "block_sel", "s_en", "latch_tags", "w_en", "search_en", "matchline_chb", "mw_en",
                  "sel_all_rows", "clk_buf"]
-                + [self.prefix + x for x in ["s_en_bar", "s_en", "search_en", "w_en", "latch_tags", "matchline_chb",
+                + [self.prefix + x for x in ["s_en_bar", "s_en", "latch_tags", "w_en", "search_en", "matchline_chb",
                                              "mw_en_bar", "mw_en", "sel_all_rows_bar", "sel_all_rows", "clk_bar", "clk_buf"]] +
                 ["vdd", "gnd"])
 
@@ -687,12 +752,28 @@ class CamBlock(bank.bank):
         temp.append("vdd")
         self.connect_inst(temp)
 
-    def add_tag_flops(self):
-        self.tag_flop_array_inst = self.add_inst(name="tag_flop_array", mod=self.tag_flop_array,
-                                                 offset=self.ml_precharge_array_inst.lr())
+    def add_search_sense_amp_array(self):
+        self.search_sense_inst = self.add_inst(name="search_sense_amps", mod=self.search_sense_amp_array,
+                                               offset=self.ml_precharge_array_inst.lr())
         temp = []
         for i in range(self.num_rows):
             temp.append("ml[{0}]".format(i))
+        for i in range(self.num_rows):
+            temp.append("search_out[{0}]".format(i))
+        temp.append(self.prefix + "search_en")
+        temp.append("search_ref")
+        temp.append("vdd")
+        temp.append("gnd")
+        self.connect_inst(temp)
+
+
+    def add_tag_flops(self):
+        self.add_search_sense_amp_array()
+        self.tag_flop_array_inst = self.add_inst(name="tag_flop_array", mod=self.tag_flop_array,
+                                                 offset=self.search_sense_inst.lr())
+        temp = []
+        for i in range(self.num_rows):
+            temp.append("search_out[{0}]".format(i))
         for i in range(self.num_rows):
             temp.append("tag[{0}]".format(i))
             temp.append("tag_bar[{0}]".format(i))
@@ -704,7 +785,7 @@ class CamBlock(bank.bank):
 
     def add_wordline_driver(self):
         self.wordline_x_offset = -self.overall_central_bus_width - self.wordline_driver.width
-        super(CamBlock, self).add_wordline_driver()
+        super(cam_block, self).add_wordline_driver()
 
     def add_address_mux_array(self):
         offset = self.wordline_driver_inst.ll() - vector(self.address_mux_array.width, 0)
@@ -735,7 +816,7 @@ class CamBlock(bank.bank):
             args = self.replace_args(self.prefix + "tri_en", self.prefix + "s_en", args)
             args = self.replace_args(self.prefix + "tri_en_bar", self.prefix + "s_en_bar", args)
 
-        super(CamBlock, self).connect_inst(args, check)
+        super(cam_block, self).connect_inst(args, check)
 
     def replace_args(self, from_name, to_name, args):
         args = [arg.replace(from_name, to_name) for arg in args]

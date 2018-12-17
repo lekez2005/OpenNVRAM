@@ -57,8 +57,8 @@ class ml_precharge_array(design.design):
 
     def add_layout_pins(self):
         for row in range(self.rows):
-            self.copy_layout_pin(self.precharge_insts[-1], "ml", "ml[{0}]".format(row))
-            self.copy_layout_pin(self.precharge_insts[-1], "vdd", "vdd")
+            self.copy_layout_pin(self.precharge_insts[row], "ml", "ml[{0}]".format(row))
+            self.copy_layout_pin(self.precharge_insts[row], "vdd", "vdd")
         precharge_pin = self.precharge_insts[0].get_pin("chb")
         self.add_layout_pin("precharge_bar", precharge_pin.layer, offset=vector(precharge_pin.lx(), 0),
                             width=precharge_pin.width(), height=self.height)

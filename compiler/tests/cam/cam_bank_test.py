@@ -19,4 +19,5 @@ class CamBankTest(CamTestBase):
         a = cam_bank.CamBank(word_size=256, num_words=512, words_per_row=1, name="bank1")
         self.local_check(a)
 
+
 run_tests(__name__)

@@ -57,6 +57,8 @@ class cam_control_logic(control_logic.control_logic):
 
     def add_layout_pins(self):
         sorted_names = sorted(self.output_names, key=lambda x: self.rails[x])
+        a, b = sorted_names.index('search_en'), sorted_names.index('latch_tags')
+        sorted_names[b], sorted_names[a] = sorted_names[a], sorted_names[b]
         pin_height = 2*self.m3_width
         y_base = self.bottom_outputs + 2*self.m2_width
         for i in range(len(sorted_names)):
@@ -68,7 +70,15 @@ class cam_control_logic(control_logic.control_logic):
             self.add_rect("metal2", offset=vector(rail_x, y_offset), height=self.bottom_outputs - y_offset)
 
             self.add_rect("metal3", offset=vector(x_offset, y_offset), width=rail_x - x_offset)
-            self.add_contact(contact.m2m3.layer_stack, offset=vector(rail_x, y_offset))
+            if pin_name in ["search_en", "sel_all_rows"]:
+                self.add_contact(contact.m2m3.layer_stack,
+                                 offset=vector(rail_x + self.m2_width, y_offset), rotate=90)
+            elif pin_name == "sel_all_rows":
+                self.add_contact(contact.m2m3.layer_stack,
+                                 offset=vector(rail_x + self.m2_width + contact.m2m3.second_layer_height, y_offset),
+                                 rotate=90)
+            else:
+                self.add_contact(contact.m2m3.layer_stack, offset=vector(rail_x, y_offset))
             self.add_layout_pin(pin_name, "metal3", offset=vector(x_offset, y_offset - pin_height),
                                 height=pin_height)
 

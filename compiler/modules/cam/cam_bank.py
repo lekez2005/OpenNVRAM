@@ -58,7 +58,7 @@ class CamBank(design.design):
             self.add_pin("ADDR[{0}]".format(i))
 
         for pin in ["sel_all_banks", "bank_sel", "clk_buf", "s_en", "w_en", "search_en", "matchline_chb",
-                    "mw_en", "sel_all_rows", "latch_tags", "vdd", "gnd"]:
+                    "mw_en", "sel_all_rows", "latch_tags", "search_ref", "vdd", "gnd"]:
             self.add_pin(pin)
 
     def create_layout(self):
@@ -79,7 +79,11 @@ class CamBank(design.design):
 
     def create_modules(self):
 
-        self.cam_block = cam_block.CamBlock(self.word_size, self.num_rows, 1, 1, "cam_block")
+        cam_block_name = getattr(OPTS, "cam_block")
+        cam_block = reload(__import__(cam_block_name))
+        mod_class = getattr(cam_block, cam_block_name)
+
+        self.cam_block = mod_class(self.word_size, self.num_rows, 1, 1, "cam_block")
         self.add_mod(self.cam_block)
         self.prefix = self.cam_block.prefix
 
@@ -116,7 +120,7 @@ class CamBank(design.design):
                 temp.append("dec_out[{0}]".format(i))
 
             temp.extend(["sel_all_banks", "bank_sel", "clk_buf", "s_en", "w_en", "search_en", "matchline_chb", "mw_en",
-                         "sel_all_rows", "latch_tags", "block_gated_clk", "vdd", "gnd"])
+                         "sel_all_rows", "latch_tags", "search_ref", "block_gated_clk", "vdd", "gnd"])
             self.connect_inst(temp)
         self.left_block = self.block_insts[0]
 
@@ -287,6 +291,7 @@ class CamBank(design.design):
         self.copy_layout_pin(self.left_block, "mw_en", "mw_en")
         self.copy_layout_pin(self.left_block, "sel_all_rows", "sel_all_rows")
         self.copy_layout_pin(self.left_block, "latch_tags", "latch_tags")
+        self.copy_layout_pin(self.left_block, "search_ref", "search_ref")
         for i in range(self.word_size):
             for name_template in ["MASK[{}]", "DATA[{}]"]:
                 pin_name = name_template.format(i)

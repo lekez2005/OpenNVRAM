@@ -41,6 +41,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                    'bitcell',
                    'body_tap',
                    'cam_bitcell',
+                   'cam_bitcell_12t',
                    'contact',
                    'ptx',
                    'pinv',
@@ -90,6 +91,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.line_end_space = drc["metal1_to_metal1_line_end"]
         self.parallel_line_space = drc["parallel_metal1_to_metal1"]
         self.metal1_minwidth_fill = utils.ceil(drc["minarea_metal1_minwidth"]/self.m1_width)
+        self.minarea_metal1_minwidth = drc["minarea_metal1_minwidth"]
         self.poly_vert_space = drc["poly_end_to_end"]
         self.parallel_via_space = drc["parallel_via_space"]
         self.metal1_min_enclosed_area = drc["metal1_min_enclosed_area"]

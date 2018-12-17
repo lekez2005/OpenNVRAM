@@ -33,6 +33,7 @@ class Cam(sram.sram):
             self.copy_layout_pin(self.bank_inst, "ADDR[{}]".format(i))
 
         self.add_control_logic_pins()
+        self.copy_layout_pin(self.bank_inst, "search_ref")
 
     def add_control_logic_pins(self):
         for (old, new) in zip(["csb", "web", "oeb", "seb", "mwb", "bcastb", "clk"],
@@ -75,6 +76,8 @@ class Cam(sram.sram):
 
         self.route_single_msb_address()
 
+        self.route_search_ref()
+
         self.route_two_banks_power()
 
     def route_four_banks(self):
@@ -100,6 +103,8 @@ class Cam(sram.sram):
         self.route_four_bank_logic()
         self.route_double_msb_address()
 
+        self.route_search_ref()
+
         self.route_four_banks_power()
 
     def connect_lower_address_pins(self):
@@ -111,7 +116,8 @@ class Cam(sram.sram):
             right_pin = self.bank_inst[1].get_pin(addr_name)
             rail_y = base_y + (self.bank_addr_size - i) * self.m4_pitch
             for pin in [left_pin, right_pin]:
-                self.add_rect("metal3", offset=vector(pin.lx(), rail_y), height=min_bus_y-rail_y)
+                self.add_rect("metal3", offset=vector(pin.lx(), rail_y), height=max(min_bus_y-rail_y,
+                                                                                    self.metal1_minwidth_fill))
                 self.add_rect("metal2", offset=pin.ul(), height=rail_y - pin.uy())
                 self.add_contact(contact.m2m3.layer_stack, offset=(pin.lx(), rail_y - contact.m2m3.second_layer_height))
                 self.add_contact(contact.m3m4.layer_stack, offset=(pin.lx(), rail_y - contact.m3m4.second_layer_height))
@@ -161,7 +167,7 @@ class Cam(sram.sram):
         for i in range(self.addr_size):
             self.add_pin("ADDR[{0}]".format(i), "INPUT")
 
-        self.add_pin_list(["CSb", "WEb", "OEb", "SEb", "MWb", "BCASTb", "clk"], "INPUT")
+        self.add_pin_list(["CSb", "WEb", "OEb", "SEb", "MWb", "BCASTb", "search_ref", "clk"], "INPUT")
         self.add_pin("vdd", "POWER")
         self.add_pin("gnd", "GROUND")
 
@@ -383,6 +389,21 @@ class Cam(sram.sram):
                                  offset=vector(rail_x + self.m3_width + (i % 2) * contact.m2m3.second_layer_height,
                                                bank_sel_pin.by()), rotate=90)
 
+    def route_search_ref(self):
+        left_pin = self.bank_inst[0].get_pin("search_ref")
+        right_pin = self.bank_inst[1].get_pin("search_ref")
+
+        self.add_contact(contact.m2m3.layer_stack,
+                         offset=left_pin.ul() + vector(contact.m2m3.second_layer_height, 0), rotate=90)
+        self.add_contact(contact.m2m3.layer_stack, offset=right_pin.ur(), rotate=90)
+        self.add_layout_pin("search_ref", "metal2", offset=left_pin.ul(), width=right_pin.lx() - left_pin.lx())
+
+        if self.num_banks == 4:
+            top_left = self.bank_inst[2].get_pin("search_ref")
+            top_right = self.bank_inst[3].get_pin("search_ref")
+            self.add_rect("metal3", offset=left_pin.ul(), height=top_left.by() - left_pin.uy())
+            self.add_rect("metal3", offset=right_pin.ul(), height=top_right.by() - right_pin.uy())
+
     def connect_address_decoder_control_gnd(self):
         control_gnd = self.control_logic_inst.get_pin("gnd")
 
@@ -438,5 +459,5 @@ class Cam(sram.sram):
             else:
                 args.append("vdd")
             args.extend(["clk_buf", "s_en", "w_en", "search_en", "matchline_chb", "mw_en", "sel_all_rows", "latch_tags",
-                         "vdd", "gnd"])
+                         "search_ref", "vdd", "gnd"])
         super(Cam, self).connect_inst(args, check)

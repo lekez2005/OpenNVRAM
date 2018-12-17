@@ -109,7 +109,8 @@ class matchline_precharge(design.design):
 
             # left x
             bitcell_rects = self.bitcell.gds.getShapesInLayer(layer[shape_layer], purpose_num)
-            rightmost = max(map(lambda x: x[0], map(lambda x: x[1], bitcell_rects)))
+            rightmost = max(bitcell_rects, key=lambda x: x[1][0])[1][0]
+            bitcell_top_rect = max(bitcell_rects, key=lambda x: x[1][1])[1][1]
             rect_extension = rightmost - self.bitcell.width
             left = rect_extension
 
@@ -147,7 +148,7 @@ class matchline_precharge(design.design):
         self.add_layout_pin("vdd", "metal1", offset=vector(0, self.height - 0.5*vdd_height),
                             width=self.width, height=vdd_height)
 
-        # ml pin -> assumes bitcell ML pin is on M3 and flop din pin on M2
+        # ml pin
         bitcell_ml = self.bitcell.get_pin("ML")
         drain_pin = self.ptx_inst.get_pin("D")
         self.add_path("metal3", [vector(0, bitcell_ml.cy()),
@@ -156,13 +157,7 @@ class matchline_precharge(design.design):
         self.add_contact(contact.m2m3.layer_stack,
                          offset=vector(drain_pin.lx(), drain_pin.cy() - 0.5*contact.m2m3.second_layer_height))
         self.add_layout_pin("ml", "metal3", offset=vector(0, bitcell_ml.by()), width=self.width)
-        flop_din = self.ms_flop.get_pin("din")
-        self.add_rect("metal3", offset=vector(self.width, flop_din.by()), height=bitcell_ml.uy() - flop_din.by())
-        self.add_rect("metal3", offset=vector(self.width, flop_din.by()), width=flop_din.lx())
-        self.add_contact(contact.m2m3.layer_stack, offset=vector(self.width + contact.m2m3.second_layer_height, 0) +
-                         flop_din.ll(), rotate=90)
-        self.add_rect(flop_din.layer, offset=vector(self.width, 0) + flop_din.ll(), width=flop_din.width(),
-                      height=flop_din.height())
+
 
         # chb pin
         gate_pin = self.ptx_inst.get_pin("G")

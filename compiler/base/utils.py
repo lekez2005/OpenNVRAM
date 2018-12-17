@@ -161,7 +161,6 @@ def get_libcell_size(name, units, layer):
     cell_vlsi = gdsMill.VlsiLayout(units=units, from_file=cell_gds)
     cell_vlsi.load_from_file()
 
-    cell = {}
     measure_result = cell_vlsi.getLayoutBorder(layer)
     if measure_result == None:
         measure_result = cell_vlsi.measureSize(name)

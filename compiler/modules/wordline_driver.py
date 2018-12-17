@@ -20,6 +20,7 @@ class wordline_driver(design.design):
         self.rows = rows
         self.no_cols = no_cols
         self.module_insts = []
+        self.output_insts = []
         self.add_pins()
         self.design_layout()
         self.DRC_LVS()
@@ -196,6 +197,7 @@ class wordline_driver(design.design):
                                   width=a_pin.lx()-z_pin.rx())
 
 
+            self.output_insts.append(output_inst)
 
             # en connection
             a_pin = inv1_inst.get_pin("A")

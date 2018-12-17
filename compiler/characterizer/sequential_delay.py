@@ -363,7 +363,7 @@ class SequentialDelay(delay.delay):
             bl_name = "BL_READ_RISE_{}_{}".format(self.current_time, i)
 
             net = "D[{}]".format(i)
-            transition = self.get_transition(self.word_size-i, new_val)
+            transition = self.get_transition(self.word_size-i - 1, new_val)
             self.setup_delay_measurement(transition, net,
                                    delay_name="R_DELAY_{}_a{}_d{}".format(transition, address_int, i),
                                    slew_name="R_SLEW_{}_a{}_d{}".format(transition, address_int, i),
@@ -385,7 +385,7 @@ class SequentialDelay(delay.delay):
             else:
                 bl_label = None
             bl_name = "BL_WRITE_RISE_{}_{}".format(self.current_time, i)
-            transition = self.get_transition(self.word_size-i, new_val)
+            transition = self.get_transition(self.word_size-i-1, new_val)
             self.setup_delay_measurement(transition, label,
                                    delay_name="W_DELAY_{}_a{}_{}".format(transition, address_int, label),
                                    slew_name="W_SLEW_{}_a{}_{}".format(transition, address_int, label),

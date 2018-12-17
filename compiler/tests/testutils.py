@@ -4,6 +4,7 @@ sys.path.append(os.path.join(sys.path[0],".."))
 import globals
 from globals import OPTS
 import debug
+import options
 
 class openram_test(unittest.TestCase):
     """ Base unit test that we have some shared classes in. """
@@ -154,6 +155,21 @@ class openram_test(unittest.TestCase):
             self.fail("MISMATCH {0} {1}".format(file1,file2))
         else:
             debug.info(2,"MATCH {0} {1}".format(file1,file2))
+
+
+def replace_custom_temp(suffix, config_module_name):
+    config_module = __import__(config_module_name)
+
+    temp_folder = options.options.openram_temp
+    new_temp = os.path.join(temp_folder, suffix) + "/"
+
+    config_module.openram_temp = new_temp
+
+    for attr in ["spice_file", "pex_spice", "reduced_spice", "gds_file"]:
+        default_val = getattr(options.options, attr)
+        file_name = os.path.basename(default_val)
+        new_val = os.path.join(new_temp, file_name)
+        setattr(config_module, attr, new_val)
 
 
 def header(filename, technology):

@@ -1,11 +1,11 @@
-import design
 import debug
+from base import contact
+from base import design
+from base.vector import vector
+from globals import OPTS
+from pgates.ptx_spice import ptx_spice
 from tech import drc
 from tech import layer as tech_layers
-from vector import vector
-import contact
-from ptx_spice import ptx_spice
-from globals import OPTS
 
 
 class single_level_column_mux(design.design):
@@ -36,20 +36,32 @@ class single_level_column_mux(design.design):
         self.connect_gates()
         self.add_bitline_pins()
 
+    def calculate_top_space(self):
+        """Calculate space for body contact above transistor"""
+        # calculate bitcell extension
+        top_nwell = self.bitcell.get_top_rect("nwell")
+        self.nwell_extension = top_nwell - self.bitcell.height
+        self.body_contact_active_space = self.well_enclose_active
+
+        prelim_top_space = (self.nwell_extension + self.body_contact_active_space + self.body_contact_active_height +
+                          self.poly_to_active + self.poly_extend_active)
+
+        self.pimplant_height = max(prelim_top_space - self.nwell_extension - self.implant_enclose_ptx_active,
+                                   self.implant_width)
+        self.top_space = max(prelim_top_space, self.nwell_extension + self.pimplant_height)
+
 
     def add_ptx(self):
         """ Create the two pass gate NMOS transistors to switch the bitlines"""
 
         gate_contact_height = contact.poly.second_layer_height
         middle_space = gate_contact_height + 2*self.line_end_space
-        # TODO tune extra_top_space. This value was selected to pass drc
-        extra_top_space = self.wide_m1_space
-        top_space = self.poly_extend_active + drc["ptx_implant_enclosure_active"] + extra_top_space
 
-        extra_bottom_space = 0.5*self.m2_space# to give room for sel pin
-        bottom_space = top_space + extra_bottom_space
+        self.calculate_top_space()
+        extra_bottom_space = 0.5*self.m2_space  # to give room for sel pin
+        bottom_space = self.poly_extend_active + self.implant_enclose_poly + extra_bottom_space
 
-        self.height = top_space + bottom_space + middle_space + 2*self.ptx_width
+        self.height = self.top_space + bottom_space + middle_space + 2*self.ptx_width
         self.poly_height = middle_space + 2*(self.ptx_width + self.poly_extend_active)
         self.mid_y = bottom_space + 0.5*middle_space + self.ptx_width
         self.mid_x = 0.5 * self.width
@@ -84,8 +96,9 @@ class single_level_column_mux(design.design):
             offset = vector(self.poly_x_start + i*self.poly_pitch + 0.5*self.poly_width, self.mid_y)
             self.add_rect_center(poly_layers[i], offset=offset, width=self.poly_width, height=self.poly_height)
 
-        # add implant
-        self.add_rect("nimplant", offset=vector(0, 0), width=self.width, height=self.height)
+        # add nimplant
+        self.nimplant_height = self.active_mid_y_top + 0.5*self.ptx_width + self.implant_enclose_ptx_active
+        self.add_rect("nimplant", offset=vector(0, 0), width=self.width, height=self.nimplant_height)
 
         no_contacts = self.calculate_num_contacts(self.ptx_width)
         self.drain_x = [self.mid_x]

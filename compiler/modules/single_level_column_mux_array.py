@@ -1,11 +1,11 @@
-from math import log
-import design
-from single_level_column_mux import single_level_column_mux 
-import contact
-from tech import drc
 import debug
-import utils
-from vector import vector
+from base import contact
+from base import design
+from base import utils
+from base.vector import vector
+from globals import OPTS
+from modules.single_level_column_mux import single_level_column_mux
+from tech import drc
 
 
 class single_level_column_mux_array(design.design):
@@ -19,7 +19,7 @@ class single_level_column_mux_array(design.design):
         debug.info(1, "Creating {0}".format(self.name))
         self.columns = columns
         self.word_size = word_size
-        self.words_per_row = self.columns / self.word_size
+        self.words_per_row = int(self.columns / self.word_size)
         self.add_pins()
         self.create_layout()
         self.DRC_LVS()
@@ -33,25 +33,22 @@ class single_level_column_mux_array(design.design):
         for i in range(self.word_size):
             self.add_pin("bl_out[{}]".format(i))
             self.add_pin("br_out[{}]".format(i))
-        self.add_pin("gnd")  # TODO gnd pin
+        self.add_pin("gnd")
 
     def create_layout(self):
         self.add_modules()
         self.setup_layout_constants()
         self.create_array()
+        self.add_body_contacts()
         self.add_routing()
         # Find the highest shapes to determine height before adding well
         highest = self.find_highest_coords()
         self.height = highest.y 
         self.add_layout_pins()
 
-        
-
     def add_modules(self):
-        # FIXME: Why is this 4x?
-        self.mux = single_level_column_mux(tx_size=4)
+        self.mux = single_level_column_mux(tx_size=OPTS.column_mux_size)
         self.add_mod(self.mux)
-
 
     def setup_layout_constants(self):
         self.column_addr_size = int(self.words_per_row / 2)
@@ -60,8 +57,6 @@ class single_level_column_mux_array(design.design):
         # one set of metal1 routes for select signals and a pair to interconnect the mux outputs bl/br
         # two extra route pitch is to space from the sense amp
         self.route_height = (self.words_per_row + 4)*self.m1_pitch
-        
-
         
     def create_array(self):
         self.mux_inst = []
@@ -83,7 +78,6 @@ class single_level_column_mux_array(design.design):
                                "sel[{}]".format(col_num % self.words_per_row),
                                "gnd"])
 
-
     def add_layout_pins(self):
         """ Add the pins after we determine the height. """
         # For every column, add a pass gate
@@ -100,6 +94,40 @@ class single_level_column_mux_array(design.design):
                                 layer="metal2",
                                 offset=offset,
                                 height=self.height-offset.y)
+
+    def add_body_contacts(self):
+
+        # pimplant
+        pimplant_height = self.mux.pimplant_height
+        top_active_y_offset = self.mux_inst[0].uy() - self.mux.top_space
+        pimplant_y = top_active_y_offset + self.implant_enclose_ptx_active
+
+        implant_start = self.mux_inst[0].lx() + self.well_enclose_implant
+        implant_end = self.mux_inst[-1].rx() - self.well_enclose_implant
+        self.add_rect("pimplant", offset=vector(implant_start, pimplant_y), height=pimplant_height,
+                      width=implant_end - implant_start)
+        # active
+        active_height = self.mux.body_contact_active_height
+        active_y_offset = top_active_y_offset + self.poly_extend_active + self.poly_to_active
+        active_start = implant_start + self.implant_enclose_active
+        active_end = implant_end - self.implant_enclose_active
+        self.add_rect("active", offset=vector(active_start, active_y_offset), height=active_height,
+                      width=active_end - active_start)
+        # contact layer
+        active_enclosure = drc["cont_active_enclosure_contact"]
+        contact_x = active_start + active_enclosure
+        contact_y_offset = active_y_offset + 0.5*(active_height - self.contact_width)
+        while contact_x + self.contact_width + active_enclosure < active_end:
+            self.add_rect("contact", offset=vector(contact_x, contact_y_offset), width=self.contact_width,
+                          height=self.contact_width)
+            contact_x += self.contact_spacing + self.contact_width
+
+        # gnd pin
+        pin_y_offset = active_y_offset + 0.5*(active_height - self.rail_height)
+        pin_width = self.mux_inst[-1].rx()
+        self.add_layout_pin("gnd", "metal1", offset=vector(0, pin_y_offset), width=pin_width, height=self.rail_height)
+
+
 
 
     def add_routing(self):
@@ -119,9 +147,6 @@ class single_level_column_mux_array(design.design):
 
     def add_vertical_gate_rail(self):
         """  Connect the selection gate to the address rails """
-
-        # shift to use the blank space to the left of the transistor implant
-        sel_pos = self.mux.get_pin("sel").lx()
 
         # Offset to the first transistor gate in the pass gate
         for col in range(self.columns):
@@ -163,7 +188,6 @@ class single_level_column_mux_array(design.design):
                               width=width,
                               height=drc["minwidth_metal2"])
                           
-
                 # Extend the bitline output rails and gnd downward on the first bit of each n-way mux
                 self.add_layout_pin(text="bl_out[{}]".format(int(j/self.words_per_row)),
                                     layer="metal2",
@@ -203,6 +227,3 @@ class single_level_column_mux_array(design.design):
                 self.add_via(layers=("metal1", "via1", "metal2"),
                              offset= br_out_offset,
                              rotate=90)
-
-                
-            

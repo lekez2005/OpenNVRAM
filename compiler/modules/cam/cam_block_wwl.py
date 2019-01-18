@@ -1,9 +1,10 @@
-from cam_block import cam_block
-import contact
+from base import contact
+from base import utils
+from base.vector import vector
 from globals import OPTS
-import utils
-from vector import vector
+from cam_block import cam_block
 from wwl_driver_array import WwlDriverArray
+
 
 class cam_block_wwl(cam_block):
     """

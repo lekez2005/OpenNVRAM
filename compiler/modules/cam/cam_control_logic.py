@@ -1,8 +1,10 @@
-import contact
-import control_logic
+from importlib import reload
+
+from base import contact
+from base import utils
+from base.vector import vector
 from globals import OPTS
-import utils
-from vector import vector
+from modules import control_logic
 
 
 class cam_control_logic(control_logic.control_logic):

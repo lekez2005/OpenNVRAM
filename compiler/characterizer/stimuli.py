@@ -4,11 +4,13 @@ various functions that can be be used to generate stimulus for other
 simulations as well.
 """
 
-import tech
-import debug
-import utils
 import os
+
 import numpy as np
+
+import debug
+import tech
+from base import utils
 from globals import OPTS
 
 
@@ -24,11 +26,10 @@ class stimuli():
         self.tx_length = tech.spice["channel"]
 
         self.sf = stim_file
-        
+
         (self.process, self.voltage, self.temperature) = corner
         self.device_models = tech.spice["fet_models"][self.process]
 
-    
     def inst_sram(self, abits, dbits, sram_name):
         """ Function to instatiate an SRAM subckt. """
         self.sf.write("Xsram ")
@@ -42,14 +43,12 @@ class stimuli():
         self.sf.write("{0} {1} ".format(self.vdd_name, self.gnd_name))
         self.sf.write("{0}\n".format(sram_name))
 
-
     def inst_model(self, pins, model_name):
         """ Function to instantiate a generic model with a set of pins """
         self.sf.write("X{0} ".format(model_name))
         for pin in pins:
             self.sf.write("{0} ".format(pin))
         self.sf.write("{0}\n".format(model_name))
-
 
     def create_inverter(self, size=1, beta=2.5):
         """ Generates inverter for the top level signals (only for sim purposes) """
@@ -64,14 +63,13 @@ class stimuli():
                                                                         self.tx_length))
         self.sf.write(".ENDS test_inv\n")
 
-
-    def create_buffer(self, buffer_name, size=[1,3], beta=2.5):
+    def create_buffer(self, buffer_name, size=[1, 3], beta=2.5):
         """
             Generates buffer for top level signals (only for sim
             purposes). Size is pair for PMOS, NMOS width multiple. 
             """
 
-        self.sf.write(".SUBCKT test_{2} in out {0} {1}\n".format(self.vdd_name, 
+        self.sf.write(".SUBCKT test_{2} in out {0} {1}\n".format(self.vdd_name,
                                                                  self.gnd_name,
                                                                  buffer_name))
         self.sf.write("mpinv1 out_inv in {0} {0} {1} w={2}u l={3}u\n".format(self.vdd_name,
@@ -92,37 +90,34 @@ class stimuli():
                                                                               self.tx_length))
         self.sf.write(".ENDS test_{0}\n\n".format(buffer_name))
 
-
     def inst_buffer(self, buffer_name, signal_list):
         """ Adds buffers to each top level signal that is in signal_list (only for sim purposes) """
         for signal in signal_list:
             self.sf.write("X{0}_buffer {0} {0}_buf {1} {2} test_{3}\n".format(signal,
-                                                                              "test"+self.vdd_name,
-                                                                              "test"+self.gnd_name,
+                                                                              "test" + self.vdd_name,
+                                                                              "test" + self.gnd_name,
                                                                               buffer_name))
-
 
     def inst_inverter(self, signal_list):
         """ Adds inv for each signal that needs its inverted version (only for sim purposes) """
         for signal in signal_list:
             self.sf.write("X{0}_inv {0} {0}_inv {1} {2} test_inv\n".format(signal,
-                                                                           "test"+self.vdd_name,
-                                                                           "test"+self.gnd_name))
+                                                                           "test" + self.vdd_name,
+                                                                           "test" + self.gnd_name))
 
-        
     def inst_accesstx(self, dbits):
         """ Adds transmission gate for inputs to data-bus (only for sim purposes) """
         self.sf.write("* Tx Pin-list: Drain Gate Source Body\n")
         for i in range(dbits):
-            pmos_access_string="mp{0} DATA[{0}] acc_en D[{0}] {1} {2} w={3}u l={4}u\n"
+            pmos_access_string = "mp{0} DATA[{0}] acc_en D[{0}] {1} {2} w={3}u l={4}u\n"
             self.sf.write(pmos_access_string.format(i,
-                                                    "test"+self.vdd_name,
+                                                    "test" + self.vdd_name,
                                                     self.pmos_name,
                                                     20 * self.tx_width,
                                                     self.tx_length))
-            nmos_access_string="mn{0} DATA[{0}] acc_en_inv D[{0}] {1} {2} w={3}u l={4}u\n"
+            nmos_access_string = "mn{0} DATA[{0}] acc_en_inv D[{0}] {1} {2} w={3}u l={4}u\n"
             self.sf.write(nmos_access_string.format(i,
-                                                    "test"+self.gnd_name,
+                                                    "test" + self.gnd_name,
                                                     self.nmos_name,
                                                     10 * self.tx_width,
                                                     self.tx_length))
@@ -133,16 +128,15 @@ class stimuli():
             from 50% to 50%.
         """
         self.sf.write("* PULSE: period={0}\n".format(period))
-        pulse_string="V{0} {0} 0 PULSE ({1} {2} {3}n {4}n {5}n {6}n {7}n)\n"
-        self.sf.write(pulse_string.format(sig_name, 
+        pulse_string = "V{0} {0} 0 PULSE ({1} {2} {3}n {4}n {5}n {6}n {7}n)\n"
+        self.sf.write(pulse_string.format(sig_name,
                                           v1,
                                           v2,
                                           offset,
                                           t_rise,
-                                          t_fall, 
-                                          0.5*period-0.5*t_rise-0.5*t_fall,
+                                          t_fall,
+                                          0.5 * period - 0.5 * t_rise - 0.5 * t_fall,
                                           period))
-
 
     def gen_pwl(self, sig_name, clk_times, data_values, period, slew, setup):
         """ 
@@ -152,18 +146,18 @@ class stimuli():
             to the initial value.
         """
         # the initial value is not a clock time
-        debug.check(len(clk_times)==len(data_values),"Clock and data value lengths don't match.")
-    
+        debug.check(len(clk_times) == len(data_values), "Clock and data value lengths don't match.")
+
         # shift signal times earlier for setup time
-        times = np.array(clk_times) - setup*period
+        times = np.array(clk_times) - setup * period
         values = np.array(data_values) * self.voltage
         half_slew = 0.5 * slew
         self.sf.write("* (time, data): {}\n".format(zip(clk_times, data_values)))
         self.sf.write("V{0} {0} 0 PWL (0n {1}v ".format(sig_name, values[0]))
-        for i in range(1,len(times)):
-            self.sf.write("{0}n {1}v {2}n {3}v ".format(times[i]-half_slew,
-                                                        values[i-1],
-                                                        times[i]+half_slew,
+        for i in range(1, len(times)):
+            self.sf.write("{0}n {1}v {2}n {3}v ".format(times[i] - half_slew,
+                                                        values[i - 1],
+                                                        times[i] + half_slew,
                                                         values[i]))
         self.sf.write(")\n")
 
@@ -172,9 +166,9 @@ class stimuli():
         self.sf.write("V{0} {0} 0 DC {1}\n".format(sig_name, v_val))
 
     def get_inverse_voltage(self, value):
-        if value > 0.5*self.voltage:
+        if value > 0.5 * self.voltage:
             return 0
-        elif value <= 0.5*self.voltage:
+        elif value <= 0.5 * self.voltage:
             return self.voltage
         else:
             debug.error("Invalid value to get an inverse of: {0}".format(value))
@@ -186,11 +180,10 @@ class stimuli():
             return 1
         else:
             debug.error("Invalid value to get an inverse of: {0}".format(value))
-        
 
     def gen_meas_delay(self, meas_name, trig_name, targ_name, trig_val, targ_val, trig_dir, targ_dir, trig_td, targ_td):
         """ Creates the .meas statement for the measurement of delay """
-        measure_string=".meas tran {0} TRIG v({1}) VAL={2} {3}=1 TD={4}n TARG v({5}) VAL={6} {7}=1 TD={8}n\n\n"
+        measure_string = ".meas tran {0} TRIG v({1}) VAL={2} {3}=1 TD={4}n TARG v({5}) VAL={6} {7}=1 TD={8}n\n\n"
         self.sf.write(measure_string.format(meas_name,
                                             trig_name,
                                             trig_val,
@@ -200,7 +193,7 @@ class stimuli():
                                             targ_val,
                                             targ_dir,
                                             targ_td))
-    
+
     def gen_meas_power(self, meas_name, t_initial, t_final):
         """ Creates the .meas statement for the measurement of avg power """
         # power mea cmd is different in different spice:
@@ -212,7 +205,7 @@ class stimuli():
                                                                             power_exp,
                                                                             t_initial,
                                                                             t_final))
-    
+
     def write_control(self, end_time):
         """ Write the control cards to run and end the simulation """
         if OPTS.spice_name == "spectre":
@@ -231,8 +224,8 @@ class stimuli():
 
         # create plots for all signals
         self.sf.write("* probe is used for hspice/xa, while plot is used in ngspice\n")
-        if OPTS.debug_level>0:
-            if OPTS.spice_name in ["hspice","xa"]:
+        if OPTS.debug_level > 0:
+            if OPTS.spice_name in ["hspice", "xa"]:
                 self.sf.write(".probe V(*)\n")
             else:
                 self.sf.write(".plot V(*)\n")
@@ -246,20 +239,15 @@ class stimuli():
     def write_control_spectre(self, end_time):
         self.sf.write("simulator lang=spectre\n")
         self.sf.write("simulatorOptions options reltol=1e-3 vabstol=1e-6 iabstol=1e-12 temp={0} try_fast_op=no "
-            "scalem=1.0 scale=1.0 gmin={1} rforce=1 maxnotes=5 maxwarns=5 "
-            "digits=5 cols=80 dc_pivot_check=yes pivrel=1e-3\n".format(self.temperature, tech.spice["gmin"]))
+                      "scalem=1.0 scale=1.0 gmin={1} rforce=1 maxnotes=5 maxwarns=5 "
+                      "digits=5 cols=80 dc_pivot_check=yes pivrel=1e-3\n".format(self.temperature, tech.spice["gmin"]))
         self.sf.write('dcOp dc write="spectre.dc" readns="spectre.dc" maxiters=150 maxsteps=10000 annotate=status\n')
         self.sf.write('tran tran step={} stop={}n annotate=status maxiters=5\n'.format("5p", end_time))
 
         self.sf.write('saveOptions options save=lvlpub nestlvl=1 pwr=total \n')
-        #self.sf.write('saveOptions options save=all nestlvl=1 pwr=total \n')
-
+        # self.sf.write('saveOptions options save=all nestlvl=1 pwr=total \n')
 
         self.sf.write("simulator lang=spice\n")
-
-
-
-
 
     def write_include(self, circuit):
         """Writes include statements, inputs are lists of model files"""
@@ -278,6 +266,7 @@ class stimuli():
                 else:
                     debug.error(
                         "Could not find spice model: {0}\nSet SPICE_MODEL_DIR to over-ride path.\n".format(item))
+
             self.sf.write("\nsimulator lang=spice\n")
         else:
             self.sf.write("* {} process corner\n".format(self.process))
@@ -285,41 +274,40 @@ class stimuli():
                 if os.path.isfile(item):
                     self.sf.write(".include \"{0}\"\n".format(item))
                 else:
-                    debug.error("Could not find spice model: {0}\nSet SPICE_MODEL_DIR to over-ride path.\n".format(item))
-
+                    debug.error(
+                        "Could not find spice model: {0}\nSet SPICE_MODEL_DIR to over-ride path.\n".format(item))
 
     def write_supply(self):
         """ Writes supply voltage statements """
         self.sf.write("V{0} {0} 0 {1}\n".format(self.vdd_name, self.voltage))
         self.sf.write("V{0} {0} 0 {1}\n".format(self.gnd_name, 0))
         # This is for the test power supply
-        self.sf.write("V{0} {0} 0 {1}\n".format("test"+self.vdd_name, self.voltage))
-        self.sf.write("V{0} {0} 0 {1}\n".format("test"+self.gnd_name, 0))
-
+        self.sf.write("V{0} {0} 0 {1}\n".format("test" + self.vdd_name, self.voltage))
+        self.sf.write("V{0} {0} 0 {1}\n".format("test" + self.gnd_name, 0))
 
     def run_sim(self):
         """ Run hspice in batch mode and output rawfile to parse. """
-        temp_stim = "{0}stim.sp".format(OPTS.openram_temp)
+        temp_stim = os.path.join(OPTS.openram_temp, 'stim.sp')
         import datetime
         start_time = datetime.datetime.now()
-        debug.check(OPTS.spice_exe!="","No spice simulator has been found.")
-    
+        debug.check(OPTS.spice_exe != "", "No spice simulator has been found.")
+
         if OPTS.spice_name == "xa":
             # Output the xa configurations here. FIXME: Move this to write it once.
-            xa_cfg = open("{}xa.cfg".format(OPTS.openram_temp), "w")
+            xa_cfg = open(os.path.join(OPTS.openram_temp, "xa.cfg"), "w")
             xa_cfg.write("set_sim_level -level 7\n")
             xa_cfg.write("set_powernet_level 7 -node vdd\n")
             xa_cfg.close()
-            cmd = "{0} {1} -c {2}xa.cfg -o {2}xa -mt 2".format(OPTS.spice_exe,
+            cmd = "{0} {1} -c {2}xa.cfg -o {2} -mt 2".format(OPTS.spice_exe,
                                                                temp_stim,
-                                                               OPTS.openram_temp)
-            valid_retcode=0
+                                                               os.path.join(OPTS.openram_temp, "xa"))
+            valid_retcode = 0
         elif OPTS.spice_name == "hspice":
             # TODO: Should make multithreading parameter a configuration option
-            cmd = "{0} -mt 2 -i {1} -o {2}timing".format(OPTS.spice_exe,
+            cmd = "{0} -mt 2 -i {1} -o {2}".format(OPTS.spice_exe,
                                                          temp_stim,
-                                                         OPTS.openram_temp)
-            valid_retcode=0
+                                                         os.path.join(OPTS.openram_temp, "timing"))
+            valid_retcode = 0
         elif OPTS.spice_name == "spectre":
             extra_options = ""
             if OPTS.use_pex:
@@ -327,30 +315,26 @@ class stimuli():
                 extra_options += " +dcopt +postlayout "
                 # extra_options += " +dcopt +parasitics=20 "
             cmd = "{0} -64 {1} -format {2} -raw {3} ++aps {4} ".format(OPTS.spice_exe,
-                                                                      temp_stim,
-                                                                      OPTS.spectre_format,
-                                                                      OPTS.openram_temp,
-                                                                      extra_options)
+                                                                       temp_stim,
+                                                                       OPTS.spectre_format,
+                                                                       OPTS.openram_temp,
+                                                                       extra_options)
             valid_retcode = 0
         else:
             # ngspice 27+ supports threading with "set num_threads=4" in the stimulus file or a .spiceinit 
-            cmd = "{0} -b -o {2}timing.lis {1}".format(OPTS.spice_exe,
+            cmd = "{0} -b -o {2} {1}".format(OPTS.spice_exe,
                                                        temp_stim,
-                                                       OPTS.openram_temp)
+                                                       os.path.join(OPTS.openram_temp, "timing.lis"))
             # for some reason, ngspice-25 returns 1 when it only has acceptable warnings
-            valid_retcode=1
+            valid_retcode = 1
 
+        retcode = utils.run_command(cmd, stdout_file=os.path.join(OPTS.openram_temp, "spice_stdout.log"),
+                                    stderror_file=os.path.join(OPTS.openram_temp, "spice_stderr.log"),
+                                    verbose_level=1)
 
-        retcode = utils.run_command(cmd, stdout_file="{0}spice_stdout.log".format(OPTS.openram_temp),
-                          stderror_file="{0}spice_stderr.log".format(OPTS.openram_temp),
-                          verbose_level=1)
-
-        
         if retcode > valid_retcode:
             debug.error("Spice simulation error: " + cmd, -1)
         else:
             end_time = datetime.datetime.now()
-            delta_time = round((end_time-start_time).total_seconds(),1)
-            debug.info(2,"*** Spice: {} seconds".format(delta_time))
-
-    
+            delta_time = round((end_time - start_time).total_seconds(), 1)
+            debug.info(2, "*** Spice: {} seconds".format(delta_time))

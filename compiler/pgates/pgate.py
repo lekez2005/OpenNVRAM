@@ -1,13 +1,15 @@
-import contact
-import design
+import math
+
 import debug
+from base import contact
+from base import design
+from base import utils
+from base.utils import round_to_grid
+from base.vector import vector
 from globals import OPTS
 from tech import drc, parameter
 from tech import layer as tech_layers
-from vector import vector
-import math
-from utils import round_to_grid
-import utils
+
 
 class pgate(design.design):
     """
@@ -49,11 +51,8 @@ class pgate(design.design):
         for shrink_factor in shrink_factors:
             self.pmos_scale = _pmos_scale * shrink_factor
             self.nmos_scale = _nmos_scale * shrink_factor
-            try:
-                self.determine_tx_mults()
+            if self.determine_tx_mults():
                 break
-            except AssertionError:
-                continue
 
 
     def determine_tx_mults(self):
@@ -99,10 +98,10 @@ class pgate(design.design):
         self.tx_height_available = tx_height_available = self.height - (self.top_space +
                                                                         self.middle_space + self.bottom_space)
 
-        debug.check(tx_height_available > min_n_width + min_p_width,
-                    "Cell height {0} too small for simple pmos height {1}, nmos height {2}.".format(
+        if tx_height_available < min_n_width + min_p_width:
+            debug.info(2, "Warning: Cell height {0} too small for simple pmos height {1}, nmos height {2}.".format(
                         self.height, min_p_width, min_n_width))
-
+            return False
 
         # Determine the number of mults for each to fit width into available space
         self.nmos_width = self.nmos_size*drc["minwidth_tx"]
@@ -126,9 +125,11 @@ class pgate(design.design):
         # We also need to round the width to the grid or we will end up with LVS property
         # mismatch errors when fingers are not a grid length and get rounded in the offset geometry.
         self.nmos_width = round_to_grid(self.nmos_width / self.tx_mults)
-        debug.check(self.nmos_width>=drc["minwidth_tx"],"Cannot finger NMOS transistors to fit cell height.")
+        debug.check(self.nmos_width >= drc["minwidth_tx"], "Cannot finger NMOS transistors to fit cell height.")
         self.pmos_width = round_to_grid(self.pmos_width / self.tx_mults)
-        debug.check(self.pmos_width>=drc["minwidth_tx"],"Cannot finger PMOS transistors to fit cell height.")
+        debug.check(self.pmos_width >= drc["minwidth_tx"], "Cannot finger PMOS transistors to fit cell height.")
+
+        return True
 
     def setup_layout_constants(self):
 
@@ -266,7 +267,7 @@ class pgate(design.design):
                                     size=(1, self.nmos_contacts))
 
     def connect_positions_m2(self, positions, mid_y, tx_width, no_contacts, contact_shift):
-        m1m2_layers = contact.contact.m1m2_layers
+        m1m2_layers = contact.m1m2.layer_stack
         for i in range(len(positions)):
             x_offset = positions[i]
             offset = vector(x_offset, mid_y)
@@ -284,7 +285,6 @@ class pgate(design.design):
                 height = utils.ceil(max(self.minarea_metal1_contact/metal_fill_width,
                                            active_cont.mod.first_layer_height))
                 if height > tx_width:
-                    direction = 1 if mid_y > self.mid_y else -1
                     if OPTS.use_body_taps and self.align_bitcell and self.same_line_inputs:
                         if mid_y > self.mid_y:
                             rect_mid = mid_y - 0.5*contact.m1m2.second_layer_height + 0.5*height
@@ -292,8 +292,10 @@ class pgate(design.design):
                             rect_mid = mid_y + 0.5*contact.m1m2.second_layer_height - 0.5*height
                     else:
                         via_height = contact.m1m2.first_layer_height
-                        rect_bottom = mid_y - direction*0.5*via_height - height
-                        rect_mid = rect_bottom - direction*0.5*height
+                        if mid_y > self.mid_y:
+                            rect_mid = mid_y - 0.5*via_height + 0.5*height
+                        else:
+                            rect_mid = mid_y + 0.5*via_height - 0.5*height
 
                     offset = vector(offset.x, rect_mid)
                 self.add_rect_center("metal1", offset=offset, height=height,
@@ -393,10 +395,8 @@ class pgate(design.design):
                     self.add_rect_center("contact", offset=vector(x_offset, y_offset))
 
     def add_output_pin(self):
-        self.output_y = (self.active_mid_y_pmos + self.active_mid_y_nmos) / 2
-        offset = vector(self.output_x + 0.5 * self.m1_width, self.output_y)
-        self.add_layout_pin_center_rect("Z", "metal1", offset=offset,
-                                        height=self.active_mid_y_pmos-self.active_mid_y_nmos)
+        offset = vector(self.output_x, self.active_mid_y_nmos)
+        self.add_layout_pin("Z", "metal1", offset=offset, height=self.active_mid_y_pmos-self.active_mid_y_nmos)
 
     def get_left_source_drain(self):
         """Return left-most source or drain"""
@@ -407,9 +407,9 @@ class pgate(design.design):
         input_list = [top_left, top_right, bottom_left, bottom_right]
 
         x_extension = lambda x: abs(0.5*(x.mod.nwell_width-x.mod.width))
-        x_extensions = map(x_extension, input_list)
+        x_extensions = list(map(x_extension, input_list))
         y_height = lambda x: x.mod.height - x.mod.mid_y
-        y_heights = map(y_height, input_list)
+        y_heights = list(map(y_height, input_list))
 
         nwell_left = min(top_left.lx() - x_extensions[0], bottom_left.lx() - x_extensions[2])
         nwell_right = max(top_right.rx() + x_extensions[1], bottom_right.rx() + x_extensions[3])

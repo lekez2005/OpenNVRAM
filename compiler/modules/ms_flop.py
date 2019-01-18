@@ -1,9 +1,7 @@
-import globals
-import design
-from math import log
-import design
-from tech import GDS,layer
-import utils
+from base import design
+from base import utils
+from tech import GDS, layer
+
 
 class ms_flop(design.design):
     """
@@ -40,7 +38,7 @@ class ms_flop(design.design):
         
     def calculate_effective_capacitance(self, load):
         """Computes effective capacitance. Results in fF"""
-        from tech import spice, parameter
+        from tech import spice
         c_load = load
         c_para = spice["flop_para_cap"]#ff
         transistion_prob = spice["flop_transisition_prob"]

@@ -1,5 +1,3 @@
-import debug
-
 class verilog(object):
     """ Create a behavioral Verilog file for simulation."""
 

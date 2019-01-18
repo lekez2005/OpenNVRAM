@@ -1,35 +1,16 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3
 """
-Run a regresion test on a wordline_driver array
+Run a regression test on a wordline_driver array
 """
 
-import unittest
-from testutils import header,openram_test
-import sys,os
-sys.path.append(os.path.join(sys.path[0],".."))
-import globals
-from globals import OPTS
+from testutils import OpenRamTest
 import debug
 
 
-class signal_gate_test(openram_test):
-
-    @classmethod
-    def setUpClass(cls):
-        globals.init_openram("config_20_{0}".format(OPTS.tech_name))
-
-    @classmethod
-    def tearDownClass(cls):
-        globals.end_openram()
+class SignalGateTest(OpenRamTest):
 
     def run_commands(self, buffer_stages):
-
-        global verify
-        import verify
-        OPTS.check_lvsdrc = False
-
-        import signal_gate
-
+        from modules import signal_gate
         gate = signal_gate.SignalGate(buffer_stages)
         self.local_check(gate)
 
@@ -46,9 +27,4 @@ class signal_gate_test(openram_test):
         self.run_commands([1, 2, 4, 8])
 
         
-# instantiate a copy of the class to actually run the test
-(OPTS, args) = globals.parse_args()
-del sys.argv[1:]
-header(__file__, OPTS.tech_name)
-if __name__ == "__main__":
-    unittest.main()
+OpenRamTest.run_tests(__name__)

@@ -1,35 +1,50 @@
 import os
 import re
+import subprocess
+
 import debug
 from globals import OPTS
 
-        
+
 def relative_compare(value1,value2,error_tolerance=0.001):
     """ This is used to compare relative values for convergence. """
     return (abs(value1 - value2) / max(value1,value2) <= error_tolerance)
 
 
-def parse_output(filename, key, find_max=True):
-    """Parses a hspice output.lis file for a key value"""
-    re_pattern = r"{0}\s*=\s*(-?\d+.?\d*[e]?[-+]?[0-9]*\S*)\s+.*".format(key)
-    if OPTS.spice_name == "xa" :
+def get_measurement_file(filename):
+    if OPTS.spice_name == "xa":
         # customsim has a different output file name
-        full_filename="{0}xa.meas".format(OPTS.openram_temp)
+        full_filename = os.path.join(OPTS.openram_temp, "xa.meas")
     elif OPTS.spice_name == "spectre":
-        full_filename = os.path.join(OPTS.openram_temp, "transient1.meas_tran")
-        re_pattern = r'"{0}"\s*"measReal"\s*((?:\d+.?\d*[e]?[-+]?[0-9]*)|(?:nan)\S*)\s+.*'.format(key)
+        full_filename = temp_filename = os.path.join(OPTS.openram_temp, "transient1.meas_tran")
+        if OPTS.spectre_format in ["psfxl", "psfbin"]:
+            full_filename = os.path.join(OPTS.openram_temp, "transient1.meas_tran_ascii")
+            cmd = "psf {} > {}".format(temp_filename, full_filename)
+            subprocess.run(cmd, shell=True, check=True)
     else:
         # ngspice/hspice using a .lis file
-        full_filename="{0}{1}.lis".format(OPTS.openram_temp, filename)
+        full_filename = os.path.join(OPTS.openram_temp, filename + ".lis")
 
+    return full_filename
+
+
+def parse_output(filename, key, find_max=True):
+    """Parses a hspice output.lis file for a key value"""
+    if OPTS.spice_name == "spectre":
+        re_pattern = r'"{0}"\s*"measReal"\s*((?:\d+.?\d*[e]?[-+]?[0-9]*)|(?:nan)\S*)\s+.*'.format(key)
+    else:
+        re_pattern = r"{0}\s*=\s*(-?\d+.?\d*[e]?[-+]?[0-9]*\S*)\s+.*".format(key)
+    full_filename = get_measurement_file(filename)
     try:
-        f = open(full_filename, "r")
+        f = open(full_filename, "rt")
     except IOError:
         debug.error("Unable to open spice output file: {0}".format(full_filename),1)
-    contents = f.read()
+    else:
+        with f:
+            contents = f.read()
     # val = re.search(r"{0}\s*=\s*(-?\d+.?\d*\S*)\s+.*".format(key), contents)
     vals = re.findall(re_pattern, contents, flags=re.IGNORECASE)
-    vals_float = map(convert_to_float, vals)
+    vals_float = list(map(convert_to_float, vals))
     if len(vals_float) == 0:
         return False
     elif len(vals_float) == 1:

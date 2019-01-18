@@ -1,8 +1,8 @@
 import debug
-import design
-import ptx
+from base import design
+from base.vector import vector
 from tech import drc
-from vector import vector
+from . import ptx
 
 
 class ptx_spice(ptx.ptx):

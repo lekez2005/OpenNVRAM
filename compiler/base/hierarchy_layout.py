@@ -1,18 +1,21 @@
 import itertools
-import geometry
-import gdsMill
+import os
+
 import debug
+from base import geometry
+from base import lef
+from base.pin_layout import pin_layout
+from base.vector import vector
+from gdsMill import gdsMill
 from globals import OPTS
 from tech import drc, GDS
 from tech import layer as techlayer, layer_label_map
+
 try:
     from tech import purpose as techpurpose
 except ImportError:
     techpurpose = {}
-import os
-from vector import vector
-from pin_layout import pin_layout
-import lef
+
 
 class layout(lef.lef):
     """
@@ -51,37 +54,36 @@ class layout(lef.lef):
         in the stack from 0..n
         """
 
-        if (inv_num % 2 == 0):
-            base_offset=vector(x_offset, inv_num * height)
+        if inv_num % 2 == 0:
+            base_offset = vector(x_offset, inv_num * height)
             y_dir = 1
         else:
             # we lose a rail after every 2 gates            
-            base_offset=vector(x_offset, (inv_num+1) * height - (inv_num%2)*rail_height)
+            base_offset = vector(x_offset, (inv_num+1) * height - (inv_num % 2)*rail_height)
             y_dir = -1
             
-        return (base_offset,y_dir)
-
+        return base_offset, y_dir
 
     def find_lowest_coords(self):
         """Finds the lowest set of 2d cartesian coordinates within
         this layout"""
 
         objs = self.objs + list(itertools.chain.from_iterable(self.pin_map.values()))
-        objs = filter(lambda x: not x.name == "label", objs)
-        if len(objs)>0:
+        objs = list(filter(lambda x: not x.name == "label", objs))
+        if len(objs) > 0:
             lowestx1 = min(obj.lx() for obj in objs)
             lowesty1 = min(obj.by() for obj in objs)
         else:
-            lowestx1=lowesty1=None
-        if len(self.insts)>0:
+            lowestx1 = lowesty1 = None
+        if len(self.insts) > 0:
             lowestx2 = min(inst.lx() for inst in self.insts)
             lowesty2 = min(inst.by() for inst in self.insts)
         else:
-            lowestx2=lowesty2=None
-        if lowestx1==None:
-            return vector(lowestx2,lowesty2)
-        elif lowestx2==None:
-            return vector(lowestx1,lowesty1)            
+            lowestx2 = lowesty2 = None
+        if lowestx1 is None:
+            return vector(lowestx2, lowesty2)
+        elif lowestx2 is None:
+            return vector(lowestx1, lowesty1)
         else:
             return vector(min(lowestx1, lowestx2), min(lowesty1, lowesty2))
 
@@ -90,24 +92,23 @@ class layout(lef.lef):
         this layout"""
 
         objs = self.objs + list(itertools.chain.from_iterable(self.pin_map.values()))
-        objs = filter(lambda x: not x.name == "label", objs)
-        if len(objs)>0:
+        objs = list(filter(lambda x: not x.name == "label", objs))
+        if len(objs) > 0:
             highestx1 = max(obj.rx() for obj in objs)
             highesty1 = max(obj.uy() for obj in objs)
         else:
-            highestx1=highesty1=None        
-        if len(self.insts)>0:            
+            highestx1 = highesty1 = None
+        if len(self.insts) > 0:
             highestx2 = max(inst.rx() for inst in self.insts)
             highesty2 = max(inst.uy() for inst in self.insts)
         else:
-            highestx2=highesty2=None
-        if highestx1==None:
-            return vector(highestx2,highesty2)
-        elif highestx2==None:
-            return vector(highestx1,highesty1)            
+            highestx2 = highesty2 = None
+        if highestx1 is None:
+            return vector(highestx2, highesty2)
+        elif highestx2 is None:
+            return vector(highestx1, highesty1)
         else:
             return vector(max(highestx1, highestx2), max(highesty1, highesty2))
-
 
     def translate_all(self, offset):
         """
@@ -125,10 +126,11 @@ class layout(lef.lef):
             pin_list = self.pin_map[pin_name]
             for pin in pin_list:
                 pin.rect = [pin.ll() - offset, pin.ur() - offset]
-            
 
-    def add_inst(self, name, mod, offset=[0,0], mirror="R0",rotate=0):
+    def add_inst(self, name, mod, offset=None, mirror="R0", rotate=0) -> geometry.instance:
         """Adds an instance of a mod to this module"""
+        if offset is None:
+            offset = vector(0, 0)
         self.insts.append(geometry.instance(name, mod, offset, mirror, rotate))
         debug.info(3, "adding instance {}".format(self.insts[-1]))
 
@@ -312,7 +314,7 @@ class layout(lef.lef):
     def add_path(self, layer, coordinates, width=None):
         """Connects a routing path on given layer,coordinates,width."""
         debug.info(4,"add path " + str(layer) + " " + str(coordinates))
-        import path
+        from base import path
         # NOTE: (UNTESTED) add_path(...) is currently not used
         # negative layers indicate "unused" layers in a given technology
         #layer_num = techlayer[layer]
@@ -341,7 +343,7 @@ class layout(lef.lef):
     def add_wire(self, layers, coordinates):
         """Connects a routing path on given layer,coordinates,width.
         The layers are the (horizontal, via, vertical). """
-        import wire
+        from base import wire
         # add an instance of our path that breaks down into rectangles and contacts
         wire.wire(obj=self,
                   layer_stack=layers, 
@@ -369,7 +371,7 @@ class layout(lef.lef):
     
     def add_via(self, layers, offset, size=[1,1], mirror="R0", rotate=0, implant_type=None, well_type=None):
         """ Add a three layer via structure. """
-        import contact
+        from base import contact
         via = contact.contact(layer_stack=layers,
                               dimensions=size,
                               implant_type=implant_type,
@@ -386,7 +388,7 @@ class layout(lef.lef):
 
     def add_via_center(self, layers, offset, size=[1,1], mirror="R0", rotate=0, implant_type=None, well_type=None):
         """ Add a three layer via structure by the center coordinate accounting for mirroring and rotation. """
-        import contact
+        from base import contact
         via = contact.contact(layer_stack=layers,
                               dimensions=size,
                               implant_type=implant_type,
@@ -525,14 +527,19 @@ class layout(lef.lef):
         # FIXME: We don't have a body contact in ptx, so just ignore it for now
         import copy
         pin_names = copy.deepcopy(self.pins)
-        if self.name.startswith("pmos") or self.name.startswith("nmos"):
+        class_name = self.__class__.__name__
+        if class_name == "ptx":
             pin_names.remove("B")
+        elif class_name == "ptx_spice":  # ptx spice has no layout
+            pin_names = []
+        elif class_name in ["single_level_column_mux", "single_level_column_mux_array"]:
+            pin_names.remove("gnd")
             
         blockages = []
         for pin_name in pin_names:
             pin_list = self.get_pins(pin_name)
             for pin in pin_list:
-                if pin.layer_num==layer_num:
+                if pin.layer_num == layer_num:
                     blockages += [pin.rect]
 
         return blockages

@@ -1,10 +1,12 @@
+import os
 import shutil
+
 import debug
 import tech
-import stimuli
-from trim_spice import trim_spice
-import charutils as ch
 from globals import OPTS
+from . import charutils as ch
+from . import stimuli
+from .trim_spice import trim_spice
 
 
 class delay(object):
@@ -96,7 +98,7 @@ class delay(object):
         self.obtain_cycle_times()
 
         # creates and opens stimulus file for writing
-        temp_stim = "{0}/stim.sp".format(OPTS.openram_temp)
+        temp_stim = os.path.join(OPTS.openram_temp, "stim.sp")
         self.sf = open(temp_stim, "w")
         if OPTS.spice_name == "spectre":
             self.sf.write("simulator lang=spice\n")
@@ -158,7 +160,7 @@ class delay(object):
         self.obtain_cycle_times()
 
         # creates and opens stimulus file for writing
-        temp_stim = "{0}/stim.sp".format(OPTS.openram_temp)
+        temp_stim = os.path.join(OPTS.openram_temp, "stim.sp")
         self.sf = open(temp_stim, "w")
         if OPTS.spice_name == "spectre":
             self.sf.write("simulator lang=spice\n")
@@ -399,8 +401,10 @@ class delay(object):
         #key=raw_input("press return to continue")
         return (leakage_power*1e3, trim_leakage_power*1e3)
     
-    def check_valid_delays(self, (delay_hl, delay_lh, slew_hl, slew_lh)):
+    def check_valid_delays(self, delay_tuple):
         """ Check if the measurements are defined and if they are valid. """
+
+        (delay_hl, delay_lh, slew_hl, slew_lh) = delay_tuple
 
         # if it failed or the read was longer than a period
         if type(delay_hl)!=float or type(delay_lh)!=float or type(slew_lh)!=float or type(slew_hl)!=float:
@@ -536,7 +540,7 @@ class delay(object):
         if OPTS.use_pex:
             self.trim_sp_file = OPTS.pex_spice
         elif OPTS.trim_netlist:
-            self.trim_sp_file = "{}reduced.sp".format(OPTS.openram_temp)
+            self.trim_sp_file = os.path.join(OPTS.openram_temp, "reduced.sp")
             self.trimsp=trim_spice(self.sp_file, self.trim_sp_file)
             self.trimsp.set_configuration(self.num_banks,
                                           self.num_rows,
@@ -545,10 +549,10 @@ class delay(object):
             self.trimsp.trim(self.probe_address,self.probe_data)
         else:
             # The non-reduced netlist file when it is disabled
-            self.trim_sp_file = "{}sram.sp".format(OPTS.openram_temp)
+            self.trim_sp_file = os.path.join(OPTS.openram_temp, "sram.sp")
 
         # The non-reduced netlist file for power simulation 
-        self.sim_sp_file = "{}sram.sp".format(OPTS.openram_temp)
+        self.sim_sp_file = os.path.join(OPTS.openram_temp, "sram.sp")
         # Make a copy in temp for debugging
         shutil.copy(self.sp_file, self.sim_sp_file)
 

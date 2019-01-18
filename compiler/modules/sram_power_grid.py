@@ -1,31 +1,30 @@
-
-import contact
-from contact_full_stack import ContactFullStack
-import utils
-from vector import vector
+from base import contact
+from base import utils
+from base.contact_full_stack import ContactFullStack
+from base.vector import vector
 
 
 class Mixin:
 
     def get_m1_vdd(self, bank_inst):
-        return filter(lambda x: x.layer == "metal1", bank_inst.get_pins("vdd"))
+        return list(filter(lambda x: x.layer == "metal1", bank_inst.get_pins("vdd")))
 
     def get_m2_gnd(self, bank_inst):
-        return filter(lambda x: x.layer == "metal2", bank_inst.get_pins("gnd"))
+        return list(filter(lambda x: x.layer == "metal2", bank_inst.get_pins("gnd")))
 
     def route_one_bank_power(self):
         m1mbottop = self.route_control_logic_power()
 
         # add vdd pin
-        vdd_pin = filter(lambda x: not x.layer == "metal1", self.bank_inst.get_pins("vdd"))[0]
+        vdd_pin = next(filter(lambda x: not x.layer == "metal1", self.bank_inst.get_pins("vdd")))
         self.add_layout_pin("vdd", vdd_pin.layer, vdd_pin.ll(), vdd_pin.width(), vdd_pin.height())
 
         # add gnd pin
-        gnd_pin = filter(lambda x: not x.layer == "metal1", self.bank_inst.get_pins("gnd"))[0]
+        gnd_pin = next(filter(lambda x: not x.layer == "metal1", self.bank_inst.get_pins("gnd")))
         self.add_layout_pin("gnd", gnd_pin.layer, gnd_pin.ll(), gnd_pin.width(), gnd_pin.height())
 
         # shift vias relative to banks
-        gnd_rails = map(lambda x: utils.transform_relative(x.offset, self.bank_inst).y, self.bank.gnd_grid_rects)
+        gnd_rails = list(map(lambda x: utils.transform_relative(x.offset, self.bank_inst).y, self.bank.gnd_grid_rects))
 
         bottom_power_layer = self.bank.bottom_power_layer
 
@@ -53,15 +52,15 @@ class Mixin:
 
 
         # filter vdd vias
-        vdd_grid_bottom = map(lambda x: x.offset, bank_inst.mod.vdd_grid_rects)
-        vdd_via_pos = map(lambda x: utils.transform_relative(x, bank_inst).y, vdd_grid_bottom)  # initial list
+        vdd_grid_bottom = list(map(lambda x: x.offset, bank_inst.mod.vdd_grid_rects))
+        vdd_via_pos = list(map(lambda x: utils.transform_relative(x, bank_inst).y, vdd_grid_bottom))  # initial list
 
-        gnd_grid_bottom = map(lambda x: x.offset, bank_inst.mod.gnd_grid_rects)
-        gnd_via_pos = map(lambda x: utils.transform_relative(x, bank_inst).y, gnd_grid_bottom)  # initial list
+        gnd_grid_bottom = list(map(lambda x: x.offset, bank_inst.mod.gnd_grid_rects))
+        gnd_via_pos = list(map(lambda x: utils.transform_relative(x, bank_inst).y, gnd_grid_bottom))  # initial list
 
         if 'X' in bank_inst.mirror:
-            vdd_via_pos = map(lambda x: x - m1mbottop.height, vdd_via_pos)
-            gnd_via_pos = map(lambda x: x - m1mbottop.height, gnd_via_pos)
+            vdd_via_pos = list(map(lambda x: x - m1mbottop.height, vdd_via_pos))
+            gnd_via_pos = list(map(lambda x: x - m1mbottop.height, gnd_via_pos))
 
         temp_vdd_via_pos = []
         for via_pos in vdd_via_pos:
@@ -77,7 +76,7 @@ class Mixin:
         # filter gnd vias
 
 
-        control_pins = map(bank_inst.get_pin, self.control_logic_outputs + ["bank_sel"])
+        control_pins = list(map(bank_inst.get_pin, self.control_logic_outputs + ["bank_sel"]))
         bottom_control_pin = min(control_pins, key=lambda x: x.by()).by()
         temp_gnd_via_pos = []
         for via_pos in gnd_via_pos:
@@ -195,7 +194,7 @@ class Mixin:
 
         for j in [0, 1]:
             for i in range(len(reference_banks)):
-                via_pos_y = map(lambda x: utils.transform_relative(x.offset, reference_banks[i]).y, grid_rects[j])
+                via_pos_y = list(map(lambda x: utils.transform_relative(x.offset, reference_banks[i]).y, grid_rects[j]))
                 if i == 0:
                     via_pos_y = [x - m1mbottop.second_layer_height for x in via_pos_y]
                 all_rails[j].extend(via_pos_y)
@@ -262,7 +261,7 @@ class Mixin:
     def connect_address_decoder_control_gnd(self):
         # connect msb_address, decoder and control_logic gnd pins
         gnd_pins = self.msb_address_inst.get_pins("gnd") + self.msb_decoder_inst.get_pins("gnd")
-        gnd_pins = filter(lambda x: x.layer == "metal1", gnd_pins)
+        gnd_pins = list(filter(lambda x: x.layer == "metal1", gnd_pins))
         right_most_pin = max(gnd_pins, key=lambda x: x.rx())
         bottom_gnd = min(gnd_pins, key=lambda x: x.by())
         top_gnd = max(gnd_pins, key=lambda x: x.by())
@@ -302,7 +301,8 @@ class Mixin:
         top_vdd = max(self.bank_inst[2].get_pins("vdd"), key=lambda x: x.by())
         for i in [0, 1]:
             bank_inst = self.bank_inst[i]
-            for pin in bank_inst.get_pins("vdd") + filter(lambda x: not x.layer == "metal2", bank_inst.get_pins("gnd")):
+            for pin in (bank_inst.get_pins("vdd") +
+                        list(filter(lambda x: not x.layer == "metal2", bank_inst.get_pins("gnd")))):
                 self.add_rect(pin.layer, offset=pin.ul(), width=pin.width(), height=top_vdd.by()-pin.uy())
             for pin in self.get_m2_gnd(bank_inst):
                 self.add_rect("metal2", offset=vector(pin.lx(), self.horz_control_bus_positions["gnd"].y),

@@ -1,25 +1,18 @@
-#!/usr/bin/env python2.7
-"Run a regresion test on a basic path"
+#!/usr/bin/env python3
+"Run a regression test on a basic path"
 
-import unittest
-from testutils import header,openram_test
-import sys,os
-sys.path.append(os.path.join(sys.path[0],".."))
+from testutils import OpenRamTest
 import globals
 from globals import OPTS
-import debug
 
-class path_test(openram_test):
+
+class PathTest(OpenRamTest):
 
     def runTest(self):
-        globals.init_openram("config_20_{0}".format(OPTS.tech_name))
-        global verify
-        import verify
-        OPTS.check_lvsdrc = False
-
-        import path
         import tech
-        import design
+
+        from base import design
+        from base import path
 
         min_space = 2 * tech.drc["minwidth_metal1"]
         layer_stack = ("metal1")
@@ -33,7 +26,6 @@ class path_test(openram_test):
         w = design.design("path_test0")
         path.path(w,layer_stack, position_list)
         self.local_drc_check(w)
-
 
         min_space = 2 * tech.drc["minwidth_metal1"]
         layer_stack = ("metal1")
@@ -89,10 +81,4 @@ class path_test(openram_test):
         globals.end_openram()
         
 
-
-# instantiate a copy of the class to actually run the test
-if __name__ == "__main__":
-    (OPTS, args) = globals.parse_args()
-    del sys.argv[1:]
-    header(__file__, OPTS.tech_name)
-    unittest.main()
+OpenRamTest.run_tests(__name__)

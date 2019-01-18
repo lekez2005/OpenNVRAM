@@ -1,13 +1,14 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3
 """
 Test for correctness of decoder logic
 """
 
-from cam_test_base import CamTestBase, run_tests
-import debug
+import re
 
 import numpy as np
-import re
+
+import debug
+from cam_test_base import CamTestBase
 
 
 class DecoderLogicTest(CamTestBase):
@@ -22,7 +23,7 @@ class DecoderLogicTest(CamTestBase):
         """Return indices of connecions of a given row of a given row"""
         z_name = 'Z[{}]'.format(row)
         filter_lambda = lambda x: z_name in x and x.index(z_name) > 0
-        z_connections = filter(filter_lambda, decoder.conns)
+        z_connections = list(filter(filter_lambda, decoder.conns))
         if len(z_connections) == 1:
             return z_connections[0]
         else:
@@ -32,7 +33,7 @@ class DecoderLogicTest(CamTestBase):
         # get just the inputs
         inputs = inputs[:-3]
         pattern = re.compile('\[(\d+)\]')
-        inputs = map(lambda x: int(pattern.search(x).groups()[0]), inputs)
+        inputs = list(map(lambda x: int(pattern.search(x).groups()[0]), inputs))
         total = inputs[0]
         for i in range(1, len(inputs)):
             num_bits_lambda = lambda x: int(np.log2(len(x)))
@@ -54,7 +55,6 @@ class DecoderLogicTest(CamTestBase):
             self.assertEqual(i, evaluated_row,
                              "Expected {} Got {} for decoder_{}".format(i, evaluated_row, num_rows))
 
-
     def test_4_input_decoder(self):
         self.evaluate_n_inputs(4)
 
@@ -75,4 +75,4 @@ class DecoderLogicTest(CamTestBase):
 
 
 
-run_tests(__name__)
+CamTestBase.run_tests(__name__)

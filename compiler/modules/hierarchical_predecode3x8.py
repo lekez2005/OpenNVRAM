@@ -1,8 +1,4 @@
-from tech import drc
-import debug
-import design
-from vector import vector
-from hierarchical_predecode import hierarchical_predecode
+from modules.hierarchical_predecode import hierarchical_predecode
 
 class hierarchical_predecode3x8(hierarchical_predecode):
     """

@@ -1,7 +1,7 @@
-import design
 import debug
+from base import design
+from base import utils
 from modules import bitcell
-import utils
 from tech import GDS, layer
 
 

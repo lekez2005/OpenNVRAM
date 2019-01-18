@@ -1,14 +1,17 @@
+from importlib import reload
+
 import numpy as np
 
-import contact
 import debug
-import design
+from base import contact
+from base import design
+from base.vector import vector
 from globals import OPTS
-from pinv import pinv
-from pnand2 import pnand2
-from pnand3 import pnand3
+from pgates.pinv import pinv
+from pgates.pnand2 import pnand2
+from pgates.pnand3 import pnand3
 from tech import drc
-from vector import vector
+
 
 class ColumnDecoder(design.design):
     """
@@ -91,7 +94,7 @@ class ColumnDecoder(design.design):
                 out_pins.append("dout[{}]".format(i+self.row_addr_size))
                 out_pins.append("dout_bar[{}]".format(i+self.row_addr_size))
 
-        din_pins = map(lambda x: "din[{}]".format(x), range(self.total_ff))
+        din_pins = list(map(lambda x: "din[{}]".format(x), range(self.total_ff)))
 
         self.msf_addr_inst = self.add_inst("msf_addr_in", mod=self.msf_addr_in,
                                            offset=vector(0, self.ff_y_offset + self.msf_addr_in.height),

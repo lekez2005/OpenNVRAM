@@ -1,17 +1,19 @@
-from math import log
-import design
-from tech import drc, parameter
-import debug
-import contact
-import control_logic_buffer
-from pinv import pinv
-from pnand2 import pnand2
-from pnand3 import pnand3
-from pnor2 import pnor2
-import pgate
 import math
-from vector import vector
+from importlib import reload
+
+import debug
+from base import contact
+from base import design
+from base.vector import vector
 from globals import OPTS
+from modules import control_logic_buffer
+from pgates import pgate
+from pgates.pinv import pinv
+from pgates.pnand2 import pnand2
+from pgates.pnand3 import pnand3
+from pgates.pnor2 import pnor2
+from tech import drc
+
 
 class control_logic(design.design):
     """
@@ -418,11 +420,11 @@ class control_logic(design.design):
 
         y_pos = self.msf_inst.uy() + self.m1_pitch
         m2_pin_lambda = lambda x: x.layer=="metal2"
-        self.route_pin_to_rail(filter(m2_pin_lambda, self.msf_inst.get_pins("din[2]"))[0],
+        self.route_pin_to_rail(next(filter(m2_pin_lambda, self.msf_inst.get_pins("din[2]"))),
                                self.web_rail, y_pos, self.msf_inst.lx()+self.m1_space)
-        self.route_pin_to_rail(filter(m2_pin_lambda, self.msf_inst.get_pins("din[1]"))[0],
+        self.route_pin_to_rail(next(filter(m2_pin_lambda, self.msf_inst.get_pins("din[1]"))),
                                self.csb_rail, y_pos + self.m1_pitch, self.msf_inst.lx()+self.m1_space)
-        self.route_pin_to_rail(filter(m2_pin_lambda, self.msf_inst.get_pins("din[0]"))[0],
+        self.route_pin_to_rail(next(filter(m2_pin_lambda, self.msf_inst.get_pins("din[0]"))),
                                self.oeb_rail, y_pos + 2*self.m1_pitch, self.msf_inst.lx()+self.m1_space)
 
         msf_clk_pin = self.msf_inst.get_pin("clk")

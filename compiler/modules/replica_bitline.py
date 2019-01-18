@@ -1,12 +1,16 @@
-import debug
-import design
-from tech import drc
-from pinv import pinv
-import contact
-from ptx import ptx
-import utils
-from vector import vector
+from importlib import reload
+
+from modules import body_tap
+from base import contact
+from base import design
+from base import utils
+from base.vector import vector
 from globals import OPTS
+from pgates.pinv import pinv
+from pgates.ptx import ptx
+from tech import drc
+from tech import layer as tech_layers
+
 
 class replica_bitline(design.design):
     """
@@ -94,7 +98,7 @@ class replica_bitline(design.design):
                                                  self.delay_chain_offset.x + self.delay_chain.width), 0)
         self.wl_x_offset = self.gnd_offset.x + self.rail_height + gnd_space
 
-        rbl_x_offset = self.wl_x_offset + self.m1_width + self.line_end_space - self.bitcell.get_pin("vdd").lx()
+        rbl_x_offset = self.wl_x_offset + self.m1_width + self.line_end_space - self.replica_bitcell.get_pin("vdd").lx()
 
         self.bitcell_offset = vector(rbl_x_offset + self.rbl.bitcell_offsets[0], self.bottom_y_offset)
         self.rbl_offset = vector(rbl_x_offset, self.bitcell_offset.y + self.replica_bitcell.height)
@@ -105,8 +109,8 @@ class replica_bitline(design.design):
 
     def create_modules(self):
         """ Create modules for later instantiation """
-        self.bitcell = self.replica_bitcell = self.mod_replica_bitcell()
-        self.add_mod(self.bitcell)
+        self.replica_bitcell = self.mod_replica_bitcell()
+        self.add_mod(self.replica_bitcell)
 
         # This is the replica bitline load column that is the height of our array
         self.rbl = self.mod_bitcell_array(name="bitline_load", cols=1, rows=self.bitcell_loads)
@@ -284,7 +288,10 @@ class replica_bitline(design.design):
         if self.dc_inst.uy() > self.rbl_inst.uy():
             top = self.dc_inst.uy()
         else:
-            gnd_extension = max(0, -self.bitcell.get_pin("gnd").by())
+            m1_rects = (self.replica_bitcell.gds.getShapesInLayer(tech_layers["metal1"]) +
+                        body_tap.body_tap().gds.getShapesInLayer(tech_layers["metal1"]))
+            top_rect = max(map(lambda x: x[1], map(lambda x: x[1], m1_rects)))
+            gnd_extension = top_rect - self.replica_bitcell.height
             top = self.rbl_inst.uy() + gnd_extension
         vdd_height = top + 0.5 * self.rail_height + self.parallel_line_space + self.rail_height
 
@@ -313,7 +320,7 @@ class replica_bitline(design.design):
                       width=self.bitcell_offset.x-right_vdd_start.x,
                       height=self.rail_height)
 
-        # Add a second vdd pin. No need for full length. It is must connect at the next level.
+        # Add a second vdd pin. No need for full length. It must connect at the next level.
         self.left_vdd = self.add_layout_pin(text="vdd",
                             layer="metal1",
                             offset=vector(0, 0),

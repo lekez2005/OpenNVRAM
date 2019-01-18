@@ -1,8 +1,9 @@
-import contact
-import design
-from tech import drc
+from importlib import reload
+
 import debug
-from vector import vector
+from base import contact
+from base import design
+from base.vector import vector
 from globals import OPTS
 
 

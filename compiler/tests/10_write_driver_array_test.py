@@ -1,25 +1,16 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3
 """
-Run a regresion test on a write driver array
+Run a regression test on a write driver array
 """
 
-import unittest
-from testutils import header,openram_test
-import sys,os
-sys.path.append(os.path.join(sys.path[0],".."))
-import globals
-from globals import OPTS
+from testutils import OpenRamTest
 import debug
 
-class write_driver_test(openram_test):
+
+class WriteDriverTest(OpenRamTest):
 
     def runTest(self):
-        globals.init_openram("config_20_{0}".format(OPTS.tech_name))
-        global verify
-        import verify
-        OPTS.check_lvsdrc = False
-
-        import write_driver_array
+        from modules import write_driver_array
 
         debug.info(2, "Testing write_driver_array for columns=8, word_size=8")
         a = write_driver_array.write_driver_array(columns=8, word_size=8)
@@ -29,12 +20,5 @@ class write_driver_test(openram_test):
         a = write_driver_array.write_driver_array(columns=16, word_size=8)
         self.local_check(a)
         
-        OPTS.check_lvsdrc = True
-        globals.end_openram()
 
-# instantiate a copy of the class to actually run the test
-if __name__ == "__main__":
-    (OPTS, args) = globals.parse_args()
-    del sys.argv[1:]
-    header(__file__, OPTS.tech_name)
-    unittest.main()
+OpenRamTest.run_tests(__name__)

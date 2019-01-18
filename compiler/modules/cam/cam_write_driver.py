@@ -1,7 +1,7 @@
 import debug
-import design
-import utils
-from tech import GDS,layer
+from base import design
+from base import utils
+from tech import GDS, layer
 
 class cam_write_driver(design.design):
     """

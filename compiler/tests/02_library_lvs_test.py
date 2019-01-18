@@ -1,26 +1,26 @@
-#!/usr/bin/env python2.7
-"Run a regresion test the library cells for LVS"
+#!/usr/bin/env python3
+"Run a regression test the library cells for LVS"
 
-import unittest
-from testutils import header,openram_test
-import sys,os,re
-sys.path.append(os.path.join(sys.path[0],".."))
+import os
+import re
+
+from testutils import OpenRamTest
+import debug
 import globals
 from globals import OPTS
-import debug
 
-class library_lvs_test(openram_test):
+
+class library_lvs_test(OpenRamTest):
 
     def runTest(self):
-        globals.init_openram("config_20_{0}".format(OPTS.tech_name))
         import verify
         (gds_dir, sp_dir, allnames) = setup_files()
         lvs_errors = 0
         debug.info(1, "Performing LVS on: " + ", ".join(allnames))
 
         for f in allnames:
-            gds_name = "{0}/{1}.gds".format(gds_dir, f)
-            sp_name = "{0}/{1}.sp".format(sp_dir, f)
+            gds_name = os.path.join(gds_dir, "{0}.gds".format(f))
+            sp_name = os.path.join(sp_dir, "{0}.sp".format(f))
             if not os.path.isfile(gds_name):
                 lvs_errors += 1
                 debug.error("Missing GDS file {}".format(gds_name))
@@ -34,33 +34,13 @@ class library_lvs_test(openram_test):
         globals.end_openram()
 
 def setup_files():
-    gds_dir = OPTS.openram_tech + "/gds_lib"
-    sp_dir = OPTS.openram_tech + "/sp_lib"
-    files = os.listdir(gds_dir)
-    nametest = re.compile("\.gds$", re.IGNORECASE)
-    gds_files = filter(nametest.search, files)
+    gds_dir = os.path.join(OPTS.openram_tech, "gds_lib")
+    sp_dir = os.path.join(OPTS.openram_tech, "sp_lib")
+    nametest = re.compile(r"(?P<mod>\S+)\.(?:gds|sp)", re.IGNORECASE)
     files = os.listdir(sp_dir)
-    nametest = re.compile("\.sp$", re.IGNORECASE)
-    sp_files = filter(nametest.search, files)
+    sp_names = nametest.findall("\n".join(files))
+    # only use sp files since some gds files may be filler cells without netlists
+    return (gds_dir, sp_dir, sp_names)
 
-    # make a list of all the gds and spice files
-    tempnames = gds_files
-    tempnames.extend(sp_files)
 
-    # remove the .gds and .sp suffixes
-    for i in range(len(tempnames)):
-        tempnames[i] = re.sub('\.gds$', '', tempnames[i])
-        tempnames[i] = re.sub('\.sp$', '', tempnames[i])
-
-    # remove duplicate base names
-    nameset = set(tempnames)
-    allnames = list(nameset)
-
-    return (gds_dir, sp_dir, allnames)
-
-# instantiate a copy of the class to actually run the test
-if __name__ == "__main__":
-    (OPTS, args) = globals.parse_args()
-    del sys.argv[1:]
-    header(__file__, OPTS.tech_name)
-    unittest.main()
+OpenRamTest.run_tests(__name__)

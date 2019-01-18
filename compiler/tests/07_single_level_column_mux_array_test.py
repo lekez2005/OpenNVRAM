@@ -1,24 +1,16 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3
 """
-Run a regresion test on a single transistor column_mux.
+Run a regression test on a single transistor column_mux.
 """
 
-from testutils import header,openram_test,unittest
-import sys,os
-sys.path.append(os.path.join(sys.path[0],".."))
-import globals
-from globals import OPTS
+from testutils import OpenRamTest
 import debug
 
-class single_level_column_mux_array_test(openram_test):
+
+class SingleLevelColumnMuxArrayTest(OpenRamTest):
 
     def runTest(self):
-        globals.init_openram("config_20_{0}".format(OPTS.tech_name))
-        global verify
-        import verify
-        OPTS.check_lvsdrc = False
-
-        import single_level_column_mux_array
+        from modules import single_level_column_mux_array
         
         debug.info(1, "Testing sample for 2-way column_mux_array")
         a = single_level_column_mux_array.single_level_column_mux_array(columns=16, word_size=8)
@@ -32,13 +24,5 @@ class single_level_column_mux_array_test(openram_test):
         a = single_level_column_mux_array.single_level_column_mux_array(columns=32, word_size=4)
         self.local_check(a)
 
-        OPTS.check_lvsdrc = True        
-        globals.end_openram()
-        
 
-# instantiate a copdsay of the class to actually run the test
-if __name__ == "__main__":
-    (OPTS, args) = globals.parse_args()
-    del sys.argv[1:]
-    header(__file__, OPTS.tech_name)
-    unittest.main()
+OpenRamTest.run_tests(__name__)

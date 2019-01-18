@@ -1,19 +1,18 @@
-import design
 import debug
+from base import design
+from base import unique_meta
+from base import utils
 from globals import OPTS
-import utils
 from tech import GDS, layer
-import unique_meta
 
-class body_tap(design.design):
+
+class body_tap(design.design, metaclass=unique_meta.Unique):
     """
     A single bit cell (6T, 8T, etc.)  This module implements the
     single memory cell used in the design. It is a hand-made cell, so
     the layout and netlist should be available in the technology
     library.
     """
-
-    __metaclass__ = unique_meta.Unique
 
     name = OPTS.body_tap
 

@@ -1,33 +1,34 @@
-from bitcell import bitcell
-import contact
-import design
-from pinv import pinv
-from pnand2 import pnand2
-from signal_gate import SignalGate
-import utils
-from vector import vector
+from base import contact
+from base import design
+from base import utils
+from base.vector import vector
+from modules.signal_gate import SignalGate
+from pgates.pinv import pinv
+from pgates.pnand2 import pnand2
 
 
 class WwlDriver(SignalGate):
 
     def get_name(self):
-        return "wwl_driver_mod"
+        return "wwl_driver"
 
     def route_input_pins(self):
         # en pin
         b_pin = self.logic_inst.get_pin("B")
-        self.add_contact_center(contact.m1m2.layer_stack, offset=b_pin.center())
-        self.add_rect("metal2", offset=vector(0, b_pin.cy() - 0.5*self.m2_width), width=b_pin.lx())
+        offset = vector(b_pin.lx(), b_pin.uy() - contact.m1m2.second_layer_height)
+        self.add_contact(contact.m1m2.layer_stack, offset)
+        self.add_rect("metal2", offset=vector(0, b_pin.uy() - self.m2_width), width=b_pin.lx())
         self.add_layout_pin("en", "metal2", offset=vector(0, 0), height=self.logic_inst.height)
 
         # in pin
         a_pin = self.logic_inst.get_pin("A")
-        self.add_contact_center(contact.m1m2.layer_stack, offset=a_pin.center())
-        self.add_contact_center(contact.m2m3.layer_stack, offset=a_pin.center())
+        offset = vector(a_pin.rx(), a_pin.cy() - 0.5*contact.m1m2.second_layer_height)
+        self.add_contact(contact.m1m2.layer_stack, offset=offset, rotate=90)
+        self.add_contact(contact.m2m3.layer_stack, offset=offset, rotate=90)
         # add m2 fill
         fill_width = utils.ceil(self.minarea_metal1_minwidth/contact.m2m3.second_layer_height)
-        self.add_rect("metal2", vector(self.m2_width + self.line_end_space, a_pin.by()), width=fill_width)
-        self.add_layout_pin("in", "metal3", offset=vector(0, a_pin.by()), width=a_pin.lx())
+        self.add_rect("metal2", vector(self.m2_width + self.line_end_space, offset.y), width=fill_width)
+        self.add_layout_pin("in", "metal3", offset=vector(0, offset.y), width=a_pin.lx())
 
     def add_out_pins(self):
         self.copy_layout_pin(self.module_insts[-2], "Z", "out_inv")
@@ -42,7 +43,7 @@ class WwlDriver(SignalGate):
 
 class WwlDriverArray(design.design):
     def __init__(self, rows, buffer_stages, no_cols=16):
-        design.design.__init__(self, "wwl_driver")
+        design.design.__init__(self, "wwl_driver_array")
 
         self.rows = rows
         self.buffer_stages = buffer_stages

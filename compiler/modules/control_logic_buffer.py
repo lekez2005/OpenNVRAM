@@ -1,7 +1,7 @@
 import debug
-import design
-from pinv import pinv
-from vector import vector
+from base import design
+from base.vector import vector
+from pgates.pinv import pinv
 
 
 class ControlLogicBuffer(design.design):

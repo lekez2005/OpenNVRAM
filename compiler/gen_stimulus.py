@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3
 """
 This script will generate a stimulus file for a given period, load, and slew input
 for the given dimension SRAM. It is useful for debugging after an SRAM has been
@@ -6,11 +6,9 @@ created without re-running the entire process. Right now, it assumes the nominal
 corner, but should probably be extended.
 """
 
-import sys,os
-import datetime
-import re
-import importlib
-from globals import *
+import sys
+
+from globals import parse_args, init_openram, report_status, end_openram
 
 (OPTS, args) = parse_args()
 
@@ -34,7 +32,6 @@ load = float(args[2])
 slew = float(args[3])
 
 # These depend on arguments, so don't load them until now.
-import debug
 
 init_openram(config_file=config_file, is_unit_test=False)
 OPTS.check_lvsdrc = False

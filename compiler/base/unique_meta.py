@@ -13,7 +13,7 @@ class Unique(type):
         return cls._cache[name]
 
     def __init__(cls, name, bases, attributes):
-        super(type, cls).__init__(name, bases, attributes)
+        super().__init__(name, bases, attributes)
         cls._cache = {}
 
     @classmethod

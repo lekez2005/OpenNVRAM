@@ -1,5 +1,3 @@
-import math
-
 class GdsStructure:
     """Class represent a GDS Structure Object"""
     def __init__(self):

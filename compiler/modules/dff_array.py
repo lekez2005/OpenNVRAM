@@ -1,9 +1,10 @@
+from importlib import reload
+
 import debug
-import design
-from tech import drc
-from math import log
-from vector import vector
+from base import design
+from base.vector import vector
 from globals import OPTS
+
 
 class dff_array(design.design):
     """

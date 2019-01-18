@@ -1,13 +1,15 @@
-import debug
-import design
 import math
-import contact
-from pinv import pinv
-from vector import vector
+from importlib import reload
+
+import debug
+from base import contact
+from base import design
+from base.vector import vector
 from globals import OPTS
-from pgate import pgate
-from pnand2 import pnand2
-from pnand3 import pnand3
+from pgates.pgate import pgate
+from pgates.pinv import pinv
+from pgates.pnand2 import pnand2
+from pgates.pnand3 import pnand3
 
 
 class hierarchical_predecode(design.design):
@@ -385,15 +387,23 @@ class hierarchical_predecode(design.design):
             max_rail = max(self.rails.values())
             layers = ("metal1", "via1", "metal2")
             via_x = max_rail + 2*self.m1_space + 0.5*contact.m1m2.first_layer_height
-            for rail_pin,gate_pin in zip(index_lst,gate_lst):
-                pin_pos = self.nand_inst[k].get_pin(gate_pin).lc()
+            for rail_pin, gate_pin_name in zip(index_lst,gate_lst):
+                gate_pin = self.nand_inst[k].get_pin(gate_pin_name)
+                pin_pos = gate_pin.lc()
                 rail_pos = vector(self.rails[rail_pin], pin_pos.y)
                 self.add_via_center(layers=layers, offset=rail_pos, rotate=0)
                 self.add_path("metal1", [rail_pos, vector(via_x, rail_pos.y)])
                 via_offset = vector(via_x, rail_pos.y)
                 self.add_via_center(layers=layers, offset=via_offset, rotate=90)
                 self.add_path("metal2", [via_offset, pin_pos])
-                self.add_via_center(layers=layers, offset=pin_pos+vector(0.5*contact.m1m2.width, 0), rotate=0)
+                if gate_pin_name == "A":
+                    y_offset = gate_pin.cy()
+                else:
+                    if k % 2 == 0:
+                        y_offset = gate_pin.cy() + 0.5*(contact.m1m2.second_layer_height - self.m1_width)
+                    else:
+                        y_offset = gate_pin.cy() - 0.5*(contact.m1m2.second_layer_height - self.m1_width)
+                self.add_via_center(layers=layers, offset=vector(gate_pin.cx(), y_offset), rotate=0)
 
 
 

@@ -1,8 +1,8 @@
-from contact import m1m2
-import contact
+from base import contact
+from base.contact import m1m2
+from base.vector import vector
+from modules.ms_flop_array import ms_flop_array
 from tech import drc
-from vector import vector
-from ms_flop_array import ms_flop_array
 
 
 class ms_flop_array_horizontal(ms_flop_array):

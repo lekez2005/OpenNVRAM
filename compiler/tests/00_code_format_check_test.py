@@ -1,13 +1,12 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3
+import os
+import re
 
-import unittest
-from testutils import header,openram_test
-import sys,os,re
-sys.path.append(os.path.join(sys.path[0],".."))
-import globals
+from testutils import OpenRamTest
 import debug
 
-class code_format_test(openram_test):
+
+class code_format_test(OpenRamTest):
     "Run a test to check for tabs instead of spaces in the all source files."
 
     def runTest(self):
@@ -48,8 +47,8 @@ def setup_files(path):
     for (dir, _, current_files) in os.walk(path):
         for f in current_files:
             files.append(os.path.join(dir, f))
-    nametest = re.compile("\.py$", re.IGNORECASE)
-    select_files = filter(nametest.search, files)
+    nametest = re.compile(r"\.py$", re.IGNORECASE)
+    select_files = list(filter(nametest.search, files))
     return select_files
 
 
@@ -58,19 +57,22 @@ def check_file_format_tab(file_name):
     f = open(file_name, "r+b")
     key_positions = []
     for num, line in enumerate(f, 1):
-        if '\t' in line:
+        if b'\t' in line:
             key_positions.append(num)
     if len(key_positions) > 0:
         debug.info(0, '\nFound ' + str(len(key_positions)) + ' tabs in ' +
                    str(file_name) + ' (line ' + str(key_positions[0]) + ')')
+    f.close()
     return len(key_positions)
 
 
 def check_print_output(file_name):
     """Check if any files (except debug.py) call the _print_ function. We should
     use the debug output with verbosity instead!"""
-    file = open(file_name, "r+b")
-    line = file.read()
+    if "tests" in file_name:
+        return 0
+    with open(file_name, "r+b") as file:
+        line = file.read().decode()
     # skip comments with a hash
     line = re.sub(r'#.*', '', line)
     # skip doc string comments
@@ -80,12 +82,7 @@ def check_print_output(file_name):
         debug.info(0, "\nFound " + str(count) +
                    " _print_ calls " + str(file_name))
 
-    return(count)
+    return count
 
 
-# instantiate a copy of the class to actually run the test
-if __name__ == "__main__":
-    (OPTS, args) = globals.parse_args()
-    del sys.argv[1:]
-    header(__file__, OPTS.tech_name)
-    unittest.main()
+OpenRamTest.run_tests(__name__)

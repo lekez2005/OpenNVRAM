@@ -1,7 +1,9 @@
-import design
 import debug
-import utils
-from tech import GDS,layer
+from base import design
+from base import utils
+from tech import GDS, layer
+from tech import layer as tech_layers
+
 
 class bitcell(design.design):
     """
@@ -27,7 +29,6 @@ class bitcell(design.design):
         return self.get_top_rect("nwell")
 
     def get_top_rect(self, layer_):
-        from tech import layer as tech_layers
         rects = self.gds.getShapesInLayer(tech_layers[layer_])
 
         return max(map(lambda x: x[1], map(lambda x: x[1], rects)))

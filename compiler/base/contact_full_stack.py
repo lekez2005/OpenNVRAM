@@ -1,7 +1,8 @@
-import design
-from tech import full_stack_vias
-from vector import vector
 import copy
+
+from base import design
+from base.vector import vector
+from tech import full_stack_vias
 
 
 class ContactFullStack(design.design):

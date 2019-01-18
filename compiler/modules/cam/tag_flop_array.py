@@ -1,8 +1,10 @@
-import contact
-import design
+from importlib import reload
+
 import debug
+from base import contact
+from base import design
+from base.vector import vector
 from globals import OPTS
-from vector import vector
 
 
 class tag_flop_array(design.design):

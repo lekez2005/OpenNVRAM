@@ -1,6 +1,7 @@
 import itertools
+
+from base.vector import vector
 from modules import replica_bitline
-from vector import vector
 
 
 class cam_replica_bitline_12t(replica_bitline.replica_bitline):

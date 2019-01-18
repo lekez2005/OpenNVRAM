@@ -1,10 +1,8 @@
-import numpy as np
-import string
 from itertools import tee
+
 import debug
-from vector3d import vector3d
-from cell import cell
-import os
+from .cell import cell
+from .vector3d import vector3d
 
 try:
     import Queue as Q  # ver. < 3.0

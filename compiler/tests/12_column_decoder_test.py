@@ -1,36 +1,16 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3
 """
-Run a regresion test on a wordline_driver array
+Run a regression test on a wordline_driver array
 """
 
-import unittest
-from testutils import header,openram_test
-import sys,os
-sys.path.append(os.path.join(sys.path[0],".."))
-import globals
-from globals import OPTS
+from testutils import OpenRamTest
 import debug
 
 
-class column_decoder_test(openram_test):
-
-    @classmethod
-    def setUpClass(cls):
-        globals.init_openram("config_20_{0}".format(OPTS.tech_name))
-
-    @classmethod
-    def tearDownClass(cls):
-        globals.end_openram()
+class ColumnDecoderTest(OpenRamTest):
 
     def run_commands(self, row_addr_size, col_addr_size):
-
-        global verify
-        import verify
-        import design
-        design.name_map = []
-        OPTS.check_lvsdrc = False
-
-        import column_decoder
+        from modules import column_decoder
 
         decoder = column_decoder.ColumnDecoder(row_addr_size=row_addr_size, col_addr_size=col_addr_size)
         self.local_check(decoder)
@@ -52,9 +32,4 @@ class column_decoder_test(openram_test):
         self.run_commands(row_addr_size=6, col_addr_size=3)
 
         
-# instantiate a copy of the class to actually run the test
-(OPTS, args) = globals.parse_args()
-del sys.argv[1:]
-header(__file__, OPTS.tech_name)
-if __name__ == "__main__":
-    unittest.main()
+OpenRamTest.run_tests(__name__)

@@ -1,15 +1,14 @@
-import design
+import math
+import re
+
 import debug
+from base import design
+from base import utils
+from base.contact import contact, m1m2, poly as poly_contact
+from base.vector import vector
 from tech import drc, info, spice
 from tech import layer as tech_layers
-from vector import vector
-from contact import contact
-from contact import poly as poly_contact
-from contact import m1m2
-import math
-import path
-import re
-import utils
+
 
 class ptx(design.design):
     """

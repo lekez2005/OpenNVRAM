@@ -1,8 +1,8 @@
+from base.utils import snap_to_grid
+from base.vector import vector
 from tech import drc
 from tech import layer as techlayer
-import debug
-from vector import vector
-from utils import snap_to_grid
+
 
 def create_rectilinear_route(my_list):
     """ Add intermediate nodes if it isn't rectilinear. Also skip

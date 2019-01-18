@@ -1,21 +1,22 @@
 
 import datetime
-import getpass
-from math import log,sqrt,ceil
-import sys
+import os
+from importlib import reload
+from math import log, sqrt
 
-from bank import bank
-import contact
 import debug
-import design
+import verify
+from base import contact
+from base import design
+from base.vector import vector
+from characterizer import lib
 from globals import OPTS, print_time
-from hierarchical_predecode2x4 import hierarchical_predecode2x4 as pre2x4
-import sram_power_grid
-from tech import drc, spice
-import utils
-from vector import vector
+from modules import sram_power_grid
+from modules.bank import bank
+from modules.hierarchical_predecode2x4 import hierarchical_predecode2x4 as pre2x4
+from tech import drc
 
-    
+
 class sram(design.design, sram_power_grid.Mixin):
     """
     Dynamically generated SRAM by connecting banks to control logic. The
@@ -41,7 +42,7 @@ class sram(design.design, sram_power_grid.Mixin):
 
         # reset the static duplicate name checker for unit tests
         # in case we create more than one SRAM
-        import design
+        from base import design
         design.design.name_map=[]
 
         self.word_size = word_size
@@ -91,7 +92,7 @@ class sram(design.design, sram_power_grid.Mixin):
 
         debug.check(self.num_banks in [1,2,4], "Valid number of banks are 1 , 2 and 4.")
 
-        self.num_words_per_bank = self.num_words/self.num_banks
+        self.num_words_per_bank = int(self.num_words/self.num_banks)
         self.num_bits_per_bank = self.word_size*self.num_words_per_bank
 
         # Compute the area of the bitcells and estimate a square bank (excluding auxiliary circuitry)
@@ -111,7 +112,7 @@ class sram(design.design, sram_power_grid.Mixin):
         
         # Fix the number of columns and rows
         self.num_cols = self.words_per_row*self.word_size
-        self.num_rows = self.num_words_per_bank/self.words_per_row
+        self.num_rows = int(self.num_words_per_bank/self.words_per_row)
 
         # Compute the address and bank sizes
         self.row_addr_size = int(log(self.num_rows, 2))
@@ -119,7 +120,7 @@ class sram(design.design, sram_power_grid.Mixin):
         self.bank_addr_size = self.col_addr_size + self.row_addr_size
         self.addr_size = self.bank_addr_size + int(log(self.num_banks, 2))
         
-        debug.info(1,"Words per row: {}".format(self.words_per_row))
+        debug.info(1, "Words per row: {}".format(self.words_per_row))
 
     def estimate_words_per_row(self,tentative_num_cols, word_size):
         """This provides a heuristic rounded estimate for the number of words
@@ -137,13 +138,13 @@ class sram(design.design, sram_power_grid.Mixin):
         it to a minimum and maximum.
         """
         # Recompute the words per row given a hard max
-        if(tentative_num_rows > 512):
+        if tentative_num_rows > 512:
             debug.check(tentative_num_rows*words_per_row <= 2048, "Number of words exceeds 2048")
-            return words_per_row*tentative_num_rows/512
+            return int(words_per_row*tentative_num_rows/512)
         # Recompute the words per row given a hard min
-        if(tentative_num_rows < 16):
+        if tentative_num_rows < 16:
             debug.check(tentative_num_rows*words_per_row >= 16, "Minimum number of rows is 16, but given {0}".format(tentative_num_rows))
-            return words_per_row*tentative_num_rows/16
+            return int(words_per_row*tentative_num_rows/16)
             
         return words_per_row
 
@@ -246,7 +247,8 @@ class sram(design.design, sram_power_grid.Mixin):
         for i in range(self.bank_addr_size):
             addr_name = "ADDR[{}]".format(i)
 
-            (bl_pin, br_pin, tl_pin, tr_pin) = map(lambda x:self.bank_inst[x].get_pin(addr_name), range(self.num_banks))
+            (bl_pin, br_pin, tl_pin, tr_pin) = list(map(lambda x:self.bank_inst[x].get_pin(addr_name),
+                                                        range(self.num_banks)))
             for left, right in [(bl_pin, br_pin), (tl_pin, tr_pin)]:
                 self.add_rect(left.layer, offset=left.lr(), width=right.lx() - left.rx())
             rail_x = self.addr_bus_x + i*self.m2_pitch
@@ -355,7 +357,7 @@ class sram(design.design, sram_power_grid.Mixin):
         # Control is placed below the bank control signals
         # align control_logic vdd with first bank's vdd
         bank_inst = self.bank_inst[0]
-        control_pins = map(bank_inst.get_pin, self.control_logic_outputs + ["bank_sel"])
+        control_pins = list(map(bank_inst.get_pin, self.control_logic_outputs + ["bank_sel"]))
         self.bottom_control_pin = min(control_pins, key=lambda x: x.by())
         self.top_control_pin = max(control_pins, key=lambda x: x.uy())
 
@@ -556,16 +558,16 @@ class sram(design.design, sram_power_grid.Mixin):
     def route_four_bank_logic(self):
         self.vert_control_bus_positions = {}
         control_pin_names = ["tri_en", "s_en", "w_en", "clk_buf"]
-        control_pins = map(self.control_logic_inst.get_pin, control_pin_names)
+        control_pins = list(map(self.control_logic_inst.get_pin, control_pin_names))
         control_pins = sorted(control_pins, key=lambda x: x.lx()) # sort from left to right
 
         if control_pins[0].lx() < self.control_bus_x:
             # rail should go down then left
             control_pins = sorted(control_pins, key=lambda x: x.uy(), reverse=True)
             wide_address = True
-            x_offsets = map(lambda i: self.control_bus_x + i*self.m3_pitch, range(4))
+            x_offsets = list(map(lambda i: self.control_bus_x + i*self.m3_pitch, range(4)))
         else:
-            x_offsets = map(lambda x: x.lx(), control_pins)
+            x_offsets = list(map(lambda x: x.lx(), control_pins))
             wide_address = False
 
         bank_pins = sorted(map(self.bank_inst[0].get_pin, control_pin_names), key=lambda x: x.by())
@@ -577,8 +579,8 @@ class sram(design.design, sram_power_grid.Mixin):
             x_offset = x_offsets[i]
             self.vert_control_bus_positions[pin_name] = x_offset
 
-            (bl_pin, br_pin, tl_pin, tr_pin) = map(lambda x:self.bank_inst[x].get_pin(pin_name),
-                                                   range(self.num_banks))
+            (bl_pin, br_pin, tl_pin, tr_pin) = list(map(lambda x:self.bank_inst[x].get_pin(pin_name),
+                                                   range(self.num_banks)))
 
             # connect accross from left to right
             for left, right in [(bl_pin, br_pin), (tl_pin, tr_pin)]:
@@ -706,11 +708,11 @@ class sram(design.design, sram_power_grid.Mixin):
     def create_multi_bank_modules(self):
         """ Create the multibank address flops and bank decoder """
         self.msb_address = self.mod_ms_flop_array(name="msb_address",
-                                                  columns=self.num_banks/2,
-                                                  word_size=self.num_banks/2)
+                                                  columns=int(self.num_banks/2),
+                                                  word_size=int(self.num_banks/2))
         self.add_mod(self.msb_address)
 
-        if self.num_banks>2:
+        if self.num_banks > 2:
             self.msb_decoder = pre2x4(route_top_rail=True)
             self.add_mod(self.msb_decoder)
 
@@ -955,11 +957,10 @@ class sram(design.design, sram_power_grid.Mixin):
 
         # route control logic output pins to bank control inputs
 
-        control_logic_pins = map(self.control_logic_inst.get_pin, self.get_control_logic_names())
+        control_logic_pins = list(map(self.control_logic_inst.get_pin, self.get_control_logic_names()))
 
         pitch = self.m3_width + 2*self.m3_width
 
-        pin_x_offset = self.control_logic_inst.rx() - 2*pitch
         for i in range(len(control_logic_pins)):
             src_pin = control_logic_pins[i]
             pin_name = src_pin.name
@@ -1015,7 +1016,8 @@ class sram(design.design, sram_power_grid.Mixin):
 
         # Save the spice file
         start_time = datetime.datetime.now()
-        spname = OPTS.output_path + self.name + ".sp"
+        spname = os.path.join(OPTS.output_path, self.name + ".sp")
+        gdsname = os.path.join(OPTS.output_path, self.name + ".gds")
         print("SP: Writing to {0}".format(spname))
         self.sp_write(spname)
         print_time("Spice writing", datetime.datetime.now(), start_time)
@@ -1024,7 +1026,7 @@ class sram(design.design, sram_power_grid.Mixin):
         if OPTS.use_pex:
             start_time = datetime.datetime.now()
             # Output the extracted design if requested
-            sp_file = OPTS.output_path + "temp_pex.sp"
+            sp_file = os.path.join(OPTS.output_path, "temp_pex.sp")
             verify.run_pex(self.name, gdsname, spname, output=sp_file)
             print_time("Extraction", datetime.datetime.now(), start_time)
         else:
@@ -1033,35 +1035,34 @@ class sram(design.design, sram_power_grid.Mixin):
         
         # Characterize the design
         start_time = datetime.datetime.now()        
-        from characterizer import lib
+
         print("LIB: Characterizing... ")
         if OPTS.analytical_delay:
             print("Using analytical delay models (no characterization)")
         else:
-            if OPTS.spice_name!="":
+            if OPTS.spice_name != "":
                 print("Performing simulation-based characterization with {}".format(OPTS.spice_name))
             if OPTS.trim_netlist:
                 print("Trimming netlist to speed up characterization.")
-        lib.lib(out_dir=OPTS.output_path, sram=self, sp_file=sp_file)
+        lib(out_dir=OPTS.output_path, sram=self, sp_file=sp_file)
         print_time("Characterization", datetime.datetime.now(), start_time)
 
         # Write the layout
         start_time = datetime.datetime.now()
-        gdsname = OPTS.output_path + self.name + ".gds"
         print("GDS: Writing to {0}".format(gdsname))
         self.gds_write(gdsname)
         print_time("GDS", datetime.datetime.now(), start_time)
 
         # Create a LEF physical model
         start_time = datetime.datetime.now()
-        lefname = OPTS.output_path + self.name + ".lef"
+        lefname = os.path.join(OPTS.output_path, self.name + ".lef")
         print("LEF: Writing to {0}".format(lefname))
         self.lef_write(lefname)
         print_time("LEF", datetime.datetime.now(), start_time)
 
         # Write a verilog model
         start_time = datetime.datetime.now()
-        vname = OPTS.output_path + self.name + ".v"
+        vname = os.path.join(OPTS.output_path, self.name + ".v")
         print("Verilog: Writing to {0}".format(vname))
         self.verilog_write(vname)
         print_time("Verilog", datetime.datetime.now(), start_time)

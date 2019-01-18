@@ -1,11 +1,10 @@
-import contact
-import pgate
 import debug
-from tech import drc, parameter, spice
-from ptx_spice import ptx_spice
-from vector import vector
+from base.vector import vector
 from globals import OPTS
-import utils
+from tech import parameter, spice
+from . import pgate
+from .ptx_spice import ptx_spice
+
 
 class pnor2(pgate.pgate):
     """

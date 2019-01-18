@@ -1,11 +1,12 @@
 """
 This provides a set of useful generic types for the gdsMill interface. 
 """
-import debug
-from vector import vector
-import tech
 import math
-from globals import OPTS
+
+import debug
+import tech
+from base.vector import vector
+
 
 class geometry:
     """
@@ -181,20 +182,18 @@ class instance(geometry):
                               mirror=self.mirror,
                               rotate=self.rotate)
 
-        
-    
-    def get_pin(self,name,index=-1):
+    def get_pin(self, name,index=-1):
         """ Return an absolute pin that is offset and transformed based on
         this instance location. Index will return one of several pins."""
 
         import copy
-        if index==-1:
+        if index == -1:
             pin = copy.deepcopy(self.mod.get_pin(name))
-            pin.transform(self.offset,self.mirror,self.rotate)
+            pin.transform(self.offset, self.mirror, self.rotate)
             return pin
         else:
-            pins = copy.deepcopy(self.mod.get_pin(name))
-            pin.transform(self.offset,self.mirror,self.rotate)
+            pin = copy.deepcopy(self.mod.get_pins(name)[index])
+            pin.transform(self.offset, self.mirror, self.rotate)
             return pin[index]
 
     def get_num_pins(self, name):
@@ -231,7 +230,7 @@ class path(geometry):
         self.name = "path"
         self.layerNumber = layerNumber
         self.layerPurpose= layerPurpose
-        self.coordinates = map(lambda x: [x[0], x[1]], coordinates)
+        self.coordinates = list(map(lambda x: [x[0], x[1]], coordinates))
         self.coordinates = vector(self.coordinates).snap_to_grid()
         self.path_width = path_width
 
@@ -313,7 +312,7 @@ class rectangle(geometry):
         self.layerNumber = layerNumber
         self.layerPurpose= layerPurpose
         self.offset = vector(offset).snap_to_grid()
-        self.size = vector(width, height).snap_to_grid()
+        self.size = (vector(offset) + vector(width, height)).snap_to_grid() - self.offset  # prevent roundoff errors
         self.width = self.size.x
         self.height = self.size.y
         self.compute_boundary(offset,"",0)

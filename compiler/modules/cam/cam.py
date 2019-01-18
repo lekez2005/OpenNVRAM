@@ -1,10 +1,11 @@
-import cam_bank
-import contact
-import debug
 import re
+
+import debug
 import sram
-import utils
-from vector import vector
+from base import contact
+from base import utils
+from base.vector import vector
+from . import cam_bank
 
 
 class Cam(sram.sram):
@@ -189,11 +190,11 @@ class Cam(sram.sram):
         # Control is placed below the bank control signals
         # align control_logic vdd with first bank's vdd
         bank_inst = self.bank_inst[0]
-        control_pins = map(bank_inst.get_pin, self.control_logic_outputs + ["bank_sel"])
+        control_pins = list(map(bank_inst.get_pin, self.control_logic_outputs + ["bank_sel"]))
         self.bottom_control_pin = min(control_pins, key=lambda x: x.by())
         self.top_control_pin = max(control_pins, key=lambda x: x.uy())
 
-        control_logic_pins = map(self.control_logic.get_pin, self.control_logic_outputs)
+        control_logic_pins = list(map(self.control_logic.get_pin, self.control_logic_outputs))
         right_control_pin = max(control_logic_pins, key=lambda x: x.rx())
 
         control_gap = 2*self.wide_m1_space + self.implant_space
@@ -409,7 +410,7 @@ class Cam(sram.sram):
 
         # connect msb_address, decoder and control_logic gnd pins
         gnd_pins = self.msb_address_inst.get_pins("gnd") + self.msb_decoder_inst.get_pins("gnd")
-        gnd_pins = filter(lambda x: x.layer == "metal1", gnd_pins)
+        gnd_pins = list(filter(lambda x: x.layer == "metal1", gnd_pins))
         top_gnd = max(gnd_pins, key=lambda x: x.by())
         for gnd_pin in gnd_pins:
             self.add_rect("metal1", height=gnd_pin.height(),
@@ -454,7 +455,7 @@ class Cam(sram.sram):
             args.append("sel_all_banks")
             if self.num_banks > 1:
                 bank_name = self.insts[-1].name
-                bank_num = re.match(".*bank(?P<bank_num>\d+)", bank_name).group('bank_num')
+                bank_num = re.match(r".*bank(?P<bank_num>\d+)", bank_name).group('bank_num')
                 args.append("bank_sel[{0}]".format(bank_num))
             else:
                 args.append("vdd")

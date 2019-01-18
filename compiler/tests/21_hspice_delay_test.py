@@ -1,30 +1,29 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3
 """
-Run a regresion test on various srams
+Run a regression test on various srams
 """
+import os
+from unittest import skipIf
 
-import unittest
-from testutils import header,openram_test
-import sys,os
-sys.path.append(os.path.join(sys.path[0],".."))
-import globals
 from globals import OPTS
+from testutils import OpenRamTest
+
+OPTS.spice_name = "hspice"
+OPTS.analytical_delay = False
+OpenRamTest.initialize_tests()
+
 import debug
 
-class timing_sram_test(openram_test):
 
+class TimingSramTest(OpenRamTest):
+
+    @skipIf(not OPTS.spice_exe, "hspice not found")
     def runTest(self):
-        globals.init_openram("config_20_{0}".format(OPTS.tech_name))
-        OPTS.check_lvsdrc = False
-        OPTS.spice_name="hspice"
+        OPTS.spice_name = "hspice"
         OPTS.analytical_delay = False
-        
+
         # This is a hack to reload the characterizer __init__ with the spice version
-        import characterizer
-        reload(characterizer)
         from characterizer import delay
-        if not OPTS.spice_exe:
-            debug.error("Could not find {} simulator.".format(OPTS.spice_name),-1)
 
         import sram
         import tech
@@ -34,9 +33,7 @@ class timing_sram_test(openram_test):
                       num_banks=OPTS.num_banks,
                       name="sram1")
 
-        OPTS.check_lvsdrc = True
-
-        tempspice = OPTS.openram_temp + "temp.sp"
+        tempspice = os.path.join(OPTS.openram_temp, "temp.sp")
         s.sp_write(tempspice)
 
         probe_address = "1" * s.addr_size
@@ -44,12 +41,12 @@ class timing_sram_test(openram_test):
         debug.info(1, "Probe address {0} probe data {1}".format(probe_address, probe_data))
 
         corner = (OPTS.process_corners[0], OPTS.supply_voltages[0], OPTS.temperatures[0])
-        d = delay.delay(s,tempspice,corner)
-        import tech
-        loads = [tech.spice["msflop_in_cap"]*4]
-        slews = [tech.spice["rise_time"]*2]
-        data = d.analyze(probe_address, probe_data,slews,loads)
-        #print data
+        d = delay(s, tempspice, corner)
+        loads = [tech.spice["msflop_in_cap"] * 4]
+        slews = [tech.spice["rise_time"] * 2]
+        data = d.analyze(probe_address, probe_data, slews, loads)
+
+        golden_data = None
         if OPTS.tech_name == "freepdk45":
             golden_data = {'leakage_power': 0.0006964536000000001,
                            'delay_lh': [0.0573055],
@@ -73,28 +70,16 @@ class timing_sram_test(openram_test):
                            'delay_hl': [0.9019090999999999],
                            'slew_lh': [0.5896232]}
         else:
-            self.assertTrue(False) # other techs fail
+            self.assertTrue(False)  # other techs fail
         # Check if no too many or too few results
-        self.assertTrue(len(data.keys())==len(golden_data.keys()))
+        self.assertTrue(len(data.keys()) == len(golden_data.keys()))
         # Check each result
         for k in data.keys():
-            if type(data[k])==list:
+            if type(data[k]) == list:
                 for i in range(len(data[k])):
-                    self.isclose(data[k][i],golden_data[k][i],0.15)
+                    self.isclose(data[k][i], golden_data[k][i], 0.15)
             else:
-                self.isclose(data[k],golden_data[k],0.15)
+                self.isclose(data[k], golden_data[k], 0.15)
 
-                
-        # reset these options
-        OPTS.check_lvsdrc = True
-        OPTS.analytical_delay = True
-        reload(characterizer)
 
-        globals.end_openram()
-        
-# instantiate a copdsay of the class to actually run the test
-if __name__ == "__main__":
-    (OPTS, args) = globals.parse_args()
-    del sys.argv[1:]
-    header(__file__, OPTS.tech_name)
-    unittest.main()
+OpenRamTest.run_tests(__name__)

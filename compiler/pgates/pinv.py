@@ -1,15 +1,15 @@
-import contact
-import pgate
 import debug
-from tech import drc, parameter, spice, info
-from ptx import ptx
-from ptx_spice import ptx_spice
-from vector import vector
+from base import contact
+from base import unique_meta
+from base import utils
+from base.vector import vector
 from globals import OPTS
-import unique_meta
-import utils
+from tech import parameter, spice
+from . import pgate
+from .ptx_spice import ptx_spice
 
-class pinv(pgate.pgate):
+
+class pinv(pgate.pgate, metaclass=unique_meta.Unique):
     """
     Pinv generates gds of a parametrically sized inverter. The
     size is specified as the drive size (relative to minimum NMOS) and
@@ -18,8 +18,6 @@ class pinv(pgate.pgate):
     from center of rail to rail..  The route_output will route the
     output to the right side of the cell for easier access.
     """
-    __metaclass__ = unique_meta.Unique
-
     c = __import__(OPTS.bitcell)
     bitcell = getattr(c, OPTS.bitcell)
 
@@ -36,7 +34,7 @@ class pinv(pgate.pgate):
         if not beta == parameter["beta"]:
             name += "_b" + str(beta)
         if not height == pgate.pgate.get_default_height():
-            name += "_h_" + str(height).replace(".", "_")
+            name += "_h_" + "{:.5g}".format(height).replace(".", "_")
         if align_bitcell:
             name += "_align"
         if same_line_inputs:

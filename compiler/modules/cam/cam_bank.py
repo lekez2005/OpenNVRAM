@@ -1,12 +1,13 @@
-from vector import vector
-import cam_block
-import contact
 import copy
-import debug
-import design
-from globals import OPTS
+from importlib import reload
 from math import log
-import utils
+
+import debug
+from base import contact
+from base import design
+from base import utils
+from base.vector import vector
+from globals import OPTS
 
 
 class CamBank(design.design):
@@ -36,7 +37,7 @@ class CamBank(design.design):
         self.height = self.block_insts[-1].uy()
 
     def compute_sizes(self):
-        self.num_rows = self.num_words / self.words_per_row
+        self.num_rows = int(self.num_words / self.words_per_row)
         self.num_cols = self.words_per_row*self.word_size
 
         self.row_addr_size = int(log(self.num_rows, 2))
@@ -87,7 +88,7 @@ class CamBank(design.design):
         self.add_mod(self.cam_block)
         self.prefix = self.cam_block.prefix
 
-        left_gnd = filter(lambda x: x.layer == "metal2",  self.cam_block.get_pins("gnd"))[0]
+        left_gnd = next(filter(lambda x: x.layer == "metal2",  self.cam_block.get_pins("gnd")))
         self.cam_x_shift = left_gnd.lx() - self.cam_block.gnd_x_offset
         self.cam_y_shift = -self.cam_block.min_point
 
@@ -163,7 +164,7 @@ class CamBank(design.design):
         self.power_rail_width = right_vdd.width()
         self.right_vdd_offset = right_vdd.lx()
 
-        self.block_gnd = filter(lambda x: x.layer == "metal2", self.left_block.get_pins("gnd"))[0]
+        self.block_gnd = next(filter(lambda x: x.layer == "metal2", self.left_block.get_pins("gnd")))
 
 
 
@@ -203,7 +204,7 @@ class CamBank(design.design):
         block_clk = self.left_block.get_pin(self.prefix + "clk_buf")
         decoder_clks = self.row_decoder_inst.get_pins("clk")
         if len(decoder_clks) > 1:  # TODO fix clk order
-            same_y = filter(lambda x: x.by() < block_clk.by() < x.uy(), decoder_clks)
+            same_y = list(filter(lambda x: x.by() < block_clk.by() < x.uy(), decoder_clks))
             if len(same_y) > 0:
                 decoder_clk = same_y[0]
             else:
@@ -226,8 +227,8 @@ class CamBank(design.design):
 
         # connect gnd pins
         highest_address_pin = self.row_decoder_inst.get_pin("A[{}]".format(self.addr_size-1))
-        gnd_pins = filter(lambda x: x.uy() < highest_address_pin.uy() and x.by() > decoder_clk.by(),
-                          self.row_decoder_inst.get_pins("gnd"))
+        gnd_pins = list(filter(lambda x: x.uy() < highest_address_pin.uy() and x.by() > decoder_clk.by(),
+                          self.row_decoder_inst.get_pins("gnd")))
 
         highest_pin = max(gnd_pins, key=lambda x: x.uy())
         lowest_pin = min(gnd_pins, key=lambda x: x.by())
@@ -259,7 +260,8 @@ class CamBank(design.design):
 
         self.vdd_grid_rects = []
         vdd_grid_insts = self.cam_block.vdd_via_insts
-        vdd_via_y= map(lambda via_inst: utils.transform_relative(via_inst.offset, self.left_block).y, vdd_grid_insts)
+        vdd_via_y= list(map(lambda via_inst: utils.transform_relative(via_inst.offset, self.left_block).y,
+                            vdd_grid_insts))
         for via_y in vdd_via_y:
             self.vdd_grid_rects.append(self.add_inst(self.cam_block.m1mtop.name, self.cam_block.m1mtop,
                           offset=vector(self.left_vdd_offset, via_y)))

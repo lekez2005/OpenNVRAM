@@ -2,19 +2,23 @@
 This is called globals.py, but it actually parses all the arguments and performs
 the global OpenRAM setup as well.
 """
-import os
-import debug
-import shutil
-import optparse
-import options
-import sys
-import re
 import importlib
+import optparse
+import copy
+import os
+import re
+import shutil
+import sys
+from importlib import reload
+
+import debug
+import options
 
 USAGE = "Usage: openram.py [options] <config file>\nUse -h for help.\n"
 
 # Anonymous object that will be the options
 OPTS = options.options()
+DEFAULT_OPTS = options.options()
 
 def parse_args():
     """ Parse the optional arguments for OpenRAM """
@@ -58,6 +62,8 @@ def parse_args():
     # Alias SCMOS to AMI 0.5um
     if OPTS.tech_name == "scmos":
         OPTS.tech_name = "scn3me_subm"
+    global DEFAULT_OPTS
+    DEFAULT_OPTS = copy.deepcopy(OPTS)
 
     return (options, args)
 
@@ -89,17 +95,25 @@ def print_banner():
 def check_versions():
     """ Run some checks of required software versions. """
 
-    # check that we are not using version 3 and at least 2.7
+    # Now require python >=3.6
     major_python_version = sys.version_info.major
     minor_python_version = sys.version_info.minor
-    if not (major_python_version == 2 and minor_python_version >= 7):
-        debug.error("Python 2.7 is required.",-1)
+    if not (major_python_version == 3 and minor_python_version >= 6):
+        debug.error("Python 3.6 or greater is required.", -1)
 
     # FIXME: Check versions of other tools here??
     # or, this could be done in each module (e.g. verify, characterizer, etc.)
 
+
 def init_openram(config_file, is_unit_test=True):
     """Initialize the technology, paths, simulators, etc."""
+    # reset options to default since some tests modify OPTS
+    for key in list(OPTS.__dict__.keys()):
+        if key not in DEFAULT_OPTS.__dict__:
+            del OPTS.__dict__[key]
+        else:
+            OPTS.__dict__[key] = DEFAULT_OPTS.__dict__[key]
+
     check_versions()
 
     debug.info(1,"Initializing OpenRAM...")
@@ -111,7 +125,6 @@ def init_openram(config_file, is_unit_test=True):
     import_tech()
 
     initialize_classes()
-
 
 
 def get_tool(tool_type, preferences):
@@ -143,7 +156,7 @@ def read_config(config_file, is_unit_test=True):
     
     # Create a full path relative to current dir unless it is already an abs path
     if not os.path.isabs(config_file):
-        config_file = os.getcwd() + "/" +  config_file
+        config_file = os.path.join(os.getcwd(), config_file)
     # Make it a python file if the base name was only given
     config_file = re.sub(r'\.py$', "", config_file)
     # Expand the user if it is used
@@ -167,10 +180,8 @@ def read_config(config_file, is_unit_test=True):
         if not k in OPTS.__dict__ or k=="tech_name":
             OPTS.__dict__[k]=v
     
-    if not OPTS.output_path.endswith('/'):
-        OPTS.output_path += "/"
-    if not OPTS.output_path.startswith('/'):
-        OPTS.output_path = os.getcwd() + "/" + OPTS.output_path
+    if not os.path.isabs(OPTS.output_path):
+        OPTS.output_path = os.path.join(os.getcwd(), OPTS.output_path)
     debug.info(1, "Output saved in " + OPTS.output_path)
 
     OPTS.is_unit_test=is_unit_test
@@ -226,14 +237,12 @@ def setup_paths():
 
     # Add all of the subdirs to the python path
     # These subdirs are modules and don't need to be added: characterizer, verify
-    for subdir in ["gdsMill", "tests", "router", "modules", "modules/cam", "base", "pgates"]:
-        full_path = "{0}/{1}".format(OPENRAM_HOME,subdir)
+    for subdir in ["tests", "modules", "modules/cam"]:
+        full_path = os.path.abspath(os.path.join(OPENRAM_HOME, subdir))
         debug.check(os.path.isdir(full_path),
-                    "$OPENRAM_HOME/{0} does not exist: {1}".format(subdir,full_path))
+                    "{} does not exist:".format(full_path))
         sys.path.append("{0}".format(full_path)) 
 
-    if not OPTS.openram_temp.endswith('/'):
-        OPTS.openram_temp += "/"
     debug.info(1, "Temporary files saved in " + OPTS.openram_temp)
 
     cleanup_paths()
@@ -276,17 +285,16 @@ def import_tech():
         debug.error("$OPENRAM_TECH is not properly defined.",1)
     debug.check(os.path.isdir(OPENRAM_TECH),"$OPENRAM_TECH does not exist: {0}".format(OPENRAM_TECH))
     
-    OPTS.openram_tech = OPENRAM_TECH + "/" + OPTS.tech_name
-    if not OPTS.openram_tech.endswith('/'):
-        OPTS.openram_tech += "/"
+    OPTS.openram_tech =os.path.join(OPENRAM_TECH, OPTS.tech_name)
+
     debug.info(1, "Technology path is " + OPTS.openram_tech)
 
     try:
         filename = "setup_openram_{0}".format(OPTS.tech_name)
         # we assume that the setup scripts (and tech dirs) are located at the
         # same level as the compielr itself, probably not a good idea though.
-        path = "{0}/setup_scripts".format(os.environ.get("OPENRAM_TECH"))
-        debug.check(os.path.isdir(path),"OPENRAM_TECH does not exist: {0}".format(path))    
+        path = os.path.join(os.environ.get("OPENRAM_TECH"), "setup_scripts")
+        debug.check(os.path.isdir(path), "setup_scripts does not exist: {0}".format(path))
         sys.path.append(os.path.abspath(path))
         __import__(filename)
     except ImportError:
@@ -303,9 +311,22 @@ def import_tech():
         OPTS.temperatures = tech.spice["temperatures"]
 
 def initialize_classes():
-    global OPTS
+    check_lvsdrc = OPTS.check_lvsdrc
+    OPTS.check_lvsdrc = True
+    if 'characterizer' not in sys.modules:
+        import characterizer
+    else:
+        import characterizer
+        reload(characterizer)
+
+    if 'verify' not in sys.modules:
+        import verify
+    else:
+        import verify
+        reload(verify)
     # only bitcell is preloaded here because most unit tests only require loading bitcell to get it's dimensions
     reload(__import__(OPTS.bitcell))
+    OPTS.check_lvsdrc = check_lvsdrc
 
 def print_time(name, now_time, last_time=None):
     """ Print a statement about the time delta. """

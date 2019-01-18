@@ -62,14 +62,23 @@ import os
 import re
 
 import debug
+from base import utils
+from base.utils import get_temp_file
 from globals import OPTS
 from tech import drc
-import utils
 
 
 def run_drc(cell_name, gds_name, exception_group=""):
     """Run DRC check on a given top-level name which is
        implemented in gds_name."""
+    bail = 2
+    if bail == 1:
+        utils.to_cadence(gds_name)
+        debug.check(False, "quick fail")
+    elif bail == 2:
+        utils.to_cadence(gds_name)
+    elif bail == 3:
+        return
 
     # the runset file contains all the options to run calibre
     debug.info(1, "Run DRC for {}".format(cell_name))
@@ -104,24 +113,23 @@ def run_drc(cell_name, gds_name, exception_group=""):
         'drcActiveRecipe': 'All checks (Modified)',
         'drcUserRecipes': '{{All checks (Modified)} {{group_unselect[1]} all {group_select[1]} rule_file ' +
             group_unselect_str + rule_unselect_str + '}}',
-        'drcResultsFile': OPTS.openram_temp + cell_name + ".drc.results",
-        'drcSummaryFile': OPTS.openram_temp + cell_name + ".drc.summary",
+        'drcResultsFile': get_temp_file(cell_name + ".drc.results"),
+        'drcSummaryFile': get_temp_file(cell_name + ".drc.summary"),
         'cmnFDILayerMapFile': drc["layer_map"],
         'cmnFDIUseLayerMap': 1
     }
 
     # write the runset file
-    f = open(OPTS.openram_temp + "drc_runset", "w")
-    for k in sorted(drc_runset.iterkeys()):
+    f = open(get_temp_file("drc_runset"), "w")
+    for k in sorted(drc_runset.keys()):
         f.write("*{0}: {1}\n".format(k, drc_runset[k]))
     f.close()
 
     # run drc
-    errfile = "{0}{1}.drc.err".format(OPTS.openram_temp, cell_name)
-    outfile = "{0}{1}.drc.out".format(OPTS.openram_temp, cell_name)
+    errfile = get_temp_file("{0}.drc.err".format(cell_name))
+    outfile = get_temp_file("{0}.drc.out".format(cell_name))
 
-    cmd = "{0} -gui -drc {1}drc_runset -batch".format(OPTS.drc_exe[1],
-                                                                    OPTS.openram_temp)
+    cmd = "{0} -gui -drc {1} -batch".format(OPTS.drc_exe[1], get_temp_file("drc_runset"))
     debug.info(2, cmd)
     utils.run_command(cmd, outfile, errfile, verbose_level=3, cwd=OPTS.openram_temp)
 
@@ -142,9 +150,9 @@ def run_drc(cell_name, gds_name, exception_group=""):
         summary=results[-4:-1]
     else:
         summary = results[-3:]
-    geometries = int(re.split("\W+", summary[0])[5])
-    rulechecks = int(re.split("\W+", summary[1])[4])
-    errors = int(re.split("\W+", summary[2])[5])
+    geometries = int(re.split(r"\W+", summary[0])[5])
+    rulechecks = int(re.split(r"\W+", summary[1])[4])
+    errors = int(re.split(r"\W+", summary[2])[5])
 
     # always display this summary 
     if errors > 0:        
@@ -189,15 +197,15 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
         'lvsSourcePath': sp_name,
         'lvsSourcePrimary': cell_name,
         'lvsSourceSystem': 'SPICE',
-        'lvsSpiceFile': OPTS.openram_temp + "extracted.sp",
+        'lvsSpiceFile': get_temp_file("extracted.sp"),
         'lvsPowerNames': 'vdd',
         'lvsGroundNames': 'gnd',
         'lvsIncludeSVRFCmds': 1,
         'lvsIgnorePorts': 1,
-        'lvsERCDatabase': OPTS.openram_temp + cell_name + ".erc.results",
-        'lvsERCSummaryFile': OPTS.openram_temp + cell_name + ".erc.summary",
-        'lvsReportFile': OPTS.openram_temp + cell_name + ".lvs.report",
-        'lvsMaskDBFile': OPTS.openram_temp + cell_name + ".maskdb",
+        'lvsERCDatabase': get_temp_file(cell_name + ".erc.results"),
+        'lvsERCSummaryFile': get_temp_file(cell_name + ".erc.summary"),
+        'lvsReportFile': get_temp_file(cell_name + ".lvs.report"),
+        'lvsMaskDBFile': get_temp_file(cell_name + ".maskdb"),
         'cmnFDILayerMapFile': drc["layer_map"],
         'cmnFDIUseLayerMap': 1,
         'lvsRecognizeGates': 'NONE'
@@ -213,17 +221,16 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
 
 
     # write the runset file
-    f = open(OPTS.openram_temp + "lvs_runset", "w")
-    for k in sorted(lvs_runset.iterkeys()):
+    f = open(get_temp_file("lvs_runset"), "w")
+    for k in sorted(lvs_runset.keys()):
         f.write("*{0}: {1}\n".format(k, lvs_runset[k]))
     f.close()
 
     # run LVS
-    errfile = "{0}{1}.lvs.err".format(OPTS.openram_temp, cell_name)
-    outfile = "{0}{1}.lvs.out".format(OPTS.openram_temp, cell_name)
+    errfile = get_temp_file("{}.err".format(cell_name))
+    outfile = get_temp_file("{}.out".format(cell_name))
 
-    cmd = "{0} -gui -lvs {1}lvs_runset -batch".format(OPTS.lvs_exe[1],
-                                                                    OPTS.openram_temp)
+    cmd = "{0} -gui -lvs {1} -batch".format(OPTS.lvs_exe[1], get_temp_file("lvs_runset"))
     debug.info(2, cmd)
     utils.run_command(cmd, outfile, errfile, verbose_level=3, cwd=OPTS.openram_temp)
 
@@ -236,15 +243,15 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
     # CORRECT
     # INCORRECT
     test = re.compile("#     CORRECT     #")
-    correct = filter(test.search, results)
+    correct = list(filter(test.search, results))
     test = re.compile("NOT COMPARED")
-    notcompared = filter(test.search, results)
+    notcompared = list(filter(test.search, results))
     test = re.compile("#     INCORRECT     #")
-    incorrect = filter(test.search, results)
+    incorrect = list(filter(test.search, results))
 
     # Errors begin with "Error:"
-    test = re.compile("\s+Error:")
-    errors = filter(test.search, results)
+    test = re.compile(r"\s+Error:")
+    errors = list(filter(test.search, results))
     for e in errors:
         debug.error(e.strip("\n"))
 
@@ -256,12 +263,12 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
     f.close()
 
     test = re.compile("ERROR:")
-    exterrors = filter(test.search, results)
+    exterrors = list(filter(test.search, results))
     for e in exterrors:
         debug.error(e.strip("\n"))
 
     test = re.compile("WARNING:")
-    extwarnings = filter(test.search, results)
+    extwarnings = list(filter(test.search, results))
     for e in extwarnings:
         debug.warning(e.strip("\n"))
 
@@ -277,7 +284,7 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
 
     # Errors begin with "ERROR:"
     test = re.compile("ERROR:")
-    stdouterrors = filter(test.search, results)
+    stdouterrors = list(filter(test.search, results))
     for e in stdouterrors:
         debug.error(e.strip("\n"))
 
@@ -293,11 +300,11 @@ def run_pex(cell_name, gds_name, sp_name, output=None, run_drc_lvs=True, correct
     debug.info(1, "Run PEX for {}".format(cell_name))
     from tech import drc
     if output == None:
-        output = name + ".pex.netlist"
+        output = get_temp_file(cell_name + ".pex.netlist")
 
     # check if lvs report has been done
     # if not run drc and lvs
-    if run_drc_lvs and not os.path.isfile(os.path.join(OPTS.openram_temp, cell_name + ".lvs.report")):
+    if run_drc_lvs and not os.path.isfile(get_temp_file(cell_name + ".lvs.report")):
         run_drc(cell_name, gds_name)
         run_lvs(cell_name, gds_name, sp_name)
 
@@ -327,17 +334,17 @@ def run_pex(cell_name, gds_name, sp_name, output=None, run_drc_lvs=True, correct
     }
 
     # write the runset file
-    f = open(OPTS.openram_temp + "pex_runset", "w")
-    for k in sorted(pex_runset.iterkeys()):
+    f = open(get_temp_file("pex_runset"), "w")
+    for k in sorted(pex_runset.keys()):
         f.write("*{0}: {1}\n".format(k, pex_runset[k]))
     f.close()
 
     # run pex
-    errfile = "{0}{1}.pex.err".format(OPTS.openram_temp, cell_name)
-    outfile = "{0}{1}.pex.out".format(OPTS.openram_temp, cell_name)
+    errfile = get_temp_file("{}.pex.err".format(cell_name))
+    outfile = get_temp_file("{}.pex.out".format(cell_name))
 
-    cmd = "{0} -gui -pex {1}pex_runset -batch ".format(OPTS.pex_exe[1],
-                                                                    OPTS.openram_temp)
+    cmd = "{0} -gui -pex {1} -batch ".format(OPTS.pex_exe[1],
+                                                       get_temp_file("pex_runset"))
     debug.info(2, cmd)
     utils.run_command(cmd, outfile, errfile, verbose_level=3, cwd=OPTS.openram_temp)
 
@@ -349,7 +356,7 @@ def run_pex(cell_name, gds_name, sp_name, output=None, run_drc_lvs=True, correct
 
     # Errors begin with "ERROR:"
     test = re.compile("ERROR:")
-    stdouterrors = filter(test.search, results)
+    stdouterrors = list(filter(test.search, results))
     for e in stdouterrors:
         debug.error(e.strip("\n"))
 
@@ -371,7 +378,7 @@ def correct_port(name, output_file_name, ref_file_name):
     pex_file.seek(match_index_start)
     rest_text = pex_file.read()
     # locate the end of circuit definition line
-    match = re.search("\* \n", rest_text)
+    match = re.search(r"\* \n", rest_text)
     match_index_end = match.start()
     # store the unchanged part of pex file in memory
     pex_file.seek(0)

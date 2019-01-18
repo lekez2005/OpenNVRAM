@@ -1,9 +1,11 @@
-from tech import drc
-import debug
-from contact import contact
 from itertools import tee
-from vector import vector
-from vector3d import vector3d
+
+import debug
+from base.contact import contact
+from base.vector import vector
+from router.vector3d import vector3d
+from tech import drc
+
 
 class route():
     """ 

@@ -1,13 +1,13 @@
-import contact
-import debug
-import design
-from globals import OPTS
 import math
-from pgates.ptx import ptx
-from tech import GDS,layer, purpose, parameter
-import utils
-from vector import vector
 
+import debug
+from base import contact
+from base import design
+from base import utils
+from base.vector import vector
+from globals import OPTS
+from pgates.ptx import ptx
+from tech import layer, purpose, parameter
 
 
 class matchline_precharge(design.design):

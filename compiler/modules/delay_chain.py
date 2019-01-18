@@ -1,12 +1,13 @@
 import math
+
 import debug
-import design
-from tech import drc
-from pinv import pinv
-from contact import contact, m1m2
-from vector import vector
+from base import design
+from base import utils
+from base.contact import contact
+from base.vector import vector
 from globals import OPTS
-import utils
+from pgates.pinv import pinv
+
 
 class delay_chain(design.design):
     """

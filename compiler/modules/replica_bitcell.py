@@ -1,7 +1,8 @@
-import design
 import debug
-import utils
-from tech import GDS,layer
+from base import design
+from base import utils
+from tech import GDS, layer
+
 
 class replica_bitcell(design.design):
     """

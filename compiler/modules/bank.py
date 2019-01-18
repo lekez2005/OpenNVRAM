@@ -1,16 +1,16 @@
-import sys
-from tech import drc, power_grid_layers
-from bank_gate import BankGate, ControlGate
-from column_decoder import ColumnDecoder
+from importlib import reload
+from math import log
+
 import debug
-import design
-import math
-from math import log,sqrt,ceil
-import contact
-from contact_full_stack import ContactFullStack
-import utils
-from vector import vector
+from base import contact
+from base import design
+from base import utils
+from base.contact_full_stack import ContactFullStack
+from base.vector import vector
 from globals import OPTS
+from tech import drc, power_grid_layers
+from .bank_gate import BankGate, ControlGate
+from .column_decoder import ColumnDecoder
 
 
 class bank(design.design):
@@ -78,6 +78,10 @@ class bank(design.design):
             self.route_msf_address()
         else:
             self.route_column_decoder()
+
+        if self.col_mux_array_inst is not None:
+            self.route_col_mux_to_sense_amp_array()
+
         self.add_control_pins()
         self.calculate_rail_vias()
         self.route_vdd_supply()
@@ -105,6 +109,8 @@ class bank(design.design):
             # The m2 width is because the 6T cell may have vias on the boundary edge for
             # overlapping when making the array
             self.add_column_mux_array()
+        else:
+            self.col_mux_array_inst = None
 
         self.add_sense_amp_array()
         self.add_write_driver_array()
@@ -122,8 +128,8 @@ class bank(design.design):
     def compute_sizes(self):
         """  Computes the required sizes to create the bank """
 
-        self.num_cols = self.words_per_row*self.word_size
-        self.num_rows = self.num_words / self.words_per_row
+        self.num_cols = int(self.words_per_row*self.word_size)
+        self.num_rows = int(self.num_words / self.words_per_row)
 
         self.row_addr_size = int(log(self.num_rows, 2))
         self.col_addr_size = int(log(self.words_per_row, 2))
@@ -145,8 +151,8 @@ class bank(design.design):
         self.num_control_lines = 6
         # The order of the control signals on the control bus:
         self.input_control_signals = ["clk_buf", "tri_en", "w_en", "s_en"]
-        self.control_signals = map(lambda x: self.prefix + x,
-                                   ["s_en", "clk_bar", "clk_buf", "tri_en_bar", "tri_en", "w_en"])
+        self.control_signals = list(map(lambda x: self.prefix + x,
+                                        ["s_en", "clk_bar", "clk_buf", "tri_en_bar", "tri_en", "w_en"]))
 
         # The central bus is the column address (both polarities), row address
         self.num_addr_lines = self.row_addr_size
@@ -278,10 +284,7 @@ class bank(design.design):
     def add_column_mux_array(self):
         """ Adding Column Mux when words_per_row > 1 . """
 
-
-        y_space = self.nwell_extension + self.implant_space
-
-        y_offset = self.column_mux_array.height + y_space
+        y_offset = self.column_mux_array.height
         self.col_mux_array_inst=self.add_inst(name="column_mux_array",
                                               mod=self.column_mux_array,
                                               offset=vector(0,y_offset).scale(-1,-1))
@@ -554,7 +557,7 @@ class bank(design.design):
         # connect bank gate outputs outputs
         control_to_pin = dict(zip(self.control_signals, self.control_signals))
         control_to_pin[self.prefix + "clk_buf"] = self.prefix + "clk"
-        for control_name, pin_name in control_to_pin.iteritems():
+        for control_name, pin_name in control_to_pin.items():
             if pin_name == "clk_buf":
                 pin_name = "clk"
             v_rail_x = self.central_line_xoffset[control_name]
@@ -670,7 +673,7 @@ class bank(design.design):
         # row address lines
         # goes from just below row decoder to lowest msf_address_int output pin
         if self.msf_address_inst is not None:
-            data_pin_names = map("dout[{}]".format, range(self.row_addr_size))
+            data_pin_names = list(map("dout[{}]".format, range(self.row_addr_size)))
             addr_pins = sorted(map(self.msf_address_inst.get_pin, data_pin_names), key=lambda x: x.by())
             rail_min_point = addr_pins[0].by()
             for i in range(self.row_addr_size):
@@ -684,7 +687,7 @@ class bank(design.design):
                                    width=self.m2_width,
                                    height=-rail_min_point - self.line_end_space)
         else:
-            data_pin_names = map("dout[{}]".format, range(self.row_addr_size))
+            data_pin_names = list(map("dout[{}]".format, range(self.row_addr_size)))
             addr_pins = sorted(map(self.column_decoder_inst.get_pin, data_pin_names), key=lambda x: x.by())
             bottom_rail = min(addr_pins[0].by(), self.row_decoder_inst.by())
             top_rail = self.wordline_driver_inst.by() - 0.5*self.wordline_driver.rail_height - self.line_end_space
@@ -699,20 +702,24 @@ class bank(design.design):
                                    width=self.m2_width,
                                    height=top_rail - bottom_rail)
 
-
-
-
     def route_precharge_to_bitcell_array(self):
         """ Routing of BL and BR between pre-charge and bitcell array """
+        self.connect_array_bitlines(self.precharge_array_inst, self.bitcell_array_inst)
 
+    def route_col_mux_to_sense_amp_array(self):
+        for i in range(self.word_size):
+            for (top_name, bot_name) in [("bl_out[{}]", "bl[{}]"), ("br_out[{}]", "br[{}]")]:
+                top_pin = self.col_mux_array_inst.get_pin(top_name.format(i))
+                bot_pin = self.sense_amp_array_inst.get_pin(bot_name.format(i*self.words_per_row))
+                self.add_path(top_pin.layer, [bot_pin.uc(), top_pin.bc()])
+
+    def connect_array_bitlines(self, top_array, bottom_array, top_bl_name="bl[{}]", top_br_name="br[{}]",
+                               bot_bl_name="bl[{}]", bot_br_name="br[{}]"):
         for i in range(self.num_cols):
-            precharge_bl = self.precharge_array_inst.get_pin("bl[{}]".format(i)).bc()
-            precharge_br = self.precharge_array_inst.get_pin("br[{}]".format(i)).bc()
-            bitcell_bl = self.bitcell_array_inst.get_pin("bl[{}]".format(i)).uc()
-            bitcell_br = self.bitcell_array_inst.get_pin("br[{}]".format(i)).uc()
-
-            self.add_path("metal2",[precharge_bl,bitcell_bl])
-            self.add_path("metal2",[precharge_br,bitcell_br])
+            for (top_name, bot_name) in [(top_bl_name, bot_bl_name), (top_br_name, bot_br_name)]:
+                top_pin = top_array.get_pin(top_name.format(i))
+                bot_pin = bottom_array.get_pin(bot_name.format(i))
+                self.add_path(top_pin.layer, [bot_pin.uc(), top_pin.bc()])
 
     def route_sense_amp_to_trigate(self):
         """ Routing of sense amp output to tri_gate input """
@@ -895,11 +902,10 @@ class bank(design.design):
 
         # route sel pins
         obstructions = []
-        tri_gate_in_pins = map(self.tri_gate_array_inst.get_pin,
-                               map("in[{0}]".format, range(self.word_size)))
+        tri_gate_in_pins = list(map(self.tri_gate_array_inst.get_pin, map("in[{0}]".format, range(self.word_size))))
         m3_pitch = self.m3_width + self.m3_space
-        blocked_regions = map(lambda x: (x.lx() - self.bendX - 0.5*self.m1_width - m3_pitch,
-                                         x.rx() + m3_pitch), tri_gate_in_pins)
+        blocked_regions = list(map(lambda x: (x.lx() - self.bendX - 0.5*self.m1_width - m3_pitch,
+                                         x.rx() + m3_pitch), tri_gate_in_pins))
 
 
         def find_no_collision(x, direction=1.0):
@@ -950,7 +956,8 @@ class bank(design.design):
             self.add_contact_center(contact.m2m3.layer_stack, offset=vector(mid_cell, mux_sel_pin.cy()), rotate=90)
             return mid_cell
 
-        sel_pins = map(self.column_decoder_inst.get_pin, ["sel[{}]".format(i) for i in range(2**self.col_addr_size)])
+        sel_pins = list(map(self.column_decoder_inst.get_pin,
+                            ["sel[{}]".format(i) for i in range(2**self.col_addr_size)]))
         if self.col_addr_size == 1:
             connect_to_mux(sel_pins[0], "left", 0.0)
             connect_to_mux(sel_pins[1], "right", 0.0)
@@ -1118,21 +1125,30 @@ class bank(design.design):
                             offset=control_via_pos)
 
         # route clk below decoder
+        via_x = self.start_of_left_central_bus - self.parallel_line_space - 0.5 * contact.m1m2.first_layer_width
         bottom_wordline = self.wordline_driver_inst.by()
-        via_y = (bottom_wordline - 0.5*self.wordline_driver.rail_height - self.line_end_space -
-                   0.5*contact.m1m2.first_layer_height)
-        self.add_contact_center(layers=contact.contact.m1m2_layers, offset=vector(control_x_offset, via_y))
-        via_x = self.start_of_left_central_bus - self.parallel_line_space - 0.5*contact.m1m2.first_layer_width
+        self.add_rect("metal2", offset=vector(en_pin.lx(), bottom_wordline), height=en_pin.by() - bottom_wordline)
+        self.add_rect("metal2", offset=vector(en_pin.lx(), bottom_wordline), width=via_x - en_pin.lx())
+
+        if self.col_mux_array_inst is not None:
+            via_y = (self.col_mux_array_inst.get_pin("gnd").by() - 0.5 * self.wordline_driver.rail_height -
+                     self.line_end_space - 0.5 * contact.m1m2.first_layer_height)
+        else:
+            via_y = (bottom_wordline - 0.5 * self.wordline_driver.rail_height - self.line_end_space -
+                     0.5 * contact.m1m2.first_layer_height)
+
         self.add_contact_center(layers=contact.contact.m1m2_layers, offset=vector(via_x, via_y))
-        self.add_rect("metal1", offset=vector(via_x, via_y-0.5*self.m1_width), width=control_x_offset + 0.5*self.m1_width - via_x)
-        self.add_rect("metal2", offset=vector(via_x-0.5*self.m2_width, via_y), height=bottom_wordline-via_y+self.m2_width)
-        self.add_rect("metal2", offset=vector(en_pin.lx(), bottom_wordline), width=via_x-en_pin.lx())
-        self.add_rect("metal2", offset=vector(en_pin.lx(), bottom_wordline), height=en_pin.by()-bottom_wordline)
+        self.add_rect("metal2", offset=vector(via_x-0.5*self.m2_width, via_y),
+                      height=bottom_wordline-via_y+self.m2_width)
+        self.add_rect("metal1", offset=vector(via_x, via_y - 0.5 * self.m1_width),
+                      width=control_x_offset + 0.5 * self.m1_width - via_x)
+
+        self.add_contact_center(layers=contact.contact.m1m2_layers, offset=vector(control_x_offset, via_y))
 
     def get_collisions(self):
         collisions = []
 
-        addr_in_pin_names = map("ADDR[{}]".format, range(self.addr_size))
+        addr_in_pin_names = list(map("ADDR[{}]".format, range(self.addr_size)))
 
         addr_in_pins = sorted(map(self.get_pin, addr_in_pin_names), key=lambda x: x.by())
 
@@ -1146,8 +1162,6 @@ class bank(design.design):
         control_pins = sorted(map(self.get_pin, self.input_control_signals + ["bank_sel"]), key=lambda x: x.by())
         collisions.append((control_pins[0].by(), control_pins[-1].uy()))
         return collisions
-
-
 
     def calculate_rail_vias(self):
         """Calculates positions of power grid rail to M1/M2 vias. Avoids internal metal3 control pins"""
@@ -1191,7 +1205,6 @@ class bank(design.design):
                 current_y = collision[1] + via_space
 
         self.power_grid_vias = via_positions
-
 
     def route_vdd_supply(self):
         """ Route vdd for the precharge, sense amp, write_driver, data FF, tristate """
@@ -1242,7 +1255,6 @@ class bank(design.design):
                               width=self.right_vdd_x_offset - vdd_pin.rx(),
                               height=vdd_pin.height())
 
-
     def route_gnd_supply(self):
         """ Route gnd for the precharge, sense amp, write_driver, data FF, tristate """
         # add vertical rail
@@ -1276,8 +1288,11 @@ class bank(design.design):
         dummy_contact = contact.contact(layer_stack=layers, dimensions=contact_size)
         contact_width = dummy_contact.first_layer_width + dummy_contact.first_layer_vertical_enclosure
         decoder_gnds = self.row_decoder_inst.get_pins("gnd")
-        for inst in [ self.tri_gate_array_inst, self.sense_amp_array_inst, self.msf_data_in_inst,
-                      self.write_driver_array_inst, self.bank_gate_inst, self.column_decoder_inst]:
+        gnd_modules = [ self.tri_gate_array_inst, self.sense_amp_array_inst, self.msf_data_in_inst,
+                      self.write_driver_array_inst, self.bank_gate_inst, self.column_decoder_inst]
+        if self.col_mux_array_inst is not None:
+            gnd_modules.append(self.col_mux_array_inst)
+        for inst in gnd_modules:
             if inst is None:
                 continue
             for gnd_pin in inst.get_pins("gnd"):
@@ -1315,7 +1330,6 @@ class bank(design.design):
                         y_offset = gnd_pin.by()
                     self.add_rect("metal1", offset=vector(self.gnd_x_offset, y_offset), width=width, height=height)
 
-
     def route_gnd_from_left(self, pin):
         layers = ("metal1", "via1", "metal2")
         contact_size = [2, 1]
@@ -1338,7 +1352,6 @@ class bank(design.design):
                                width=self.m2_width,
                                height=self.height)
 
-
     def connect_rail_from_right(self,inst, pin, rail):
         """ Helper routine to connect an unrotated/mirrored oriented instance to the rails """
         in_pin = inst.get_pin(pin).lc()
@@ -1351,8 +1364,7 @@ class bank(design.design):
         self.add_via(layers=("metal2","via2","metal3"),
                      offset=in_pin + self.m2m3_via_offset,
                      rotate=90)
-        
-        
+
     def connect_rail_from_left(self,inst, pin, rail):
         """ Helper routine to connect an unrotated/mirrored oriented instance to the rails """
         in_pin = inst.get_pin(pin).rc()
@@ -1381,7 +1393,5 @@ class bank(design.design):
 
         data_t_DATA_delay = self.tri_gate_array.analytical_delay(bl_t_data_out_delay.slew, load)
 
-        result = msf_addr_delay + decoder_delay + word_driver_delay \
-                 + bitcell_array_delay + bl_t_data_out_delay + data_t_DATA_delay
+        result = decoder_delay + word_driver_delay + bitcell_array_delay + bl_t_data_out_delay + data_t_DATA_delay
         return result
-        

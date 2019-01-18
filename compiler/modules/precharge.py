@@ -1,11 +1,12 @@
-import contact
 import debug
-import design
-from tech import drc, parameter
-from ptx_spice import ptx_spice
-from vector import vector
+from base import contact
+from base import design
+from base import utils
+from base.vector import vector
 from globals import OPTS
-import utils
+from pgates.ptx_spice import ptx_spice
+from tech import drc, parameter
+
 
 class precharge(design.design):
     """

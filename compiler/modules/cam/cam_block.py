@@ -1,10 +1,12 @@
-from bank_gate import ControlGate
-from cam_bank_gate import CamBankGate
 from collections import namedtuple
-import contact
+
+from cam_bank_gate import CamBankGate
+
+from base import contact
+from base import utils
+from base.vector import vector
 from modules import bank
-import utils
-from vector import vector
+from modules.bank_gate import ControlGate
 
 
 class cam_block(bank.bank):
@@ -210,8 +212,8 @@ class cam_block(bank.bank):
         for i in range(self.word_size):
             # route mask
             mask_flop_out = self.msf_mask_in_inst.get_pin("dout[{0}]".format(i))
-            writer_mask_in = filter(lambda pin: pin.layer == "metal3",
-                                    self.write_driver_array_inst.get_pins("mask[{}]".format(i)))[0]
+            writer_mask_in = next(filter(lambda pin: pin.layer == "metal3",
+                                    self.write_driver_array_inst.get_pins("mask[{}]".format(i))))
             self.add_rect("metal2", offset=vector(writer_mask_in.lx(), mask_flop_out.uy() - self.m2_width),
                           width=mask_flop_out.lx() - writer_mask_in.lx())
             self.add_contact(contact.m2m3.layer_stack,
@@ -608,8 +610,8 @@ class cam_block(bank.bank):
     def compute_sizes(self):
         super(cam_block, self).compute_sizes()
 
-        self.control_signals = map(lambda x: self.prefix + x,
-                                   ["s_en", "clk_bar", "clk_buf", "tri_en_bar", "tri_en", "w_en"])
+        self.control_signals = list(map(lambda x: self.prefix + x,
+                                        ["s_en", "clk_bar", "clk_buf", "tri_en_bar", "tri_en", "w_en"]))
 
         self.num_left_rails = 2  # clk and clk_bar
 

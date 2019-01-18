@@ -1,11 +1,10 @@
-import body_tap
 import debug
-import design
-from tech import drc, spice
-from vector import vector
+from base import design
+from base import utils
+from base.vector import vector
 from globals import OPTS
-import utils
-
+from tech import drc, spice
+from modules import body_tap
 
 
 class bitcell_array(design.design):
@@ -208,7 +207,6 @@ class bitcell_array(design.design):
             offset.y += self.cell.height
 
     def analytical_delay(self, slew, load=0):
-        from tech import drc
         wl_wire = self.gen_wl_wire()
         wl_wire.return_delay_over_wire(slew)
 
@@ -226,8 +224,7 @@ class bitcell_array(design.design):
                         
     def analytical_power(self, proc, vdd, temp, load):
         """Power of Bitcell array and bitline in nW."""
-        from tech import drc
-        
+
         # Dynamic Power from Bitline
         bl_wire = self.gen_bl_wire()
         cell_load = 2 * bl_wire.return_input_cap() 

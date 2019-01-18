@@ -1,7 +1,7 @@
+import tech
+from base import utils
 from characterizer.sram_probe import SramProbe
 from globals import OPTS
-import tech
-import utils
 
 
 class CamProbe(SramProbe):
@@ -113,7 +113,6 @@ class CamProbe(SramProbe):
         else:
             return self.matchline_probes[address]
 
-
     def probe_tagbits(self, address):
         address = self.address_to_vector(address)
         bank_index, bank_inst, row, col_index = self.decode_address(address)
@@ -141,15 +140,13 @@ class CamProbe(SramProbe):
         self.add_probe_at_pin("gated_w_en_b{}".format(bank_index),
                               block_inst.mod.bank_gate_inst.get_pin("gated_w_en".format(row)), bank_inst, block_inst)
 
-
     def add_probe_at_pin(self, label, pin, bank_inst, block_inst):
         ll, ur = utils.get_pin_rect(pin, [bank_inst, block_inst])
         pin_loc = [0.5 * (ll[0] + ur[0]), 0.5 * (ll[1] + ur[1])]
         self.sram.add_label(label, pin.layer, pin_loc)
         self.probe_labels.add(label)
 
-
-    def misc_probes(self):
+    def add_misc_probes(self, bank_inst):
         self.probe_labels.add("Xsram.Xbank{}.sel_all_banks".format(0))
         self.probe_labels.add("Xsram.Xbank{}.Xrow_decoder.Xpre[0].flop_in[0]".format(0))
         self.probe_labels.add("Xsram.Xbank{}.Xrow_decoder.Xpre[0].in[0]".format(0))
@@ -182,13 +179,7 @@ class CamProbe(SramProbe):
                 self.probe_labels.add("Xsram.Xbank{}.Xcam_block{}.wl[{}]".format(0, block, row))
                 self.probe_labels.add("Xsram.Xbank{}.Xcam_block{}.ml[{}]".format(0, block, row))
 
-
-
-
-
-
-
     def get_col_location(self, col):
         cam_block = col % self.sram.words_per_row
-        col_num = col / self.sram.words_per_row
+        col_num = int(col / self.sram.words_per_row)
         return cam_block, col_num

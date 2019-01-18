@@ -1,6 +1,6 @@
-from modules import bitcell_array
 import re
-from vector import vector
+
+from modules import bitcell_array
 
 
 class cam_bitcell_12t_array(bitcell_array.bitcell_array):

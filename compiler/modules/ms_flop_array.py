@@ -1,8 +1,11 @@
+from importlib import reload
+
 import debug
-import design
-import utils
-from vector import vector
+from base import design
+from base import utils
+from base.vector import vector
 from globals import OPTS
+
 
 class ms_flop_array(design.design):
     """
@@ -25,7 +28,7 @@ class ms_flop_array(design.design):
         self.add_mod(self.ms)
 
         self.height = self.ms.height
-        self.words_per_row = self.columns / self.word_size
+        self.words_per_row = int(self.columns / self.word_size)
         self.align_bitcell = align_bitcell
 
         self.create_layout()
@@ -58,16 +61,17 @@ class ms_flop_array(design.design):
             name = "Xdff{0}".format(i)
             base = vector(self.bitcell_offsets[i], 0)
             mirror = "R0"
-            self.ms_inst[i/self.words_per_row]=self.add_inst(name=name,
+            index = int(i / self.words_per_row)
+            self.ms_inst[index]=self.add_inst(name=name,
                                                              mod=self.ms,
                                                              offset=base, 
                                                              mirror=mirror)
-            self.connect_inst(["din[{0}]".format(i/self.words_per_row),
-                               "dout[{0}]".format(i/self.words_per_row),
-                               "dout_bar[{0}]".format(i/self.words_per_row),
+            self.connect_inst(["din[{0}]".format(index),
+                               "dout[{0}]".format(index),
+                               "dout_bar[{0}]".format(index),
                                "clk",
                                "vdd", "gnd"])
-        self.width = self.ms_inst[i/self.words_per_row].rx()
+        self.width = self.ms_inst[index].rx()
 
     def add_layout_pins(self):
 

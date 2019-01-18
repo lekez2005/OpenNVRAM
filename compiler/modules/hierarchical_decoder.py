@@ -1,16 +1,18 @@
-from tech import drc
-import debug
-import design
 import math
-import contact 
-from pnand2 import pnand2
-from pnand3 import pnand3 
-from pinv import pinv 
-from hierarchical_predecode2x4 import hierarchical_predecode2x4 as pre2x4
-from hierarchical_predecode3x8 import hierarchical_predecode3x8 as pre3x8
-import utils
-from vector import vector
+
+import debug
+from base import contact
+from base import design
+from base import utils
+from base.vector import vector
 from globals import OPTS
+from modules.hierarchical_predecode2x4 import hierarchical_predecode2x4 as pre2x4
+from modules.hierarchical_predecode3x8 import hierarchical_predecode3x8 as pre3x8
+from pgates.pinv import pinv
+from pgates.pnand2 import pnand2
+from pgates.pnand3 import pnand3
+from tech import drc
+
 
 class hierarchical_decoder(design.design):
     """
@@ -535,7 +537,7 @@ class hierarchical_decoder(design.design):
 
     def route_vdd_gnd(self):
         """ Add a pin for each row of vdd/gnd which are must-connects next level up. """
-        for i in range(0, len(self.nand_inst), 2) + [-1]:
+        for i in list(range(0, len(self.nand_inst), 2)) + [-1]:
             inst = self.nand_inst[i]
             self.copy_power_pin(inst.get_pin("vdd"))
             self.copy_power_pin(inst.get_pin("gnd"))

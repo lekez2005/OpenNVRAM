@@ -1,9 +1,11 @@
-import design
-from tech import drc
-from vector import vector
+from importlib import reload
+
 import debug
+from base import design
+from base import utils
+from base.vector import vector
 from globals import OPTS
-import utils
+
 
 class sense_amp_array(design.design):
     """
@@ -32,8 +34,9 @@ class sense_amp_array(design.design):
 
     def add_pins(self):
 
-        for i in range(0,self.row_size,self.words_per_row):
-            self.add_pin("data[{0}]".format(i/self.words_per_row))
+        for i in range(0, self.row_size, self.words_per_row):
+            index = int(i/self.words_per_row)
+            self.add_pin("data[{0}]".format(index))
             self.add_pin("bl[{0}]".format(i))
             self.add_pin("br[{0}]".format(i))
 
@@ -73,8 +76,10 @@ class sense_amp_array(design.design):
             self.amp_insts.append(self.add_inst(name=name,
                           mod=self.amp,
                           offset=amp_position))
+            index = int(i / self.words_per_row)
+
             self.connect_inst(["bl[{0}]".format(i),"br[{0}]".format(i), 
-                               "data[{0}]".format(i/self.words_per_row), 
+                               "data[{0}]".format(index),
                                "en", "vdd", "gnd"])
 
             self.add_layout_pin(text="bl[{0}]".format(i),
@@ -88,7 +93,7 @@ class sense_amp_array(design.design):
                                 width=br_pin.width(),
                                 height=br_pin.height())
                            
-            self.add_layout_pin(text="data[{0}]".format(i/self.words_per_row),
+            self.add_layout_pin(text="data[{0}]".format(index),
                                 layer="metal3",
                                 offset=dout_offset,
                                 width=dout_pin.width(),

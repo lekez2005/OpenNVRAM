@@ -1,12 +1,11 @@
+from importlib import reload
 
-from characterizer import sequential_delay
-from characterizer import sram_probe
-
-import globals
-from globals import OPTS
-import verify
 import characterizer
 import debug
+import verify
+from characterizer import sequential_delay
+from characterizer import sram_probe
+from globals import OPTS
 
 
 class FunctionalTest:
@@ -26,7 +25,6 @@ class FunctionalTest:
         self.probe = None
         self.delay = None
 
-
         OPTS.analytical_delay = False
         OPTS.trim_netlist = False
 
@@ -36,9 +34,9 @@ class FunctionalTest:
         OPTS.check_lvsdrc = False
         if _sram is None:
             self.sram = sram.sram(word_size=OPTS.word_size,
-                          num_words=OPTS.num_words,
-                          num_banks=OPTS.num_banks,
-                          name="sram1")
+                                  num_words=OPTS.num_words,
+                                  num_banks=OPTS.num_banks,
+                                  name="sram1")
         else:
             self.sram = _sram
 
@@ -77,7 +75,6 @@ class FunctionalTest:
         if OPTS.use_pex and bank_inst is not None:
             probe.add_misc_probes(bank_inst)
 
-
     def extract_probes(self):
         probe = self.probe
         if OPTS.use_pex:
@@ -85,11 +82,10 @@ class FunctionalTest:
             for label in probe.probe_labels:
                 try:
                     self.saved_nodes.add(probe.extract_from_pex(label))
-                except Exception, e:
+                except:
                     debug.warning("Probe {} not found in extracted netlist".format(label))
         else:
             self.saved_nodes = set(probe.probe_labels)
-
 
     def run_drc_lvs_pex(self):
         old_drc_lvs = OPTS.check_lvsdrc
@@ -133,14 +129,8 @@ class FunctionalTest:
         for address in self.addresses:
             addr_map_list.append({
                 "address": address,
-                #"net_names": self.probe.get_bitcell_probes(address, "Q")
-                "net_names": []
+                "net_names": self.probe.get_bitcell_probes(address, "Q")
+                #"net_names": []
             })
 
         self.delay.set_stimulus_params(addr_map_list, list(self.saved_nodes))
-
-
-
-
-
-

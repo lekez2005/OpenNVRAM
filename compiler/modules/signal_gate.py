@@ -1,10 +1,10 @@
-import contact
-import design
 import debug
-from pinv import pinv
-from pnand2 import pnand2
-from pnor2 import pnor2
-from vector import vector
+from base import contact
+from base import design
+from base.vector import vector
+from pgates.pinv import pinv
+from pgates.pnand2 import pnand2
+from pgates.pnor2 import pnor2
 
 
 class SignalGate(design.design):
@@ -108,8 +108,11 @@ class SignalGate(design.design):
             self.add_rect("metal2", offset=vector(rail_x, pin.cy() - 0.5 * self.m2_width), width=pin.cx() - rail_x)
             if i == 1 and self.logic == "or":
                 self.add_contact(contact.m1m2.layer_stack, offset=pin.lr(), rotate=90)
+            elif i == 1:
+                self.add_contact(layers=contact.contact.m1m2_layers, offset=pin.lr(), rotate=90)
             else:
-                self.add_contact_center(layers=contact.contact.m1m2_layers, offset=pin.center())
+                y_offset = pin.uy() - contact.m1m2.second_layer_height
+                self.add_contact(layers=contact.contact.m1m2_layers, offset=vector(pin.lx(), y_offset))
             self.add_layout_pin(pin_names[i], "metal2", offset=vector(rail_x, 0), height=pin.cy())
             rail_x += self.parallel_line_space + self.m2_width
 

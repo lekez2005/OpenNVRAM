@@ -1,10 +1,8 @@
-import design
-import contact
-import design
-import utils
-from pinv import pinv
-from pnand2 import pnand2
-from vector import vector
+from base import contact
+from base import design
+from base.vector import vector
+from pgates.pinv import pinv
+from pgates.pnand2 import pnand2
 
 
 class wordline_driver(design.design):

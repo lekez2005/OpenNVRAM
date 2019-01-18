@@ -1,12 +1,15 @@
-import os,sys,re
-import debug
-import math
-import setup_hold
-import delay
-import charutils as ch
-import tech
+import os
+
 import numpy as np
+
+import debug
+import tech
 from globals import OPTS
+from . import charutils as ch
+from . import setup_hold
+from .charutils import round_time
+from .delay import delay
+
 
 class lib:
     """ lib file generation."""
@@ -60,7 +63,7 @@ class lib:
                                                                   volt,
                                                                   temp)
                     self.corner_name = self.corner_name.replace(".","p") # Remove decimals
-                    lib_name = self.out_dir+"{}.lib".format(self.corner_name)
+                    lib_name = os.path.join(self.out_dir, "{}.lib".format(self.corner_name))
                     
                     # A corner is a tuple of PVT
                     self.corners.append((proc, volt, temp))
@@ -71,10 +74,11 @@ class lib:
         for (self.corner,lib_name) in zip(self.corners,self.lib_files):
             debug.info(1,"Corner: " + str(self.corner))
             (self.process, self.voltage, self.temperature) = self.corner
-            self.lib = open(lib_name, "w")
-            debug.info(1,"Writing to {0}".format(lib_name))
-            self.characterize()
-            self.lib.close()
+
+            with open(lib_name, "w") as lib_file:
+                self.lib = lib_file
+                debug.info(1, "Writing to {0}".format(lib_name))
+                self.characterize()
 
     def characterize(self):
         """ Characterize the current corner. """
@@ -186,9 +190,9 @@ class lib:
         """ Helper function to create quoted, line wrapped array with each row of given length """
         # check that the length is a multiple or give an error!
         debug.check(len(values)%length == 0,"Values are not a multiple of the length. Cannot make a full array.")
-        rounded_values = map(ch.round_time,values)
+        rounded_values = list(map(ch.round_time,values))
         split_values = [rounded_values[i:i+length] for i in range(0, len(rounded_values), length)]
-        formatted_rows = map(self.create_list,split_values)
+        formatted_rows = list(map(self.create_list,split_values))
         formatted_array = ",\\\n".join(formatted_rows)
         return formatted_array
     
@@ -274,11 +278,11 @@ class lib:
         self.lib.write("            timing_type : setup_rising; \n")
         self.lib.write("            related_pin  : \"clk\"; \n")
         self.lib.write("            rise_constraint(CONSTRAINT_TABLE) {\n")
-        rounded_values = map(ch.round_time,self.times["setup_times_LH"])
+        rounded_values = list(map(round_time,self.times["setup_times_LH"]))
         self.write_values(rounded_values,len(self.slews),"            ")
         self.lib.write("            }\n")
         self.lib.write("            fall_constraint(CONSTRAINT_TABLE) {\n")
-        rounded_values = map(ch.round_time,self.times["setup_times_HL"])
+        rounded_values = list(map(round_time,self.times["setup_times_HL"]))
         self.write_values(rounded_values,len(self.slews),"            ")
         self.lib.write("            }\n")
         self.lib.write("        }\n")
@@ -286,11 +290,11 @@ class lib:
         self.lib.write("            timing_type : hold_rising; \n")
         self.lib.write("            related_pin  : \"clk\"; \n")
         self.lib.write("            rise_constraint(CONSTRAINT_TABLE) {\n")
-        rounded_values = map(ch.round_time,self.times["hold_times_LH"])
+        rounded_values = list(map(round_time,self.times["hold_times_LH"]))
         self.write_values(rounded_values,len(self.slews),"            ")
         self.lib.write("              }\n")
         self.lib.write("            fall_constraint(CONSTRAINT_TABLE) {\n")
-        rounded_values = map(ch.round_time,self.times["hold_times_HL"])
+        rounded_values = list(map(round_time,self.times["hold_times_HL"]))
         self.write_values(rounded_values,len(self.slews),"            ")
         self.lib.write("            }\n")
         self.lib.write("        }\n")
@@ -413,8 +417,8 @@ class lib:
         self.lib.write("            }\n")
         self.lib.write("        }\n")
 
-        min_pulse_width = ch.round_time(self.char_results["min_period"])/2.0
-        min_period = ch.round_time(self.char_results["min_period"])
+        min_pulse_width = round_time(self.char_results["min_period"])/2.0
+        min_period = round_time(self.char_results["min_period"])
         self.lib.write("        timing(){ \n")
         self.lib.write("            timing_type :\"min_pulse_width\"; \n")
         self.lib.write("            related_pin  : clk; \n")
@@ -440,10 +444,8 @@ class lib:
 
     def compute_delay(self):
         """ Do the analysis if we haven't characterized the SRAM yet """
-        try:
-            self.d
-        except AttributeError:
-            self.d = delay.delay(self.sram, self.sp_file, self.corner)
+        if not hasattr(self, 'd'):
+            self.d = delay(self.sram, self.sp_file, self.corner)
             if self.use_model:
                 self.char_results = self.d.analytical_delay(self.sram,self.slews,self.loads)
             else:

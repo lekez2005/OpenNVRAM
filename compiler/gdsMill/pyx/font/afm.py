@@ -59,7 +59,7 @@ def _parsefloat(s):
 def _parsefloats(s, nos):
     try:
         numbers = s.split()
-        result = map(float, numbers)
+        result = list(map(float, numbers))
         if len(result) != nos:
             raise AFMError()
     except:

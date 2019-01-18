@@ -1,9 +1,7 @@
-import design
 import debug
+from base import design
+from base.vector import vector
 from matchline_precharge import matchline_precharge
-from pinv import pinv
-from pnand2 import pnand2
-from vector import vector
 
 
 class ml_precharge_array(design.design):

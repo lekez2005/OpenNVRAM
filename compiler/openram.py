@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3
 """
 SRAM Compiler
 
@@ -10,11 +10,10 @@ a Liberty (.lib) file for timing analysis/optimization
 
 """
 
-import sys,os
 import datetime
-import re
-import importlib
-from globals import *
+import sys
+
+from globals import parse_args, print_time, USAGE, end_openram, print_banner, report_status, init_openram
 
 (OPTS, args) = parse_args()
 
@@ -25,7 +24,6 @@ if len(args) != 1:
 
 
 # These depend on arguments, so don't load them until now.
-import debug
 
 
 init_openram(config_file=args[0], is_unit_test=False)
@@ -37,7 +35,6 @@ print_banner()
 report_status()
 
 # Start importing design modules after we have the config file
-import verify
 import sram
 
 print("Output files are " + OPTS.output_name + ".(sp|gds|v|lib|lef)")

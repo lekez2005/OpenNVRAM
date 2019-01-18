@@ -1,6 +1,7 @@
-import debug
 import math
+
 import tech
+
 
 class vector():
     """
@@ -95,7 +96,8 @@ class vector():
         """
         grid = tech.drc["grid"]  
         # this gets the nearest integer value
-        off_in_grid = int(round(round((offset / grid), 2), 0))
+        # 0.001 added for edge cases: round(196.5, 0) rounds to 196 in python3 but 197 in python 2
+        off_in_grid = int(math.copysign(1, offset) * round(round((abs(offset) / grid), 2) + 0.001, 0))
         offset = off_in_grid * grid
         return offset
 

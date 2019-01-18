@@ -1,7 +1,7 @@
+from base.contact import contact
+from base.path import path
 from tech import drc
-import debug
-from contact import contact
-from path import path
+
 
 class wire(path):
     """ 

@@ -1,6 +1,3 @@
-import debug
-import math
-
 class vector3d():
     """
     This is the vector3d class to represent a 3D coordinate.

@@ -1,8 +1,9 @@
-import design
-import debug
-from globals import OPTS
-import write_driver_array
+from importlib import reload
 
+import debug
+from base import design
+from globals import OPTS
+from modules import write_driver_array
 
 
 class sl_driver_array(write_driver_array.write_driver_array):
@@ -23,7 +24,7 @@ class sl_driver_array(write_driver_array.write_driver_array):
 
         self.columns = columns
         self.word_size = word_size
-        self.words_per_row = columns / word_size
+        self.words_per_row = int(columns / word_size)
 
         self.height = self.driver.height
 
@@ -43,10 +44,11 @@ class sl_driver_array(write_driver_array.write_driver_array):
         self.add_pin("gnd")
 
     def get_connections(self, i):
-        return ["din[{0}]".format(i/self.words_per_row),
-                           "sl[{0}]".format(i/self.words_per_row),
-                           "slb[{0}]".format(i/self.words_per_row),
-                           "mask[{0}]".format(i/self.words_per_row),
+        index = int(i/self.words_per_row)
+        return ["din[{0}]".format(index),
+                           "sl[{0}]".format(index),
+                           "slb[{0}]".format(index),
+                           "mask[{0}]".format(index),
                            "en", "vdd", "gnd"]
 
 

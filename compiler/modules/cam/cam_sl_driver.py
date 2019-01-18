@@ -1,6 +1,6 @@
 import debug
-import design
-import utils
+from base import design
+from base import utils
 from tech import GDS, layer
 
 

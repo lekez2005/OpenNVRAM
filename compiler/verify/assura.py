@@ -21,9 +21,10 @@ inserted in the runset.
 
 import os
 import re
-import time
+
 import debug
 from globals import OPTS
+
 
 def run_drc(name, gds_name):
     """Run DRC check on a given top-level name which is
@@ -31,8 +32,8 @@ def run_drc(name, gds_name):
 
     from tech import drc
     drc_rules = drc["drc_rules"]
-    drc_runset = OPTS.openram_temp + name + ".rsf"
-    drc_log_file = "{0}{1}.log".format(OPTS.openram_temp, name)
+    drc_runset = os.path.join(OPTS.openram_temp, name + ".rsf")
+    drc_log_file = os.path.join(OPTS.openram_temp, "{0}.log".format(name))
 
     # write the runset file
     # the runset file contains all the options to run Assura
@@ -90,12 +91,12 @@ def run_lvs(name, gds_name, sp_name):
        implemented in gds_name and sp_name. """
     from tech import drc
     lvs_rules = drc["lvs_rules"]
-    lvs_runset = OPTS.openram_temp + name + ".rsf"
+    lvs_runset = os.path.join(OPTS.openram_temp, name + ".rsf")
     # The LVS compare rules must be defined in the tech file for Assura.
     lvs_compare = drc["lvs_compare"]
     # Define the must-connect names for disconnected LVS nets for Assura
     lvs_bindings = drc["lvs_bindings"]
-    lvs_log_file = "{0}{1}.log".format(OPTS.openram_temp, name)
+    lvs_log_file = os.path.join(OPTS.openram_temp, "{}.log".format(name))
     # Needed when FET models are sub-circuits
     if drc.has_key("lvs_subcircuits"):
         lvs_sub_file = drc["lvs_subcircuits"]

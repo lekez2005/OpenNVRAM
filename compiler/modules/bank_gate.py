@@ -1,9 +1,9 @@
-import contact
 import debug
-import design
+from base import contact
+from base import design
+from base.vector import vector
 from globals import OPTS
-from signal_gate import SignalGate
-from vector import vector
+from .signal_gate import SignalGate
 
 
 class ControlGate:
@@ -25,8 +25,8 @@ class BankGate(design.design):
     """
     def __init__(self, control_gates, contact_pwell=True, contact_nwell=True):
         self.control_gates = control_gates  # type: list[ControlGate]
-        self.left_outputs = filter(lambda gate: gate.output_dir == "left", control_gates)
-        self.right_outputs = filter(lambda gate: gate.output_dir == "right", control_gates)
+        self.left_outputs = list(filter(lambda gate: gate.output_dir == "left", control_gates))
+        self.right_outputs = list(filter(lambda gate: gate.output_dir == "right", control_gates))
         self.contact_pwell = contact_pwell
         self.contact_nwell = contact_nwell
         name = "bank_gate"
@@ -74,8 +74,8 @@ class BankGate(design.design):
             self.height = self.top_pins[-1].uy()
 
     def setup_layout_constants(self):
-        num_bottom_complements = len(filter(lambda x: x.route_complement, self.right_outputs))
-        num_top_complements = len(filter(lambda x: x.route_complement, self.left_outputs))
+        num_bottom_complements = len(list(filter(lambda x: x.route_complement, self.right_outputs)))
+        num_top_complements = len(list(filter(lambda x: x.route_complement, self.left_outputs)))
         self.rail_pitch = self.m1_width + self.parallel_line_space
 
         self.num_bottom_rails = (self.get_num_sel_signals() +
@@ -169,7 +169,6 @@ class BankGate(design.design):
         self.add_layout_pin(pin_name, "metal1", offset=vector(self.width - pin_width, y_offset), width=pin_width)
 
     def route_left_output(self, instance, ctrl_gate):
-
 
         pins = [instance.get_pin("out"), instance.get_pin("out_inv")]
         output_names = ["gated_" + ctrl_gate.signal_name, "gated_{}_bar".format(ctrl_gate.signal_name)]

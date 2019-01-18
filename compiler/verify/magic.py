@@ -59,10 +59,9 @@ EOF
 
 import os
 import re
-import time
+
 import debug
-from globals import OPTS
-import subprocess
+
 
 def write_magic_script(cell_name, gds_name, extract=False):
     """ Write a magic script to perform DRC and optionally extraction. """
@@ -153,12 +152,10 @@ def run_drc(cell_name, gds_name, extract=False):
     # run drc
     cwd = os.getcwd()
     os.chdir(OPTS.openram_temp)
-    errfile = "{0}{1}.drc.err".format(OPTS.openram_temp, cell_name)
-    outfile = "{0}{1}.drc.summary".format(OPTS.openram_temp, cell_name)
+    errfile = os.path.join(OPTS.openram_temp, "{0}.drc.err".format(cell_name))
+    outfile = os.path.join(OPTS.openram_temp, "{0}.drc.summary".format(cell_name))
 
-    cmd = "{0}run_drc.sh 2> {1} 1> {2}".format(OPTS.openram_temp,
-                                               errfile,
-                                               outfile)
+    cmd = "{0} 2> {1} 1> {2}".format(os.path.join(OPTS.openram_temp, "run_drc.sh"), errfile, outfile)
     debug.info(2, cmd)
     os.system(cmd)
     os.chdir(cwd)
@@ -178,7 +175,7 @@ def run_drc(cell_name, gds_name, extract=False):
     # those lines should be the last 3
     for line in results:
         if "Total DRC errors found:" in line:
-            errors = int(re.split(":\W+", line)[1])
+            errors = int(re.split(": ", line)[1])
             break
 
     # always display this summary
@@ -204,11 +201,11 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
     # run LVS
     cwd = os.getcwd()
     os.chdir(OPTS.openram_temp)
-    errfile = "{0}{1}.lvs.err".format(OPTS.openram_temp, cell_name)
-    outfile = "{0}{1}.lvs.out".format(OPTS.openram_temp, cell_name)
-    resultsfile = "{0}{1}.lvs.report".format(OPTS.openram_temp, cell_name)    
+    errfile = os.path.join(OPTS.openram_temp, "{0}.lvs.err".format(cell_name))
+    outfile = os.path.join(OPTS.openram_temp, "{0}.lvs.out".format(cell_name))
+    resultsfile = os.path.join(OPTS.openram_temp, "{0}.lvs.report".format(cell_name))
 
-    cmd = "{0}run_lvs.sh lvs 2> {1} 1> {2}".format(OPTS.openram_temp,
+    cmd = "{0} lvs 2> {1} 1> {2}".format(os.path.join(OPTS.openram_temp, "run_lvs.sh"),
                                                    errfile,
                                                    outfile)
     debug.info(2, cmd)
@@ -223,14 +220,14 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
 
     # Netlists do not match.
     test = re.compile("Netlists do not match.")
-    incorrect = filter(test.search, results)
+    incorrect = list(filter(test.search, results))
     # There were property errors.
     test = re.compile("Property errors were found.")
-    propertyerrors = filter(test.search, results)
+    propertyerrors = list(filter(test.search, results))
     # Require pins to match?
     # Cell pin lists for pnand2_1.spice and pnand2_1 altered to match.
     # test = re.compile(".*altered to match.")
-    # pinerrors = filter(test.search, results)
+    # pinerrors = list(filter(test.search, results))
     # if len(pinerrors)>0:
     #     debug.warning("Pins altered to match in {}.".format(cell_name))
     
@@ -242,7 +239,7 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
 
     # Netlists match uniquely.
     test = re.compile("Netlists match uniquely.")
-    correct = filter(test.search, results)
+    correct = list(filter(test.search, results))
     # Fail if they don't match. Something went wrong!
     if correct == 0:
         total_errors += 1
@@ -298,11 +295,11 @@ def run_pex(name, gds_name, sp_name, output=None):
     # run pex
     cwd = os.getcwd()
     os.chdir(OPTS.openram_temp)
-    errfile = "{0}{1}.pex.err".format(OPTS.openram_temp, name)
-    outfile = "{0}{1}.pex.out".format(OPTS.openram_temp, name)
+    errfile = os.path.join(OPTS.openram_temp, "{0}.pex.err".format(name))
+    outfile = os.path.join("{0}.pex.out".format(name))
 
-    cmd = "{0} -gui -pex {1}pex_runset -batch 2> {2} 1> {3}".format(OPTS.pex_exe,
-                                                                    OPTS.openram_temp,
+    cmd = "{0} -gui -pex {1} -batch 2> {2} 1> {3}".format(OPTS.pex_exe,
+                                                                    os.path.join(OPTS.openram_temp, "pex_runset"),
                                                                     errfile,
                                                                     outfile)
     debug.info(2, cmd)
@@ -316,7 +313,7 @@ def run_pex(name, gds_name, sp_name, output=None):
 
     # Errors begin with "ERROR:"
     test = re.compile("ERROR:")
-    stdouterrors = filter(test.search, results)
+    stdouterrors = list(filter(test.search, results))
     for e in stdouterrors:
         debug.error(e.strip("\n"))
 

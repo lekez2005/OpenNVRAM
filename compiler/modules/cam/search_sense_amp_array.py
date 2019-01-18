@@ -1,12 +1,8 @@
-import contact
 import debug
-import design
-from pinv import pinv
-from pnand2 import pnand2
-from signal_gate import SignalGate
+from base import design
+from base import utils
+from base.vector import vector
 from tech import GDS, layer
-import utils
-from vector import vector
 
 
 class SearchSenseAmp(design.design):

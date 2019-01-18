@@ -1,10 +1,11 @@
-import sys
-import tech
-import stimuli
+import os
+
 import debug
-import charutils as ch
-import ms_flop
+import tech
 from globals import OPTS
+from . import charutils as ch
+from .charutils import convert_to_float, relative_compare
+from .stimuli import stimuli
 
 
 class setup_hold():
@@ -17,7 +18,7 @@ class setup_hold():
         # This must match the spice model order
         self.pins = ["data", "dout", "dout_bar", "clk", "vdd", "gnd"]
         self.model_name = "ms_flop"
-        self.model_location = OPTS.openram_tech + "sp_lib/ms_flop.sp"
+        self.model_location = os.path.join(OPTS.openram_tech, "sp_lib", "ms_flop.sp")
         self.period = tech.spice["feasible_period"]
 
         debug.info(2,"Feasible period from technology file: {0} ".format(self.period))
@@ -38,7 +39,7 @@ class setup_hold():
         # creates and opens the stimulus file for writing
         temp_stim = OPTS.openram_temp + "stim.sp"
         self.sf = open(temp_stim, "w")
-        self.stim = stimuli.stimuli(self.sf, self.corner)
+        self.stim = stimuli(self.sf, self.corner)
 
         self.write_header(correct_value)
 
@@ -219,8 +220,8 @@ class setup_hold():
 
 
             self.stim.run_sim()
-            clk_to_q = ch.convert_to_float(ch.parse_output("timing", "clk2q_delay"))
-            setuphold_time = ch.convert_to_float(ch.parse_output("timing", "setup_hold_time"))
+            clk_to_q = convert_to_float(parse_output("timing", "clk2q_delay"))
+            setuphold_time = convert_to_float(parse_output("timing", "setup_hold_time"))
             if type(clk_to_q)==float and (clk_to_q<1.1*ideal_clk_to_q) and type(setuphold_time)==float:
                 if mode == "SETUP": # SETUP is clk-din, not din-clk
                     setuphold_time *= -1e9
@@ -235,7 +236,7 @@ class setup_hold():
                 infeasible_bound = target_time
 
             #raw_input("Press Enter to continue...")
-            if ch.relative_compare(feasible_bound, infeasible_bound, error_tolerance=0.001):
+            if relative_compare(feasible_bound, infeasible_bound, error_tolerance=0.001):
                 debug.info(3,"CONVERGE {0} vs {1}".format(feasible_bound,infeasible_bound))
                 break
             

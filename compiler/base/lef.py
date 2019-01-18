@@ -1,10 +1,5 @@
-import gdsMill
-import tech
-import globals
-import math
 import debug
-import datetime
-from collections import defaultdict
+
 
 class lef(object):
     """
@@ -23,7 +18,7 @@ class lef(object):
 
         self.indent = "" # To maintain the indent level easily
 
-        self.lef  = open(lef_name,"w")
+        self.lef  = open(lef_name, "w")
         self.lef_write_header()
         for pin in self.pins:
             self.lef_write_pin(pin)

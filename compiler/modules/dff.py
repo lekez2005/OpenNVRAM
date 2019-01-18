@@ -1,9 +1,7 @@
-import globals
-import design
-from math import log
-import design
-from tech import GDS,layer
-import utils
+from base import design
+from base import utils
+from tech import GDS, layer
+
 
 class dff(design.design):
     """

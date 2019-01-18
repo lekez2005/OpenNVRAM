@@ -1,5 +1,4 @@
 import optparse
-import getpass 
 import os
 
 class options(optparse.Values):
@@ -13,8 +12,8 @@ class options(optparse.Values):
     # This is the name of the technology.
     tech_name = ""
     # This is the temp directory where all intermediate results are stored.
-    openram_temp = os.environ["SCRATCH"] + "/openram/openram_{0}_temp/".format(os.getpid())
-    #openram_temp = '/scratch/ota2/openram/openram_136599_temp/'
+    openram_temp = os.path.join(os.environ["SCRATCH"], "openram", "openram_temp")
+    # openram_temp = os.environ["SCRATCH"] + "/openram/openram_{0}_temp/".format(os.getpid())
 
     spice_file = os.path.join(openram_temp, 'temp.sp')
     pex_spice = os.path.join(openram_temp, 'pex.sp')
@@ -100,4 +99,5 @@ class options(optparse.Values):
         "clk": [2, 6, 12, 24, 24]
     }
     precharge_size = 2
+    column_mux_size = 4
 

@@ -1,12 +1,12 @@
-import design
 import debug
-import utils
+from base import design
+from base import unique_meta
+from base import utils
+from base.vector import vector
 from tech import drc
-import unique_meta
-from vector import vector
 
 
-class contact(design.design):
+class contact(design.design, metaclass=unique_meta.Unique):
     """
     Object for a contact shape with its conductor enclosures.
     Creates a contact array minimum active or poly enclosure and metal1 enclosure.
@@ -16,7 +16,6 @@ class contact(design.design):
     necessary to import layouts into Magic which requires the select to be in the same GDS
     hierarchy as the contact.
     """
-    __metaclass__ = unique_meta.Unique
 
     active_layers = ("active", "contact", "metal1")
     poly_layers = ("poly", "contact", "metal1")

@@ -1,7 +1,6 @@
-import os
 import inspect
-import globals
-import sys
+import os
+
 
 # the debug levels:
 # 0 = minimum output (default)

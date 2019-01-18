@@ -1,5 +1,7 @@
-import debug
 from math import log
+
+import debug
+
 
 class trim_spice():
     """
@@ -15,10 +17,11 @@ class trim_spice():
         debug.info(1,"Trimming non-critical cells to speed-up characterization: {}.".format(reduced_spfile))
         
         # Load the file into a buffer for performance
-        sp = open(self.sp_file, "r")
-        self.spice = sp.readlines()
-        for i in range(len(self.spice)):
-            self.spice[i] = self.spice[i].rstrip(" \n")
+
+        with open(self.sp_file, "r") as sp:
+            self.spice = sp.readlines()
+            for i in range(len(self.spice)):
+                self.spice[i] = self.spice[i].rstrip(" \n")
         
 
         self.sp_buffer = self.spice
@@ -32,7 +35,7 @@ class trim_spice():
         self.num_columns = columns
         self.word_size = word_size
 
-        self.words_per_row = self.num_columns / self.word_size
+        self.words_per_row = int(self.num_columns / self.word_size)
         self.row_addr_size = int(log(self.num_rows, 2))
         self.col_addr_size = int(log(self.words_per_row, 2))
         self.bank_addr_size = self.col_addr_size + self.row_addr_size
@@ -95,8 +98,8 @@ class trim_spice():
         # Everything else isn't worth removing. :)
         
         # Finally, write out the buffer as the new reduced file
-        sp = open(self.reduced_spfile, "w")
-        sp.write("\n".join(self.sp_buffer))
+        with open(self.reduced_spfile, "w") as sp:
+            sp.write("\n".join(self.sp_buffer))
 
         
     def remove_insts(self, subckt_name, keep_inst_list):

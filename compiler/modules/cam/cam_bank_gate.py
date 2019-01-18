@@ -1,7 +1,7 @@
-from bank_gate import BankGate
-import contact
-from signal_gate import SignalGate
-from vector import vector
+from base import contact
+from base.vector import vector
+from modules.bank_gate import BankGate
+from modules.signal_gate import SignalGate
 
 
 class CamBankGate(BankGate):

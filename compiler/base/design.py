@@ -1,17 +1,17 @@
-import math
 import copy
-import hierarchy_layout
-import hierarchy_spice
-import globals
-import utils
-import verify
-import debug
+import math
 import os
+
+import debug
+import verify
+from base import hierarchy_layout
+from base import hierarchy_spice
+from base import utils
+from base.vector import vector
 from globals import OPTS
 from tech import drc
 from tech import layer as tech_layers
 from tech import purpose as tech_purpose
-from vector import vector
 
 
 class design(hierarchy_spice.spice, hierarchy_layout.layout):
@@ -23,8 +23,8 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
     
 
     def __init__(self, name):
-        self.gds_file = OPTS.openram_tech + "gds_lib/" + name + ".gds"
-        self.sp_file = OPTS.openram_tech + "sp_lib/" + name + ".sp"
+        self.gds_file = os.path.join(OPTS.openram_tech, "gds_lib", name + ".gds")
+        self.sp_file = os.path.join(OPTS.openram_tech, "sp_lib", name + ".sp")
 
         self.name = name
         hierarchy_layout.layout.__init__(self, name)
@@ -78,12 +78,17 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.rail_height = drc["rail_height"]
         
         self.poly_to_active = drc["poly_to_active"]
+        self.body_contact_active_height = drc["body_contact_active_height"]
         self.poly_extend_active = drc["poly_extend_active"]
         self.poly_to_field_poly = drc["poly_to_field_poly"]
         self.contact_to_gate = drc["contact_to_gate"]
         self.well_enclose_active = drc["well_enclosure_active"]
         self.implant_enclose_active = drc["implant_enclosure_active"]
+        self.implant_enclose_ptx_active = drc["ptx_implant_enclosure_active"]
+        self.implant_enclose_poly = drc["implant_enclosure_poly"]
+        self.implant_width = drc["minwidth_implant"]
         self.implant_space = drc["implant_to_implant"]
+        self.well_enclose_implant = drc["well_enclosure_implant"]
 
         self.minarea_metal1_contact = drc["minarea_metal1_contact"]
 
@@ -111,7 +116,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         """
         Calculates the possible number of source/drain contacts in a finger.
         """
-        import contact
+        from base import contact
         num_contacts = int(math.ceil(tx_width/(self.contact_width + self.contact_spacing)))
         while num_contacts > 1:
             contact_array = contact.contact(layer_stack=("active", "contact", "metal1"),
@@ -127,7 +132,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         filter_match = lambda x: (
                     x.__class__.__name__ == "rectangle" and x.layerNumber == tech_layers[layer] and
                     x.layerPurpose == tech_purpose[purpose])
-        return filter(filter_match, self.objs)
+        return list(filter(filter_match, self.objs))
 
     def get_gds_layer_shapes(self, cell, layer, purpose="drawing"):
         return cell.gds.getShapesInLayer(tech_layers[layer], tech_purpose[purpose])
@@ -207,13 +212,14 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                 rects = cell.gds.getShapesInLayer(tech_layers["po_dummy"], tech_purpose["po_dummy"])
             else:
                 shapes = self.get_layer_shapes("po_dummy", "po_dummy")
-                rects = map(lambda x: x.boundary, shapes)
+                rects = list(map(lambda x: x.boundary, shapes))
 
             leftmost = min(map(lambda x: x[0], map(lambda x: x[0], rects)))
             rightmost = max(map(lambda x: x[0], map(lambda x: x[1], rects)))
             return (leftmost, rightmost)
 
     def add_dummy_poly(self, cell, instances, words_per_row, from_gds=True):
+        instances = list(instances)
         cell_fills = self.get_poly_fills(cell)
 
         def add_fill(x_offset, direction="left"):

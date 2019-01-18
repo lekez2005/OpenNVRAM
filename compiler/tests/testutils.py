@@ -1,16 +1,63 @@
-import unittest,warnings
-import sys,os,glob
-sys.path.append(os.path.join(sys.path[0],".."))
-import globals
+import glob
+import os
+import sys
+import unittest
+import inspect
+
+module_dir = os.path.abspath(os.path.dirname(__file__))
+sys.path.append(os.path.abspath(os.path.join(module_dir, "../")))
+
 from globals import OPTS
-import debug
+import globals
 import options
 
-class openram_test(unittest.TestCase):
+
+class OpenRamTest(unittest.TestCase):
     """ Base unit test that we have some shared classes in. """
+
+    debug = None
+    initialized = False
+    config_template = "config_20_{}"
+
+    @staticmethod
+    def run_tests(name):
+        if name == "__main__":
+            parse_args()
+            unittest.main()
+
+    @classmethod
+    def initialize_tests(cls, config_template=None):
+        if not config_template:
+            config_template = cls.config_template
+        parse_args()
+        header(inspect.getfile(cls), OPTS.tech_name)
+        globals.init_openram(config_template.format(OPTS.tech_name))
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        import importlib
+        OpenRamTest.debug = importlib.import_module('debug')
+        OPTS.check_lvsdrc = False
+
+    def run(self, result=None):
+        if not self.initialized:
+            self.initialize_tests()
+            self.initialized = True
+        super().run(result)
+
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        globals.end_openram()
+
+    def setUp(self):
+        OPTS.check_lvsdrc = False
+        self.reset()
     
     def local_drc_check(self, w):
-        tempgds = OPTS.openram_temp + "temp.gds"
+        tempgds = os.path.join(OPTS.openram_temp, "temp.gds")
         w.gds_write(tempgds)
         import verify
         self.assertFalse(verify.run_drc(w.name, tempgds, exception_group=w.__class__.__name__))
@@ -20,8 +67,8 @@ class openram_test(unittest.TestCase):
     
     def local_check(self, a, final_verification=False):
 
-        tempspice = OPTS.openram_temp + "temp.sp"
-        tempgds = OPTS.openram_temp + "temp.gds"
+        tempspice = os.path.join(OPTS.openram_temp, "temp.sp")
+        tempgds = os.path.join(OPTS.openram_temp, "temp.gds")
 
         a.sp_write(tempspice)
         a.gds_write(tempgds)
@@ -46,7 +93,7 @@ class openram_test(unittest.TestCase):
 
     def cleanup(self):
         """ Reset the duplicate checker and cleanup files. """
-        files = glob.glob(OPTS.openram_temp + '*')
+        files = glob.glob(os.path.join(OPTS.openram_temp, '*'))
         for f in files:
             # Only remove the files
             if os.path.isfile(f):
@@ -54,10 +101,10 @@ class openram_test(unittest.TestCase):
 
     def reset(self):
         """ Reset the static duplicate name checker for unit tests """
-        import design
+        from base import design
         design.design.name_map=[]
 
-    def isclose(self, value1,value2,error_tolerance=1e-2):
+    def isclose(self, value1, value2, error_tolerance=1e-2):
         """ This is used to compare relative values. """
         import debug
         relative_diff = abs(value1 - value2) / max(value1,value2)
@@ -143,7 +190,7 @@ class openram_test(unittest.TestCase):
         import debug
         import filecmp
         import difflib
-        check = filecmp.cmp(file1,file2)
+        check = filecmp.cmp(file1, file2)
         if not check:
             debug.info(2,"MISMATCH {0} {1}".format(file1,file2))
             f1 = open(file1,"r")
@@ -157,11 +204,17 @@ class openram_test(unittest.TestCase):
             debug.info(2,"MATCH {0} {1}".format(file1,file2))
 
 
+def parse_args():
+    if not OPTS.tech_name:  # args not previously parsed
+        globals.parse_args()
+        del sys.argv[1:]
+
+
 def replace_custom_temp(suffix, config_module_name):
     config_module = __import__(config_module_name)
 
     temp_folder = options.options.openram_temp
-    new_temp = os.path.join(temp_folder, suffix) + "/"
+    new_temp = os.path.join(temp_folder, suffix)
 
     config_module.openram_temp = new_temp
 
@@ -174,12 +227,12 @@ def replace_custom_temp(suffix, config_module_name):
 
 def header(filename, technology):
     tst = "Running Test for:"
-    print "\n"
-    print " ______________________________________________________________________________ "
-    print "|==============================================================================|"
-    print "|=========" + tst.center(60) + "=========|"
-    print "|=========" + technology.center(60) + "=========|"
-    print "|=========" + filename.center(60) + "=========|"
-    from  globals import OPTS
-    print "|=========" + OPTS.openram_temp.center(60) + "=========|"
-    print "|==============================================================================|"
+    print("\n")
+    print(" ______________________________________________________________________________ ")
+    print("|==============================================================================|")
+    print("|=========" + tst.center(60) + "=========|")
+    print("|=========" + technology.center(60) + "=========|")
+    print("|=========" + filename.center(60) + "=========|")
+    from globals import OPTS
+    print("|=========" + OPTS.openram_temp.center(60) + "=========|")
+    print("|==============================================================================|")

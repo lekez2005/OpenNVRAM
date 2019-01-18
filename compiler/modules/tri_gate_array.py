@@ -1,11 +1,13 @@
+from importlib import reload
+
 import debug
-from tech import drc
-import design
+from base import design
+from base import utils
+from base.vector import vector
+from globals import OPTS
 from tech import layer as tech_layers
 from tech import purpose as tech_purpose
-import utils
-from vector import vector
-from globals import OPTS
+
 
 class tri_gate_array(design.design):
     """
@@ -25,7 +27,7 @@ class tri_gate_array(design.design):
         self.columns = columns
         self.word_size = word_size
 
-        self.words_per_row = self.columns / self.word_size
+        self.words_per_row = int(self.columns / self.word_size)
         self.height = self.tri.height
         
         self.create_layout()
@@ -58,8 +60,9 @@ class tri_gate_array(design.design):
             self.tri_inst[i]=self.add_inst(name=name,
                                            mod=self.tri,
                                            offset=base)
-            self.connect_inst(["in[{0}]".format(i/self.words_per_row),
-                               "out[{0}]".format(i/self.words_per_row),
+            index = int(i/self.words_per_row)
+            self.connect_inst(["in[{0}]".format(index),
+                               "out[{0}]".format(index),
                                "en", "en_bar", "vdd", "gnd"])
         self.width = self.tri_inst[i].rx()
 
@@ -101,16 +104,17 @@ class tri_gate_array(design.design):
     def add_layout_pins(self):
         
         for i in range(0,self.columns,self.words_per_row):
+            index = int(i/self.words_per_row)
 
             in_pin = self.tri_inst[i].get_pin("in")
-            self.add_layout_pin(text="in[{0}]".format(i/self.words_per_row),
+            self.add_layout_pin(text="in[{0}]".format(index),
                                 layer="metal2",
                                 offset=in_pin.ll(),
                                 width=in_pin.width(),
                                 height=in_pin.height())
 
             out_pin = self.tri_inst[i].get_pin("out")
-            self.add_layout_pin(text="out[{0}]".format(i/self.words_per_row),
+            self.add_layout_pin(text="out[{0}]".format(index),
                                 layer="metal2",
                                 offset=out_pin.ll(),
                                 width=out_pin.width(),

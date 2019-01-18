@@ -1,12 +1,14 @@
-import gdsMill
-import tech
-from contact import contact
 import math
+
 import debug
-import grid
-from vector import vector
-from vector3d import vector3d 
+import tech
+from base.contact import contact
+from base.vector import vector
+from gdsMill import gdsMill
 from globals import OPTS
+from . import grid
+from .vector3d import vector3d
+
 
 class router:
     """A router class to read an obstruction map from a gds and plan a
@@ -271,7 +273,7 @@ class router:
         self.add_grid_pin(contracted_path[-1],add_tgt_via)
 
         # convert the path back to absolute units from tracks
-        abs_path = map(self.convert_point_to_units,contracted_path)
+        abs_path = list(map(self.convert_point_to_units,contracted_path))
         debug.info(1,str(abs_path))
         self.cell.add_route(self.layers,abs_path)
 

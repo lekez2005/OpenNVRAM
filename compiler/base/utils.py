@@ -1,15 +1,14 @@
-import imp
+import importlib.util
 import math
 import os
 import subprocess
 import time
 
-import gdsMill
 import globals
-from pin_layout import pin_layout
 import tech
-from vector import vector
-
+from base.pin_layout import pin_layout
+from base.vector import vector
+from gdsMill import gdsMill
 
 try:
     from tech import layer_pin_map
@@ -31,7 +30,8 @@ def round_to_grid(number):
     """
     grid = tech.drc["grid"]  
     # this gets the nearest integer value
-    number_grid = int(round(round((number / grid), 2), 0))
+    # 0.001 added for edge cases: round(196.5, 0) rounds to 196 in python3 but 197 in python 2
+    number_grid = int(math.copysign(1, number) * round(round((abs(number) / grid), 2) + 0.001, 0))
     number_off = number_grid * grid
     return number_off
 
@@ -94,7 +94,7 @@ def get_tap_positions(num_columns):
         bitcell_offsets = [i*bitcell.width for i in range(num_columns)]
         return bitcell_offsets, []
 
-    import body_tap as mod_body_tap
+    from modules import body_tap as mod_body_tap
 
     body_tap = mod_body_tap.body_tap
 
@@ -125,7 +125,7 @@ def get_tap_positions(num_columns):
 
 
 def get_body_tap_width():
-    from body_tap import body_tap
+    from modules.body_tap import body_tap
     return body_tap().width
 
 
@@ -135,7 +135,7 @@ def auto_measure_libcell(pin_list, name, units, layer):
     Open a GDS file and find the pins in pin_list as text on a given layer.
     Return these as a set of properties including the cell width/height too.
     """
-    cell_gds = OPTS.openram_tech + "gds_lib/" + str(name) + ".gds"
+    cell_gds = os.path.join(OPTS.openram_tech, "gds_lib", str(name) + ".gds")
     cell_vlsi = gdsMill.VlsiLayout(units=units, from_file=cell_gds)
     cell_vlsi.load_from_file()
 
@@ -157,7 +157,7 @@ def get_libcell_size(name, units, layer):
     Open a GDS file and return the library cell size from either the
     bounding box or a border layer.
     """
-    cell_gds = OPTS.openram_tech + "gds_lib/" + str(name) + ".gds"
+    cell_gds = os.path.join(OPTS.openram_tech, "gds_lib", str(name) + ".gds")
     cell_vlsi = gdsMill.VlsiLayout(units=units, from_file=cell_gds)
     cell_vlsi.load_from_file()
 
@@ -173,7 +173,7 @@ def get_libcell_pins(pin_list, name, units, layer):
     Open a GDS file and find the pins in pin_list as text on a given layer.
     Return these as a rectangle layer pair for each pin.
     """
-    cell_gds = OPTS.openram_tech + "gds_lib/" + str(name) + ".gds"
+    cell_gds = os.path.join(OPTS.openram_tech, "gds_lib", str(name) + ".gds")
     cell_vlsi = gdsMill.VlsiLayout(units=units, from_file=cell_gds)
     cell_vlsi.load_from_file()
 
@@ -194,16 +194,16 @@ def run_command(command, stdout_file, stderror_file, verbose_level=1, cwd=None):
     verbose = OPTS.debug_level >= verbose_level
     if cwd is None:
         cwd = OPTS.openram_temp
-
     with open(stdout_file, "w") as stdout_f, open(stderror_file, "w") as stderr_f:
         stdout = subprocess.PIPE if verbose else stdout_f
         process = subprocess.Popen(command, stdout=stdout, stderr=stderr_f, shell=True, cwd=cwd)
         while verbose:
-            line = process.stdout.readline()
+            line = process.stdout.readline().decode()
             if not line:
+                process.stdout.close()
                 break
             else:
-                print line,
+                print(line, end=" ")
                 stdout_f.write(line)
 
     if process is not None:
@@ -215,9 +215,14 @@ def run_command(command, stdout_file, stderror_file, verbose_level=1, cwd=None):
         return -1
 
 
-def to_cadence(gds_file):
-    to_cadence = imp.load_source("to_cadence",
-                                 "/research/APSEL/ota2/openram/OpenRAM/technology/freepdk45/scripts/to_cadence.py")
-    to_cadence.export_gds(gds_file)
+def get_temp_file(file_name):
+    return os.path.join(OPTS.openram_temp, file_name)
 
+
+def to_cadence(gds_file):
+    file_path = "/research/APSEL/ota2/openram/OpenRAM/technology/freepdk45/scripts/to_cadence.py"
+    spec = importlib.util.spec_from_file_location("to_cadence", file_path)
+    to_cadence = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(to_cadence)
+    to_cadence.export_gds(gds_file)
 

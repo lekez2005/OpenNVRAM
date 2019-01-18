@@ -71,11 +71,11 @@ class linear(_parter):
         if tickdists is None and labeldists is not None:
             self.ticklist = [tick.rational(labeldists[0])]
         else:
-            self.ticklist = map(tick.rational, tickdists)
+            self.ticklist = list(map(tick.rational, tickdists))
         if labeldists is None and tickdists is not None:
             self.labellist = [tick.rational(tickdists[0])]
         else:
-            self.labellist = map(tick.rational, labeldists)
+            self.labellist = list(map(tick.rational, labeldists))
         self.extendtick = extendtick
         self.extendlabel = extendlabel
         self.epsilon = epsilon

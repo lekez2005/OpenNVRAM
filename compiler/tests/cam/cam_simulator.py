@@ -1,4 +1,4 @@
-from cam_test_base import CamTestBase, run_tests
+from cam_test_base import CamTestBase
 from globals import OPTS
 
 
@@ -42,10 +42,11 @@ class CamSimulator(CamTestBase):
             probe.probe_sense_amp(address)
             probe.probe_tagbits(address)
             probe.probe_tagbits(address+1)
-        probe.misc_probes()
+        probe.add_misc_probes(None)
         func_test.addresses = addresses
 
-        #func_test.run_drc_lvs_pex()
+        if use_pex:
+            func_test.run_drc_lvs_pex()
 
         delay = CustomSequentialDelay(func_test.sram, func_test.spice_file, self.corner, initialize=False)
         delay.col_zero_address = col_zero_address
@@ -68,13 +69,13 @@ class CamSimulator(CamTestBase):
 
         delay.run_delay_simulation()
 
-    def test_schematic(self):
-        use_pex = False
-        self.run_commands(use_pex)
-
-    # def test_extracted(self):
-    #     use_pex = True
+    # def test_schematic(self):
+    #     use_pex = False
     #     self.run_commands(use_pex)
 
+    def test_extracted(self):
+        use_pex = True
+        self.run_commands(use_pex)
 
-run_tests(__name__)
+
+CamTestBase.run_tests(__name__)

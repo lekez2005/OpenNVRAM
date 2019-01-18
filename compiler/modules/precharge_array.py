@@ -1,9 +1,9 @@
-import design
 import debug
+from base import design
+from base import utils
+from base.vector import vector
+from modules.precharge import precharge
 from tech import drc
-from vector import vector
-from precharge import precharge
-import utils
 
 
 class precharge_array(design.design):

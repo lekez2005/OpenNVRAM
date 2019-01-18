@@ -1,20 +1,16 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3
 """
-Run a regresion test on mux array and a horizontal casecade of decoder, address mux and wordline driver in order
+Run a regression test on mux array and a horizontal casecade of decoder, address mux and wordline driver in order
 """
-import sys
+from cam_test_base import CamTestBase
+from globals import OPTS
+from unittest import skipIf
 
-from cam_test_base import CamTestBase, run_tests
-import globals
-argv = sys.argv
-(OPTS, _) = globals.parse_args()
-sys.argv = argv
-globals.init_openram("config_cam_{}".format(OPTS.tech_name))
+CamTestBase.initialize_tests(CamTestBase.config_template)
 
 import debug
-import design
+from base import design
 import numpy as np
-from unittest import skip
 
 
 class DecoderMuxDriverCascade(design.design):
@@ -29,7 +25,7 @@ class DecoderMuxDriverCascade(design.design):
         from modules import hierarchical_decoder
         from modules import wordline_driver
 
-        from vector import vector
+        from base.vector import vector
 
         self.add_pin_list(["vdd", "gnd"])
 
@@ -50,7 +46,7 @@ class DecoderMuxDriverCascade(design.design):
             args.append("A[{0}]".format(addr_bit))
         for row in range(rows):
             args.append("decode[{0}]".format(row))
-        args.extend(["vdd", "gnd"])
+        args.extend(["clk", "vdd", "gnd"])
         self.connect_inst(args)
 
         # address_mux
@@ -117,4 +113,5 @@ class DecoderMuxDriverCascadeTest(CamTestBase):
         cascade = DecoderMuxDriverCascade(32, 8)
         self.local_check(cascade)
 
-run_tests(__name__)
+
+CamTestBase.run_tests(__name__)

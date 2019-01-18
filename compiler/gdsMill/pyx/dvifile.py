@@ -942,7 +942,7 @@ class dvifile:
         self.filepos = 0
 
         # rescale self.pos in order to be consistent with the new scaling
-        self.pos = map(lambda x, rescale=rescale:1.0*x/rescale, self.pos)
+        self.pos = list(map(lambda x, rescale=rescale:1.0*x/rescale, self.pos))
 
         # since tfmconv converts from tfm units to dvi units, rescale it as well
         self.tfmconv /= rescale

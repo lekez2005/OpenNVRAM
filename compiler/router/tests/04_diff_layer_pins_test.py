@@ -1,14 +1,17 @@
-#!/usr/bin/env python2.7
-"Run a regresion test the library cells for DRC"
+#!/usr/bin/env python3
+"Run a regression test the library cells for DRC"
 
+import os
+import sys
 import unittest
-from testutils import header
-import sys,os
+
+from tests.testutils import header
+
 sys.path.append(os.path.join(sys.path[0],"../.."))
 sys.path.append(os.path.join(sys.path[0],".."))
 import globals
 import debug
-import calibre
+from verify import calibre
 
 OPTS = globals.OPTS
 
@@ -21,7 +24,7 @@ class diff_layer_pins_test(unittest.TestCase):
     def runTest(self):
         globals.init_openram("config_{0}".format(OPTS.tech_name))
 
-        import design
+        from base import design
         import router
 
         class gdscell(design.design):

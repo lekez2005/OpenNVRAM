@@ -5,7 +5,7 @@ import numpy as np
 import debug
 from globals import OPTS
 import tech
-import utils
+from base import utils
 
 
 class SramProbe(object):
@@ -226,7 +226,7 @@ class SramProbe(object):
         if label_key not in self.sense_amp_probes:
             debug.error("sense amp probes must be added first")
         if OPTS.use_pex:
-            return map(lambda x: self.extract_from_pex(x, pex_file), self.sense_amp_probes[label_key])
+            return list(map(lambda x: self.extract_from_pex(x, pex_file), self.sense_amp_probes[label_key]))
         else:
             return self.sense_amp_probes[label_key]
 
@@ -340,4 +340,4 @@ class SramProbe(object):
             debug.error("Invalid data: {}".format(address))
 
     def clear_labels(self):
-        self.sram.objs = filter(lambda x: not x.name == "label", self.sram.objs)
+        self.sram.objs = list(filter(lambda x: not x.name == "label", self.sram.objs))

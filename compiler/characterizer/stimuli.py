@@ -161,9 +161,9 @@ class stimuli():
                                                         values[i]))
         self.sf.write(")\n")
 
-    def gen_constant(self, sig_name, v_val):
+    def gen_constant(self, sig_name, v_val, gnd_node="0"):
         """ Generates a constant signal with reference voltage and the voltage value """
-        self.sf.write("V{0} {0} 0 DC {1}\n".format(sig_name, v_val))
+        self.sf.write("V{0} {0} {1} DC {2}\n".format(sig_name, gnd_node, v_val))
 
     def get_inverse_voltage(self, value):
         if value > 0.5 * self.voltage:
@@ -239,10 +239,11 @@ class stimuli():
     def write_control_spectre(self, end_time):
         self.sf.write("simulator lang=spectre\n")
         self.sf.write("simulatorOptions options reltol=1e-3 vabstol=1e-6 iabstol=1e-12 temp={0} try_fast_op=no "
-                      "scalem=1.0 scale=1.0 gmin={1} rforce=1 maxnotes=5 maxwarns=5 "
+                      "scalem=1.0 scale=1.0 gmin={1} rforce=100m maxnotes=5 maxwarns=5 "
                       "digits=5 cols=80 dc_pivot_check=yes pivrel=1e-3\n".format(self.temperature, tech.spice["gmin"]))
         self.sf.write('dcOp dc write="spectre.dc" readns="spectre.dc" maxiters=150 maxsteps=10000 annotate=status\n')
-        self.sf.write('tran tran step={} stop={}n annotate=status maxiters=5\n'.format("5p", end_time))
+        tran_options = OPTS.tran_options if hasattr(OPTS, "tran_options") else ""
+        self.sf.write('tran tran step={} stop={}n annotate=status maxiters=5 {}\n'.format("5p", end_time, tran_options))
 
         self.sf.write('saveOptions options save=lvlpub nestlvl=1 pwr=total \n')
         # self.sf.write('saveOptions options save=all nestlvl=1 pwr=total \n')
@@ -309,12 +310,13 @@ class stimuli():
                                                          os.path.join(OPTS.openram_temp, "timing"))
             valid_retcode = 0
         elif OPTS.spice_name == "spectre":
-            extra_options = ""
+            extra_options = OPTS.spectre_options if hasattr(OPTS, "spectre_options") else " +aps"
             if OPTS.use_pex:
                 # postlayout is more aggressive than +parasitics
                 extra_options += " +dcopt +postlayout "
                 # extra_options += " +dcopt +parasitics=20 "
-            cmd = "{0} -64 {1} -format {2} -raw {3} ++aps {4} ".format(OPTS.spice_exe,
+            cmd = "{0} -64 {1} -format {2} -raw {3} {4} ".format(OPTS.spice_exe,
+            # cmd = "{0} -64 {1} -format {2} -raw {3} +aps {4} ".format(OPTS.spice_exe,
                                                                        temp_stim,
                                                                        OPTS.spectre_format,
                                                                        OPTS.openram_temp,

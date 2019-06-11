@@ -235,9 +235,14 @@ def setup_paths():
         debug.error("$OPENRAM_HOME is not properly defined.",1)
     debug.check(os.path.isdir(OPENRAM_HOME),"$OPENRAM_HOME does not exist: {0}".format(OPENRAM_HOME))
 
+    if hasattr(OPTS, "python_path"):
+        python_path = OPTS.python_path
+    else:
+        python_path = []
+
     # Add all of the subdirs to the python path
     # These subdirs are modules and don't need to be added: characterizer, verify
-    for subdir in ["tests", "modules", "modules/cam"]:
+    for subdir in ["tests", "modules", "modules/cam"] + python_path:
         full_path = os.path.abspath(os.path.join(OPENRAM_HOME, subdir))
         debug.check(os.path.isdir(full_path),
                     "{} does not exist:".format(full_path))

@@ -163,12 +163,12 @@ class SequentialDelay(delay):
 
         for key in self.control_sigs:
             # self.v_data[key] = "V{0} {0} 0 PWL ( 0, {1}v, ".format(key, curr_val*self.vdd_voltage)
-            self.v_data[key] = "V{0} {0} 0 PWL ( ".format(key)
+            self.v_data[key] = "V{0} {0} gnd PWL ( ".format(key)
             self.v_comments[key] = "* (time, data): [ "
 
         for key in ["clk"] + self.bus_sigs:
             # self.v_data[key] = "V{0} {0} 0 PWL ( 0, {1}v, ".format(key, 0)
-            self.v_data[key] = "V{0} {0} 0 PWL ( ".format(key)
+            self.v_data[key] = "V{0} {0} gnd PWL ( ".format(key)
             self.v_comments[key] = "* (time, data): [ "
         self.current_time = self.setup_time + 0.5 * self.slew
         self.update_output()

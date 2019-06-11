@@ -20,6 +20,7 @@ control_logic = "cam_control_logic"
 body_tap = "cam_body_tap"
 search_sense_amp_array = "search_sense_amp_array"
 cam_block = "cam_block"
+ml_precharge = "matchline_precharge"
 
 wwl_buffer_stages = [4, 8, 16]
 bank_gate_buffers = {  # buffers for bank gate. "default" used for unspecified signals

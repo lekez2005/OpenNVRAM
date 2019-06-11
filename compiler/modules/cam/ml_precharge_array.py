@@ -1,7 +1,7 @@
 import debug
 from base import design
+from base.utils import load_class
 from base.vector import vector
-from matchline_precharge import matchline_precharge
 
 
 class ml_precharge_array(design.design):
@@ -13,8 +13,7 @@ class ml_precharge_array(design.design):
         design.design.__init__(self, "ml_precharge_array")
         debug.info(1, "Creating {0}".format(self.name))
 
-
-        self.precharge = matchline_precharge(size=size)
+        self.precharge = load_class('ml_precharge')(size=size)
         self.add_mod(self.precharge)
 
         self.rows = rows

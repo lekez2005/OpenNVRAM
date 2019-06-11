@@ -38,12 +38,6 @@ class sram(design.design, sram_power_grid.Mixin):
         c = reload(__import__(OPTS.ms_flop))
         self.mod_ms_flop = getattr(c, OPTS.ms_flop)
         self.ms_flop = self.mod_ms_flop()
-        
-
-        # reset the static duplicate name checker for unit tests
-        # in case we create more than one SRAM
-        from base import design
-        design.design.name_map=[]
 
         self.word_size = word_size
         self.num_words = num_words
@@ -57,7 +51,7 @@ class sram(design.design, sram_power_grid.Mixin):
         design.design.__init__(self, name)
 
         # For different layer width vias
-        self.m2m3_offset_fix = vector(0,0.5*(self.m3_width-self.m2_width))
+        self.m2m3_offset_fix = vector(0, 0.5*(self.m3_width-self.m2_width))
         
         # M1/M2 routing pitch is based on contacted pitch of the biggest layer
         self.m1_pitch = self.m1_width + self.parallel_line_space
@@ -771,19 +765,22 @@ class sram(design.design, sram_power_grid.Mixin):
                                 offset=position_copy,
                                 mirror=bank_mirror)
 
-        temp = []
-        for i in range(self.word_size):
-            temp.append("DATA[{0}]".format(i))
-        for i in range(self.bank_addr_size):
-            temp.append("ADDR[{0}]".format(i))
-        if(self.num_banks > 1):
-            temp.append("bank_sel[{0}]".format(bank_num))
-        else:
-            temp.append("vdd")
-        temp.extend(["s_en", "w_en", "tri_en", "clk_buf", "vdd", "gnd"])
-        self.connect_inst(temp)
+        self.connect_inst(self.get_bank_connections(bank_num))
 
         return bank_inst
+
+    def get_bank_connections(self, bank_num):
+        connections = []
+        for i in range(self.word_size):
+            connections.append("DATA[{0}]".format(i))
+        for i in range(self.bank_addr_size):
+            connections.append("ADDR[{0}]".format(i))
+        if self.num_banks > 1:
+            connections.append("bank_sel[{0}]".format(bank_num))
+        else:
+            connections.append("vdd")
+        connections.extend(["s_en", "w_en", "tri_en", "clk_buf", "vdd", "gnd"])
+        return connections
 
     # FIXME: This should be in geometry.py or it's own class since it is
     # reusable

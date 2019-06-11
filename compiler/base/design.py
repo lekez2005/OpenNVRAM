@@ -36,7 +36,9 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         # because each reference must be a unique name.
         # These modules ensure unique names or have no changes if they
         # aren't unique
-        ok_list = ['ms_flop',
+        ok_list = [
+                   'GdsLibImport',
+                   'ms_flop',
                    'ms_flop_horz_pitch',
                    'bitcell',
                    'body_tap',
@@ -49,7 +51,8 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                    'SignalGate',
                    'sram',
                    'hierarchical_predecode2x4',
-                   'hierarchical_predecode3x8']
+                   'hierarchical_predecode3x8'
+        ]
         if name not in design.name_map:
             design.name_map.append(name)
         elif self.__class__.__name__ in ok_list:

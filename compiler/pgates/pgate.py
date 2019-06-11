@@ -23,7 +23,7 @@ class pgate(design.design):
                  align_bitcell=False, same_line_inputs=True):
         """ Creates a generic cell """
         design.design.__init__(self, name)
-        if align_bitcell:
+        if align_bitcell or height is None:
             height = pgate.bitcell.height
         self.beta = beta
         self.size = size

@@ -17,7 +17,7 @@ def get_measurement_file(filename):
         full_filename = os.path.join(OPTS.openram_temp, "xa.meas")
     elif OPTS.spice_name == "spectre":
         full_filename = temp_filename = os.path.join(OPTS.openram_temp, "transient1.meas_tran")
-        if OPTS.spectre_format in ["psfxl", "psfbin"]:
+        if OPTS.spectre_format in ["psfxl", "psfbin"] and os.path.exists(full_filename):
             full_filename = os.path.join(OPTS.openram_temp, "transient1.meas_tran_ascii")
             cmd = "psf {} > {}".format(temp_filename, full_filename)
             subprocess.run(cmd, shell=True, check=True)

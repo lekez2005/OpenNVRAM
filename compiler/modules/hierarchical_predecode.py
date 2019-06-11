@@ -20,7 +20,7 @@ class hierarchical_predecode(design.design):
         self.number_of_inputs = input_number
         self.number_of_outputs = int(math.pow(2, self.number_of_inputs))
         name = "pre{0}x{1}".format(self.number_of_inputs,self.number_of_outputs)
-        if route_top_rail == False:
+        if not route_top_rail:
             name += "_no_top"
         if use_flops:
             name += "_flops"
@@ -33,7 +33,15 @@ class hierarchical_predecode(design.design):
         self.bitcell_height = self.mod_bitcell.height
 
         if self.use_flops:
-            self.module_height = self.bitcell_height
+            if hasattr(OPTS, "predecoder_flop"):
+                predecoder_flop = OPTS.predecoder_flop
+            else:
+                predecoder_flop = "ms_flop_horz_pitch"
+            c = reload(__import__(predecoder_flop))
+            self.mod_ms_flop = getattr(c, predecoder_flop)
+            self.flop = self.mod_ms_flop()
+            self.add_mod(self.flop)
+            self.module_height = self.flop.height
         else:
             self.module_height = pgate.get_default_height()
 
@@ -65,14 +73,6 @@ class hierarchical_predecode(design.design):
         else:
             self.top_inv = self.inv
             self.top_nand = self.nand
-
-        if self.use_flops:
-            c = reload(__import__(OPTS.ms_flop_horz_pitch))
-            self.mod_ms_flop = getattr(c, OPTS.ms_flop_horz_pitch)
-            self.flop = self.mod_ms_flop()
-            self.add_mod(self.flop)
-
-
 
     def create_nand(self,inputs, contact_nwell=True):
         """ Create the NAND for the predecode input stage """

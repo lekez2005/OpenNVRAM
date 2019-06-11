@@ -60,7 +60,7 @@ class options(optparse.Values):
     process_corners = ""
     use_body_taps = True  # bitcell does not include body taps so insert body taps between bitcells
 
-    spectre_format = "psfxl"
+    spectre_format = "psfbin"
     decoder_flops = False
     
 

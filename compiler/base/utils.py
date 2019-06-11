@@ -3,6 +3,7 @@ import math
 import os
 import subprocess
 import time
+from importlib import reload
 
 import globals
 import tech
@@ -187,6 +188,12 @@ def get_libcell_pins(pin_list, name, units, layer):
             # this is a list because other cells/designs may have must-connect pins
             cell[str(pin)].append(pin_layout(pin, rect, layer))
     return cell
+
+
+def load_class(class_name):
+    config_mod_name = getattr(OPTS, class_name)
+    class_file = reload(__import__(config_mod_name))
+    return getattr(class_file, config_mod_name)
 
 
 def run_command(command, stdout_file, stderror_file, verbose_level=1, cwd=None):

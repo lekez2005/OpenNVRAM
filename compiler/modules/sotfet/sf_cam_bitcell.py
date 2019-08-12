@@ -10,5 +10,5 @@ class sf_cam_bitcell(bitcell.bitcell):
     library.
     """
 
-    pin_names = ["BL", "BR", "ML", "WL", "gnd"]
+    pin_names = ["BL", "BR", "ML", "WL", "mz1", "gnd"]
     lib_name = "sot_cam_cell"

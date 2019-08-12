@@ -131,6 +131,16 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             num_contacts -= 1
         return num_contacts
 
+    @staticmethod
+    def calculate_min_m1_area(width, min_height):
+        """Given width calculate the height, if height is less than min_height,
+         set height to min_height and readjust width"""
+        height = max(utils.ceil(drc["minarea_metal1_contact"]/width), drc["minside_metal1_contact"])
+        if height < min_height:
+            height = min_height
+            width = utils.ceil(drc["minarea_metal1_contact"]/height)
+        return width, height
+
     def get_layer_shapes(self, layer, purpose="drawing"):
         filter_match = lambda x: (
                     x.__class__.__name__ == "rectangle" and x.layerNumber == tech_layers[layer] and
@@ -273,14 +283,6 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                         continue
                     self.add_rect(layer, offset=vector(prev_inst.rx() + right_extension, ll[1]), height=ur[1] - ll[1],
                                   width=current_inst.lx() - prev_inst.rx())
-
-
-
-
-
-
-
-        
 
     def DRC_LVS(self, final_verification=False):
         """Checks both DRC and LVS for a module"""

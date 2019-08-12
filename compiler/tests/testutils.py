@@ -3,6 +3,7 @@ import os
 import sys
 import unittest
 import inspect
+from importlib import reload
 
 module_dir = os.path.abspath(os.path.dirname(__file__))
 sys.path.append(os.path.abspath(os.path.join(module_dir, "../")))
@@ -103,6 +104,13 @@ class OpenRamTest(unittest.TestCase):
         """ Reset the static duplicate name checker for unit tests """
         from base import design
         design.design.name_map=[]
+
+    @staticmethod
+    def load_class_from_opts(mod_name):
+        config_mod_name = getattr(OPTS, mod_name)
+        class_file = reload(__import__(config_mod_name))
+        mod_class = getattr(class_file, config_mod_name)
+        return mod_class
 
     def isclose(self, value1, value2, error_tolerance=1e-2):
         """ This is used to compare relative values. """

@@ -15,8 +15,7 @@ class CamBankTest(CamTestBase):
 
     def test_large_array(self):
         from modules.sotfet import sf_cam_bank
-        debug.info(1, "No column mux")
-        a = sf_cam_bank.SfCamBank(word_size=256, num_words=512, words_per_row=1, name="bank2")
+        a = sf_cam_bank.SfCamBank(word_size=128, num_words=128, words_per_row=1, name="bank1")
         self.local_check(a)
 
 

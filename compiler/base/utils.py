@@ -88,8 +88,13 @@ def get_pin_rect(pin, instances):
 
 
 def get_tap_positions(num_columns):
+    # cells_per_group to accommodate peripherals spanning more than one bitcell.
+    # bitcell positions are calculated such that bitcells are only appended at the beginning
+    # of groups and not in the middle
     c = __import__(OPTS.bitcell)
     bitcell = getattr(c, OPTS.bitcell)
+
+    cells_per_group = OPTS.cells_per_group
 
     if not OPTS.use_body_taps:
         bitcell_offsets = [i*bitcell.width for i in range(num_columns)]
@@ -100,6 +105,8 @@ def get_tap_positions(num_columns):
     body_tap = mod_body_tap.body_tap
 
     cells_spacing = int(math.ceil(0.9*tech.drc["latchup_spacing"]/bitcell.width))
+    cells_spacing = cells_spacing - (cells_spacing % cells_per_group)
+
     tap_width = body_tap.width
     i = 0
     tap_positions = []
@@ -107,7 +114,7 @@ def get_tap_positions(num_columns):
         tap_positions.append(i)
         i += cells_spacing
     if tap_positions[-1] == num_columns:
-        tap_positions[-1] = num_columns - 1  # prevent clash with cells to the right of bitcell array
+        tap_positions[-1] = num_columns - cells_per_group  # prevent clash with cells to the right of bitcell array
     if len(tap_positions) >= 3:
         tap_positions = [tap_positions[0]] + tap_positions[1:-1:2] + [tap_positions[-1]]
     tap_positions = list(sorted(set(tap_positions)))
@@ -169,11 +176,15 @@ def get_libcell_size(name, units, layer):
     return measure_result
 
 
-def get_libcell_pins(pin_list, name, units, layer):
+def get_libcell_pins(pin_list, name, units=None, layer=None):
     """
     Open a GDS file and find the pins in pin_list as text on a given layer.
     Return these as a rectangle layer pair for each pin.
     """
+    if units is None:
+        units = tech.GDS["unit"]
+    if layer is None:
+        layer = tech.layer["boundary"]
     cell_gds = os.path.join(OPTS.openram_tech, "gds_lib", str(name) + ".gds")
     cell_vlsi = gdsMill.VlsiLayout(units=units, from_file=cell_gds)
     cell_vlsi.load_from_file()

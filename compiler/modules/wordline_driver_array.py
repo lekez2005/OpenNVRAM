@@ -1,5 +1,6 @@
 from base import contact
 from base import design
+from base.contact import m1m2
 from base.vector import vector
 from globals import OPTS
 from modules.logic_buffer import LogicBuffer
@@ -56,7 +57,8 @@ class wordline_driver_array(design.design):
         bitcell = mod_bitcell()
 
         self.logic_buffer = LogicBuffer(self.buffer_stages, logic="pnand2", height=bitcell.height, route_outputs=False,
-                                        contact_pwell=False, contact_nwell=False, align_bitcell=True)
+                                        route_inputs=False,
+                                        contact_pwell=False, contact_nwell=False, align_bitcell=False)
         self.add_mod(self.logic_buffer)
 
     def add_modules(self):
@@ -99,8 +101,9 @@ class wordline_driver_array(design.design):
             self.add_segment_center(layer="metal1",
                                     start=clk_offset,
                                     end=a_pos)
-            self.add_via_center(layers=("metal1", "via1", "metal2"),
-                                offset=clk_offset)
+            self.add_via(layers=m1m2.layer_stack,
+                         offset=vector(en_pin.lx()+m1m2.second_layer_height, a_pin.cy()-0.5*self.m2_width),
+                         rotate=90)
 
             # route in pin
             self.copy_layout_pin(buffer_inst, "B", "in[{}]".format(row))
@@ -116,8 +119,28 @@ class wordline_driver_array(design.design):
             y_offset = (row + 1) * self.logic_buffer.height - 0.5 * self.rail_height
             if (row % 2) == 0:
                 pin_name = "gnd"
+                # add nimplant fill ground ground pin
+                nimplants = self.logic_buffer.logic_mod.get_layer_shapes("nimplant")[0]
+                self.add_rect_center("nimplant", offset=vector(buffer_inst.lx()+0.5*buffer_inst.width,
+                                                               buffer_inst.uy()),
+                                     width=buffer_inst.width, height=2*nimplants.by())
+
             else:
                 pin_name = "vdd"
+
+            # extend nwell to the left
+            nand_gate = self.logic_buffer.logic_mod
+            nwell = nand_gate.get_layer_shapes("nwell")[0]
+
+            nwell_extension = nwell.uy() - nand_gate.height
+            if row % 2 == 0:
+                rect_y = self.logic_buffer.height * row - nwell_extension
+            else:
+                rect_y = self.logic_buffer.height * row + nwell.by()
+
+            nwell_width = nand_gate.width
+            nwell_x = buffer_inst.lx() - nwell_width
+            self.add_rect("nwell", offset=vector(nwell_x, rect_y), width=nwell_width, height=nwell.height)
 
             self.add_layout_pin(text=pin_name, layer="metal1", offset=[0, y_offset], width=buffer_inst.rx(),
                                 height=self.rail_height)

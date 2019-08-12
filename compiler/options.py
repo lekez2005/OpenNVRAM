@@ -101,3 +101,5 @@ class options(optparse.Values):
     precharge_size = 2
     column_mux_size = 4
 
+    cells_per_group = 1
+

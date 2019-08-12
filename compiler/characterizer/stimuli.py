@@ -244,8 +244,12 @@ class stimuli():
         self.sf.write('dcOp dc write="spectre.dc" readns="spectre.dc" maxiters=150 maxsteps=10000 annotate=status\n')
         tran_options = OPTS.tran_options if hasattr(OPTS, "tran_options") else ""
         self.sf.write('tran tran step={} stop={}n annotate=status maxiters=5 {}\n'.format("5p", end_time, tran_options))
+        if OPTS.use_pex:
+            nestlvl = 1
+        else:
+            nestlvl = 5
 
-        self.sf.write('saveOptions options save=lvlpub nestlvl=1 pwr=total \n')
+        self.sf.write('saveOptions options save=lvlpub nestlvl={} pwr=total \n'.format(nestlvl))
         # self.sf.write('saveOptions options save=all nestlvl=1 pwr=total \n')
 
         self.sf.write("simulator lang=spice\n")

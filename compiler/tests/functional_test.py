@@ -56,6 +56,7 @@ class FunctionalTest:
             probe.probe_bit_lines(address, "br")
 
             probe.probe_wordlines(address)
+            probe.probe_decoder_outputs(address)
         self.banks = banks = {}
         for address in addresses:
             address_vec = self.probe.address_to_vector(address)
@@ -129,7 +130,8 @@ class FunctionalTest:
         for address in self.addresses:
             addr_map_list.append({
                 "address": address,
-                "net_names": self.probe.get_bitcell_probes(address, "Q")
+                "net_names": self.probe.get_bitcell_probes(address, "Q"),
+                "decoder_label": self.probe.get_decoder_probes(address)
                 #"net_names": []
             })
 

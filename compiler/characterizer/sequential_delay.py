@@ -109,24 +109,28 @@ class SequentialDelay(delay):
             reset_address_vec = [int(not x) for x in address]
             address_int = self.address_to_int(address)
             address_labels = addr_dict["net_names"]
+            decoder_label = addr_dict["decoder_label"]
             if "data" in addr_dict:
                 data = addr_dict["data"]
             else:
                 data = (2 ** self.word_size) - 1
             data_bar = self.complement_data(data)
 
+            self.setup_decoder_delay(address_int, decoder_label=decoder_label)
             self.write_data(address, data)
 
-            self.setup_write_delay(address_int, data_bar, address_labels)
+            self.setup_write_delay(address_int, data_bar, address_labels, )
             self.write_data(address, data_bar)
             self.write_data(reset_address_vec, data, "set data bus high so we can observe transition")
             self.setup_read_delay(address_int, data_bar)
+            self.setup_decoder_delay(address_int, decoder_label=decoder_label)
             self.read_data(address)
 
             self.setup_write_delay(address_int, data, address_labels)
             self.write_data(address, data)
             self.write_data(reset_address_vec, data_bar, "set data bus low so we can observe transition")
             self.setup_read_delay(address_int, data)
+            self.setup_decoder_delay(address_int, decoder_label=decoder_label)
             self.read_data(address)
 
     def write_generic_stimulus(self):
@@ -231,7 +235,8 @@ class SequentialDelay(delay):
 
     def write_data(self, address_vec, data, comment=""):
         """Write data to an address. Data can be integer or binary vector. Address is binary MSB first vector"""
-        self.command_comments.append("* t = {} Write {} to {} {} \n".format(self.current_time, data,
+        self.command_comments.append("* t = {} Write {} to {} {} \n".format(self.current_time,
+                                                                            list(reversed(self.convert_data(data))),
                                                                             address_vec, comment))
         self.address = list(reversed(address_vec))
         self.data = list(reversed(self.convert_data(data)))
@@ -346,6 +351,7 @@ class SequentialDelay(delay):
         Should be called before the read command
         """
         self.period = self.read_period
+        time_suffix = "{:.2g}".format(self.current_time).replace('.', '_')
         self.setup_power_measurement("READ", self.get_transition(0, new_val), address_int)
         for i in range(self.word_size):
             if bl_labels is not None:
@@ -361,13 +367,37 @@ class SequentialDelay(delay):
                                          slew_name="R_SLEW_{}_a{}_d{}".format(transition, address_int, i),
                                          bl_net=bl_label, bl_name=bl_name)
 
-    def setup_write_delay(self, address_int, new_val, address_labels, bl_labels=None):
+            meas_name = "READ_DELAY_a{}_c{}_t{}".format(address_int, i, time_suffix)
+            targ_val = 0.9 * self.vdd_voltage if transition == "LH" else 0.1 * self.vdd_voltage
+            targ_dir = "RISE" if transition == "LH" else "FALL"
+            self.stim.gen_meas_delay(meas_name=meas_name,
+                                     trig_name="clk", trig_val=0.1 * self.vdd_voltage, trig_dir="FALL",
+                                     trig_td=self.current_time + self.duty_cycle * self.period,
+                                     targ_name=net, targ_val=targ_val, targ_dir=targ_dir,
+                                     targ_td=self.current_time + self.duty_cycle * self.period)
+
+    def setup_decoder_delay(self, address_int, decoder_label):
+        if decoder_label is not None:
+            self.saved_nodes.add(decoder_label)
+            time_suffix = "{:.2g}".format(self.current_time).replace('.', '_')
+            meas_name = "decoder_a{}_t{}".format(address_int, time_suffix)
+            self.stim.gen_meas_delay(meas_name=meas_name,
+                                     trig_name="clk", trig_val=0.5, trig_dir="RISE",
+                                     trig_td=self.current_time,
+                                     targ_name=decoder_label, targ_val=0.8, targ_dir="RISE",
+                                     targ_td=self.current_time)
+
+    def setup_write_delay(self, address_int, new_val, address_labels, bl_labels=None, decoder_label=None):
         """Set up write delay measurement for each bit in address
           Transition is HL or LH.
           Should be called before the write command itself
           """
         self.period = self.write_period
         self.saved_nodes.update(address_labels)
+        if bl_labels is not None:
+            self.saved_nodes.update(bl_labels)
+
+        time_suffix = "{:.2g}".format(self.current_time).replace('.', '_')
 
         self.setup_power_measurement("WRITE", self.get_transition(0, new_val), address_int)
         for i in range(self.word_size):
@@ -382,3 +412,12 @@ class SequentialDelay(delay):
                                          delay_name="W_DELAY_{}_a{}_{}".format(transition, address_int, label),
                                          slew_name="W_SLEW_{}_a{}_{}".format(transition, address_int, label),
                                          bl_net=bl_label, bl_name=bl_name)
+
+            meas_name = "STATE_DELAY_a{}_c{}_t{}".format(address_int, i, time_suffix)
+            targ_val = 0.9 * self.vdd_voltage if transition == "LH" else 0.1 * self.vdd_voltage
+            targ_dir = "RISE" if transition == "LH" else "FALL"
+            self.stim.gen_meas_delay(meas_name=meas_name,
+                                     trig_name="clk", trig_val=0.1 * self.vdd_voltage, trig_dir="FALL",
+                                     trig_td=self.current_time + self.duty_cycle * self.period,
+                                     targ_name=label, targ_val=targ_val, targ_dir=targ_dir,
+                                     targ_td=self.current_time + self.duty_cycle * self.period)

@@ -1,4 +1,4 @@
-from subprocess import check_output
+from subprocess import check_output, CalledProcessError
 
 import numpy as np
 
@@ -30,6 +30,7 @@ class SramProbe(object):
         self.wordline_probes = {}
         self.sense_amp_probes = {}
         self.word_driver_clk_probes = {}
+        self.decoder_probes = {}
         self.probe_labels = set()
 
     def probe_bit_cells(self, address, pin_name="Q"):
@@ -97,6 +98,12 @@ class SramProbe(object):
             for label in pin_labels:
                 pin_labels_pex.append(self.extract_from_pex(label, pex_file))
             return pin_labels_pex
+
+    def get_decoder_probes(self, address):
+        if OPTS.use_pex:
+            return self.extract_from_pex(self.decoder_probes[address])
+        else:
+            return self.decoder_probes[address]
 
     def probe_bit_lines(self, address, pin_name="bl"):
         """add labels to bitlines
@@ -174,6 +181,23 @@ class SramProbe(object):
         else:
             self.wordline_probes[label_key] = self.get_wordline_label(bank_index, row, col_index)
         self.probe_labels.add(self.wordline_probes[label_key])
+
+    def probe_decoder_outputs(self, address_int):
+        """add labels to wordlines
+                labels should be unique by bank and row
+                """
+
+        address = self.address_to_vector(address_int)
+        bank_index, bank_inst, row, col_index = self.decode_address(address)
+
+        if OPTS.use_pex:
+            decoder_label = "dec_b{}_r{}".format(bank_index, row)
+            decoder_pin = bank_inst.mod.decoder.get_pin("decode[{}]".format(row))
+            self.add_pin_label(decoder_pin, [bank_inst, bank_inst.mod.row_decoder_inst], decoder_label)
+        else:
+            decoder_label = "Xsram.Xbank{}.dec_out[{}]".format(bank_index, row)
+        self.decoder_probes[address_int] = decoder_label
+        self.probe_labels.add(decoder_label)
 
     def get_wordline_label(self, bank_index, row, col_index):
         return "Xsram.Xbank{}.Xbitcell_array.wl[{}]".format(bank_index, row)
@@ -269,14 +293,17 @@ class SramProbe(object):
                                 [bank_inst])
             self.probe_pin(bank_inst.mod.write_driver_array_inst.get_pin("data[0]"), "write_d0_b{}".format(bank_index),
                             [bank_inst])
-            self.probe_pin(bank_inst.mod.wordline_driver_inst.get_pin("in[0]"), "wl_drv_in0_b{}".format(bank_index),
-                            [bank_inst])
+            # self.probe_pin(bank_inst.mod.wordline_driver_inst.get_pin("in[0]"), "wl_drv_in0_b{}".format(bank_index),
+            #                 [bank_inst])
             self.probe_pin(bank_inst.mod.wordline_driver_inst.mod.module_insts[0].get_pin("Z"),
                             "wl_drv_en_bar_b{}".format(bank_index),
                             [bank_inst, bank_inst.mod.wordline_driver_inst])
             self.probe_pin(bank_inst.mod.wordline_driver_inst.mod.module_insts[1].get_pin("Z"),
                             "wl_drv_net0_b{}".format(bank_index),
                             [bank_inst, bank_inst.mod.wordline_driver_inst])
+            for i in range(self.sram.bank.row_addr_size):
+                self.probe_pin(bank_inst.mod.row_decoder_inst.get_pin("A[{}]".format(i)), "decoder_in_{}".format(i),
+                               [bank_inst])
 
     def add_misc_probes(self, bank_inst):
         self.probe_pin(bank_inst.get_pin("clk_buf"), "clk_buf", [])
@@ -292,12 +319,25 @@ class SramProbe(object):
     def extract_from_pex(self, label, pex_file=None):
         if pex_file is None:
             pex_file = self.pex_file
-        pattern = "\sN_{}_\S+_[gsd]".format(label)
-        match = check_output(["grep", "-m1", "-o", "-E", pattern, pex_file])
-        if match and match.strip():
-            return 'Xsram.' + match.strip()
-        else:
-            debug.error("Match not found in pex file for label {}".format(label))
+        # lvs box pins have exact match without mangling
+        match = None
+        try:
+            pattern = "\sN_{}_\S+_[gsd]".format(label)
+            match = check_output(["grep", "-m1", "-o", "-E", pattern, pex_file])
+        except CalledProcessError as ex:
+            if ex.returncode == 1:  # mismatch
+                try:
+                    match = check_output(["grep", "-m1", "-o", label, pex_file])
+                except CalledProcessError as ex:
+                    if ex.returncode == 1:
+                        debug.error("Match not found in pex file for label {}".format(label))
+                        raise ex
+                    else:
+                        raise ex
+            else:
+                raise ex
+
+        return 'Xsram.' + match.decode().strip()
 
     def decode_address(self, address):
         if self.sram.num_banks == 4:
@@ -341,3 +381,9 @@ class SramProbe(object):
 
     def clear_labels(self):
         self.sram.objs = list(filter(lambda x: not x.name == "label", self.sram.objs))
+
+    def add_pin_label(self, pin, module_insts, label_key):
+        ll, ur = utils.get_pin_rect(pin, module_insts)
+        pin_loc = [0.5 * (ll[0] + ur[0]), 0.5 * (ll[1] + ur[1])]
+        # self.sram.add_rect(pin.layer, offset=ll, width=pin.width(), height=pin.height())
+        self.sram.add_label(label_key, pin.layer, pin_loc)

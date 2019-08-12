@@ -3,6 +3,8 @@ import os
 from importlib import reload
 
 import characterizer
+import debug
+import verify
 from characterizer.sequential_delay import SequentialDelay
 from globals import OPTS
 from sf_cam_dut import SfCamDut
@@ -21,6 +23,10 @@ class SfCamDelay(SequentialDelay):
 
     def __init__(self, sram, spfile, corner, initialize=False):
         super().__init__(sram, spfile, corner, initialize=initialize)
+
+        self.cmos = OPTS.bitcell == "cam_bitcell"
+
+        self.separate_vdd = OPTS.separate_vdd if hasattr(OPTS, 'separate_vdd') else False
 
         # set up for write
         self.search = self.prev_search = 0
@@ -50,8 +56,9 @@ class SfCamDelay(SequentialDelay):
             self.search_period, self.write_period, self.load, self.slew))
 
         self.stim = SfCamDut(self.sf, self.corner)
+        self.stim.add_power_labels(self.sram)
 
-        self.stim.write_include(self.trim_sp_file)
+
 
         self.write_generic_stimulus()
 
@@ -60,24 +67,41 @@ class SfCamDelay(SequentialDelay):
         self.generate_steps()
 
         for node in self.saved_nodes:
-            self.sf.write(".plot V({0}) \n".format(node))
+            self.sf.write(".probe V({0}) \n".format(node))
 
         self.finalize_output()
+
+        self.stim.write_include(self.trim_sp_file)
 
         # run until the end of the cycle time
         self.stim.write_control(self.current_time + self.period)
 
         self.sf.close()
 
+    def probe_addresses(self, addresses):
+        probe = SfCamProbe(self.sram, OPTS.pex_spice)
+        self.probe_matchlines(probe, self.sram)
+        if self.cmos:
+            probe.probe_search_lines(0)
+        probe.probe_bitlines(0)
+        probe.probe_misc_bank(0)
+
+        for address in addresses:
+            probe.probe_address(address)
+
+        self.run_drc_lvs_pex()
+
+        probe.extract_probes()
+
+        self.ml_precharge_addresses = probe.get_matchline_probes()
+
+        return probe
+
     def generate_steps(self):
-        probe = SfCamProbe(self.sram, self.sp_file)
-        self.ml_precharge_addresses = self.probe_matchlines(probe, self.sram)
 
         zero_address = 0
         max_address = self.sram.num_words - 1
-
-        probe.probe_address(zero_address)
-        probe.probe_address(max_address)
+        probe = self.probe_addresses([zero_address, max_address])
 
         zero_one_mix = list(itertools.chain.from_iterable(zip([1]*self.word_size, [0]*self.word_size)))
         one_zero_data = zero_one_mix[:self.word_size]
@@ -85,31 +109,31 @@ class SfCamDelay(SequentialDelay):
         one_mismatch = list(one_zero_data)
         one_mismatch[0] = 0
 
-        one_zero_data = [1] * self.word_size
-        one_mismatch = [1] * self.word_size
+        # one_zero_data = [1] * self.word_size
+        # one_mismatch = [1] * self.word_size
 
         mask = [1] * self.word_size
         self.write_masked_data(self.convert_address(zero_address), self.invert_vec(one_zero_data), mask,
-                               "reset address {}".format(zero_address))
+                               "reset address".format(zero_address))
         self.write_masked_data(self.convert_address(max_address), self.invert_vec(one_mismatch), mask,
-                               "reset address {}".format(max_address))
+                               "reset address".format(max_address))
 
         self.write_masked_data(self.convert_address(zero_address), one_zero_data, mask,
-                               "write {} to address {}".format(one_zero_data, zero_address))
+                               " address {}".format(zero_address))
         self.setup_write_measurements(zero_address, one_zero_data,
                                       probe.decoder_probes[zero_address], probe.state_probes[zero_address])
 
         self.write_masked_data(self.convert_address(max_address), one_mismatch, mask,
-                               "write {} to address {}".format(one_mismatch, max_address))
+                               " address {}".format(one_mismatch, max_address))
         self.setup_write_measurements(max_address, one_mismatch,
                                       probe.decoder_probes[max_address], probe.state_probes[max_address])
 
-        self.search_data(one_zero_data, mask, "search data {}".format(one_zero_data))
-        self.search_data(one_mismatch, mask, "search data {}".format(one_mismatch))
+        self.search_data(one_zero_data, mask, "".format(one_zero_data))
+        self.search_data(one_mismatch, mask, "".format(one_mismatch))
 
         self.measure_leakage()
 
-        self.saved_nodes = sorted(set(probe.probe_labels))
+        self.saved_nodes = sorted(probe.saved_nodes)
 
     @staticmethod
     def invert_vec(data_vec):
@@ -117,14 +141,8 @@ class SfCamDelay(SequentialDelay):
 
     @staticmethod
     def probe_matchlines(probe, cam):
-        addresses = []
         for i in range(cam.num_words):
             probe.probe_matchline(i)
-            addresses.append({
-                "addr_int": i,
-                "label": probe.matchline_probes[i]
-            })
-        return addresses
 
     def update_output(self):
         # write mask
@@ -174,7 +192,7 @@ class SfCamDelay(SequentialDelay):
         self.current_time += self.search_period
 
     def setup_search_measurements(self):
-        time = self.current_time - self.period
+        time = self.current_time
         time_suffix = "{:.2g}".format(time).replace('.', '_')
 
         meas_name = "SEARCH_POWER_t{}".format(time_suffix)
@@ -186,15 +204,16 @@ class SfCamDelay(SequentialDelay):
             self.stim.gen_meas_delay(meas_name="ML_rise_a{}_{}".format(addr["addr_int"], time_suffix),
                                      trig_name="clk", trig_val=0.9 * self.vdd_voltage, trig_dir="RISE",
                                      trig_td=time,
-                                     targ_name=addr["label"], targ_val=0.9 * self.vdd_voltage, targ_dir="RISE",
+                                     targ_name=addr["ml_label"], targ_val=0.9 * self.vdd_voltage, targ_dir="RISE",
                                      targ_td=time)
-            self.stim.gen_meas_delay(meas_name="ML_fall_a{}_{}".format(addr["addr_int"], time_suffix),
+            self.stim.gen_meas_delay(meas_name="dout_fall_a{}_{}".format(addr["addr_int"], time_suffix),
                                      trig_name="clk", trig_val=0.1 * self.vdd_voltage, trig_dir="FALL",
                                      trig_td=time + self.duty_cycle*self.period,
-                                     targ_name=addr["label"], targ_val=0.1 * self.vdd_voltage, targ_dir="FALL",
+                                     targ_name=addr["dout_label"], targ_val=0.1 * self.vdd_voltage, targ_dir="FALL",
                                      targ_td=time + self.duty_cycle*self.period)
 
     def setup_write_measurements(self, address_int, new_val, decoder_label, state_labels):
+        """new_val is MSB first"""
         time = self.current_time - self.period
         # power measurement
         time_suffix = "{:.2g}".format(time).replace('.', '_')
@@ -208,16 +227,29 @@ class SfCamDelay(SequentialDelay):
                                  trig_td=time,
                                  targ_name=decoder_label, targ_val=0.9 * self.vdd_voltage, targ_dir="RISE",
                                  targ_td=time)
+        new_val_reversed = list(reversed(new_val))
         for i in range(self.word_size):
-            transition = "HL" if new_val[i] == 1 else "LH"
-            targ_val = -0.05 if transition == "LH" else 0.05
-            targ_dir = "FALL" if transition == "LH" else "RISE"
+            transition = "HL" if new_val_reversed[i] == 0 else "LH"
+            if self.cmos:
+                targ_val = 0.9*self.vdd_voltage if transition == "LH" else 0.1*self.vdd_voltage
+                targ_dir = "RISE" if transition == "LH" else "FALL"
+            else:
+                # There are two rise times, time to rise cross threshold and time to relax
+                # Measure time to cross threshold first
+                meas_name = "STATE_CROSS_a{}_c{}_t{}".format(address_int, i, time_suffix)
+                targ_val = -0.8 if transition == "LH" else 0.8
+                targ_dir = "FALL" if transition == "LH" else "RISE"
+                self.stim.gen_meas_delay(meas_name=meas_name,
+                                         trig_name="clk", trig_val=0.9 * self.vdd_voltage, trig_dir="RISE",
+                                         trig_td=time,
+                                         targ_name=state_labels[i], targ_val=0, targ_dir=targ_dir,
+                                         targ_td=time)
             meas_name = "STATE_DELAY_a{}_c{}_t{}".format(address_int, i, time_suffix)
             self.stim.gen_meas_delay(meas_name=meas_name,
                                      trig_name="clk", trig_val=0.1 * self.vdd_voltage, trig_dir="FALL",
-                                     trig_td=time + 0.5*self.duty_cycle*self.period,
+                                     trig_td=time + self.duty_cycle*self.period,
                                      targ_name=state_labels[i], targ_val=targ_val, targ_dir=targ_dir,
-                                     targ_td=time + 0.5*self.duty_cycle*self.period)
+                                     targ_td=time + self.duty_cycle*self.period)
 
     def write_generic_stimulus(self):
         """ Overrides super class method to use internal logic for measurement setup
@@ -234,6 +266,29 @@ class SfCamDelay(SequentialDelay):
                             dbits=self.word_size,
                             sram_name=self.name)
 
+    def run_drc_lvs_pex(self):
+        OPTS.check_lvsdrc = True
+        reload(verify)
 
+        self.sram.sp_write(OPTS.spice_file)
+        self.sram.gds_write(OPTS.gds_file)
 
+        if getattr(OPTS, 'run_drc', True):
+            drc_result = verify.run_drc(self.sram.name, OPTS.gds_file, exception_group="sram")
+            if drc_result:
+                raise AssertionError("DRC Failed")
+        else:
 
+            from base import utils
+            utils.to_cadence(OPTS.gds_file)
+
+        if getattr(OPTS, 'run_lvs', True):
+            lvs_result = verify.run_lvs(self.sram.name, OPTS.gds_file, OPTS.spice_file,
+                                        final_verification=not self.separate_vdd)
+            if lvs_result:
+                raise AssertionError("LVS Failed")
+
+        if OPTS.use_pex and getattr(OPTS, 'run_pex', True):
+            errors = verify.run_pex(self.sram.name, OPTS.gds_file, OPTS.spice_file, OPTS.pex_spice)
+            if errors:
+                raise AssertionError("PEX failed")

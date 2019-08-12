@@ -80,7 +80,10 @@ class write_driver_array(design.design):
                                 offset=din_pin.ll(),
                                 width=din_pin.width(),
                                 height=din_pin.height())
-        pin_names = ["en", "vdd", "gnd"]
+        en_pin = self.driver_insts[0].get_pin("en")
+        self.add_layout_pin("en", en_pin.layer, offset=en_pin.ll(),
+                            width=self.driver_insts[-1].get_pin("en").rx() - en_pin.lx())
+        pin_names = ["vdd", "gnd"]
         for pin_name in pin_names:
             pins = self.driver_insts[0].get_pins(pin_name)
             for pin in pins:

@@ -405,9 +405,6 @@ class hierarchical_predecode(design.design):
                         y_offset = gate_pin.cy() - 0.5*(contact.m1m2.second_layer_height - self.m1_width)
                 self.add_via_center(layers=layers, offset=vector(gate_pin.cx(), y_offset), rotate=0)
 
-
-
-
     def route_vdd_gnd(self):
         """ Add a pin for each row of vdd/gnd which are must-connects next level up. """
 
@@ -418,12 +415,16 @@ class hierarchical_predecode(design.design):
             (gate_offset, y_dir) = self.get_gate_offset(0, self.inv.height, num)
 
             # route vdd
-            vdd_offset = self.nand_inst[num].get_pin("vdd").ll().scale(0,1)
+            vdd_pin = self.nand_inst[num].get_pin("vdd")
+            if hasattr(OPTS, 'separate_vdd') and OPTS.separate_vdd and num > len(self.in_inst):
+                x_start = vdd_pin.lx()
+            else:
+                x_start = 0
             self.add_layout_pin(text="vdd",
                                 height=self.rail_height,
                                 layer="metal1",
-                                offset=vdd_offset,
-                                width=self.inv_inst[num].rx())
+                                offset=vector(x_start, vdd_pin.by()),
+                                width=self.inv_inst[num].rx()-x_start)
 
             # route gnd
             gnd_offset = self.nand_inst[num].get_pin("gnd").ll().scale(0,1)

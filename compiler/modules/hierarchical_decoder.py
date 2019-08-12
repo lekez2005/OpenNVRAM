@@ -297,6 +297,7 @@ class hierarchical_decoder(design.design):
             self.add_decoder_nand_array()
             self.add_decoder_inv_array()
             self.route_decoder()
+            self.add_body_contacts()
 
 
     def add_decoder_nand_array(self):
@@ -421,8 +422,35 @@ class hierarchical_decoder(design.design):
                                 offset=z_pin.ll(),
                                 width=z_pin.width(),
                                 height=z_pin.height())
-        
 
+    def add_body_contacts(self):
+        """Add contacts to the left of the nand gates"""
+        active_height = contact.active.first_layer_width
+        active_width = utils.ceil(drc["minarea_cont_active_thin"] / active_height)
+        implant_height = drc["minwidth_implant"]
+        implant_enclosure = drc["ptx_implant_enclosure_active"]
+        implant_width = max(utils.ceil(active_width + 2*implant_enclosure),
+                            utils.ceil(drc["minarea_implant"]/implant_height))
+        implant_x = self.nand_inst[0].lx() - 0.5*implant_width
+        num_contacts = self.calculate_num_contacts(active_width)
+
+        nwell_width = implant_width + 2*self.well_enclose_implant
+        nwell_height = implant_height + 2*self.well_enclose_implant
+
+        for row in range(self.rows):
+            gnd_pin = self.nand_inst[row].get_pin("gnd")
+            self.add_contact_center(contact.contact.active_layers,
+                                    offset=vector(implant_x, gnd_pin.cy()), size=[num_contacts, 1])
+            self.add_rect_center("pimplant", offset=vector(implant_x, gnd_pin.cy()),
+                                 width=implant_width, height=implant_height)
+
+            vdd_pin = self.nand_inst[row].get_pin("vdd")
+            self.add_contact_center(contact.contact.active_layers,
+                                    offset=vector(implant_x, vdd_pin.cy()), size=[num_contacts, 1])
+            self.add_rect_center("nimplant", offset=vector(implant_x, vdd_pin.cy()),
+                                 width=implant_width, height=implant_height)
+            self.add_rect_center("nwell", offset=(implant_x, vdd_pin.cy()),
+                                width=nwell_width, height=nwell_height)
 
     def create_vertical_rail(self):
         """ Creates vertical metal 2 rails to connect predecoder and decoder stages."""
@@ -529,10 +557,14 @@ class hierarchical_decoder(design.design):
                 self.add_rect("metal2", offset=offset, width=fill_width, height=fill_height)
 
     def copy_power_pin(self, pin):
+        if hasattr(OPTS, 'separate_vdd') and pin.name == 'vdd':
+            width = pin.rx()
+        else:
+            width = self.width
         self.add_layout_pin(text=pin.name,
                             layer=pin.layer,
                             offset=vector(0, pin.by()),
-                            width=self.width,
+                            width=width,
                             height=pin.height())
 
     def route_vdd_gnd(self):

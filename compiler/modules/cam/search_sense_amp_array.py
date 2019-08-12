@@ -1,10 +1,10 @@
-import debug
 from base import design
-from base import utils
+from base.library_import import library_import
 from base.vector import vector
-from tech import GDS, layer
+from globals import OPTS
 
 
+@library_import
 class SearchSenseAmp(design.design):
     """
     This module implements the single sense amp cell used in the design. It
@@ -14,29 +14,7 @@ class SearchSenseAmp(design.design):
     """
 
     pin_names = ["vin", "vcomp", "dout", "en", "vdd", "gnd"]
-
-
-    def __init__(self):
-        design.design.__init__(self, "search_sense_amp")
-        debug.info(2, "Create search sense_amp")
-
-        (self.width, self.height) = utils.get_libcell_size(self.name, GDS["unit"], layer["boundary"])
-        self.pin_map = utils.get_libcell_pins(SearchSenseAmp.pin_names, self.name, GDS["unit"], layer["boundary"])
-
-
-    def analytical_delay(self, slew, load=0.0):
-        from tech import spice
-        r = spice["min_tx_r"]/(10)
-        c_para = spice["min_tx_drain_c"]
-        result = self.cal_delay_with_rc(r=r, c=c_para+load, slew=slew)
-        return self.return_delay(result.delay, result.slew)
-
-    def analytical_power(self, proc, vdd, temp, load):
-        """Returns dynamic and leakage power. Results in nW"""
-        #Power in this module currently not defined. Returns 0 nW (leakage and dynamic).
-        total_power = self.return_power()
-        return total_power
-
+    lib_name = OPTS.search_sense_amp
 
 
 class search_sense_amp_array(design.design):

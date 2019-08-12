@@ -7,6 +7,7 @@ class cam_bitcell_12t_array(bitcell_array.bitcell_array):
     """
     Creates a rows x cols array of memory cells. Assumes bit-lines
     and word line is connected by abutment.
+    Has separate read and write wordlines
     Connects the word lines and bit lines.
     """
 

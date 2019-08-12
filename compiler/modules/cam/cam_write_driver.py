@@ -1,8 +1,8 @@
-import debug
 from base import design
-from base import utils
-from tech import GDS, layer
+from base.library_import import library_import
 
+
+@library_import
 class cam_write_driver(design.design):
     """
     write driver to be active during write operations only.
@@ -12,14 +12,5 @@ class cam_write_driver(design.design):
     """
 
     pin_names = ["din", "bl", "br", "en", "mask", "gnd", "vdd"]
-    (width,height) = utils.get_libcell_size("cam_write_driver", GDS["unit"], layer["boundary"])
-    pin_map = utils.get_libcell_pins(pin_names, "cam_write_driver", GDS["unit"], layer["boundary"])
-
-    def __init__(self):
-        design.design.__init__(self, "cam_write_driver")
-        debug.info(2, "Create cam_write_driver")
-
-        self.width = cam_write_driver.width
-        self.height = cam_write_driver.height
-        self.pin_map = cam_write_driver.pin_map
+    lib_name = "cam_write_driver"
 

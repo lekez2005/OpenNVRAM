@@ -6,7 +6,7 @@ from base.vector import vector
 
 class ml_precharge_array(design.design):
     """
-    Array of 2-1 mux to decide between address decoder output and match tags for enabling wordline driver
+    Array of matchline precharge
     """
 
     def __init__(self, rows, size=1):

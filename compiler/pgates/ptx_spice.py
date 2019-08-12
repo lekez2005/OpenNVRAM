@@ -11,7 +11,7 @@ class ptx_spice(ptx.ptx):
     """
 
     def __init__(self, width=drc["minwidth_tx"], mults=1, tx_type="nmos", contact_pwell=True, contact_nwell=True):
-        name = "{0}_m{1}_w{2}".format(tx_type, mults, width)
+        name = "{0}_m{1}_w{2:.4g}".format(tx_type, mults, width)
         if not contact_pwell:
             name += "_no_p"
         if not contact_nwell:

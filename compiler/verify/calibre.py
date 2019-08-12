@@ -65,6 +65,7 @@ import debug
 from base import utils
 from base.utils import get_temp_file
 from globals import OPTS
+import tech
 from tech import drc
 
 
@@ -181,6 +182,16 @@ def run_drc(cell_name, gds_name, exception_group=""):
     return errors
 
 
+def get_lvs_box_cells():
+    if hasattr(tech, 'lvs_box_cells'):
+        box_str_list = ['{{1 {}}}'.format(cell_name) for cell_name in tech.lvs_box_cells]
+        return {
+            'cmnConfigureLVSBox': '1',
+            'cmnLVSBoxes':        ' '.join(box_str_list),
+        }
+    return {}
+
+
 def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
     """Run LVS check on a given top-level name which is
     implemented in gds_name and sp_name. Final verification will
@@ -211,12 +222,12 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
         'lvsRecognizeGates': 'NONE'
         #'cmnVConnectNamesState' : 'ALL', #connects all nets with the same name
     }
+    lvs_runset.update(get_lvs_box_cells())
 
     # This should be removed for final verification
     if not final_verification:
         lvs_runset['cmnVConnectReport']=1
-        lvs_runset['cmnVConnectNamesState']='SOME'
-        lvs_runset['cmnVConnectNames']='vdd gnd'
+        lvs_runset['cmnVConnectNamesState']='ALL'
 
 
 
@@ -331,7 +342,10 @@ def run_pex(cell_name, gds_name, sp_name, output=None, run_drc_lvs=True, correct
         'pexPexSeparator': "1",
         'pexPexSeparatorValue': "_",
         'pexPexNetlistNameSource': 'LAYOUTNAMES',
+        'pexSVRFCmds': '{LVS PRESERVE BOX CELLS YES} {}',
+        'pexIncludeCmdsType': 'SVRF',  # used for preserving lvs box names
     }
+    pex_runset.update(get_lvs_box_cells())
 
     # write the runset file
     f = open(get_temp_file("pex_runset"), "w")

@@ -74,9 +74,9 @@ class spice(verilog.verilog):
         where we dynamically generate groups of connections after a
         group of modules are generated."""
 
-        if (check and (len(self.insts[-1].mod.pins) != len(args))):
-            debug.error("Number of net connections ({0}) does not match last instance ({1})".format(len(self.insts[-1].mod.pins),
-                                                                                                    len(args)), 1)
+        if check and (len(self.insts[-1].mod.pins) != len(args)):
+            debug.error("Number of net connections ({0}) does not match last module instance connections ({1})"
+                        .format(len(args), len(self.insts[-1].mod.pins)), 1)
         self.conns.append(args)
 
         if check and (len(self.insts)!=len(self.conns)):

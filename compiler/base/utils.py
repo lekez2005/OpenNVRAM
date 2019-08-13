@@ -238,7 +238,9 @@ def get_temp_file(file_name):
 
 
 def to_cadence(gds_file):
-    file_path = "/research/APSEL/ota2/openram/OpenRAM/technology/freepdk45/scripts/to_cadence.py"
+    abs_path = os.path.dirname(os.path.abspath(__file__))
+    file_dir = os.path.join(abs_path, '..', '..', 'technology', 'freepdk45', 'scripts')
+    file_path = os.path.join(file_dir, 'to_cadence.py')
     spec = importlib.util.spec_from_file_location("to_cadence", file_path)
     to_cadence = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(to_cadence)

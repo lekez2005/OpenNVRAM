@@ -58,11 +58,6 @@ class SfCamBank(bank.bank):
         self.logic_buffers = LogicBuffers()
         self.add_mod(self.logic_buffers)
 
-    def create_module(self, mod_name, *args, **kwargs):
-        mod = getattr(self, 'mod_' + mod_name)(*args, **kwargs)
-        self.add_mod(mod)
-        return mod
-
     def add_modules(self):
         self.add_bitcell_array()
         self.add_search_sense_amp_array()

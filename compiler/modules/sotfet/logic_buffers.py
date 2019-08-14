@@ -79,7 +79,7 @@ class LogicBuffers(design.design):
         self.clk_buf = BufferStage(buffer_stages=OPTS.clk_buffers, **buffer_args)
         self.add_mod(self.clk_buf)
 
-        assert len(OPTS.write_buffers) % 2 == 0, "Number of write buffers should be odd"
+        assert len(OPTS.write_buffers) % 2 == 0, "Number of write buffers should be even"
         self.write_buf = BufferStage(buffer_stages=OPTS.write_buffers, **buffer_args)
         self.add_mod(self.write_buf)
 

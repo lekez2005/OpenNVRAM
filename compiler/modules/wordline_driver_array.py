@@ -23,7 +23,6 @@ class wordline_driver_array(design.design):
         design.design.__init__(self, "wordline_driver")
 
         self.rows = rows
-        assert len(buffer_stages) % 2 == 1 and len(buffer_stages) > 0, "Odd number of stages required"
         if buffer_stages is None:
             buffer_stages = [2, 8]
         self.buffer_stages = buffer_stages
@@ -58,7 +57,7 @@ class wordline_driver_array(design.design):
 
         self.logic_buffer = LogicBuffer(self.buffer_stages, logic="pnand2", height=bitcell.height, route_outputs=False,
                                         route_inputs=False,
-                                        contact_pwell=False, contact_nwell=False, align_bitcell=False)
+                                        contact_pwell=False, contact_nwell=False, align_bitcell=True)
         self.add_mod(self.logic_buffer)
 
     def add_modules(self):

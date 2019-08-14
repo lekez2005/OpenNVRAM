@@ -247,7 +247,7 @@ class stimuli():
         if OPTS.use_pex:
             nestlvl = 1
         else:
-            nestlvl = 5
+            nestlvl = OPTS.nestlvl if hasattr(OPTS, 'nestlvl') else 2
 
         self.sf.write('saveOptions options save=lvlpub nestlvl={} pwr=total \n'.format(nestlvl))
         # self.sf.write('saveOptions options save=all nestlvl=1 pwr=total \n')

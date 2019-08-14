@@ -1376,6 +1376,11 @@ class bank(design.design):
         self.add_via(layers=("metal2","via2","metal3"),
                      offset=in_pin + self.m2m3_via_offset,
                      rotate=90)
+
+    def create_module(self, mod_name, *args, **kwargs):
+        mod = getattr(self, 'mod_' + mod_name)(*args, **kwargs)
+        self.add_mod(mod)
+        return mod
         
     def analytical_delay(self, slew, load):
         """ return  analytical delay of the bank"""

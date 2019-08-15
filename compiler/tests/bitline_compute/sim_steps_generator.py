@@ -16,8 +16,6 @@ class SimStepsGenerator(SequentialDelay):
     read_duty_cycle = write_duty_cycle = 0.5
     saved_nodes = []
 
-    baseline_sim = False
-
     def __init__(self, sram, spfile, corner, initialize=False):
         super().__init__(sram, spfile, corner, initialize=initialize)
 
@@ -51,14 +49,17 @@ class SimStepsGenerator(SequentialDelay):
         self.sf.write("{} \n".format(self.sram))
         if OPTS.spice_name == "spectre":
             self.sf.write("simulator lang=spice\n")
-        self.sf.write("* Delay stimulus for read period = {0}n, write period = {1} load={2}fF slew={3}ns\n\n".format(
-            self.read_period, self.write_period, self.load, self.slew))
+        self.sf.write("* Delay stimulus for read period = {0}n, write period = {1}n "
+                      " read duty = {2}n write duty = {3}n Area={4:.0f}um2 load={5}fF slew={6}n\n\n".format(
+            self.read_period, self.write_period, self.read_duty_cycle, self.write_duty_cycle,
+            (self.sram.width*self.sram.height),
+            self.load, self.slew))
 
         self.stim = SpiceDut(self.sf, self.corner)
 
         self.write_generic_stimulus()
 
-        if not self.baseline_sim:
+        if not OPTS.baseline:
             self.stim.gen_constant("sense_amp_ref", OPTS.sense_amp_ref, gnd_node="gnd")
 
         self.initialize_output()
@@ -127,18 +128,27 @@ class SimStepsGenerator(SequentialDelay):
 
         mask = [1] * self.word_size
 
-        self.write_masked_data(self.convert_address(a_address), zero_data, mask, "Set A to zero")
-        self.write_masked_data(self.convert_address(c_address), zero_data, mask, "Set C to zero")
+        if OPTS.baseline:
+            self.write_masked_data(self.convert_address(a_address), zero_data, mask, "Set A to zero")
+            self.setup_write_measurements(a_address, one_data)
+            self.write_masked_data(self.convert_address(a_address), one_data, mask, "Set A to ones")
 
-        self.setup_write_measurements(a_address, one_data)
-        self.write_masked_data(self.convert_address(a_address), one_data, mask, "Set A to ones")
+            self.write_masked_data(self.convert_address(b_address), zero_data, mask, "Set B to zero")
+            self.setup_read_measurements(a_address, one_data)
+            self.read_data(self.convert_address(a_address), "Read A")
 
-        self.write_masked_data(self.convert_address(b_address), zero_data, mask, "Set B to zero")
+        else:
+            self.write_masked_data(self.convert_address(a_address), zero_data, mask, "Set A to zero")
+            self.write_masked_data(self.convert_address(c_address), zero_data, mask, "Set C to zero")
 
-        self.setup_read_measurements(a_address, one_data)
-        self.read_data(self.convert_address(a_address), "Read A")
+            self.setup_write_measurements(a_address, one_data)
+            self.write_masked_data(self.convert_address(a_address), one_data, mask, "Set A to ones")
 
-        if not self.baseline_sim:
+            self.write_masked_data(self.convert_address(b_address), zero_data, mask, "Set B to zero")
+
+            self.setup_read_measurements(a_address, one_data)
+            self.read_data(self.convert_address(a_address), "Read A")
+
             self.setup_and_measurement(one_data, zero_data)
             self.bitline_compute(a_address, b_address, "Bitline A and B")
 

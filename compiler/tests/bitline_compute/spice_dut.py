@@ -1,7 +1,4 @@
-import os
-
 import tech
-from base import utils
 from characterizer.stimuli import stimuli
 from globals import OPTS
 from modules.bitline_compute.bl_bank import BlBank
@@ -12,7 +9,6 @@ class SpiceDut(stimuli):
     Instantiates the sram
     External peripheral spice should also be instantiated here
     """
-    baseline = False
 
     def inst_sram(self, abits, dbits, sram_name):
         self.sf.write("Xsram ")
@@ -21,10 +17,10 @@ class SpiceDut(stimuli):
             self.sf.write("mask[{0}] ".format(i))
         for i in range(abits):
             self.sf.write("A[{0}] ".format(i))
-            if not self.baseline:
+            if not OPTS.baseline:
                 self.sf.write("A_1[{0}] ".format(i))
 
-        if not self.baseline:
+        if not OPTS.baseline:
             self.sf.write(" en_0 en_1 sense_amp_ref ")
 
         self.sf.write(" read ")

@@ -47,7 +47,7 @@ class BlProbe(SramProbe):
     def probe_misc_bank(self, bank):
         bank_inst = self.sram.bank_inst
 
-        nets = ["clk_buf", "wordline_en", "precharge_en", "write_en", "sense_en", "tri_en_bar"]
+        nets = ["clk_buf", "wordline_en", "precharge_en", "write_en", "sense_en", "sense_en_bar"]
 
         if OPTS.use_pex:
             for net in nets:
@@ -73,7 +73,10 @@ class BlProbe(SramProbe):
             decoder_pin = bank_inst.mod.decoder_logic_mod.get_pin("out[{}]".format(row))
             self.add_pin_label(decoder_pin, [bank_inst, bank_inst.mod.decoder_logic_inst], decoder_label)
         else:
-            decoder_label = "Xsram.Xbank{}.wl_in[{}]".format(bank_index, row)
+            if OPTS.baseline:
+                decoder_label = "Xsram.Xbank{}.dec_out_0[{}]".format(bank_index, row)
+            else:
+                decoder_label = "Xsram.Xbank{}.wl_in[{}]".format(bank_index, row)
         self.decoder_probes[address_int] = decoder_label
         self.probe_labels.add(decoder_label)
 
@@ -111,15 +114,14 @@ class BlProbe(SramProbe):
             self.dout_probes[col] = dout_label
             self.probe_labels.add(dout_label)
 
-            if OPTS.use_pex:
+            if OPTS.use_pex or OPTS.baseline:
                 pass
             else:
                 and_label = "Xsram.Xbank0.and_out[{}]".format(col)
                 self.and_probes[col] = and_label
                 self.probe_labels.add(and_label)
 
-                # TODO fix label
-                nor_label = "Xsram.Xbank0.and_out[{}]".format(col)
+                nor_label = "Xsram.Xbank0.nor_out[{}]".format(col)
                 self.nor_probes[col] = nor_label
                 self.probe_labels.add(nor_label)
 

@@ -12,8 +12,7 @@ class sense_amp(design.design):
     Sense amplifier to read a pair of bit-lines.
     """
 
-    pin_names = ["bl", "br", "dout", "en", "vdd", "gnd"]
-
+    pin_names = ["bl", "br", "dout", "en", "en_bar", "vdd", "gnd"]
 
     def __init__(self, name):
         design.design.__init__(self, name)

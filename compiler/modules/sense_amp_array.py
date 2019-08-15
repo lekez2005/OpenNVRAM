@@ -41,6 +41,7 @@ class sense_amp_array(design.design):
             self.add_pin("br[{0}]".format(i))
 
         self.add_pin("en")
+        self.add_pin("en_bar")
         self.add_pin("vdd")
         self.add_pin("gnd")
 
@@ -80,7 +81,7 @@ class sense_amp_array(design.design):
 
             self.connect_inst(["bl[{0}]".format(i),"br[{0}]".format(i), 
                                "data[{0}]".format(index),
-                               "en", "vdd", "gnd"])
+                               "en", "en_bar", "vdd", "gnd"])
 
             self.add_layout_pin(text="bl[{0}]".format(i),
                                 layer="metal2",

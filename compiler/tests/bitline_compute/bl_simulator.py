@@ -7,15 +7,16 @@ from test_base import TestBase
 from globals import OPTS
 
 
-class Simulator(TestBase):
+class BlSimulator(TestBase):
     baseline = False
 
     def setUp(self):
-        super(Simulator, self).setUp()
+        super(BlSimulator, self).setUp()
 
         self.corner = (OPTS.process_corners[0], OPTS.supply_voltages[0], OPTS.temperatures[0])
 
-    def replace_temp_folder(self, new_temp):
+    @staticmethod
+    def replace_temp_folder(new_temp):
         if not os.path.exists(new_temp):
             os.makedirs(new_temp)
         OPTS.openram_temp = new_temp
@@ -24,12 +25,18 @@ class Simulator(TestBase):
             new_val = os.path.join(new_temp, file_name)
             setattr(OPTS, attr, new_val)
 
-    def run_commands(self, use_pex, word_size, num_words):
-        folder_name = "baseline" if self.baseline else "compute"
+    @staticmethod
+    def set_temp_folder(baseline, word_size, num_words):
+        folder_name = "baseline" if baseline else "compute"
         temp_folder = os.path.join(OPTS.openram_temp, "{}_{}_{}".format(folder_name, word_size, num_words))
-        self.replace_temp_folder(temp_folder)
+        BlSimulator.replace_temp_folder(temp_folder)
+        return temp_folder
+
+    def run_commands(self, use_pex, word_size, num_words):
+        self.set_temp_folder(self.baseline, word_size, num_words)
 
         from modules.bitline_compute.bl_sram import BlSram
+        from modules.bitline_compute.baseline.bl_baseline_sram import BlBaselineSram
         from sim_steps_generator import SimStepsGenerator
 
         OPTS.use_pex = use_pex
@@ -37,7 +44,13 @@ class Simulator(TestBase):
         OPTS.word_size = word_size
         OPTS.num_words = num_words
 
-        sram_class = BlSram
+        if self.baseline:
+            OPTS.sense_amp_array = "sense_amp_array"
+            OPTS.baseline = True
+            sram_class = BlBaselineSram
+        else:
+            OPTS.baseline = False
+            sram_class = BlSram
 
         self.sram = sram_class(word_size=OPTS.word_size, num_words=OPTS.num_words, num_banks=1, name="sram1",
                                words_per_row=OPTS.words_per_row)
@@ -73,10 +86,10 @@ class Simulator(TestBase):
 
 
 if 'baseline' in sys.argv:
-    Simulator.baseline = True
+    BlSimulator.baseline = True
     sys.argv.remove('baseline')
 else:
-    Simulator.baseline = False
+    BlSimulator.baseline = False
 
 
-TestBase.run_tests(__name__)
+BlSimulator.run_tests(__name__)

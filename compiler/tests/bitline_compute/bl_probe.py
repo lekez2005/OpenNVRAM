@@ -51,9 +51,9 @@ class BlProbe(SramProbe):
 
         if OPTS.use_pex:
             for net in nets:
-                pin = bank_inst.mod.logic_buffers.get_pin(net)
+                pin = bank_inst.mod.control_buffers.get_pin(net)
                 pin_label = "{}".format(net)
-                self.add_pin_label(pin, [bank_inst, bank_inst.mod.logic_buffers_inst], pin_label)
+                self.add_pin_label(pin, [bank_inst, bank_inst.mod.control_buffers_inst], pin_label)
                 self.probe_labels.add(pin_label)
         else:
             for net in nets:
@@ -70,8 +70,12 @@ class BlProbe(SramProbe):
 
         if OPTS.use_pex:
             decoder_label = "dec_r{}".format(row)
-            decoder_pin = bank_inst.mod.decoder_logic_mod.get_pin("out[{}]".format(row))
-            self.add_pin_label(decoder_pin, [bank_inst, bank_inst.mod.decoder_logic_inst], decoder_label)
+            if OPTS.baseline:
+                decoder_pin = bank_inst.mod.decoder.get_pin("decode[{}]".format(row))
+                self.add_pin_label(decoder_pin, [bank_inst, bank_inst.mod.right_decoder_inst], decoder_label)
+            else:
+                decoder_pin = bank_inst.mod.decoder_logic_mod.get_pin("out[{}]".format(row))
+                self.add_pin_label(decoder_pin, [bank_inst, bank_inst.mod.decoder_logic_inst], decoder_label)
         else:
             if OPTS.baseline:
                 decoder_label = "Xsram.Xbank{}.dec_out_0[{}]".format(bank_index, row)
@@ -108,22 +112,33 @@ class BlProbe(SramProbe):
 
     def probe_outputs(self):
         """Probes for sense amp outputs and, nor"""
+        bank_inst = self.sram.bank_inst
         for col in range(self.sram.num_cols):
             # dout label
             dout_label = "D[{}]".format(col)
             self.dout_probes[col] = dout_label
-            self.probe_labels.add(dout_label)
 
-            if OPTS.use_pex or OPTS.baseline:
-                pass
-            else:
-                and_label = "Xsram.Xbank0.and_out[{}]".format(col)
-                self.and_probes[col] = and_label
-                self.probe_labels.add(and_label)
+            if not OPTS.baseline:
+                if OPTS.use_pex:
+                    and_pin = bank_inst.mod.sense_amp_array_inst.get_pin("and[{}]".format(col))
+                    pin_label = "and_c{}".format(col)
+                    self.add_pin_label(and_pin, [bank_inst, bank_inst.mod.sense_amp_array_inst], pin_label)
+                    self.probe_labels.add(pin_label)
+                    self.and_probes[col] = pin_label
 
-                nor_label = "Xsram.Xbank0.nor_out[{}]".format(col)
-                self.nor_probes[col] = nor_label
-                self.probe_labels.add(nor_label)
+                    nor_pin = bank_inst.mod.sense_amp_array_inst.get_pin("nor[{}]".format(col))
+                    pin_label = "nor_c{}".format(col)
+                    self.add_pin_label(nor_pin, [bank_inst, bank_inst.mod.sense_amp_array_inst], pin_label)
+                    self.probe_labels.add(pin_label)
+                    self.nor_probes[col] = pin_label
+                else:
+                    and_label = "Xsram.Xbank0.and_out[{}]".format(col)
+                    self.and_probes[col] = and_label
+                    self.probe_labels.add(and_label)
+
+                    nor_label = "Xsram.Xbank0.nor_out[{}]".format(col)
+                    self.nor_probes[col] = nor_label
+                    self.probe_labels.add(nor_label)
 
     def add_pin_label(self, pin, module_insts, label_key):
         ll, ur = utils.get_pin_rect(pin, module_insts)
@@ -145,6 +160,8 @@ class BlProbe(SramProbe):
                     self.and_probes[col] = self.extract_from_pex(col_label)
                 for col, col_label in self.nor_probes.items():
                     self.nor_probes[col] = self.extract_from_pex(col_label)
+                for col, col_label in self.bitline_probes.items():
+                    self.bitline_probes[col] = self.extract_from_pex(col_label)
                 for address, address_label in self.decoder_probes.items():
                     self.decoder_probes[address] = self.extract_from_pex(address_label)
                 for address, address_labels in self.state_probes.items():

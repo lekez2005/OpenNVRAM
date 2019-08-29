@@ -143,6 +143,10 @@ class wordline_driver_array(design.design):
 
             self.add_layout_pin(text=pin_name, layer="metal1", offset=[0, y_offset], width=buffer_inst.rx(),
                                 height=self.rail_height)
+        # add vdd for row zero
+        self.add_layout_pin(text="vdd", layer="metal1",
+                            offset=[0, -0.5*self.rail_height], width=self.buffer_insts[0].rx(),
+                            height=self.rail_height)
 
     def analytical_delay(self, slew, load=0):
         return self.logic_buffer.analytical_delay(slew, load)

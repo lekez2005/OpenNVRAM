@@ -46,6 +46,6 @@ class SpiceDut(stimuli):
         self.sf.write("V{0} {0} 0 {1}\n".format("test" + self.vdd_name, self.voltage))
         self.sf.write("V{0} {0} 0 {1}\n".format("test" + self.gnd_name, 0))
 
-        if hasattr(OPTS, 'separate_vdd') and OPTS.separate_vdd:
+        if OPTS.separate_vdd:
             for vdd_name in BlBank.external_vdds:
                 self.gen_constant(vdd_name, self.voltage, gnd_node="gnd")

@@ -1,9 +1,8 @@
-import debug
 from base import design
-from base import utils
-from tech import GDS, layer
+from base.library_import import library_import
 
 
+@library_import
 class sense_amp(design.design):
     """
     This module implements the single sense amp cell used in the design. It
@@ -13,14 +12,7 @@ class sense_amp(design.design):
     """
 
     pin_names = ["bl", "br", "dout", "en", "en_bar", "vdd", "gnd"]
-
-    def __init__(self, name):
-        design.design.__init__(self, name)
-        debug.info(2, "Create sense_amp")
-
-        (self.width, self.height) = utils.get_libcell_size(self.name, GDS["unit"], layer["boundary"])
-        self.pin_map = utils.get_libcell_pins(sense_amp.pin_names, self.name, GDS["unit"], layer["boundary"])
-
+    lib_name = "sense_amp"
 
     def analytical_delay(self, slew, load=0.0):
         from tech import spice

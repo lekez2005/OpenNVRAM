@@ -24,9 +24,8 @@ class ContactFullStack(design.design):
             cls._m2_stack = cls(start_layer=1)
         return cls._m2_stack
 
-
-
     def __init__(self, start_layer=0, stop_layer=-1, centralize=True, dimensions=[]):
+        # TODO: fix bug which creates unnecessary layer vias when start_via is large
         dim_str = "_".join([str(item) for sublist in dimensions for item in sublist])
         alignment = "c" if centralize else "l"
         name = "full_stack_via_M{}_M10_{}_{}".format(start_layer + 1, alignment, dim_str)

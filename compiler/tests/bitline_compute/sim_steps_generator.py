@@ -27,13 +27,17 @@ class SimStepsGenerator(SequentialDelay):
         mid_address = int(0.5*self.sram.num_words)
         self.address_1 = self.prev_address_1 = self.convert_address(mid_address)
 
-        for i in range(self.addr_size):
-            self.bus_sigs.append("A_1[{}]".format(i))
+        if not OPTS.baseline:
+            for i in range(self.addr_size):
+                self.bus_sigs.append("A_1[{}]".format(i))
 
         for i in range(self.word_size):
             self.bus_sigs.append("mask[{}]".format(i))
 
-        self.control_sigs = ["read", "en_0", "en_1", "acc_en", "acc_en_inv"]
+        if OPTS.baseline:
+            self.control_sigs = ["read", "acc_en", "acc_en_inv"]
+        else:
+            self.control_sigs = ["read", "en_0", "en_1", "acc_en", "acc_en_inv"]
 
     def write_delay_stimulus(self):
         """ Override super class method to use internal logic for pwl voltages and measurement setup
@@ -168,10 +172,11 @@ class SimStepsGenerator(SequentialDelay):
 
     def update_output(self):
         # write address1
-        for i in range(self.addr_size):
-            key = "A_1[{}]".format(i)
-            self.write_pwl(key, self.prev_address_1[i], self.address_1[i])
-        self.prev_address_1 = self.address_1
+        if not OPTS.baseline:
+            for i in range(self.addr_size):
+                key = "A_1[{}]".format(i)
+                self.write_pwl(key, self.prev_address_1[i], self.address_1[i])
+            self.prev_address_1 = self.address_1
         # write mask
         for i in range(self.word_size):
             key = "mask[{}]".format(i)
@@ -392,7 +397,7 @@ class SimStepsGenerator(SequentialDelay):
 
         if getattr(OPTS, 'run_lvs', True):
             lvs_result = verify.run_lvs(self.sram.name, OPTS.gds_file, OPTS.spice_file,
-                                        final_verification=not self.separate_vdd)
+                                        final_verification=not OPTS.separate_vdd)
             if lvs_result:
                 raise AssertionError("LVS Failed")
 

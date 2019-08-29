@@ -3,11 +3,20 @@ from importlib import reload
 import debug
 from base import design
 from base import utils
+from base.library_import import library_import
 from base.vector import vector
 from globals import OPTS
 from tech import layer as tech_layers
 from tech import purpose as tech_purpose
 
+
+@library_import
+class tri_gate_tap(design.design):
+    """
+    Contains two bitline logic cells stacked vertically
+    """
+    pin_names = []
+    lib_name = "tri_gate_tap"
 
 class tri_gate_array(design.design):
     """
@@ -39,7 +48,7 @@ class tri_gate_array(design.design):
         self.create_array()
         self.add_layout_pins()
         self.connect_en_pins()
-        self.fill_implants_and_nwell()
+        #self.fill_implants_and_nwell()
 
     def add_pins(self):
         """create the name of pins depend on the word size"""
@@ -64,6 +73,11 @@ class tri_gate_array(design.design):
             self.connect_inst(["in[{0}]".format(index),
                                "out[{0}]".format(index),
                                "en", "en_bar", "vdd", "gnd"])
+        self.body_tap = tri_gate_tap()
+        for x_offset in self.tap_offsets:
+            self.add_inst(name=self.body_tap.name, mod=self.body_tap,
+                                                     offset=vector(x_offset, 0))
+            self.connect_inst([])
         self.width = self.tri_inst[i].rx()
 
     def connect_en_pins(self):

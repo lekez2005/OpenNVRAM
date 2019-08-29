@@ -319,7 +319,7 @@ class SramProbe(object):
     def extract_from_pex(self, label, pex_file=None):
         if pex_file is None:
             pex_file = self.pex_file
-        # lvs box pins have exact match without mangling
+
         match = None
         try:
             pattern = "\sN_{}_\S+_[gsd]".format(label)
@@ -327,7 +327,8 @@ class SramProbe(object):
         except CalledProcessError as ex:
             if ex.returncode == 1:  # mismatch
                 try:
-                    match = check_output(["grep", "-m1", "-o", label, pex_file])
+                    # lvs box pins have exact match without mangling so search for exact match without regex
+                    match = check_output(["grep", "-m1", "-Fo", label, pex_file])
                 except CalledProcessError as ex:
                     if ex.returncode == 1:
                         debug.error("Match not found in pex file for label {}".format(label))

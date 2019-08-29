@@ -45,6 +45,8 @@ class BlSimulator(TestBase):
         OPTS.num_words = num_words
 
         if self.baseline:
+            OPTS.sense_amp = "sense_amp"
+            OPTS.sense_amp_tap = "sense_amp_tap"
             OPTS.sense_amp_array = "sense_amp_array"
             OPTS.baseline = True
             sram_class = BlBaselineSram
@@ -78,11 +80,11 @@ class BlSimulator(TestBase):
 
     def test_schematic(self):
         OPTS.trim_netlist = False
-        OPTS.run_drc = False
-        OPTS.run_lvs = False
-        OPTS.run_pex = False
+        OPTS.run_drc = True
+        OPTS.run_lvs = True
+        OPTS.run_pex = True
         OPTS.separate_vdd = True
-        self.run_commands(use_pex=False, word_size=32, num_words=32)
+        self.run_commands(use_pex=True, word_size=32, num_words=32)
 
 
 if 'baseline' in sys.argv:

@@ -58,12 +58,19 @@ def print_str(str):
     logger.debug(str)
 
 
+class RotateOnOpenHandler(RotatingFileHandler):
+    def shouldRollover(self, record):
+        if self.stream is None:                 # delay was set...
+            return 1
+        return 0
+
+
 def setup_file_log(filename):
     global file_handler
     if file_handler is not None:
         file_handler.close()
         logger.removeHandler(file_handler)
-    file_handler = RotatingFileHandler(filename, mode='w', backupCount=5)
+    file_handler = RotateOnOpenHandler(filename, mode='w', backupCount=5, delay=True)
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 

@@ -15,25 +15,7 @@ class BlSimulator(TestBase):
 
         self.corner = (OPTS.process_corners[0], OPTS.supply_voltages[0], OPTS.temperatures[0])
 
-    @staticmethod
-    def replace_temp_folder(new_temp):
-        if not os.path.exists(new_temp):
-            os.makedirs(new_temp)
-        OPTS.openram_temp = new_temp
-        for attr, file_name in [("spice_file", "temp.sp"), ("pex_spice", "pex.sp"),
-                                ("reduced_spice", "reduced.sp"), ("gds_file", "temp.gds")]:
-            new_val = os.path.join(new_temp, file_name)
-            setattr(OPTS, attr, new_val)
-
-    @staticmethod
-    def set_temp_folder(baseline, word_size, num_words):
-        folder_name = "baseline" if baseline else "compute"
-        temp_folder = os.path.join(OPTS.openram_temp, "{}_{}_{}".format(folder_name, word_size, num_words))
-        BlSimulator.replace_temp_folder(temp_folder)
-        return temp_folder
-
     def run_commands(self, use_pex, word_size, num_words):
-        self.set_temp_folder(self.baseline, word_size, num_words)
 
         from modules.bitline_compute.bl_sram import BlSram
         from modules.bitline_compute.baseline.bl_baseline_sram import BlBaselineSram
@@ -76,15 +58,15 @@ class BlSimulator(TestBase):
 
         delay.write_delay_stimulus()
 
-        delay.stim.run_sim()
+        #delay.stim.run_sim()
 
     def test_schematic(self):
         OPTS.trim_netlist = False
-        OPTS.run_drc = True
-        OPTS.run_lvs = True
-        OPTS.run_pex = True
+        OPTS.run_drc = False
+        OPTS.run_lvs = False
+        OPTS.run_pex = False
         OPTS.separate_vdd = True
-        self.run_commands(use_pex=True, word_size=32, num_words=32)
+        self.run_commands(use_pex=True, word_size=word_size, num_words=num_words)
 
 
 if 'baseline' in sys.argv:
@@ -93,5 +75,11 @@ if 'baseline' in sys.argv:
 else:
     BlSimulator.baseline = False
 
+word_size = 32
+num_words = 32
+folder_name = "baseline" if BlSimulator.baseline else "compute"
+openram_temp = os.path.join(os.environ["SCRATCH"], "openram", "bl_sram")
+temp_folder = os.path.join(openram_temp, "{}_{}_{}".format(folder_name, word_size, num_words))
+BlSimulator.temp_folder = temp_folder
 
 BlSimulator.run_tests(__name__)

@@ -208,6 +208,7 @@ def load_class(class_name):
 
 
 def run_command(command, stdout_file, stderror_file, verbose_level=1, cwd=None):
+    import debug
 
     verbose = OPTS.debug_level >= verbose_level
     if cwd is None:
@@ -221,7 +222,7 @@ def run_command(command, stdout_file, stderror_file, verbose_level=1, cwd=None):
                 process.stdout.close()
                 break
             else:
-                print(line, end=" ")
+                debug.print_str(line)
                 stdout_f.write(line)
 
     if process is not None:

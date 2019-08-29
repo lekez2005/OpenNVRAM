@@ -1015,7 +1015,7 @@ class sram(design.design, sram_power_grid.Mixin):
         start_time = datetime.datetime.now()
         spname = os.path.join(OPTS.output_path, self.name + ".sp")
         gdsname = os.path.join(OPTS.output_path, self.name + ".gds")
-        print("SP: Writing to {0}".format(spname))
+        debug.print_str("SP: Writing to {0}".format(spname))
         self.sp_write(spname)
         print_time("Spice writing", datetime.datetime.now(), start_time)
 
@@ -1033,33 +1033,33 @@ class sram(design.design, sram_power_grid.Mixin):
         # Characterize the design
         start_time = datetime.datetime.now()        
 
-        print("LIB: Characterizing... ")
+        debug.print_str("LIB: Characterizing... ")
         if OPTS.analytical_delay:
-            print("Using analytical delay models (no characterization)")
+            debug.print_str("Using analytical delay models (no characterization)")
         else:
             if OPTS.spice_name != "":
-                print("Performing simulation-based characterization with {}".format(OPTS.spice_name))
+                debug.print_str("Performing simulation-based characterization with {}".format(OPTS.spice_name))
             if OPTS.trim_netlist:
-                print("Trimming netlist to speed up characterization.")
+                debug.print_str("Trimming netlist to speed up characterization.")
         lib(out_dir=OPTS.output_path, sram=self, sp_file=sp_file)
         print_time("Characterization", datetime.datetime.now(), start_time)
 
         # Write the layout
         start_time = datetime.datetime.now()
-        print("GDS: Writing to {0}".format(gdsname))
+        debug.print_str("GDS: Writing to {0}".format(gdsname))
         self.gds_write(gdsname)
         print_time("GDS", datetime.datetime.now(), start_time)
 
         # Create a LEF physical model
         start_time = datetime.datetime.now()
         lefname = os.path.join(OPTS.output_path, self.name + ".lef")
-        print("LEF: Writing to {0}".format(lefname))
+        debug.print_str("LEF: Writing to {0}".format(lefname))
         self.lef_write(lefname)
         print_time("LEF", datetime.datetime.now(), start_time)
 
         # Write a verilog model
         start_time = datetime.datetime.now()
         vname = os.path.join(OPTS.output_path, self.name + ".v")
-        print("Verilog: Writing to {0}".format(vname))
+        debug.print_str("Verilog: Writing to {0}".format(vname))
         self.verilog_write(vname)
         print_time("Verilog", datetime.datetime.now(), start_time)

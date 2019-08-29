@@ -49,7 +49,3 @@ duty_cycle = 0.35
 
 # temp dir
 openram_temp = os.path.join(os.environ["SCRATCH"], "openram", "sotfet_cam")
-spice_file = os.path.join(openram_temp, 'temp.sp')
-pex_spice = os.path.join(openram_temp, 'pex.sp')
-reduced_spice = os.path.join(openram_temp, 'reduced.sp')
-gds_file = os.path.join(openram_temp, 'temp.gds')

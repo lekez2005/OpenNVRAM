@@ -73,23 +73,23 @@ def print_banner():
     if OPTS.is_unit_test:
         return
 
-    print("|==============================================================================|")
+    debug.print_str("|==============================================================================|")
     name = "OpenRAM Compiler"
-    print("|=========" + name.center(60) + "=========|")
-    print("|=========" + " ".center(60) + "=========|")
-    print("|=========" + "VLSI Design and Automation Lab".center(60) + "=========|")
-    print("|=========" + "University of California Santa Cruz CE Department".center(60) + "=========|")
-    print("|=========" + " ".center(60) + "=========|")
-    print("|=========" + "VLSI Computer Architecture Research Group".center(60) + "=========|")
-    print("|=========" + "Oklahoma State University ECE Department".center(60) + "=========|")
-    print("|=========" + " ".center(60) + "=========|")
+    debug.print_str("|=========" + name.center(60) + "=========|")
+    debug.print_str("|=========" + " ".center(60) + "=========|")
+    debug.print_str("|=========" + "VLSI Design and Automation Lab".center(60) + "=========|")
+    debug.print_str("|=========" + "University of California Santa Cruz CE Department".center(60) + "=========|")
+    debug.print_str("|=========" + " ".center(60) + "=========|")
+    debug.print_str("|=========" + "VLSI Computer Architecture Research Group".center(60) + "=========|")
+    debug.print_str("|=========" + "Oklahoma State University ECE Department".center(60) + "=========|")
+    debug.print_str("|=========" + " ".center(60) + "=========|")
     user_info = "Usage help: openram-user-group@ucsc.edu"
-    print("|=========" + user_info.center(60) + "=========|")
+    debug.print_str("|=========" + user_info.center(60) + "=========|")
     dev_info = "Development help: openram-dev-group@ucsc.edu"
-    print("|=========" + dev_info.center(60) + "=========|")
+    debug.print_str("|=========" + dev_info.center(60) + "=========|")
     temp_info = "Temp dir: {}".format(OPTS.openram_temp)
-    print("|=========" + temp_info.center(60) + "=========|")
-    print("|==============================================================================|")
+    debug.print_str("|=========" + temp_info.center(60) + "=========|")
+    debug.print_str("|==============================================================================|")
 
 
 def check_versions():
@@ -105,7 +105,7 @@ def check_versions():
     # or, this could be done in each module (e.g. verify, characterizer, etc.)
 
 
-def init_openram(config_file, is_unit_test=True):
+def init_openram(config_file, is_unit_test=True, openram_temp=None):
     """Initialize the technology, paths, simulators, etc."""
     # reset options to default since some tests modify OPTS
     for key in list(OPTS.__dict__.keys()):
@@ -114,11 +114,16 @@ def init_openram(config_file, is_unit_test=True):
         else:
             OPTS.__dict__[key] = DEFAULT_OPTS.__dict__[key]
 
+    if openram_temp is not None:
+        OPTS.set_temp_folder(openram_temp)
+
     check_versions()
 
     debug.info(1,"Initializing OpenRAM...")
 
-    read_config(config_file, is_unit_test)
+    read_config(config_file, is_unit_test, openram_temp)
+
+    debug.setup_file_log(OPTS.log_file)
 
     setup_paths()
 
@@ -144,9 +149,8 @@ def get_tool(tool_type, preferences):
     else:
         return(None,"")
 
-    
 
-def read_config(config_file, is_unit_test=True):
+def read_config(config_file, is_unit_test=True, openram_temp=None):
     """ 
     Read the configuration file that defines a few parameters. The
     config file is just a Python file that defines some config
@@ -178,7 +182,9 @@ def read_config(config_file, is_unit_test=True):
         # except in the case of the tech name! This is because the tech name
         # is sometimes used to specify the config file itself (e.g. unit tests)
         if not k in OPTS.__dict__ or k=="tech_name":
-            OPTS.__dict__[k]=v
+            OPTS.__dict__[k] = v
+        if k == "openram_temp" and openram_temp is None:
+            OPTS.set_temp_folder(v)
     
     if not os.path.isabs(OPTS.output_path):
         OPTS.output_path = os.path.join(os.getcwd(), OPTS.output_path)
@@ -339,7 +345,7 @@ def print_time(name, now_time, last_time=None):
         time = round((now_time-last_time).total_seconds(),1)
     else:
         time = now_time
-    print("** {0}: {1} seconds".format(name,time))
+    debug.print_str("** {0}: {1} seconds".format(name,time))
 
 
 def report_status():
@@ -355,10 +361,10 @@ def report_status():
     if not OPTS.tech_name:
         debug.error("Tech name must be specified in config file.")
 
-    print("Technology: {0}".format(OPTS.tech_name))
-    print("Word size: {0}\nWords: {1}\nBanks: {2}".format(OPTS.word_size,
+    debug.print_str("Technology: {0}".format(OPTS.tech_name))
+    debug.print_str("Word size: {0}\nWords: {1}\nBanks: {2}".format(OPTS.word_size,
                                                           OPTS.num_words,
                                                           OPTS.num_banks))
     if not OPTS.check_lvsdrc:
-        print("DRC/LVS/PEX checking is disabled.")
+        debug.print_str("DRC/LVS/PEX checking is disabled.")
     

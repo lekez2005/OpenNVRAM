@@ -57,7 +57,7 @@ class OpenRAMTest(OpenRamTest):
             filename = os.path.join(out_path, "{}.{}".format(out_file, extension))
             debug.info(1, "Checking for file: " + filename)
             if not os.path.exists(filename):
-                print(filename)
+                debug.print_str(filename)
             self.assertEqual(os.path.exists(filename), True)
 
         # Make sure there is any .lib file

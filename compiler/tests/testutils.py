@@ -19,6 +19,7 @@ class OpenRamTest(unittest.TestCase):
     debug = None
     initialized = False
     config_template = "config_20_{}"
+    temp_folder = None
 
     @staticmethod
     def run_tests(name):
@@ -31,8 +32,8 @@ class OpenRamTest(unittest.TestCase):
         if not config_template:
             config_template = cls.config_template
         parse_args()
+        globals.init_openram(config_template.format(OPTS.tech_name), openram_temp=cls.temp_folder)
         header(inspect.getfile(cls), OPTS.tech_name)
-        globals.init_openram(config_template.format(OPTS.tech_name))
 
     @classmethod
     def setUpClass(cls):
@@ -234,13 +235,14 @@ def replace_custom_temp(suffix, config_module_name):
 
 
 def header(filename, technology):
+    import debug
     tst = "Running Test for:"
-    print("\n")
-    print(" ______________________________________________________________________________ ")
-    print("|==============================================================================|")
-    print("|=========" + tst.center(60) + "=========|")
-    print("|=========" + technology.center(60) + "=========|")
-    print("|=========" + filename.center(60) + "=========|")
+    debug.print_str("\n")
+    debug.print_str(" ______________________________________________________________________________ ")
+    debug.print_str("|==============================================================================|")
+    debug.print_str("|=========" + tst.center(60) + "=========|")
+    debug.print_str("|=========" + technology.center(60) + "=========|")
+    debug.print_str("|=========" + filename.center(60) + "=========|")
     from globals import OPTS
-    print("|=========" + OPTS.openram_temp.center(60) + "=========|")
-    print("|==============================================================================|")
+    debug.print_str("|=========" + OPTS.openram_temp.center(60) + "=========|")
+    debug.print_str("|==============================================================================|")

@@ -1,5 +1,7 @@
 import inspect
 import os
+import logging
+from logging.handlers import RotatingFileHandler
 
 
 # the debug levels:
@@ -8,23 +10,35 @@ import os
 # 2 = verbose
 # n = custom setting
 
+logger = logging.getLogger("debug-logger")
+logger.setLevel(logging.DEBUG)  # always log messages
+
+# messages will be pre-formatted
+formatter = logging.Formatter("%(message)s")
+# add a default console handler
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
+
+file_handler = None
+
 def check(check,str):
     if not check:
         (frame, filename, line_number, function_name, lines,
          index) = inspect.getouterframes(inspect.currentframe())[1]
-        print("ERROR: file {0}: line {1}: {2}".format(os.path.basename(filename),line_number,str))
+        logger.debug("ERROR: file {0}: line {1}: {2}".format(os.path.basename(filename),line_number,str))
         assert 0
 
 def error(str,return_value=0):
     (frame, filename, line_number, function_name, lines,
      index) = inspect.getouterframes(inspect.currentframe())[1]
-    print("ERROR: file {0}: line {1}: {2}".format(os.path.basename(filename),line_number,str))
+    logger.debug("ERROR: file {0}: line {1}: {2}".format(os.path.basename(filename),line_number,str))
     assert return_value==0
 
 def warning(str):
     (frame, filename, line_number, function_name, lines,
      index) = inspect.getouterframes(inspect.currentframe())[1]
-    print("WARNING: file {0}: line {1}: {2}".format(os.path.basename(filename),line_number,str))
+    logger.debug("WARNING: file {0}: line {1}: {2}".format(os.path.basename(filename),line_number,str))
 
 
 def info(lev, str):
@@ -37,4 +51,19 @@ def info(lev, str):
             class_name=""
         else:
             class_name=mod.__name__
-        print("[{0}/{1}]: {2}".format(class_name,frm[0].f_code.co_name,str))
+            logger.debug("[{0}/{1}]: {2}".format(class_name,frm[0].f_code.co_name,str))
+
+
+def print_str(str):
+    logger.debug(str)
+
+
+def setup_file_log(filename):
+    global file_handler
+    if file_handler is not None:
+        file_handler.close()
+        logger.removeHandler(file_handler)
+    file_handler = RotatingFileHandler(filename, mode='w', backupCount=5)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+

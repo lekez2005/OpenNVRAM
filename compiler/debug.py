@@ -67,6 +67,10 @@ class RotateOnOpenHandler(RotatingFileHandler):
 
 def setup_file_log(filename):
     global file_handler
+    # create directory if it doesn't exist
+    directory = os.path.dirname(filename)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
     if file_handler is not None:
         file_handler.close()
         logger.removeHandler(file_handler)

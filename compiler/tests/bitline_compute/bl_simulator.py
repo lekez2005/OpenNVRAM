@@ -58,14 +58,14 @@ class BlSimulator(TestBase):
 
         delay.write_delay_stimulus()
 
-        #delay.stim.run_sim()
+        delay.stim.run_sim()
 
     def test_schematic(self):
         OPTS.trim_netlist = False
         OPTS.run_drc = False
         OPTS.run_lvs = False
         OPTS.run_pex = False
-        OPTS.separate_vdd = True
+        OPTS.separate_vdd = False
         self.run_commands(use_pex=True, word_size=word_size, num_words=num_words)
 
 

@@ -1,25 +1,27 @@
 #!/bin/env python
 import os
 import re
+import sys
+sys.path.append("../..")
+sys.path.append("..")
 
 import numpy as np
 
-from bl_simulator import BlSimulator
-from globals import OPTS
-from psf_reader import PsfReader
-from test_base import TestBase
-
-TestBase.initialize_tests("config_bl_{}")
-
 import debug
+from psf_reader import PsfReader
 
-baseline = True
-word_size = 32
-num_words = 32
+# TestBase.initialize_tests("config_bl_{}")
 
-BlSimulator.set_temp_folder(baseline, word_size, num_words)
+baseline = False
+separate_vdd = False
+word_size = 64
+num_words = 64
 
-sim_dir = OPTS.openram_temp
+folder_name = "baseline" if baseline else "compute"
+openram_temp = os.path.join(os.environ["SCRATCH"], "openram", "bl_sram")
+temp_folder = os.path.join(openram_temp, "{}_{}_{}".format(folder_name, word_size, num_words))
+
+sim_dir = temp_folder
 
 debug.info(1, "Temp Dir = {}".format(sim_dir))
 
@@ -63,14 +65,13 @@ def get_command(label):
 
 def measure_energy(times, verbose=True):
     total_power = 0
-    for net in ["vdd_buffers", "vdd_wordline", "vdd_decoder", "vdd_data_flops", "vdd_write_driver",
-                "vdd_precharge", "vdd"]:
-
+    vdd_names = ["vdd_buffers", "vdd_wordline", "vdd_data_flops", "vdd"] if separate_vdd else ["vdd"]
+    for net in vdd_names:
         current = sim_data.get_signal('V{}:p'.format(net), times[0], times[1])
         time = sim_data.slice_array(sim_data.time, times[0], times[1])
         power = -np.trapz(current, time)*0.9
         total_power += power
-        if verbose:
+        if verbose and separate_vdd:
             print("{} energy = {}".format(net, power))
     print()
     return total_power

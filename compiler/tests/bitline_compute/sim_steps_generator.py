@@ -84,10 +84,10 @@ class SimStepsGenerator(SequentialDelay):
 
     def probe_addresses(self, addresses):
         probe = BlProbe(self.sram, OPTS.pex_spice)
-        probe.probe_outputs()
 
         probe.probe_bitlines(0)
         probe.probe_misc_bank(0)
+        probe.probe_write_drivers()
 
         for address in addresses:
             probe.probe_address(address)
@@ -96,11 +96,20 @@ class SimStepsGenerator(SequentialDelay):
 
         probe.extract_probes()
 
-        self.and_probes = probe.and_probes
-        self.nor_probes = probe.nor_probes
+        # Set dout, and and nor probes, these are available at the sram port so use that directly
+        self.dout_probes = {}
+        self.and_probes = {}
+        self.nor_probes = {}
+        probe_labels = ["D[{}]", "and[{}]", "nor[{}]"]
+        probe_names = ["dout_probes", "and_probes", "nor_probes"]
+        for i in range(3):
+            probe_name = probe_names[i]
+            for col in range(self.sram.num_cols):
+                getattr(self, probe_name)[col] = probe_labels[i].format(col)
+
         self.state_probes = probe.state_probes
         self.decoder_probes = probe.decoder_probes
-        self.dout_probes = probe.dout_probes
+
         self.bitline_probes = probe.bitline_probes
 
         return probe
@@ -122,8 +131,8 @@ class SimStepsGenerator(SequentialDelay):
         """
 
         # TODO addresses to use?
-        a_address = 0
-        b_address = self.sram.num_words - 1
+        a_address = self.sram.num_words - 1  # measure using topmost row
+        b_address = 0
         c_address = 1
         probe = self.probe_addresses([a_address, b_address, c_address])
 
@@ -159,7 +168,8 @@ class SimStepsGenerator(SequentialDelay):
             self.setup_nor_measurement(zero_data, zero_data)
             self.bitline_compute(b_address, c_address, "Bitline B and C")
 
-        self.saved_nodes = sorted(probe.saved_nodes)
+        self.saved_nodes = sorted(list(probe.saved_nodes) + list(self.dout_probes.values())
+                                  + list(self.and_probes.values()) + list(self.nor_probes.values()))
 
     @staticmethod
     def invert_vec(data_vec):

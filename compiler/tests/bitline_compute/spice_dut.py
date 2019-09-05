@@ -28,6 +28,11 @@ class SpiceDut(stimuli):
 
         self.sf.write("{0} {1} ".format(self.vdd_name, self.gnd_name))
 
+        if not OPTS.baseline:
+            for col in range(dbits):
+                self.sf.write(" and[{}] ".format(col))
+                self.sf.write(" nor[{}] ".format(col))
+
         if OPTS.separate_vdd:
             self.sf.write(" ".join(BlBank.external_vdds))
 

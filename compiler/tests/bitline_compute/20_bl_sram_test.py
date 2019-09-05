@@ -11,11 +11,11 @@ class CamTest(TestBase):
 
     def test_single_bank(self):
         from modules.bitline_compute.bl_sram import BlSram
+        from globals import OPTS
 
         debug.info(1, "One-bank SRAM")
-        a = BlSram(word_size=64, num_words=64, num_banks=1, words_per_row=1, name="sram1")
-        self.local_drc_check(a)
-        #self.local_check(a, final_verification=False)
+        a = BlSram(word_size=128, num_words=64, num_banks=1, words_per_row=1, name="sram1")
+        self.local_check(a, final_verification=not OPTS.separate_vdd)
 
     def test_baseline_sram(self):
         import tech
@@ -31,8 +31,7 @@ class CamTest(TestBase):
 
         debug.info(1, "One-bank Baseline SRAM")
         a = BlBaselineSram(word_size=64, num_words=64, num_banks=1, words_per_row=1, name="sram1")
-        self.local_drc_check(a)
-        #self.local_check(a, final_verification=False)
+        self.local_check(a, final_verification=not OPTS.separate_vdd)
 
 
 TestBase.run_tests(__name__)

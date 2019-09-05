@@ -7,6 +7,7 @@ import verify
 from base import hierarchy_layout
 from base import hierarchy_spice
 from base import utils
+from base.geometry import rectangle
 from base.vector import vector
 from globals import OPTS
 from tech import drc
@@ -150,6 +151,13 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
     def get_gds_layer_shapes(self, cell, layer, purpose="drawing"):
         return cell.gds.getShapesInLayer(tech_layers[layer], tech_purpose[purpose])
+
+    def get_gds_layer_rects(self, layer, purpose="drawing"):
+        def rect(shape):
+            return rectangle(0, shape[0], width=shape[1][0]-shape[0][0],
+                             height=shape[1][1]-shape[0][1])
+        return [rect(x) for x in self.gds.getShapesInLayer(tech_layers[layer], tech_purpose[purpose])]
+
 
     def get_poly_fills(self, cell):
         poly_dummies = self.get_gds_layer_shapes(cell, "po_dummy", "po_dummy")

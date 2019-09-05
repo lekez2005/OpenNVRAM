@@ -127,20 +127,6 @@ class wordline_driver_array(design.design):
             else:
                 pin_name = "vdd"
 
-            # extend nwell to the left
-            nand_gate = self.logic_buffer.logic_mod
-            nwell = nand_gate.get_layer_shapes("nwell")[0]
-
-            nwell_extension = nwell.uy() - nand_gate.height
-            if row % 2 == 0:
-                rect_y = self.logic_buffer.height * row - nwell_extension
-            else:
-                rect_y = self.logic_buffer.height * row + nwell.by()
-
-            nwell_width = nand_gate.width
-            nwell_x = buffer_inst.lx() - nwell_width
-            self.add_rect("nwell", offset=vector(nwell_x, rect_y), width=nwell_width, height=nwell.height)
-
             self.add_layout_pin(text=pin_name, layer="metal1", offset=[0, y_offset], width=buffer_inst.rx(),
                                 height=self.rail_height)
         # add vdd for row zero

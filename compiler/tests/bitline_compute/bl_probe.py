@@ -44,6 +44,24 @@ class BlProbe(SramProbe):
                     if pin_name == "bl":
                         self.bitline_probes[col] = pin_label
 
+    def probe_write_drivers(self):
+        bank_inst = self.sram.bank_inst
+        for col in range(self.sram.num_cols):
+
+            if OPTS.use_pex:
+                for pin_name in ["bl_bar", "br_bar"]:
+                    pin = utils.get_libcell_pins([pin_name], OPTS.write_driver_mod).get(pin_name)[0]
+                    pin_label = "{}_c{}".format(pin_name, col)
+                    self.add_pin_label(pin, [bank_inst, bank_inst.mod.write_driver_array_inst,
+                                             bank_inst.mod.write_driver_array_inst.mod.mod_insts[col]],
+                                       pin_label)
+                    self.probe_labels.add(pin_label)
+            else:
+                for pin_name in ["bl_bar", "br_bar"]:
+                    pin_label = "Xsram.Xbank{}.Xwrite_driver_array.Xdriver_{}.{}".\
+                        format(0, col, pin_name)
+                    self.probe_labels.add(pin_label)
+
     def probe_misc_bank(self, bank):
         bank_inst = self.sram.bank_inst
 
@@ -58,6 +76,28 @@ class BlProbe(SramProbe):
         else:
             for net in nets:
                 self.probe_labels.add("Xsram.Xbank{}.{}".format(bank, net))
+
+        # Control buffer labels
+        # intentional wrong spellings to make probe extraction unique
+        labels = ["clk_bank_sel_bar_int", "clk_bank_sell", "clk_bankk_sel_bar"]
+        modules = ["clk_bank_sel_int_inst", "clk_bank_sel_inst", "clk_bank_sel_bar_inst"]
+        pin_names = ["Z", "Z", "Z"]
+
+        if OPTS.use_pex:
+            for i in range(len(labels)):
+                label = labels[i]
+                module = modules[i]
+                pin_name = pin_names[i]
+                self.probe_labels.add(label)
+                pin = getattr(self.sram.bank.control_buffers, module).get_pin(pin_name)
+                self.add_pin_label(pin, [bank_inst, bank_inst.mod.control_buffers_inst], label)
+
+            for i in range(len(self.sram.bank.control_buffers.clk_buf.buffer_stages)-1):
+                label = "clk_stage_{}".format(i)
+                pin = self.sram.bank.control_buffers.clk_buf.module_insts[i].get_pin("Z")
+                self.add_pin_label(pin, [bank_inst, bank_inst.mod.control_buffers_inst,
+                                         bank_inst.mod.control_buffers_inst.mod.clk_buf_inst], label)
+                self.probe_labels.add(label)
 
     def probe_address(self, address, pin_name="Q"):
 
@@ -110,36 +150,6 @@ class BlProbe(SramProbe):
         self.probe_labels.update(pin_labels)
         self.state_probes[address_int] = pin_labels
 
-    def probe_outputs(self):
-        """Probes for sense amp outputs and, nor"""
-        bank_inst = self.sram.bank_inst
-        for col in range(self.sram.num_cols):
-            # dout label
-            dout_label = "D[{}]".format(col)
-            self.dout_probes[col] = dout_label
-
-            if not OPTS.baseline:
-                if OPTS.use_pex:
-                    and_pin = bank_inst.mod.sense_amp_array_inst.get_pin("and[{}]".format(col))
-                    pin_label = "and_c{}".format(col)
-                    self.add_pin_label(and_pin, [bank_inst, bank_inst.mod.sense_amp_array_inst], pin_label)
-                    self.probe_labels.add(pin_label)
-                    self.and_probes[col] = pin_label
-
-                    nor_pin = bank_inst.mod.sense_amp_array_inst.get_pin("nor[{}]".format(col))
-                    pin_label = "nor_c{}".format(col)
-                    self.add_pin_label(nor_pin, [bank_inst, bank_inst.mod.sense_amp_array_inst], pin_label)
-                    self.probe_labels.add(pin_label)
-                    self.nor_probes[col] = pin_label
-                else:
-                    and_label = "Xsram.Xbank0.and_out[{}]".format(col)
-                    self.and_probes[col] = and_label
-                    self.probe_labels.add(and_label)
-
-                    nor_label = "Xsram.Xbank0.nor_out[{}]".format(col)
-                    self.nor_probes[col] = nor_label
-                    self.probe_labels.add(nor_label)
-
     def add_pin_label(self, pin, module_insts, label_key):
         ll, ur = utils.get_pin_rect(pin, module_insts)
         pin_loc = [0.5 * (ll[0] + ur[0]), 0.5 * (ll[1] + ur[1])]
@@ -156,10 +166,6 @@ class BlProbe(SramProbe):
                 except CalledProcessError:
                     debug.warning("Probe {} not found in extracted netlist".format(label))
             try:
-                for col, col_label in self.and_probes.items():
-                    self.and_probes[col] = self.extract_from_pex(col_label)
-                for col, col_label in self.nor_probes.items():
-                    self.nor_probes[col] = self.extract_from_pex(col_label)
                 for col, col_label in self.bitline_probes.items():
                     self.bitline_probes[col] = self.extract_from_pex(col_label)
                 for address, address_label in self.decoder_probes.items():

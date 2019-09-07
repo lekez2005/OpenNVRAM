@@ -15,6 +15,7 @@ class SimStepsGenerator(SequentialDelay):
     write_period = read_period = 0
     read_duty_cycle = write_duty_cycle = 0.5
     saved_nodes = []
+    saved_currents = []
 
     def __init__(self, sram, spfile, corner, initialize=False):
         super().__init__(sram, spfile, corner, initialize=initialize)
@@ -72,6 +73,11 @@ class SimStepsGenerator(SequentialDelay):
 
         for node in self.saved_nodes:
             self.sf.write(".probe V({0}) \n".format(node))
+
+        self.sf.write("simulator lang=spectre \n")
+        for node in self.saved_currents:
+            self.sf.write("save {0} \n".format(node))
+        self.sf.write("simulator lang=spice \n")
 
         self.finalize_output()
 
@@ -168,8 +174,9 @@ class SimStepsGenerator(SequentialDelay):
             self.setup_nor_measurement(zero_data, zero_data)
             self.bitline_compute(b_address, c_address, "Bitline B and C")
 
-        self.saved_nodes = sorted(list(probe.saved_nodes) + list(self.dout_probes.values())
-                                  + list(self.and_probes.values()) + list(self.nor_probes.values()))
+        self.saved_nodes = list(sorted(list(probe.saved_nodes) + list(self.dout_probes.values())
+                                       + list(self.and_probes.values()) + list(self.nor_probes.values())))
+        self.saved_currents = probe.current_probes
 
     @staticmethod
     def invert_vec(data_vec):

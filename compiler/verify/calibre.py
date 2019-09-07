@@ -341,7 +341,7 @@ def run_pex(cell_name, gds_name, sp_name, output=None, run_drc_lvs=True, correct
         'pexPexGroundNameValue': "gnd",
         'pexPexSeparator': "1",
         'pexPexSeparatorValue': "_",
-        'pexPexNetlistNameSource': 'LAYOUTNAMES',
+        'pexPexNetlistNameSource': 'SCHEMATICONLY',
         'pexSVRFCmds': '{LVS PRESERVE BOX CELLS YES} {}',
         'pexIncludeCmdsType': 'SVRF',  # used for preserving lvs box names
     }

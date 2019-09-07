@@ -2,6 +2,7 @@ import debug
 from base import contact
 from base import design
 from base import utils
+from base.contact import m1m2, m2m3, m3m4
 from base.vector import vector
 from globals import OPTS
 from pgates.ptx_spice import ptx_spice
@@ -48,12 +49,20 @@ class precharge(design.design):
 
         self.mid_x = 0.5*self.width
 
+        # TODO should depend on bitcell width
         self.mults = 3
 
         self.well_contact_implant_height = drc["minwidth_implant"]
         self.well_contact_active_height = contact.active.first_layer_height
-        self.top_space = 0.5*self.well_contact_implant_height + self.poly_extend_active + 0.5*self.well_contact_active_height\
-                         + self.poly_to_active
+        # nwell contact top space requirement
+        nwell_top_space = (0.5*self.well_contact_implant_height + self.poly_extend_active +
+                           0.5*self.well_contact_active_height + self.poly_to_active)
+
+        # need space from top m2 joining fingers
+        m2_top_space = (self.line_end_space + self.m2_width + self.m2_space + m1m2.second_layer_width
+                        + 0.5*(self.well_contact_implant_height - self.well_contact_active_height))
+
+        self.top_space = max(nwell_top_space, m2_top_space)
 
         poly_enclosure = drc["implant_enclosure_poly"]
 
@@ -64,7 +73,6 @@ class precharge(design.design):
         self.poly_height = (0.5*contact.poly.first_layer_height + 0.5*contact.poly.second_layer_height +
                             self.line_end_space + self.ptx_width + self.poly_extend_active)
         self.poly_y_offset = poly_enclosure
-
 
 
         self.height = self.bottom_space + self.ptx_width + self.top_space
@@ -155,8 +163,20 @@ class precharge(design.design):
     def add_nwell_contacts(self):
         self.add_rect_center("nimplant", offset=vector(self.mid_x, self.contact_y), width=self.implant_width,
                              height=self.well_contact_implant_height)
-        self.add_layout_pin_center_rect("vdd", "metal1", offset=vector(self.mid_x, self.contact_y),
-                                        width=self.width, height=self.rail_height)
+        mid_contact_y = self.contact_y
+        # TODO temp fix since sense amps expect vdd rail to extend by 0.5*self.rail_height
+        active_top = self.active_bot_y + self.ptx_width
+        pin_height = self.contact_y + 0.5*self.rail_height - active_top - self.line_end_space
+        self.add_layout_pin("vdd", "metal1", offset=vector(0, active_top + self.line_end_space),
+                            width=self.width, height=pin_height)
+
+        self.add_rect("metal3", offset=vector(0, active_top + self.line_end_space),
+                      width=self.width, height=pin_height)
+        via_y = self.get_pin("vdd").uy() - 0.5*m1m2.second_layer_width
+        self.add_contact_center(m1m2.layer_stack, offset=vector(self.mid_x, via_y), size=[1, 3], rotate=90)
+        self.add_contact_center(m2m3.layer_stack, offset=vector(self.mid_x, via_y), size=[1, 3], rotate=90)
+
+
         self.add_rect_center("active", offset=vector(self.mid_x, self.contact_y), width=self.well_contact_active_width,
                              height=self.well_contact_active_height)
         for j in range(self.no_body_contacts):
@@ -237,3 +257,33 @@ class precharge(design.design):
             x_offset = self.source_drain_pos[fill_indices[i]] + offsets[i]
             self.add_rect_center("metal1", offset=vector(x_offset, self.active_mid_y),
                                  width=fill_width, height=fill_height)
+
+
+class precharge_tap(design.design):
+    def __init__(self, precharge_cell: precharge):
+
+        super().__init__("precharge_tap")
+
+        self.height = precharge_cell.height
+        self.precharge_cell = precharge_cell
+
+        self.create_layout()
+
+    def create_layout(self):
+        body_tap = utils.get_body_tap()
+        self.width = body_tap.width
+
+        vdd_rail = utils.get_libcell_pins(["vdd"], OPTS.body_tap)["vdd"][0]
+
+        precharge_vdd = self.precharge_cell.get_pin("vdd")
+        self.add_rect("metal3", offset=vector(0, precharge_vdd.by()), width=self.width,
+                      height=precharge_vdd.height())
+        sample_contact = contact.contact(m1m2.layer_stack, dimensions=[1, 4])
+        self.add_rect(vdd_rail.layer, offset=vector(vdd_rail.lx(), 0), width=vdd_rail.width(), height=self.height)
+        via_offset = vector(vdd_rail.cx()-0.5*m1m2.second_layer_width,
+                            precharge_vdd.uy()-sample_contact.second_layer_height)
+        self.add_contact(m1m2.layer_stack, offset=via_offset, size=[1, 4])
+        self.add_contact(m2m3.layer_stack, offset=via_offset, size=[1, 4])
+        self.add_contact(m3m4.layer_stack, offset=via_offset, size=[1, 4])
+
+

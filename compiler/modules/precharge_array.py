@@ -2,7 +2,7 @@ import debug
 from base import design
 from base import utils
 from base.vector import vector
-from modules.precharge import precharge
+from modules.precharge import precharge, precharge_tap
 from tech import drc
 
 
@@ -20,6 +20,9 @@ class precharge_array(design.design):
 
         self.pc_cell = precharge(name="precharge", size=size)
         self.add_mod(self.pc_cell)
+
+        self.body_tap = precharge_tap(self.pc_cell)
+        self.add_mod(self.body_tap)
 
         self.height = self.pc_cell.height
 
@@ -74,6 +77,9 @@ class precharge_array(design.design):
                                 height=bl_pin.height())
             self.connect_inst(["bl[{0}]".format(i), "br[{0}]".format(i),
                                "en", "vdd"])
+        for x_offset in self.tap_offsets:
+            self.add_inst(self.body_tap.name, self.body_tap, offset=vector(x_offset, 0))
+            self.connect_inst([])
         self.width = inst.rx()
         layers = ["nwell"]
         purposes = ["drawing"]

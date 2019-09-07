@@ -86,6 +86,11 @@ def get_pin_rect(pin, instances):
     ur = [max(first[0], second[0]), max(first[1], second[1])]
     return ll, ur
 
+def get_body_tap():
+    from modules import body_tap as mod_body_tap
+
+    body_tap = mod_body_tap.body_tap
+    return body_tap
 
 def get_tap_positions(num_columns):
     # cells_per_group to accommodate peripherals spanning more than one bitcell.
@@ -100,9 +105,7 @@ def get_tap_positions(num_columns):
         bitcell_offsets = [i*bitcell.width for i in range(num_columns)]
         return bitcell_offsets, []
 
-    from modules import body_tap as mod_body_tap
-
-    body_tap = mod_body_tap.body_tap
+    body_tap = get_body_tap()
 
     cells_spacing = int(math.ceil(0.9*tech.drc["latchup_spacing"]/bitcell.width))
     cells_spacing = cells_spacing - (cells_spacing % cells_per_group)

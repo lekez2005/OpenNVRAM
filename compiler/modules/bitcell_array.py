@@ -50,15 +50,15 @@ class bitcell_array(design.design):
         self.add_pin("gnd")
 
     def create_layout(self):
-        (self.bitcell_offsets, tap_offsets) = utils.get_tap_positions(self.column_size)
+        (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.column_size)
         self.width = self.bitcell_offsets[-1] + self.cell.width
-        if len(tap_offsets) > 0:
+        if len(self.tap_offsets) > 0:
             self.add_left_dummy = False
-            if tap_offsets[-1] < self.bitcell_offsets[-1]:  # add right dummy
+            if self.tap_offsets[-1] < self.bitcell_offsets[-1]:  # add right dummy
                 self.add_right_dummy = True
             else:
                 self.add_right_dummy = False
-                self.width = tap_offsets[-1] + self.body_tap.width
+                self.width = self.tap_offsets[-1] + self.body_tap.width
 
 
         self.cell_inst = {}
@@ -83,7 +83,7 @@ class bitcell_array(design.design):
                                    "wl[{0}]".format(row),
                                    "vdd",
                                    "gnd"])
-            for x_offset in tap_offsets:
+            for x_offset in self.tap_offsets:
                 self.body_tap_insts.append(self.add_inst(name=self.body_tap.name, mod=self.body_tap,
                                                          offset=vector(x_offset, tempy), mirror=dir_key))
                 self.connect_inst([])

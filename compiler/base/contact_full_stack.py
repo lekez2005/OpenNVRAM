@@ -3,9 +3,10 @@ import copy
 from base import design
 from base.vector import vector
 from tech import full_stack_vias
+from base import unique_meta
 
 
-class ContactFullStack(design.design):
+class ContactFullStack(design.design, metaclass=unique_meta.Unique):
     """
     Object for a full metal stack power
     """
@@ -24,11 +25,19 @@ class ContactFullStack(design.design):
             cls._m2_stack = cls(start_layer=1)
         return cls._m2_stack
 
-    def __init__(self, start_layer=0, stop_layer=-1, centralize=True, dimensions=[]):
-        # TODO: fix bug which creates unnecessary layer vias when start_via is large
+    @classmethod
+    def get_name(cls, start_layer=0, stop_layer=-1, centralize=True, dimensions=[]):
         dim_str = "_".join([str(item) for sublist in dimensions for item in sublist])
         alignment = "c" if centralize else "l"
-        name = "full_stack_via_M{}_M10_{}_{}".format(start_layer + 1, alignment, dim_str)
+        if stop_layer == -1:
+            stop_layer = "TOP"
+        elif stop_layer == -2:
+            stop_layer = "BOT_TOP"
+        return "full_stack_via_M{}_M{}_{}_{}".format(start_layer + 1, stop_layer, alignment, dim_str)
+
+    def __init__(self, start_layer=0, stop_layer=-1, centralize=True, dimensions=[]):
+        # TODO: fix bug which creates unnecessary layer vias when start_via is large
+        name = self.get_name(start_layer, stop_layer, centralize, dimensions)
         design.design.__init__(self, name)
 
         via_defs = copy.deepcopy(full_stack_vias)

@@ -322,8 +322,11 @@ class SramProbe(object):
 
         match = None
         try:
-            pattern = "\sN_{}_\S+_[gsd]".format(label)
+            label_sub = label.replace("Xsram.", "").replace(".", "_")\
+                .replace("[", "\[").replace("]", "\]")
+            pattern = "\sN_{}_\S+_[gsd]".format(label_sub)
             match = check_output(["grep", "-m1", "-o", "-E", pattern, pex_file])
+
         except CalledProcessError as ex:
             if ex.returncode == 1:  # mismatch
                 try:
@@ -331,7 +334,7 @@ class SramProbe(object):
                     match = check_output(["grep", "-m1", "-Fo", label, pex_file])
                 except CalledProcessError as ex:
                     if ex.returncode == 1:
-                        debug.error("Match not found in pex file for label {}".format(label))
+                        debug.error("Match not found in pex file for label {} {}".format(label, pattern))
                         raise ex
                     else:
                         raise ex

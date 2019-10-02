@@ -1167,10 +1167,7 @@ class bank(design.design):
         """Calculates positions of power grid rail to M1/M2 vias. Avoids internal metal3 control pins"""
         # need to avoid the metal3 control signals
 
-        collisions = self.get_collisions()
-
         via_positions = []
-
 
         self.m1mtop = m1mtop = ContactFullStack.m1mtop()
         self.add_mod(m1mtop)
@@ -1187,22 +1184,48 @@ class bank(design.design):
         grid_pitch = grid_space + grid_rail_height
         via_space = self.wide_m1_space
 
-        current_y = self.min_point + 2*self.wide_m1_space # leave space for potential routes at the bottom
+        bank_top = self.min_point + self.height
+
+        collisions = list(sorted(self.get_collisions() +
+                                 [(self.min_point, self.min_point + 2*self.wide_m1_space),
+                                  (bank_top - grid_pitch, bank_top)],
+                                 key=lambda x: x[0]))
+
+        # combine overlapping collisions
 
         while True:
-            rail_top = current_y + grid_rail_height + via_space
-            if rail_top > (self.min_point + self.height - grid_pitch): # leave space at the top
+            i = 0
+            num_overlaps = 0
+            num_iterations = len(collisions)
+            new_collisions = []
+            while i < num_iterations:
+
+                collision = collisions[i]
+                if i < num_iterations - 1:
+                    next_collision = collisions[i + 1]
+                    if next_collision[0] < collision[1]:
+                        collision = (collision[0], next_collision[1])
+                        num_overlaps += 1
+                        i += 2
+                    else:
+                        i += 1
+                else:
+                    i += 1
+                new_collisions.append(collision)
+            collisions = new_collisions
+            if num_overlaps == 0:
                 break
-            collide = False
-            for collision in collisions:
-                if rail_top > collision[0] and current_y - via_space < collision[1]:
-                    collide = True
+
+        for i in range(len(collisions)-1):
+            collision = collisions[i]
+            current_y = collision[1] + self.wide_m1_space
+            next_collision = collisions[i+1][0]
+            while True:
+                via_top = current_y + grid_rail_height
+                if via_top > bank_top or via_top + via_space > next_collision:
                     break
-            if not collide:
                 via_positions.append(current_y)
                 current_y += grid_pitch
-            else:
-                current_y = collision[1] + via_space
 
         self.power_grid_vias = via_positions
 

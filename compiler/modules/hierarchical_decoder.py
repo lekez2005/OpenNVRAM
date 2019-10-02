@@ -299,7 +299,6 @@ class hierarchical_decoder(design.design):
             self.route_decoder()
             self.add_body_contacts()
 
-
     def add_decoder_nand_array(self):
         """ Add a column of NAND gates for final decode """
         
@@ -399,12 +398,31 @@ class hierarchical_decoder(design.design):
                 predec_module = self.pre3_8
             else:
                 predec_module = self.pre2_4
+            # add extra implant width for cases when this implant overlaps with wordline driver implant
+            # adding even one nand width for safety
             pre_module_width = predec_module.inv_inst[0].width + predec_module.nand_inst[0].width
-            implant_width = max(self.nand_inst[0].width + self.inv_inst[0].width, pre_module_width)
-            implant_height = drc["minwidth_implant"] + self.implant_space
-            y_offset = self.nand_inst[0].by() - implant_height
+
+            row_decoder_nand = self.nand_inst[0].mod
+            nand_implant = max(row_decoder_nand.get_layer_shapes("pimplant"), key=lambda x: x.uy())
+            implant_extension = nand_implant.uy() - row_decoder_nand.height
+
+            implant_height = drc["minwidth_implant"]
+            y_offset = self.nand_inst[0].by() - implant_extension - implant_height
+
+            row_decoder_width = self.nand_inst[0].width + self.inv_inst[0].width
+
+            implant_width = (max(row_decoder_width, pre_module_width) + self.implant_width + self.implant_space +
+                             0.5*row_decoder_nand.width)
+
             self.add_rect("pimplant", offset=vector(implant_left, y_offset), height=implant_height,
                           width=implant_width)
+            # add nwell to cover the implant
+            x_offset = implant_left + max(row_decoder_width, pre_module_width)
+            nwell_height = self.well_width + self.well_enclose_implant
+            nwell_width = self.well_width + self.well_enclose_implant + 0.5*row_decoder_nand.width
+            y_offset = self.nand_inst[0].by() - nwell_height
+            self.add_rect("nwell", offset=vector(x_offset, y_offset),
+                          width=nwell_width, height=nwell_height)
 
         for row in range(self.rows):
 
@@ -483,15 +501,12 @@ class hierarchical_decoder(design.design):
                 pin = self.pre2x4_inst[pre_num].get_pin(out_name)
                 self.connect_rail(index, pin) 
 
-            
         for pre_num in range(self.no_of_pre3x8):
             for i in range(8):
                 index = pre_num * 8 + i + self.no_of_pre2x4 * 4
                 out_name = "out[{}]".format(i)
                 pin = self.pre3x8_inst[pre_num].get_pin(out_name)
                 self.connect_rail(index, pin) 
-            
-                
 
     def connect_rails_to_decoder(self):
         """ Use the self.predec_groups to determine the connections to the decoder NAND gates.
@@ -519,7 +534,6 @@ class hierarchical_decoder(design.design):
                         row_index = row_index + 1
 
     def connect_rail_m2(self, rail_index, pin):
-
 
         if pin.name == "A":  # connect directly with M1
             rail_offset = vector(self.rail_x_offsets[rail_index], pin.cy())

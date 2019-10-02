@@ -60,13 +60,17 @@ class hierarchical_predecode(design.design):
     def create_modules(self):
         """ Create the INV and NAND gate """
 
-        self.inv = pinv(height=self.module_height)
+        inverter_size = OPTS.predecode_sizes[1]
+
+        self.inv = pinv(size=inverter_size, height=self.module_height)
         self.add_mod(self.inv)
         self.nand = self.create_nand(self.number_of_inputs)
         self.add_mod(self.nand)
 
+        # TODO use buffer stages in place of single output inverter
+
         if not self.route_top_rail:
-            self.top_inv = pinv(contact_nwell=False, height=self.module_height)
+            self.top_inv = pinv(size=inverter_size, contact_nwell=False, height=self.module_height)
             self.add_mod(self.top_inv)
             self.top_nand = self.create_nand(self.number_of_inputs, contact_nwell=False)
             self.add_mod(self.top_nand)
@@ -74,12 +78,13 @@ class hierarchical_predecode(design.design):
             self.top_inv = self.inv
             self.top_nand = self.nand
 
-    def create_nand(self,inputs, contact_nwell=True):
+    def create_nand(self, inputs, contact_nwell=True):
         """ Create the NAND for the predecode input stage """
-        if inputs==2:
-            nand = pnand2(contact_nwell=contact_nwell, height=self.module_height)
-        elif inputs==3:
-            nand = pnand3(contact_nwell=contact_nwell, height=self.module_height)
+        nand_size = OPTS.predecode_sizes[0]
+        if inputs == 2:
+            nand = pnand2(size=nand_size, contact_nwell=contact_nwell, height=self.module_height)
+        elif inputs == 3:
+            nand = pnand3(size=nand_size, contact_nwell=contact_nwell, height=self.module_height)
         else:
             return debug.error("Invalid number of predecode inputs.",-1)
         return nand
@@ -290,12 +295,9 @@ class hierarchical_predecode(design.design):
         for num in range(self.number_of_outputs):
 
             # route nand output to output inv input
-            zr_pos = self.nand_inst[num].get_pin("Z").rc()
-            al_pos = self.inv_inst[num].get_pin("A").lc()
-            # ensure the bend is in the middle 
-            mid1_pos = vector(0.5*(zr_pos.x+al_pos.x), zr_pos.y)
-            mid2_pos = vector(0.5*(zr_pos.x+al_pos.x), al_pos.y)
-            self.add_path("metal1", [zr_pos, mid1_pos, mid2_pos, al_pos])
+            z_pin = self.nand_inst[num].get_pin("Z")
+            a_pin = self.inv_inst[num].get_pin("A")
+            self.add_rect("metal1", offset=vector(z_pin.rx(), a_pin.by()), width=a_pin.lx()-z_pin.rx())
 
             self.copy_layout_pin(self.inv_inst[num], "Z", "out[{}]".format(num))
 

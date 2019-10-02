@@ -292,7 +292,7 @@ class stimuli():
 
     def run_sim(self):
         """ Run hspice in batch mode and output rawfile to parse. """
-        temp_stim = os.path.join(OPTS.openram_temp, 'stim.sp')
+        temp_stim = self.sf.name
         import datetime
         start_time = datetime.datetime.now()
         debug.check(OPTS.spice_exe != "", "No spice simulator has been found.")

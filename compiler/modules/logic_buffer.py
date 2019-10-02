@@ -42,7 +42,7 @@ class LogicBuffer(design.design, metaclass=Unique):
     @classmethod
     def get_name(cls, buffer_stages, logic="pnand2", height=None, route_inputs=True, route_outputs=True, contact_pwell=True,
                  contact_nwell=True, align_bitcell=False):
-        name = "logic_buffer_{}_{}".format(logic, "_".join(map(str, buffer_stages)))
+        name = "logic_buffer_{}_{}".format(logic, "_".join(['{:.3g}'.format(x) for x in buffer_stages]))
         if not route_inputs:
             name += "_no_in"
         if not route_outputs:

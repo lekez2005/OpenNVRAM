@@ -150,6 +150,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         return list(filter(filter_match, self.objs))
 
     def get_gds_layer_shapes(self, cell, layer, purpose="drawing"):
+        # TODO get from sub-cells
         return cell.gds.getShapesInLayer(tech_layers[layer], tech_purpose[purpose])
 
     def get_gds_layer_rects(self, layer, purpose="drawing"):

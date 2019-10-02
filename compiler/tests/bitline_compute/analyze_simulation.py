@@ -14,8 +14,8 @@ from psf_reader import PsfReader
 
 baseline = False
 separate_vdd = False
-word_size = 64
-num_words = 64
+word_size = 128
+num_words = 128
 
 folder_name = "baseline" if baseline else "compute"
 openram_temp = os.path.join(os.environ["SCRATCH"], "openram", "bl_sram")
@@ -110,7 +110,7 @@ max_nor = max_and = 0
 if not baseline:
     # AND delay
     max_and, _ = measure_delay(re.compile('and_delay.*= (?P<delay>\S+)\s\n'), 0.9 * read_period)
-    print("\nAND delay = {:.2f}p".format(max_tri_state / 1e-12))
+    print("\nAND delay = {:.2f}p".format(max_and / 1e-12))
     total_and = max(max_precharge, max_decoder_delay) + max_and
     print("Total AND delay = {:.2f}p".format(total_and / 1e-12))
 

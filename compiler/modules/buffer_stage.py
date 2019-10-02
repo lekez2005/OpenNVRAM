@@ -42,7 +42,7 @@ class BufferStage(design.design, metaclass=Unique):
     @classmethod
     def get_name(cls, buffer_stages, height=None, route_outputs=True, contact_pwell=True, contact_nwell=True,
                  align_bitcell=False):
-        name = "buffer_stage_" + "_".join(map(str, buffer_stages))
+        name = "buffer_stage_" + "_".join(['{:.3g}'.format(x) for x in buffer_stages])
         if not route_outputs:
             name += "_no_out"
         if not contact_nwell:

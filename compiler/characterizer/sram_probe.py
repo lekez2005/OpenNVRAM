@@ -324,7 +324,7 @@ class SramProbe(object):
         try:
             label_sub = label.replace("Xsram.", "").replace(".", "_")\
                 .replace("[", "\[").replace("]", "\]")
-            pattern = "\sN_{}_\S+_[gsd]".format(label_sub)
+            pattern = "\sN_{}_[MX]\S+_[gsd]".format(label_sub)
             match = check_output(["grep", "-m1", "-o", "-E", pattern, pex_file])
 
         except CalledProcessError as ex:

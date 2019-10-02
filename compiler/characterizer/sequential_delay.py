@@ -193,8 +193,10 @@ class SequentialDelay(delay):
 
     def write_pwl(self, key, prev_val, curr_val):
         """Append current time's data to pwl. Transitions from the previous value to the new value using the slew"""
-        if key in ["clk", "acc_en", "acc_en_inv"]:
+        if key in ["clk"]:
             setup_time = 0
+        elif key in ["acc_en", "acc_en_inv"]: # to prevent contention with tri-state buffer
+            setup_time = -0.5*self.duty_cycle*self.period
         else:
             setup_time = self.setup_time
         t1 = max(0.0, self.current_time - 0.5 * self.slew - setup_time)

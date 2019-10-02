@@ -10,6 +10,8 @@ from logging.handlers import RotatingFileHandler
 # 2 = verbose
 # n = custom setting
 
+ERROR_CODE = -1
+
 logger = logging.getLogger("debug-logger")
 logger.setLevel(logging.DEBUG)  # always log messages
 

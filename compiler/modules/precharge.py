@@ -24,7 +24,7 @@ class precharge(design.design):
         self.bitcell = self.mod_bitcell()
         
         self.beta = parameter["beta"]
-        self.ptx_width = size*self.beta*parameter["min_tx_size"]
+        self.ptx_width = utils.round_to_grid(size*self.beta*parameter["min_tx_size"])
         self.width = self.bitcell.width
 
         self.add_pins()
@@ -278,12 +278,23 @@ class precharge_tap(design.design):
         precharge_vdd = self.precharge_cell.get_pin("vdd")
         self.add_rect("metal3", offset=vector(0, precharge_vdd.by()), width=self.width,
                       height=precharge_vdd.height())
-        sample_contact = contact.contact(m1m2.layer_stack, dimensions=[1, 4])
+        en_pin = self.precharge_cell.get_pin("en")
+
+        max_via_height = precharge_vdd.uy() - en_pin.uy() - self.line_end_space
+        num_vias = 1
+        while True:
+            sample_contact = contact.contact(m1m2.layer_stack, dimensions=[1, num_vias])
+            if sample_contact.height > max_via_height:
+                num_vias -= 1
+                sample_contact = contact.contact(m1m2.layer_stack, dimensions=[1, num_vias])
+                break
+            num_vias += 1
+
         self.add_rect(vdd_rail.layer, offset=vector(vdd_rail.lx(), 0), width=vdd_rail.width(), height=self.height)
         via_offset = vector(vdd_rail.cx()-0.5*m1m2.second_layer_width,
                             precharge_vdd.uy()-sample_contact.second_layer_height)
-        self.add_contact(m1m2.layer_stack, offset=via_offset, size=[1, 4])
-        self.add_contact(m2m3.layer_stack, offset=via_offset, size=[1, 4])
-        self.add_contact(m3m4.layer_stack, offset=via_offset, size=[1, 4])
+        self.add_contact(m1m2.layer_stack, offset=via_offset, size=[1, num_vias])
+        self.add_contact(m2m3.layer_stack, offset=via_offset, size=[1, num_vias])
+        self.add_contact(m3m4.layer_stack, offset=via_offset, size=[1, num_vias])
 
 

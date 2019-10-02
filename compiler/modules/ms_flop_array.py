@@ -3,8 +3,18 @@ from importlib import reload
 import debug
 from base import design
 from base import utils
+from base.library_import import library_import
 from base.vector import vector
 from globals import OPTS
+
+
+@library_import
+class ms_flop_tap(design.design):
+    """
+    Nwell and Psub body taps for ms flop
+    """
+    pin_names = []
+    lib_name = 'ms_flop_tap'
 
 
 class ms_flop_array(design.design):
@@ -13,6 +23,7 @@ class ms_flop_array(design.design):
     Write_driver & Sense_amp, address inputs of column_mux &
     hierdecoder
     """
+    body_tap_insts = []
 
     def __init__(self, columns, word_size, name="", align_bitcell=False):
         self.columns = columns
@@ -26,6 +37,9 @@ class ms_flop_array(design.design):
         self.mod_ms_flop = getattr(c, OPTS.ms_flop)
         self.ms = self.mod_ms_flop("ms_flop")
         self.add_mod(self.ms)
+
+        self.body_tap = ms_flop_tap()
+        self.add_mod(self.body_tap)
 
         self.height = self.ms.height
         self.words_per_row = int(self.columns / self.word_size)
@@ -71,6 +85,12 @@ class ms_flop_array(design.design):
                                "dout_bar[{0}]".format(index),
                                "clk",
                                "vdd", "gnd"])
+
+        for x_offset in self.tap_offsets:
+            self.body_tap_insts.append(self.add_inst(name=self.body_tap.name, mod=self.body_tap,
+                                                     offset=vector(x_offset, 0)))
+            self.connect_inst([])
+
         self.width = self.ms_inst[index].rx()
 
     def add_layout_pins(self):

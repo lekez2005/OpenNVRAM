@@ -1191,8 +1191,7 @@ class bank(design.design):
                                   (bank_top - grid_pitch, bank_top)],
                                  key=lambda x: x[0]))
 
-        # combine overlapping collisions
-
+        # combine/collapse overlapping collisions
         while True:
             i = 0
             num_overlaps = 0
@@ -1203,8 +1202,8 @@ class bank(design.design):
                 collision = collisions[i]
                 if i < num_iterations - 1:
                     next_collision = collisions[i + 1]
-                    if next_collision[0] < collision[1]:
-                        collision = (collision[0], next_collision[1])
+                    if next_collision[0] <= collision[1]:
+                        collision = (collision[0], max(collision[1], next_collision[1]))
                         num_overlaps += 1
                         i += 2
                     else:
@@ -1216,6 +1215,7 @@ class bank(design.design):
             if num_overlaps == 0:
                 break
 
+        # calculate via positions
         for i in range(len(collisions)-1):
             collision = collisions[i]
             current_y = collision[1] + self.wide_m1_space

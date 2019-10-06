@@ -414,12 +414,13 @@ class hierarchical_decoder(design.design):
             implant_width = (max(row_decoder_width, pre_module_width) + self.implant_width + self.implant_space +
                              0.5*row_decoder_nand.width)
 
-            self.add_rect("pimplant", offset=vector(implant_left, y_offset), height=implant_height,
-                          width=implant_width)
+            implant_rect = self.add_rect("pimplant", offset=vector(implant_left, y_offset),
+                                         height=implant_height, width=implant_width)
             # add nwell to cover the implant
-            x_offset = implant_left + max(row_decoder_width, pre_module_width)
+            x_offset = implant_left + min(row_decoder_width, pre_module_width)
             nwell_height = self.well_width + self.well_enclose_implant
-            nwell_width = self.well_width + self.well_enclose_implant + 0.5*row_decoder_nand.width
+            nwell_width = max(self.well_width + self.well_enclose_implant + 0.5*row_decoder_nand.width,
+                              implant_rect.rx() - x_offset)
             y_offset = self.nand_inst[0].by() - nwell_height
             self.add_rect("nwell", offset=vector(x_offset, y_offset),
                           width=nwell_width, height=nwell_height)

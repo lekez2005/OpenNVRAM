@@ -15,8 +15,8 @@ class BlBankTest(TestBase):
         if OPTS.baseline:
             return
 
-        # self.sweep_all()
-        self.sweep_all(cols=[], rows=[64])
+        self.sweep_all()
+        # self.sweep_all(cols=[], rows=[32])
 
     def test_baseline_array(self):
         import tech
@@ -65,7 +65,7 @@ class BlBankTest(TestBase):
                     bank_class.__name__, row, col))
                 a = bank_class(word_size=col, num_words=row, words_per_row=1, name="bank1")
                 self.local_check(a)
-        except ZeroDivisionError as ex:
+        except Exception as ex:
             debug.error("Failed {} for row = {} col = {}: {} ".format(
                 bank_class.__name__, row, col, str(ex)), debug.ERROR_CODE)
             raise ex

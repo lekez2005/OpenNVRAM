@@ -52,6 +52,44 @@ class PsfReader(object):
         signal = self.get_signal(signal_name, from_t=time_t, to_t=time_t)
         return 1 * (signal.flatten() > 0.5*self.vdd)
 
+    #attributes signals to 1s and 0s but for a specified threshold value
+    def get_binary_thresh(self, signal_name, time_t, thresh):
+        signal = self.get_signal(signal_name, from_t=time_t, to_t=time_t)
+        return 1 * (signal.flatten() > thresh * self.vdd)
+
+    def get_transition_time_thresh(self, signal_name, edgetype='either',edge='first', thresh=0.5):
+        if not self.is_open:
+            self.initialize()
+        sig_prev = self.get_binary_thresh(signal_name, 0.0, thresh)
+        time = np.inf
+        for i in range(1,len(self.time)):
+            sig = self.get_binary_thresh(signal_name, self.time[i], thresh)
+            if ((sig != sig_prev) and (edgetype == 'either')):
+                time = self.time[i]
+            elif ((sig > sig_prev) and (edgetype == 'rising')):
+                time = self.time[i]
+            elif ((sig < sig_prev) and (edgetype == 'falling')):
+                time = self.time[i]
+            else:
+                time=time
+
+            if (edge == 'first' and time!=np.inf):
+                print('first edge')
+                return time
+            sig_prev = sig
+        return time
+
+    def get_delay(self, signal_name1, signal_name2, edgetype1= 'either', edgetype2='either',
+                  edge1='first', edge2='first', thresh1=0.5, thresh2=0.5):
+        trans1 = self.get_transition_time_thresh(signal_name1, edgetype1,
+                                                 edge=edge1, thresh=thresh1)
+        trans2 = self.get_transition_time_thresh(signal_name2, edgetype2,
+                                                 edge=edge2, thresh=thresh2)
+        if (trans1 == 0 or trans2==0):
+            return "Specified edge not found"
+        else:
+            return trans2-trans1
+
     def get_bus(self, bus_pattern, bus_size, from_t=0.0, to_t=None):
         # type: (str, int, float, float) -> np.ndarray
         sig_zero = self.get_signal(bus_pattern.format(0), from_t, to_t)
@@ -66,3 +104,4 @@ class PsfReader(object):
         bus_data = self.get_bus(bus_pattern, bus_size, time_t, time_t)
         bus_data = bus_data.flatten()
         return 1*np.flipud(bus_data > 0.5*self.vdd)
+

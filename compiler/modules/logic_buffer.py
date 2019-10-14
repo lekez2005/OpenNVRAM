@@ -6,6 +6,7 @@ from base.vector import vector
 from modules.buffer_stage import BufferStage
 from pgates.pinv import pinv
 from pgates.pnand2 import pnand2
+from pgates.pnand3 import pnand3
 from pgates.pnor2 import pnor2
 
 
@@ -15,6 +16,8 @@ class LogicBuffer(design.design, metaclass=Unique):
     The last output is labeled out and the penultimate output is labelled out_bar regardless of number of buffer stages
     """
     logic_mod = logic_inst = buffer_mod = buffer_inst = None
+
+    PNAND_3 = "pnand3"
 
     def __init__(self, buffer_stages, logic="pnand2", height=None, route_inputs=True, route_outputs=True, contact_pwell=True,
                  contact_nwell=True, align_bitcell=False):
@@ -60,6 +63,8 @@ class LogicBuffer(design.design, metaclass=Unique):
     def add_pins(self):
         self.add_pin("A")
         self.add_pin("B")
+        if self.logic == self.PNAND_3:
+            self.add_pin("C")
         self.add_pin("out_inv")
         if len(self.buffer_stages) > 1:
             self.add_pin("out")
@@ -84,6 +89,9 @@ class LogicBuffer(design.design, metaclass=Unique):
         elif self.logic == "pnor2":
             self.logic_mod = pnor2(size=1, height=self.height, contact_nwell=self.contact_nwell,
                                    contact_pwell=self.contact_pwell)
+        elif self.logic == self.PNAND_3:
+            self.logic_mod = pnand3(size=1, height=self.height, contact_nwell=self.contact_nwell,
+                                    contact_pwell=self.contact_pwell, align_bitcell=self.align_bitcell)
         else:
             raise Exception("Invalid logic selected")
 
@@ -96,7 +104,10 @@ class LogicBuffer(design.design, metaclass=Unique):
 
     def add_modules(self):
         self.logic_inst = self.add_inst("logic", mod=self.logic_mod, offset=vector(0, 0))
-        self.connect_inst(["A", "B", "logic_out", "vdd", "gnd"])
+        if self.logic == self.PNAND_3:
+            self.connect_inst(["A", "B", "C", "logic_out", "vdd", "gnd"])
+        else:
+            self.connect_inst(["A", "B", "logic_out", "vdd", "gnd"])
 
         self.buffer_inst = self.add_inst("buffer", mod=self.buffer_mod, offset=self.logic_inst.lr())
 
@@ -123,6 +134,8 @@ class LogicBuffer(design.design, metaclass=Unique):
         else:
             self.copy_layout_pin(self.logic_inst, "A", "A")
             self.copy_layout_pin(self.logic_inst, "B", "B")
+            if self.logic == self.PNAND_3:
+                self.copy_layout_pin(self.logic_inst, "C", "C")
 
         # logic output to buffer input
         logic_out = self.logic_inst.get_pin("Z")

@@ -13,13 +13,14 @@ def library_import(cls):
     :return:
     """
     class GdsLibImport(cls):
-        (width, height) = utils.get_libcell_size(cls.lib_name, GDS["unit"], layer["boundary"])
-        pin_map = utils.get_libcell_pins(cls.pin_names, cls.lib_name, GDS["unit"], layer["boundary"])
 
-        def __init__(self):
-            design.design.__init__(self, cls.lib_name)
-            debug.info(2, "Create {}".format(cls.lib_name))
-            self.width = GdsLibImport.width
-            self.height = GdsLibImport.height
-            self.pin_map = GdsLibImport.pin_map
+        def __init__(self, mod_name=None):
+            if mod_name is None:
+                mod_name = cls.lib_name
+            design.design.__init__(self, mod_name)
+            debug.info(2, "Create {}".format(mod_name))
+
+            (self.width, self.height) = utils.get_libcell_size(mod_name, GDS["unit"], layer["boundary"])
+            self.pin_map = utils.get_libcell_pins(cls.pin_names, mod_name, GDS["unit"], layer["boundary"])
+
     return GdsLibImport

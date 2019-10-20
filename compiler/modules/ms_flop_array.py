@@ -25,20 +25,24 @@ class ms_flop_array(design.design):
     """
     body_tap_insts = []
 
-    def __init__(self, columns, word_size, name="", align_bitcell=False):
+    def __init__(self, columns, word_size, name="", align_bitcell=False, flop_mod=None,
+                 flop_tap_name=None):
         self.columns = columns
         self.word_size = word_size
-        if name=="":
-            name = "flop_array_c{0}_w{1}".format(columns,word_size)
+        if flop_mod is None:
+            flop_mod = OPTS.ms_flop
+        if name == "":
+            name = "flop_array_c{0}_w{1}".format(columns, word_size)
+            name += "_{}".format(flop_mod) if not flop_mod == OPTS.ms_flop else ""
         design.design.__init__(self, name)
         debug.info(1, "Creating {}".format(self.name))
 
         c = reload(__import__(OPTS.ms_flop))
         self.mod_ms_flop = getattr(c, OPTS.ms_flop)
-        self.ms = self.mod_ms_flop("ms_flop")
+        self.ms = self.mod_ms_flop(flop_mod)
         self.add_mod(self.ms)
 
-        self.body_tap = ms_flop_tap()
+        self.body_tap = ms_flop_tap(flop_tap_name)
         self.add_mod(self.body_tap)
 
         self.height = self.ms.height

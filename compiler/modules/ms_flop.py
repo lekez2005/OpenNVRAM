@@ -1,23 +1,17 @@
 from base import design
 from base import utils
+from base.library_import import library_import
 from tech import GDS, layer
 
 
+@library_import
 class ms_flop(design.design):
     """
     Memory address flip-flop
     """
 
     pin_names = ["din", "dout", "dout_bar", "clk", "vdd", "gnd"]
-    (width,height) = utils.get_libcell_size("ms_flop", GDS["unit"], layer["boundary"])
-    pin_map = utils.get_libcell_pins(pin_names, "ms_flop", GDS["unit"], layer["boundary"])
-    
-    def __init__(self, name="ms_flop"):
-        design.design.__init__(self, name)
-
-        self.width = ms_flop.width
-        self.height = ms_flop.height
-        self.pin_map = ms_flop.pin_map
+    lib_name = "ms_flop"
     
     def analytical_delay(self, slew, load = 0.0):
         # dont know how to calculate this now, use constant in tech file

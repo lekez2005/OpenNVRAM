@@ -1,6 +1,4 @@
 # pip install libpsf (patched version available at https://github.com/lekez2005/libpsf
-from functools import lru_cache
-
 import libpsf
 import numpy as np
 
@@ -59,14 +57,16 @@ class PsfReader:
 
     def get_signal(self, signal_name, from_t=0.0, to_t=None):
 
-        @lru_cache(maxsize=1000)
-        def actual_get_signal(name):
-            if not self.is_open:
-                self.initialize()
-            return self.data.get_signal(name)
-
-        signal = actual_get_signal(signal_name)
-
+        if not self.is_open:
+            self.initialize()
+        if signal_name in self.cache:
+            signal = self.cache[signal_name]
+        else:
+            try:
+                signal = self.data.get_signal(signal_name)
+            except libpsf.NotFound:
+                raise ValueError("Signal {} not found".format(signal_name))
+            self.cache[signal_name] = signal
         return self.slice_array(signal, from_t, to_t)
 
     def get_signal_time(self, signal_name, from_t=0.0, to_t=None):
@@ -126,7 +126,7 @@ class PsfReader:
             trans2 = self.get_transition_time_thresh(name, t2, stop_time,
                                                      edgetype2, edge=edge2, thresh=thresh2)
             if trans1 == np.inf or trans2 == np.inf:
-                return np.inf
+                return -np.inf  # -inf to make max calculations easier
             else:
                 return trans2 - trans1
 

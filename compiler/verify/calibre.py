@@ -308,7 +308,7 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
 def run_pex(cell_name, gds_name, sp_name, output=None, run_drc_lvs=True, correct_port_order=True):
     """Run pex on a given top-level name which is
        implemented in gds_name and sp_name. """
-    debug.info(1, "Run PEX for {}".format(cell_name))
+
     from tech import drc
     if output == None:
         output = get_temp_file(cell_name + ".pex.netlist")
@@ -318,6 +318,8 @@ def run_pex(cell_name, gds_name, sp_name, output=None, run_drc_lvs=True, correct
     if run_drc_lvs and not os.path.isfile(get_temp_file(cell_name + ".lvs.report")):
         run_drc(cell_name, gds_name)
         run_lvs(cell_name, gds_name, sp_name)
+
+    debug.info(1, "Run PEX for {}".format(cell_name))
 
     pex_rules = drc["xrc_rules"]
     pex_runset = {

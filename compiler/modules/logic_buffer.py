@@ -116,8 +116,8 @@ class LogicBuffer(design.design, metaclass=Unique):
     def route_input_pins(self):
         # connect input pins
         if self.route_inputs:
-            pins = sorted([self.logic_inst.get_pin("A"), self.logic_inst.get_pin("B")], key=lambda x: x.cy(), reverse=True)
-            pin_names = ["A", "B"]
+            pins = sorted([self.logic_inst.get_pin("A"), self.logic_inst.get_pin("B")], key=lambda x: x.cy(),
+                          reverse=True)
             rail_x = 0.5 * self.m2_width
             for i in range(len(pins)):
                 pin = pins[i]
@@ -129,7 +129,7 @@ class LogicBuffer(design.design, metaclass=Unique):
                 else:
                     y_offset = pin.uy() - contact.m1m2.second_layer_height
                     self.add_contact(layers=contact.contact.m1m2_layers, offset=vector(pin.lx(), y_offset))
-                self.add_layout_pin(pin_names[i], "metal2", offset=vector(rail_x, 0), height=pin.cy())
+                self.add_layout_pin(pin.name, "metal2", offset=vector(rail_x, 0), height=pin.cy())
                 rail_x += self.parallel_line_space + self.m2_width
         else:
             self.copy_layout_pin(self.logic_inst, "A", "A")

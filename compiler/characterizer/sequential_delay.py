@@ -216,6 +216,8 @@ class SequentialDelay(delay):
         """Generate voltage at current time for each pwl voltage supply"""
         # control signals
         for key in self.control_sigs:
+            if key == "sense_trig":
+                continue
             self.write_pwl_from_key(key)
 
         # write address

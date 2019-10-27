@@ -44,23 +44,30 @@ class BlProbe(SramProbe):
     def probe_alu(self):
         if OPTS.baseline:
             return
-        if OPTS.use_pex and not OPTS.serial:
+        if OPTS.use_pex:
+
             for col in range(self.sram.num_cols):
-                self.probe_labels.add("Xalu_shift_out[{0}]_Xalu_Xmcc{0}".format(col))
+                if OPTS.serial:
+                    self.probe_labels.add("Xalu_cin[{0}]_Xalu_Xmcc{0}".format(col))
+                    self.probe_labels.add("Xalu_cout[{0}]_Xalu_Xmcc{0}".format(col))
+                else:
+                    self.probe_labels.add("Xalu_shift_out[{0}]_Xalu_Xmcc{0}".format(col))
 
-                if not col % 32 == 31:
-                    if col % 2 == 0:
-                        carry = "coutb_int[{}]".format(col)
-                    else:
-                        carry = "cout_int[{}]".format(col)
-                    self.probe_labels.add("Xalu_{0}_Xalu_Xmcc{1}".format(carry, col))
+                    if not col % 32 == 31:
+                        if col % 2 == 0:
+                            carry = "coutb_int[{}]".format(col)
+                        else:
+                            carry = "cout_int[{}]".format(col)
+                        self.probe_labels.add("Xalu_{0}_Xalu_Xmcc{1}".format(carry, col))
 
-                self.probe_labels.add("Xalu_Xmcc{0}_XI8_net1_Xalu_Xmcc{0}".format(col))
+                    self.probe_labels.add("Xalu_Xmcc{0}_XI8_net1_Xalu_Xmcc{0}".format(col))
             self.probe_labels.add("Xsram.Xalu.sr_clk_buf")
 
         if not OPTS.use_pex:
             if OPTS.serial:
-                pass
+                for i in range(self.sram.num_cols):
+                    self.probe_labels.add("Xsram.Xalu.cout[{}]".format(i))
+                    self.probe_labels.add("Xsram.Xalu.cin[{}]".format(i))
             else:
                 for i in range(self.sram.num_cols):
                     self.probe_labels.add("Xsram.Xalu.shift_out[{}]".format(i))
@@ -348,8 +355,6 @@ class BlProbe(SramProbe):
             if OPTS.serial:
                 for col in range(self.sram.num_cols):
                     self.saved_nodes.add("c_val[{}]".format(col))
-                    self.saved_nodes.add("cin[{}]".format(col))
-                    self.saved_nodes.add("cout[{}]".format(col))
             else:
                 for word in range(self.sram.alu_num_words):
                     self.saved_nodes.add("cout[{}]".format(word))

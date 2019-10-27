@@ -17,6 +17,7 @@ class SimStepsGenerator(SequentialDelay):
     read_duty_cycle = write_duty_cycle = 0.5
     saved_nodes = []
     saved_currents = []
+    first_output = True
 
     def __init__(self, sram, spfile, corner, initialize=False):
         super().__init__(sram, spfile, corner, initialize=initialize)
@@ -244,17 +245,6 @@ class SimStepsGenerator(SequentialDelay):
             self.setup_read_measurements(a_address)
             self.baseline_read(a_address, "Read A ({})".format(a_address))
 
-        elif OPTS.energy_sim:  # TODO fill in energy sims depending on serial or parallel
-            self.read_data(b_address, "Read B ({})".format(b_address))
-            self.write_masked_data(a_address, data_one, mask_one, "Write A ({})".format(a_address))
-            self.read_data(b_address, "Read B ({})".format(b_address))
-            self.write_masked_data(b_address, data_two, mask_two, "Write B ({})".format(b_address))
-            self.read_data(a_address, "Read A ({})".format(a_address))
-            # set bank_sel to zero and measure leakage
-            self.bank_sel = 0
-            self.command_comments.append("*** t = {} {} \n".format(self.current_time, "Leakage"))
-            self.write_pwl_from_key("bank_sel")
-            self.current_time += 10*self.period
         else:
             self.bank_sel = 1
             self.acc_en = self.read = 0
@@ -300,21 +290,22 @@ class SimStepsGenerator(SequentialDelay):
             # SR = A ( from previous read ), here measure msb to mask_in_bar transition time
             self.write_shift_register(bus_sel="s_and", sr_in="s_bus", sr_out="s_msb", comment="Shift-Register")
 
-            # Write back B + C if MSB
-            self.sr_en = 0
-            self.bitline_compute(b_address, c_address, bus_sel="s_sum", sr_in="s_shift",
-                                 sr_out="s_sr", comment=" B + C ")
-            self.sr_en = 0
-            self.setup_write_measurements(c_address)
-            self.write_back(c_address, bus_sel="s_sum", sr_in="s_shift", sr_out="s_msb",
-                            comment="Write-back MSB mask to C ({})".format(c_address))
-            # Write back B + C if MSB
+            if not OPTS.serial:
+                # Write back B + C if MSB
+                self.sr_en = 0
+                self.bitline_compute(b_address, c_address, bus_sel="s_sum", sr_in="s_shift",
+                                     sr_out="s_sr", comment=" B + C ")
+                self.sr_en = 0
+                self.setup_write_measurements(c_address)
+                self.write_back(c_address, bus_sel="s_sum", sr_in="s_shift", sr_out="s_msb",
+                                comment="Write-back MSB mask to C ({})".format(c_address))
+                # Write back B + C if MSB
 
-            self.bitline_compute(b_address, c_address, bus_sel="s_sum", sr_in="s_bus",
-                                 sr_out="s_sr", comment=" B + C")
-            self.sr_en = 1  # shift once, here measure lsb to mask_in_bar transition
-            self.write_back(c_address, bus_sel="s_sum", sr_in="s_shift", sr_out="s_lsb",
-                            comment="Write-back LSB mask to C ({})".format(c_address))
+                self.bitline_compute(b_address, c_address, bus_sel="s_sum", sr_in="s_bus",
+                                     sr_out="s_sr", comment=" B + C")
+                self.sr_en = 1  # shift once, here measure lsb to mask_in_bar transition
+                self.write_back(c_address, bus_sel="s_sum", sr_in="s_shift", sr_out="s_lsb",
+                                comment="Write-back LSB mask to C ({})".format(c_address))
 
         self.saved_nodes = list(sorted(list(probe.saved_nodes) + list(self.dout_probes.values())
                                        + list(self.mask_probes.values())))
@@ -483,18 +474,27 @@ class SimStepsGenerator(SequentialDelay):
         self.update_output()
 
     def set_selects(self, bus_sel=None, sr_in=None, sr_out=None):
-        selects = [self.bus_selects, self.sr_in_selects, self.sr_out_selects]
-        selected = [bus_sel, sr_in, sr_out]
-        for i in range(3):
-            if selected[i] is None:  # to enable selective sets
-                continue
-            assert selected[i] in selects[i], "Selected {} must be in {}".format(selected[i], " ".join(selects[i]))
-            for sig in selects[i]:
-                if selected[i] == sig:
+
+        def one_hot_mux(selected, all_sels):
+            if selected is None:  # to enable selective sets
+                return
+            assert selected in all_sels, "Selected {} must be in {}".format(selected, " ".join(all_sels))
+            for sig in all_sels:
+                if selected == sig:
                     value = 1
                 else:
                     value = 0
                 setattr(self, sig, value)
+
+        if OPTS.serial:
+            one_hot_mux(bus_sel, self.bus_selects)
+            one_hot_mux(sr_in, self.sr_in_selects)
+            # TODO mask_en set reminder
+        else:
+            selects = [self.bus_selects, self.sr_in_selects, self.sr_out_selects]
+            selected = [bus_sel, sr_in, sr_out]
+            for i in range(3):
+                one_hot_mux(selected[i], selects[i])
 
     def setup_write_measurements(self, address_int):
         """new_val is MSB first"""

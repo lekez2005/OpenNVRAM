@@ -44,7 +44,7 @@ class SimStepsGenerator(SequentialDelay):
                 self.sr_in_selects = ["s_bus", "s_mask_in"]
                 self.sr_out_selects = ["s_sr", "s_lsb", "s_msb"]
                 self.select_sigs = self.bus_selects + self.sr_in_selects
-                self.control_sigs = ["read", "en_0", "en_1", "acc_en", "acc_en_inv", "bank_sel", "sense_trig"
+                self.control_sigs = ["read", "en_0", "en_1", "acc_en", "acc_en_inv", "bank_sel", "sense_trig",
                                      "diff", "diffb", "sr_en", "mask_en"] + self.select_sigs
             else:
                 self.sr_in_selects = ["s_bus", "s_mask_in", "s_shift"]
@@ -84,6 +84,36 @@ class SimStepsGenerator(SequentialDelay):
         self.address_1 = self.prev_address_1 = self.convert_address(mid_address)
 
         self.inverted_sels = ["s_sr"]
+
+    def write_pwl(self, key, prev_val, curr_val):
+        """Append current time's data to pwl. Transitions from the previous value to the new value using the slew"""
+
+        if prev_val == curr_val and self.current_time > 1.5*self.period:
+            return
+
+        if key in ["clk", "bank_sel"]:
+            setup_time = 0
+        elif key in ["acc_en", "acc_en_inv"]: # to prevent contention with tri-state buffer
+            setup_time = -0.5*self.duty_cycle*self.period
+        elif self.current_time > self.period and hasattr(self, "sr_in_selects") and key in self.sr_in_selects:
+            setup_time = (1-self.duty_cycle)*self.period
+        elif key == "sense_trig":
+            if prev_val == 0:
+                setup_time = -(self.duty_cycle*self.period + OPTS.sense_trigger_delay)
+            else:
+                setup_time = -self.slew
+        else:
+            setup_time = self.setup_time
+
+        if key in self.inverted_sels:
+            prev_val, curr_val = int(not prev_val), int(not curr_val)
+
+        t1 = max(0.0, self.current_time - 0.5 * self.slew - setup_time)
+        t2 = max(0.0, self.current_time + 0.5 * self.slew - setup_time)
+        self.v_data[key] += " {0}n {1}v {2}n {3}v ".format(t1, self.vdd_voltage * prev_val, t2,
+                                                           self.vdd_voltage * curr_val)
+        self.v_comments[key] += " ({0}, {1}) ".format(int(self.current_time / self.period),
+                                                      curr_val)
 
     def write_delay_stimulus(self):
         """ Override super class method to use internal logic for pwl voltages and measurement setup
@@ -335,36 +365,6 @@ class SimStepsGenerator(SequentialDelay):
 
         if self.read:
             self.write_pwl("sense_trig", 1, 0)
-
-    def write_pwl(self, key, prev_val, curr_val):
-        """Append current time's data to pwl. Transitions from the previous value to the new value using the slew"""
-
-        if prev_val == curr_val and self.current_time > 1.5*self.period:
-            return
-
-        if key in ["clk", "bank_sel"]:
-            setup_time = 0
-        elif key in ["acc_en", "acc_en_inv"]: # to prevent contention with tri-state buffer
-            setup_time = -0.5*self.duty_cycle*self.period
-        elif self.current_time > self.period and hasattr(self, "sr_in_selects") and key in self.sr_in_selects:
-            setup_time = (1-self.duty_cycle)*self.period
-        elif key == "sense_trig":
-            if prev_val == 0:
-                setup_time = -(self.duty_cycle*self.period + OPTS.sense_trigger_delay)
-            else:
-                setup_time = -self.slew
-        else:
-            setup_time = self.setup_time
-
-        if key in self.inverted_sels:
-            prev_val, curr_val = int(not prev_val), int(not curr_val)
-
-        t1 = max(0.0, self.current_time - 0.5 * self.slew - setup_time)
-        t2 = max(0.0, self.current_time + 0.5 * self.slew - setup_time)
-        self.v_data[key] += " {0}n {1}v {2}n {3}v ".format(t1, self.vdd_voltage * prev_val, t2,
-                                                           self.vdd_voltage * curr_val)
-        self.v_comments[key] += " ({0}, {1}) ".format(int(self.current_time / self.period),
-                                                      curr_val)
 
     def baseline_read(self, address_int, comment=""):
         address_vec = self.convert_address(address_int)

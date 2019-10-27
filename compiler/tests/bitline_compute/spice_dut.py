@@ -41,6 +41,7 @@ class SpiceDut(stimuli):
             if OPTS.serial:
                 for col in range(dbits):
                     self.sf.write(" c_val[{0}] cin[{0}] cout[{0}] ".format(col))
+                    # self.sf.write(" c_val[{0}] ".format(col))
             else:
                 for word in range(self.words_per_row):
                     self.sf.write(" cin[{0}] cout[{0}] ".format(word))
@@ -51,7 +52,7 @@ class SpiceDut(stimuli):
                 self.sf.write(" s_and s_nand s_or s_nor s_xor s_xnor s_sum s_data s_cout "
                               "s_mask_in s_bus ")
 
-                self.sf.write(" read bank_sel mask_en sr_en ")
+                self.sf.write(" read bank_sel sense_trig diff diffb  mask_en sr_en ")
             else:
                 self.sf.write(" s_and s_nand s_or s_nor s_xor s_xnor s_sum s_data "
                               "s_mask_in s_bus s_shift s_sr s_lsb s_msb ")

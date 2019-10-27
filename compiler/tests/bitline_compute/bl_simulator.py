@@ -75,7 +75,7 @@ class BlSimulator(TestBase):
     def test_schematic(self):
         use_pex = True
         OPTS.trim_netlist = False
-        OPTS.run_drc = True
+        OPTS.run_drc = False
         OPTS.run_lvs = True
         OPTS.run_pex = True
 
@@ -83,7 +83,7 @@ class BlSimulator(TestBase):
 
         OPTS.separate_vdd = False
 
-        OPTS.energy_sim = False
+        OPTS.energy_sim = True
 
         self.run_commands(use_pex=use_pex, word_size=word_size, num_words=num_words)
 

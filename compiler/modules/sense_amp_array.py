@@ -99,10 +99,12 @@ class sense_amp_array(design.design):
             index = int(i / self.words_per_row)
             self.copy_layout_pin(self.amp_insts[i], pin_name, output_name + "[{}]".format(index))
 
-    def extend_horizontal_pins(self, pin_name):
+    def extend_horizontal_pins(self, pin_name, output_name=None):
+        if output_name is None:
+            output_name = pin_name
         pins = self.amp_insts[0].get_pins(pin_name)
         for pin in pins:
-            self.add_layout_pin(pin_name, pin.layer, pin.ll(), self.width - pin.lx(), pin.height())
+            self.add_layout_pin(output_name, pin.layer, pin.ll(), self.width - pin.lx(), pin.height())
 
     def add_layout_pins(self):
 

@@ -245,7 +245,6 @@ class precharge(design.design):
         self.add_inst(name="br_pmos", mod=self.pmos, offset=vector(0, 0))
         self.connect_inst(["br", "en", "vdd", "vdd"])
 
-
     def drc_fill(self):
         fill_height = self.ptx_width
         fill_width = utils.ceil(self.minarea_metal1_contact/fill_height)

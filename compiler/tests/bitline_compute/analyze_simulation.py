@@ -57,7 +57,11 @@ def measure_delay(pattern, max_delay=None):
 
 
 def extract_probe_pattern(meas_name):
-    sample = re.search(".meas tran {}.* TARG v\((.+)\) VAL".format(meas_name), stim_str).group(1)
+    sample_group = re.search(".meas tran {}.* TARG v\((.+)\) VAL".format(meas_name), stim_str)
+    if sample_group is None:
+        return ""
+    sample = sample_group.group(1)
+
     specific_index = re.search("\[[0-9]+\]", sample)
     if specific_index is None:
         return sample
@@ -95,16 +99,16 @@ def verify_write_event(write_time, write_address):
     settling_time = (1 + duty_cycle) * period
     actual_data = get_address_data(write_address, write_time + settling_time)
 
-    if not np.array_equal(actual_data, expected_data):
-        debug.error("Read failure: At time {:.3g} \n expected \t {}\n found    \t {}".
-                    format(write_time, expected_data, actual_data), 0)
+    debug_error("Write failure: At time {:.3g} address {}".format(write_time, write_address),
+                expected_data, actual_data)
 
 
 def verify_read_event(read_time, read_address):
     read_time = float(read_time) * 1e-9
-    sel_and = sim_data.get_binary("s_and", read_time)
-    if not sel_and[0]:
-        return
+    if not baseline:
+        sel_and = sim_data.get_binary("s_and", read_time)
+        if not sel_and[0]:
+            return
     expected_data = get_address_data(read_address, read_time)
     settling_time = period
     actual_data = sim_data.get_bus_binary(data_flop_in_pattern, num_cols, read_time + settling_time)
@@ -245,11 +249,12 @@ def pattern_from_saved(pattern, *args):
     return pattern
 
 
-baseline = False
+baseline = True
 word_size = 32
-num_cols = 256
-num_rows = 128
+num_cols = 32
+num_rows = 32
 fixed = True
+schematic = True
 
 num_words = int(num_cols / word_size)
 address_width = int(np.log2(num_rows))
@@ -281,17 +286,19 @@ mask_in_bar_pattern = standardize_pattern(extract_probe_pattern("mask_col"), "Xd
 mask_pattern = "mask[{}]"
 data_flop_in_pattern = standardize_pattern(extract_probe_pattern("READ_DELAY"), "dff[0-9]+", "dff{0}")
 
-write_en_pattern = pattern_from_saved("v\(\S+write_en(?!_bar)\S+Xdriver\S+\)", "Xdriver_[0-9]+", "Xdriver_{0}")
+if not schematic:
 
-write_en_bar_pattern = pattern_from_saved("v\(\S+write_en_bar\S+Xdriver\S+\)", "Xdriver_[0-9]+", "Xdriver_{0}")
+    write_en_pattern = pattern_from_saved("v\(\S+write_en(?!_bar)\S+Xdriver\S+\)", "Xdriver_[0-9]+", "Xdriver_{0}")
 
-write_driver_in_pattern = pattern_from_saved("v\(\S+data_in\S+Xdriver\S+\)", "Xdriver_[0-9]+", "Xdriver_{0}",
-                                             "\[[0-9]+\]", "[{0}]")
+    write_en_bar_pattern = pattern_from_saved("v\(\S+write_en_bar\S+Xdriver\S+\)", "Xdriver_[0-9]+", "Xdriver_{0}")
 
-bl_pattern = pattern_from_saved("v\(\S+bl\S+Xbitcell\S+\)", "c[0-9]+", "c{0}", "\[[0-9]+\]", "[{0}]")
-br_pattern = pattern_from_saved("v\(\S+br\S+Xbitcell\S+\)", "c[0-9]+", "c{0}", "\[[0-9]+\]", "[{0}]")
+    write_driver_in_pattern = pattern_from_saved("v\(\S+data_in\S+Xdriver\S+\)", "Xdriver_[0-9]+", "Xdriver_{0}",
+                                                 "\[[0-9]+\]", "[{0}]")
 
-flop_clk_in_pattern = pattern_from_saved("v\(\S+clk_bar\S+Xdata_in\S+\)", "dff[0-9]+", "dff{0}")
+    bl_pattern = pattern_from_saved("v\(\S+bl\S+Xbitcell\S+\)", "c[0-9]+", "c{0}", "\[[0-9]+\]", "[{0}]")
+    br_pattern = pattern_from_saved("v\(\S+br\S+Xbitcell\S+\)", "c[0-9]+", "c{0}", "\[[0-9]+\]", "[{0}]")
+
+    flop_clk_in_pattern = pattern_from_saved("v\(\S+clk_bar\S+Xdata_in\S+\)", "dff[0-9]+", "dff{0}")
 
 data_pattern = "D[{}]"
 
@@ -301,155 +308,157 @@ address_pattern = "A[{}]"
 
 bus_out_pattern = "v(Xsram.Xalu.bus_out[{}])"
 
-and_pattern = "and[{}]"
-nor_pattern = "nor[{}]"
+and_pattern = "v(and[{}])"
+nor_pattern = "v(nor[{}])"
 cin_pattern = "cin[{}]"
-cout_pattern = "cout[{}]"
-
-clk_reference = "v(" + re.search(".meas tran {}.* TRIG v\((\S+)\) VAL".format("PRECHARGE"), stim_str).group(1) + ")"
+cout_pattern = "v(cout[{}])"
 
 period = float(search_file(stim_file, "\* Period = ([0-9\.]+) ")) * 1e-9
 duty_cycle = float(search_file(stim_file, "\* Duty Cycle = ([0-9\.]+) "))
+# duty_cycle = 0.4
 
-area = float(search_file(stim_file, "Area=([0-9\.]+)um2"))
+if __name__ == "__main__":
+    clk_reference = "v(" + re.search(".meas tran {}.* TRIG v\((\S+)\) VAL".format("PRECHARGE"), stim_str).group(1) + ")"
 
-print("\nArea = {:2g} um2".format(area))
-print("Period = {:2g} ns".format(period))
-print("Duty Cycle = {:2g}\n".format(duty_cycle))
+    area = float(search_file(stim_file, "Area=([0-9\.]+)um2"))
 
-# Decoder delay
-max_decoder_delay, _ = measure_delay(re.compile('decoder_a.*= (?P<delay>\S+)\s\n'), 0.9 * period)
+    print("\nArea = {:2g} um2".format(area))
+    print("Period = {:2g} ns".format(period))
+    print("Duty Cycle = {:2g}\n".format(duty_cycle))
 
-# Precharge delay
-max_precharge, _ = measure_delay(re.compile('precharge_delay.*= (?P<delay>\S+)\s\n'), 0.9 * period)
+    # Decoder delay
+    max_decoder_delay, _ = measure_delay(re.compile('decoder_a.*= (?P<delay>\S+)\s\n'), 0.9 * period)
 
-print("\nDecoder delay = {:.2f}p".format(max_decoder_delay / 1e-12))
-print("Precharge delay = {:.2f}p".format(max_precharge / 1e-12))
+    # Precharge delay
+    max_precharge, _ = measure_delay(re.compile('precharge_delay.*= (?P<delay>\S+)\s\n'), 0.9 * period)
 
-# Read + write to SR
-sr_time = 1e-9 * float(search_file(stim_file, "t = ([0-9\.]+) Shift-Register"))
-sr_energy = measure_energy([sr_time - period, sr_time + period])
+    print("\nDecoder delay = {:.2f}p".format(max_decoder_delay / 1e-12))
+    print("Precharge delay = {:.2f}p".format(max_precharge / 1e-12))
 
-# analyze writes
-print("----------------Write Analysis---------------")
+    # analyze writes
+    print("----------------Write Analysis---------------")
 
-write_events = search_file(stim_file, "t = ([0-9\.]+) Write .* \(([0-9]+)\)")
-write_energies = [measure_energy(x[0]) for x in write_events]
-for write_time_, write_address_ in write_events:
-    verify_write_event(write_time_, write_address_)
+    write_events = search_file(stim_file, "t = ([0-9\.]+) Write .* \(([0-9]+)\)")
+    write_energies = [measure_energy(x[0]) for x in write_events]
+    for write_time_, write_address_ in write_events:
+        verify_write_event(write_time_, write_address_)
 
-# Write delay
-max_q_delay, _ = measure_delay(re.compile('state_delay.*= (?P<delay>\S+)\s\n'))
-print("Q state delay = {:.2f} ps".format(max_q_delay / 1e-12))
+    # Write delay
+    max_q_delay, _ = measure_delay(re.compile('state_delay.*= (?P<delay>\S+)\s\n'))
+    print("Q state delay = {:.2f} ps".format(max_q_delay / 1e-12))
 
-total_write = max(max_precharge, max_decoder_delay) + max_q_delay
-print("Total Write delay = {:.2f} ps".format(total_write / 1e-12))
-print("Max write energy = {:.2f} pJ".format(max(write_energies) / 1e-12))
+    total_write = max(max_precharge, max_decoder_delay) + max_q_delay
+    print("Total Write delay = {:.2f} ps".format(total_write / 1e-12))
+    print("Max write energy = {:.2f} pJ".format(max(write_energies) / 1e-12))
 
-# Reads
-print("----------------Read Analysis---------------")
-read_events = search_file(stim_file, "t = ([0-9\.]+) Read .* \(([0-9]+)\)")
-for read_time_, read_address_ in read_events:
-    verify_read_event(read_time_, read_address_)
+    # Reads
+    print("----------------Read Analysis---------------")
+    read_events = search_file(stim_file, "t = ([0-9\.]+) Read .* \(([0-9]+)\)")
+    for read_time_, read_address_ in read_events:
+        verify_read_event(read_time_, read_address_)
 
-read_delays = [measure_read_delays(1e-9 * float(x[0])) for x in read_events]
+    read_delays = [measure_read_delays(1e-9 * float(x[0])) for x in read_events]
 
-max_dout = np.max(read_delays)
+    max_dout = np.max(read_delays)
 
-print("clk_bar to Read bus out delay = {:.2f}p".format(max_dout / 1e-12))
+    print("clk_bar to Read bus out delay = {:.2f}p".format(max_dout / 1e-12))
 
-total_read = max(max_precharge, max_decoder_delay) + max_dout
-print("Total Read delay = {:.2f}p".format(total_read / 1e-12))
+    total_read = max(max_precharge, max_decoder_delay) + max_dout
+    print("Total Read delay = {:.2f}p".format(total_read / 1e-12))
 
-read_energies = [measure_energy(x[0]) for x in read_events]
+    read_energies = [measure_energy(x[0]) for x in read_events]
 
-print("Max read energy = {:.2f} pJ".format(max(read_energies) / 1e-12))
+    print("Max read energy = {:.2f} pJ".format(max(read_energies) / 1e-12))
 
-print("----------------Sum Analysis---------------")
-bitline_events = search_file(stim_file, "t = ([0-9\.]+) Bitline \(([0-9]+)\) \+ \(([0-9]+)\) ")
+    # Read + write to SR
+    sr_time = 1e-9 * float(search_file(stim_file, "t = ([0-9\.]+) Shift-Register"))
+    sr_energy = measure_energy([sr_time - period, sr_time + period])
 
-for bitline_time_, addr0_, addr1_ in bitline_events:
-    verify_bitline_event(bitline_time_, addr0_, addr1_)
+    print("----------------Sum Analysis---------------")
+    bitline_events = search_file(stim_file, "t = ([0-9\.]+) Bitline \(([0-9]+)\) \+ \(([0-9]+)\) ")
 
-# sum_delays = [measure_bitline_delays(1e-9*float(x[0])) for x in bitline_events]
+    for bitline_time_, addr0_, addr1_ in bitline_events:
+        verify_bitline_event(bitline_time_, addr0_, addr1_)
 
-bitline_times = [1e-9 * float(x[0]) for x in bitline_events]
+    # sum_delays = [measure_bitline_delays(1e-9*float(x[0])) for x in bitline_events]
 
-sum_delays = [clk_bar_to_bus_delay(data_flop_in_pattern, x + duty_cycle * period,
-                                   x + (1 + duty_cycle) * period, num_bits=num_cols)
-              for x in bitline_times]
+    bitline_times = [1e-9 * float(x[0]) for x in bitline_events]
 
-for i in range(len(sum_delays)):
-    sum_delays[i] = [sum_delays[i][j] if sum_delays[i][j] < np.inf else 0 for j in range(len(sum_delays[i]))]
+    sum_delays = [clk_bar_to_bus_delay(data_flop_in_pattern, x + duty_cycle * period,
+                                       x + (1 + duty_cycle) * period, num_bits=num_cols)
+                  for x in bitline_times]
 
-print("max clk_bar to data in flop delay (sum) = {:.2f}p".format(np.max(sum_delays) / 1e-12))
+    for i in range(len(sum_delays)):
+        sum_delays[i] = [sum_delays[i][j] if sum_delays[i][j] < np.inf else 0 for j in range(len(sum_delays[i]))]
 
-print("----------------Energy Analysis---------------")
+    print("max clk_bar to data in flop delay (sum) = {:.2f}p".format(np.max(sum_delays) / 1e-12))
 
-# Read + write to SR
-sr_time = 1e-9 * float(search_file(stim_file, "t = ([0-9\.]+) Shift-Register"))
-sr_energy = measure_energy([sr_time - period, sr_time + period])
-print("Read and Write to SR energy = {:.2f} pJ".format(sr_energy / 1e-12))
+    print("----------------Energy Analysis---------------")
 
-# Add + Write back
-for action in ["MASK-IN", "MSB", "LSB"]:
-    write_time = 1e-9 * float(search_file(stim_file, "t = ([0-9\.]+) Write-back {}".format(action)))
-    energy = measure_energy([write_time - period, write_time + period])
-    print("BL compute and write back using {} energy = {:.2f} pJ".format(action, energy / 1e-12))
+    # Read + write to SR
+    sr_time = 1e-9 * float(search_file(stim_file, "t = ([0-9\.]+) Shift-Register"))
+    sr_energy = measure_energy([sr_time - period, sr_time + period])
+    print("Read and Write to SR energy = {:.2f} pJ".format(sr_energy / 1e-12))
 
-print("----------------Critical Paths---------------")
+    # Add + Write back
+    for action in ["MASK-IN", "MSB", "LSB"]:
+        write_time = 1e-9 * float(search_file(stim_file, "t = ([0-9\.]+) Write-back {}".format(action)))
+        energy = measure_energy([write_time - period, write_time + period])
+        print("BL compute and write back using {} energy = {:.2f} pJ".format(action, energy / 1e-12))
 
-print("\nWrite Critical Path")
+    print("----------------Critical Paths---------------")
 
-# write:
-write_events = search_file(stim_file, "t = ([0-9\.]+) Write .* \(([0-9]+)\)")
-write_backs = search_file(stim_file, "t = ([0-9\.]+) Write-back .* \(([0-9]+)\)")
-all_writes = write_events + write_backs
+    print("\nWrite Critical Path")
 
-all_writes = [(1e-9 * float(x[0]), x[1]) for x in all_writes]
+    # write:
+    write_events = search_file(stim_file, "t = ([0-9\.]+) Write .* \(([0-9]+)\)")
+    write_backs = search_file(stim_file, "t = ([0-9\.]+) Write-back .* \(([0-9]+)\)")
+    all_writes = write_events + write_backs
 
-# find maximum write delay
-max_all_write_address = max_all_write_delay = max_all_write_time = 0
-max_clk_bar_to_q = None
-for write_time_, write_address_ in all_writes:
-    q_pattern = get_q_pattern(write_address_)
-    clk_bar_to_q = clk_bar_to_bus_delay(q_pattern, write_time_, write_time_ + period, num_cols)
-    if max(clk_bar_to_q) > max_all_write_delay:
-        max_all_write_delay = max(clk_bar_to_q)
-        max_all_write_address = write_address_
-        max_all_write_time = write_time_
-        max_clk_bar_to_q = clk_bar_to_q
+    all_writes = [(1e-9 * float(x[0]), x[1]) for x in all_writes]
 
-max_write_col = (num_cols - 1) - np.argmax(max_clk_bar_to_q)
+    # find maximum write delay
+    max_all_write_address = max_all_write_delay = max_all_write_time = 0
+    max_clk_bar_to_q = None
+    for write_time_, write_address_ in all_writes:
+        q_pattern = get_q_pattern(write_address_)
+        clk_bar_to_q = clk_bar_to_bus_delay(q_pattern, write_time_, write_time_ + period, num_cols)
+        if max(clk_bar_to_q) > max_all_write_delay:
+            max_all_write_delay = max(clk_bar_to_q)
+            max_all_write_address = write_address_
+            max_all_write_time = write_time_
+            max_clk_bar_to_q = clk_bar_to_q
 
-start_time = max_all_write_time + duty_cycle * period
-end_time = max_all_write_time + period
-write_en_delay = clk_bar_to_bus_delay(write_en_pattern.format(max_write_col), start_time, end_time)
-write_en_bar_delay = clk_bar_to_bus_delay(write_en_bar_pattern.format(max_write_col), start_time, end_time)
+    max_write_col = (num_cols - 1) - np.argmax(max_clk_bar_to_q)
 
-data_out_delay = clk_bar_to_bus_delay(write_driver_in_pattern.format(max_write_col), start_time, end_time)
+    start_time = max_all_write_time + duty_cycle * period
+    end_time = max_all_write_time + period
+    write_en_delay = clk_bar_to_bus_delay(write_en_pattern.format(max_write_col), start_time, end_time)
+    write_en_bar_delay = clk_bar_to_bus_delay(write_en_bar_pattern.format(max_write_col), start_time, end_time)
 
-bl_delay = clk_bar_to_bus_delay(bl_pattern.format(max_write_col), start_time, end_time)
-br_delay = clk_bar_to_bus_delay(br_pattern.format(max_write_col), start_time, end_time)
-q_delay = clk_bar_to_bus_delay(get_q_pattern(max_all_write_address).format(max_write_col), start_time, end_time)
+    data_out_delay = clk_bar_to_bus_delay(write_driver_in_pattern.format(max_write_col), start_time, end_time)
 
-# Plots
-end_time = start_time + 0.7*period
+    bl_delay = clk_bar_to_bus_delay(bl_pattern.format(max_write_col), start_time, end_time)
+    br_delay = clk_bar_to_bus_delay(br_pattern.format(max_write_col), start_time, end_time)
+    q_delay = clk_bar_to_bus_delay(get_q_pattern(max_all_write_address).format(max_write_col), start_time, end_time)
 
-plt.plot(*sim_data.get_signal_time(clk_reference, from_t=start_time, to_t=end_time), label="clk_buf")
-plt.plot(*sim_data.get_signal_time(write_en_pattern.format(max_write_col),
-                                   from_t=start_time, to_t=end_time), label="write_en")
-plt.plot(*sim_data.get_signal_time(write_en_bar_pattern.format(max_write_col),
-                                   from_t=start_time, to_t=end_time), label="write_en_bar")
-plt.plot(*sim_data.get_signal_time(flop_clk_in_pattern.format(max_write_col),
-                                   from_t=start_time, to_t=end_time), label="flop_clk")
-plt.plot(*sim_data.get_signal_time(write_driver_in_pattern.format(max_write_col),
-                                   from_t=start_time, to_t=end_time), label="flop_out")
-plt.plot(*sim_data.get_signal_time(bl_pattern.format(max_write_col),
-                                   from_t=start_time, to_t=end_time), label="bl")
-plt.plot(*sim_data.get_signal_time(get_q_pattern(max_all_write_address).format(max_write_col),
-                                   from_t=start_time, to_t=end_time), label="Q")
-plt.axhline(y=0.45, linestyle='--', linewidth=0.5)
-plt.grid()
-plt.legend(loc="center right", fontsize="x-small")
-plt.show()
+    # Plots
+    end_time = start_time + 0.7*period
+
+    plt.plot(*sim_data.get_signal_time(clk_reference, from_t=start_time, to_t=end_time), label="clk_buf")
+    plt.plot(*sim_data.get_signal_time(write_en_pattern.format(max_write_col),
+                                       from_t=start_time, to_t=end_time), label="write_en")
+    plt.plot(*sim_data.get_signal_time(write_en_bar_pattern.format(max_write_col),
+                                       from_t=start_time, to_t=end_time), label="write_en_bar")
+    plt.plot(*sim_data.get_signal_time(flop_clk_in_pattern.format(max_write_col),
+                                       from_t=start_time, to_t=end_time), label="flop_clk")
+    plt.plot(*sim_data.get_signal_time(write_driver_in_pattern.format(max_write_col),
+                                       from_t=start_time, to_t=end_time), label="flop_out")
+    plt.plot(*sim_data.get_signal_time(bl_pattern.format(max_write_col),
+                                       from_t=start_time, to_t=end_time), label="bl")
+    plt.plot(*sim_data.get_signal_time(get_q_pattern(max_all_write_address).format(max_write_col),
+                                       from_t=start_time, to_t=end_time), label="Q")
+    plt.axhline(y=0.45, linestyle='--', linewidth=0.5)
+    plt.grid()
+    plt.legend(loc="center right", fontsize="x-small")
+    plt.show()

@@ -15,8 +15,8 @@ class BlBankTest(TestBase):
         if OPTS.baseline:
             return
 
-        self.sweep_all()
-        # self.sweep_all(cols=[], rows=[32])
+        # self.sweep_all()
+        self.sweep_all(cols=[64], rows=[64])
 
     def test_baseline_array(self):
         import tech
@@ -27,8 +27,8 @@ class BlBankTest(TestBase):
 
         tech.drc_exceptions["BlBaselineBank"] = tech.drc_exceptions["min_nwell"]
 
-        # self.sweep_all(cols=None, rows=[])
-        self.sweep_all()
+        self.sweep_all(cols=[64], rows=[64])
+        #self.sweep_all()
 
     def sweep_all(self, rows=None, cols=None, default_row=64, default_col=64):
         from base import design
@@ -65,7 +65,7 @@ class BlBankTest(TestBase):
                     bank_class.__name__, row, col))
                 a = bank_class(word_size=col, num_words=row, words_per_row=1, name="bank1")
                 self.local_check(a)
-        except Exception as ex:
+        except ZeroDivisionError as ex:
             debug.error("Failed {} for row = {} col = {}: {} ".format(
                 bank_class.__name__, row, col, str(ex)), debug.ERROR_CODE)
             raise ex

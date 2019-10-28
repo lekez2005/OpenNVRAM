@@ -99,3 +99,121 @@ class EnergyStepsGenerator(SimStepsGenerator):
             # self.baseline_read(0, "Read B ({})".format(0))
             # self.baseline_read(0, "Read B ({})".format(0))
 
+    # Helpers
+    def get_random_bin_vector(bit_sz):
+        MAX_INT = 1 << bit_sz
+
+        _val = random.randint(0, MAX_INT - 1)
+
+        val = []
+        for i in range(bit_sz):
+            mask   = 1 << i
+            digit  = 0 if (_val & mask) == 0 else 1
+            val   += [digit]
+
+        return val
+ 
+    def gen_init():
+        num_rows = self.num_rows
+        num_cols = self.num_cols
+        word_size = self.word_size
+
+        bit_sz  = num_cols
+        MAX_INT = 1 << num_cols
+
+        _init = [random.randint(0, MAX_INT - 1) for i in range(num_rows)]
+
+        init = {}
+        for idx in range(num_rows):
+            init[idx] = get_random_bin_vector(num_rows)
+
+        return init
+ 
+    # Tests
+    def test_rd(self):
+        num_rows = self.num_rows
+        num_cols = self.num_cols
+        word_size = self.word_size
+
+        self.initialize(self.gen_init())
+
+        # Read
+        for i in range(OPTS.num_tries):
+          addr = random.randint(0, num_rows - 1)
+          self.rd(addr)
+
+    def test_wr(self):
+        num_rows = self.num_rows
+        num_cols = self.num_cols
+        word_size = self.word_size
+
+        self.initialize(self.gen_init())
+
+        # Maybe randomize the mask
+        mask_all = [1] * num_cols
+
+        for i in range(OPTS.num_tries):
+          addr = random.randint(0, num_rows - 1)
+          data = get_random_bin_vector(num_cols)
+          self.wr(addr, data, mask_all)
+
+    def test_blc(self):
+        num_rows = self.num_rows
+        num_cols = self.num_cols
+        word_size = self.word_size
+
+        self.initialize(self.gen_init())
+
+        for i in range(OPTS.num_tries):
+          addr0 = random.randint(0, num_rows - 1)
+          addr1 = random.randint(0, num_rows - 1)
+          self.blc(addr0, addr1)
+
+    def test_wb(self):
+        num_rows = self.num_rows
+        num_cols = self.num_cols
+        word_size = self.word_size
+
+        self.initialize(self.gen_init())
+
+        sources = ['and', 'nand', 'nor', 'or', 'xor', 'xnor','data_in']
+        for i in range(OPTS.num_tries):
+          src = random.choice(sources)
+          func_name = 'wb_{}'.format(src)
+          getattr(self, func_name)()
+
+    def test_wb_add(self):
+        num_rows = self.num_rows
+        num_cols = self.num_cols
+        word_size = self.word_size
+
+        self.initialize(self.gen_init())
+
+        for i in range(OPTS.num_tries):
+          func_name = 'wb_{}'.format('add')
+          getattr(self, func_name)()
+
+    def test_wb_mask(self):
+        num_rows = self.num_rows
+        num_cols = self.num_cols
+        word_size = self.word_size
+
+        self.initialize(self.gen_init())
+
+        # Get random source
+        sources = ['and', 'nand', 'nor', 'or', 'xor', 'xnor','data_in']
+        for i in range(OPTS.num_tries):
+          src = random.choice(sources)
+          func_name = 'wb_mask_{}'.format(src)
+          getattr(self, func_name)()
+
+    def test_wb_mask_add(self):
+        num_rows = self.num_rows
+        num_cols = self.num_cols
+        word_size = self.word_size
+
+        self.initialize(self.gen_init())
+
+        for i in range(OPTS.num_tries):
+          func_name = 'wb_mask_{}'.format('add')
+          getattr(self, func_name)()

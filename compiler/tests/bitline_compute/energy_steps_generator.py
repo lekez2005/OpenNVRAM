@@ -1,62 +1,101 @@
-from math import ceil
+import os
+import shutil
 
+from bl_probe import BlProbe
 from globals import OPTS
 from sim_steps_generator import SimStepsGenerator
 
 
 class EnergyStepsGenerator(SimStepsGenerator):
 
+    def write_delay_stimulus(self):
+        self.sim_folder = os.path.join(OPTS.openram_temp, OPTS.energy_sim)
+
+        if not os.path.exists(self.sim_folder):
+            os.makedirs(self.sim_folder)
+
+        existing_dc = os.path.join(OPTS.openram_temp, "spectre.dc")
+        if os.path.exists(existing_dc):
+            shutil.copy(existing_dc, self.sim_folder)
+
+        temp_stim = os.path.join(self.sim_folder, "stim.sp")
+        self.sf = open(temp_stim, "w")
+
+        self.ic_filename = os.path.join(self.sim_folder, "sram_ic")
+
+        super().write_delay_stimulus()
+
+        # OPTS.tran_options = getattr(OPTS, "tran_options", "") + "readic={}".format(self.ic_filename)
+
+        OPTS.openram_temp = self.sim_folder
+
+    def set_data(self, address, data):
+        for col in range(self.sram.num_cols):
+            q_label = self.probe.state_probes[address][col]
+            self.sf.write("ic {}={} \n".format(q_label, data[self.sram.num_cols-1-col]*0.9))
+
+    def probe_addresses(self, address_data_dict):
+
+        addresses = list(address_data_dict.keys())
+
+        self.stim.replace_pex_subcells()
+
+        self.probe = probe = BlProbe(self.sram, OPTS.pex_spice)
+
+        for address in addresses:
+            probe.probe_address(address)
+
+        probe.probe_dout_masks()
+
+        self.run_drc_lvs_pex()
+
+        probe.extract_probes()
+
+        self.sf.write("simulator lang=spectre \n")
+        self.sf.write("ic en_0=0 \n")
+        self.sf.write("ic en_1=0 \n")
+
+        for address in addresses:
+            self.set_data(address, address_data_dict[address])
+        self.sf.write("simulator lang=spice \n")
+
+        self.state_probes = probe.state_probes
+        self.decoder_probes = probe.decoder_probes
+        self.clk_buf_probe = probe.clk_buf_probe
+        self.dout_probes = probe.dout_probes
+        self.mask_probes = probe.mask_probes
+
+        self.bitline_probes = probe.bitline_probes
+        self.br_probes = probe.br_probes
+
+        return probe
+
     def generate_steps(self):
-        # TODO addresses to use?
-        a_address = self.sram.num_words - 1  # measure using topmost row
-        b_address = 0
-        c_address = int(self.sram.num_words/2)
 
-        num_cols = self.num_cols
-        word_size = self.word_size
+        if OPTS.baseline:
+            self.generate_baseline_energy()
+        elif OPTS.serial:
+            self.generate_bit_serial_energy()
+        else:
+            self.generate_bit_parallel_energy()
 
-        def select_cols(x):
-            if len(x) >= num_cols:
-                return x[:num_cols]
-            else:
-                repeats = ceil(num_cols/len(x))
-                return (x*repeats)[:num_cols]
-
-        data_one = select_cols([0]*word_size + [1, 0, 0, 1]*int(word_size/4))
-        data_two = select_cols([0]*(word_size-1) + [1] + [1, 0, 1, 0]*int(word_size/4))
-        data_three = select_cols([1] * word_size + [1, 1, 0, 0] * int(word_size / 4))
-
-        mask_one = select_cols([1]*(2*word_size))
-        mask_two = select_cols([1] * (2 * word_size))
-        mask_three = select_cols([1]*word_size + [1, 1, 0, 0]*int(word_size/4))
-
-        a_data = [data_three[i] if mask_three[i] else data_one[i] for i in range(num_cols)]
-        b_data = data_two
-
-        probe = self.probe_addresses([a_address, b_address, c_address])
-
-        self.command_comments.append("* Period = {} \n".format(self.period))
-        self.command_comments.append("* Duty Cycle = {} \n".format(self.duty_cycle))
-
-
-        # TODO fill in energy sims depending on serial or parallel or baseline
-        # New operations will need to be defined for the bit-serial case
-
-        self.read_data(b_address, "Read B ({})".format(b_address))
-        self.write_masked_data(a_address, data_one, mask_one, "Write A ({})".format(a_address))
-        self.read_data(b_address, "Read B ({})".format(b_address))
-        self.write_masked_data(b_address, data_two, mask_two, "Write B ({})".format(b_address))
-        self.read_data(a_address, "Read A ({})".format(a_address))
-        # set bank_sel to zero and measure leakage
-        self.bank_sel = 0
-        self.command_comments.append("*** t = {} {} \n".format(self.current_time, "Leakage"))
-        self.write_pwl_from_key("bank_sel")
-        self.current_time += 10*self.period
-
-        self.saved_nodes = list(sorted(list(probe.saved_nodes) + list(self.dout_probes.values())
+        self.saved_nodes = list(sorted(list(self.probe.saved_nodes) + list(self.dout_probes.values())
                                        + list(self.mask_probes.values())))
 
         self.saved_nodes.append(self.clk_buf_probe)
 
-        self.saved_currents = probe.current_probes
+
+    def generate_bit_serial_energy(self):
+        pass
+
+    def generate_bit_parallel_energy(self):
+        pass
+
+    def generate_baseline_energy(self):
+        if OPTS.energy_sim == "read":
+            self.probe_addresses({0: [1, 0]*int(self.sram.num_cols/2)})
+            self.baseline_read(0, "Read B ({})".format(0))
+            # self.baseline_read(0, "Read B ({})".format(0))
+            # self.baseline_read(0, "Read B ({})".format(0))
+            # self.baseline_read(0, "Read B ({})".format(0))
 

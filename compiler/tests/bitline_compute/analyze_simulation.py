@@ -249,22 +249,36 @@ def pattern_from_saved(pattern, *args):
     return pattern
 
 
-baseline = True
+mode = "compute"
 word_size = 32
-num_cols = 32
-num_rows = 32
+
+num_cols = 256
+num_rows = 128
 fixed = True
-schematic = True
+schematic = False
+
+baseline = serial = False
+
+if mode == "baseline":
+    baseline = True
+    folder_name = mode
+elif mode == "serial":
+    serial = True
+    folder_name = mode
+else:
+    folder_name = "compute"
 
 num_words = int(num_cols / word_size)
 address_width = int(np.log2(num_rows))
 
-folder_name = "baseline" if baseline else "compute"
 openram_temp = os.path.join(os.environ["SCRATCH"], "openram", "bl_sram")
+
+openram_temp = os.getenv("openram_temp", openram_temp)
+
 fixed_str = "_fixed" if fixed else ""
 temp_folder = os.path.join(openram_temp, "{}_{}_{}{}".format(folder_name, num_cols, num_rows, fixed_str))
 
-sim_dir = temp_folder
+sim_dir = os.getenv("temp_folder", temp_folder)
 
 debug.info(1, "Simulation Dir = {}".format(sim_dir))
 
@@ -313,7 +327,8 @@ nor_pattern = "v(nor[{}])"
 cin_pattern = "cin[{}]"
 cout_pattern = "v(cout[{}])"
 
-period = float(search_file(stim_file, "\* Period = ([0-9\.]+) ")) * 1e-9
+# period = float(search_file(stim_file, "\* Period = ([0-9\.]+) ")) * 1e-9
+period = 1.8e-9
 duty_cycle = float(search_file(stim_file, "\* Duty Cycle = ([0-9\.]+) "))
 # duty_cycle = 0.4
 
@@ -330,7 +345,7 @@ if __name__ == "__main__":
     max_decoder_delay, _ = measure_delay(re.compile('decoder_a.*= (?P<delay>\S+)\s\n'), 0.9 * period)
 
     # Precharge delay
-    max_precharge, _ = measure_delay(re.compile('precharge_delay.*= (?P<delay>\S+)\s\n'), 0.9 * period)
+    max_precharge, _ = measure_delay(re.compile('precharge_delay.*= (?P<delay>\S+)\s\n'), duty_cycle * period)
 
     print("\nDecoder delay = {:.2f}p".format(max_decoder_delay / 1e-12))
     print("Precharge delay = {:.2f}p".format(max_precharge / 1e-12))
@@ -370,45 +385,47 @@ if __name__ == "__main__":
 
     print("Max read energy = {:.2f} pJ".format(max(read_energies) / 1e-12))
 
-    # Read + write to SR
-    sr_time = 1e-9 * float(search_file(stim_file, "t = ([0-9\.]+) Shift-Register"))
-    sr_energy = measure_energy([sr_time - period, sr_time + period])
+    if not baseline:
 
-    print("----------------Sum Analysis---------------")
-    bitline_events = search_file(stim_file, "t = ([0-9\.]+) Bitline \(([0-9]+)\) \+ \(([0-9]+)\) ")
+        # Read + write to SR
+        sr_time = 1e-9 * float(search_file(stim_file, "t = ([0-9\.]+) Shift-Register"))
+        sr_energy = measure_energy([sr_time - period, sr_time + period])
 
-    for bitline_time_, addr0_, addr1_ in bitline_events:
-        verify_bitline_event(bitline_time_, addr0_, addr1_)
+        print("----------------Sum Analysis---------------")
+        bitline_events = search_file(stim_file, "t = ([0-9\.]+) Bitline \(([0-9]+)\) \+ \(([0-9]+)\) ")
 
-    # sum_delays = [measure_bitline_delays(1e-9*float(x[0])) for x in bitline_events]
+        for bitline_time_, addr0_, addr1_ in bitline_events:
+            verify_bitline_event(bitline_time_, addr0_, addr1_)
 
-    bitline_times = [1e-9 * float(x[0]) for x in bitline_events]
+        # sum_delays = [measure_bitline_delays(1e-9*float(x[0])) for x in bitline_events]
 
-    sum_delays = [clk_bar_to_bus_delay(data_flop_in_pattern, x + duty_cycle * period,
-                                       x + (1 + duty_cycle) * period, num_bits=num_cols)
-                  for x in bitline_times]
+        bitline_times = [1e-9 * float(x[0]) for x in bitline_events]
 
-    for i in range(len(sum_delays)):
-        sum_delays[i] = [sum_delays[i][j] if sum_delays[i][j] < np.inf else 0 for j in range(len(sum_delays[i]))]
+        sum_delays = [clk_bar_to_bus_delay(data_flop_in_pattern, x + duty_cycle * period,
+                                           x + (1 + duty_cycle) * period, num_bits=num_cols)
+                      for x in bitline_times]
 
-    print("max clk_bar to data in flop delay (sum) = {:.2f}p".format(np.max(sum_delays) / 1e-12))
+        for i in range(len(sum_delays)):
+            sum_delays[i] = [sum_delays[i][j] if sum_delays[i][j] < np.inf else 0 for j in range(len(sum_delays[i]))]
 
-    print("----------------Energy Analysis---------------")
+        print("max clk_bar to data in flop delay (sum) = {:.2f}p".format(np.max(sum_delays) / 1e-12))
 
-    # Read + write to SR
-    sr_time = 1e-9 * float(search_file(stim_file, "t = ([0-9\.]+) Shift-Register"))
-    sr_energy = measure_energy([sr_time - period, sr_time + period])
-    print("Read and Write to SR energy = {:.2f} pJ".format(sr_energy / 1e-12))
+        print("----------------Energy Analysis---------------")
 
-    # Add + Write back
-    for action in ["MASK-IN", "MSB", "LSB"]:
-        write_time = 1e-9 * float(search_file(stim_file, "t = ([0-9\.]+) Write-back {}".format(action)))
-        energy = measure_energy([write_time - period, write_time + period])
-        print("BL compute and write back using {} energy = {:.2f} pJ".format(action, energy / 1e-12))
+        # Read + write to SR
+        sr_time = 1e-9 * float(search_file(stim_file, "t = ([0-9\.]+) Shift-Register"))
+        sr_energy = measure_energy([sr_time - period, sr_time + period])
+        print("Read and Write to SR energy = {:.2f} pJ".format(sr_energy / 1e-12))
 
-    print("----------------Critical Paths---------------")
+        # Add + Write back
+        for action in ["MASK-IN", "MSB", "LSB"]:
+            write_time = 1e-9 * float(search_file(stim_file, "t = ([0-9\.]+) Write-back {}".format(action)))
+            energy = measure_energy([write_time - period, write_time + period])
+            print("BL compute and write back using {} energy = {:.2f} pJ".format(action, energy / 1e-12))
 
-    print("\nWrite Critical Path")
+        print("----------------Critical Paths---------------")
+
+        print("\nWrite Critical Path")
 
     # write:
     write_events = search_file(stim_file, "t = ([0-9\.]+) Write .* \(([0-9]+)\)")

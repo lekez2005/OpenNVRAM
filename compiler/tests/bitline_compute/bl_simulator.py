@@ -11,6 +11,7 @@ class BlSimulator(TestBase):
     baseline = False
     run_optimizations = True
     serial = False
+    energy_sim = False
 
     def setUp(self):
         super(BlSimulator, self).setUp()
@@ -56,6 +57,8 @@ class BlSimulator(TestBase):
 
         delay.trimsp = False
 
+        OPTS.sense_trigger_delay = 0.6
+
         delay.read_period = 2.2
         delay.write_period = 2.2
         delay.read_duty_cycle = 0.4
@@ -73,17 +76,17 @@ class BlSimulator(TestBase):
         delay.stim.run_sim()
 
     def test_schematic(self):
-        use_pex = True
+        use_pex = False
         OPTS.trim_netlist = False
         OPTS.run_drc = False
-        OPTS.run_lvs = True
-        OPTS.run_pex = True
+        OPTS.run_lvs = False
+        OPTS.run_pex = False
 
         OPTS.top_level_pex = True
 
         OPTS.separate_vdd = False
 
-        OPTS.energy_sim = True
+        OPTS.energy_sim = BlSimulator.energy_sim
 
         self.run_commands(use_pex=use_pex, word_size=word_size, num_words=num_words)
 
@@ -95,8 +98,8 @@ else:
     BlSimulator.run_optimizations = False  # for now just always use the hand-tuned values
 
 force_bit_serial = False  # just to make testing easier
-word_size = 256
-num_words = 128
+word_size = 32
+num_words = 32
 
 if "serial" in sys.argv or force_bit_serial:
     force_bit_serial = True
@@ -106,13 +109,17 @@ elif "baseline" in sys.argv:
 else:
     folder_name = "compute"
 
+for arg in sys.argv:
+    if "energy=" in arg:
+        BlSimulator.energy_sim = arg[7:]
+
 BlSimulator.serial = force_bit_serial
 
 openram_temp = os.path.join(os.environ["SCRATCH"], "openram", "bl_sram")
 
 temp_folder = os.path.join(openram_temp, "{}_{}_{}".format(folder_name, word_size, num_words))
 if not BlSimulator.run_optimizations:
-    temp_folder += "_fixed"
+    temp_folder += "_fixed3"
 BlSimulator.temp_folder = temp_folder
 
 BlSimulator.run_tests(__name__)

@@ -1,4 +1,5 @@
 import os
+import random
 from importlib import reload
 from math import ceil
 
@@ -121,13 +122,15 @@ class SimStepsGenerator(SequentialDelay):
          Creates a stimulus file for simulations to probe a bitcell at a given clock period.
         """
         self.duty_cycle = self.read_duty_cycle
+        self.period = self.read_period
 
         reload(characterizer)
 
         # creates and opens stimulus file for writing
         self.current_time = 0
-        temp_stim = os.path.join(OPTS.openram_temp, "stim.sp")
-        self.sf = open(temp_stim, "w")
+        if not getattr(self, "sf", None):
+            temp_stim = os.path.join(OPTS.openram_temp, "stim.sp")
+            self.sf = open(temp_stim, "w")
         self.sf.write("{} \n".format(self.sram))
         if OPTS.spice_name == "spectre":
             self.sf.write("simulator lang=spice\n")
@@ -236,14 +239,22 @@ class SimStepsGenerator(SequentialDelay):
             self.setup_write_measurements(b_address)
             self.baseline_write(b_address, data_two, mask_two, "Write B ({})".format(b_address))
 
-            self.setup_write_measurements(a_address)
-            self.baseline_write(a_address, data_three, mask_three, "Write A ({})".format(a_address))
+            self.setup_read_measurements(b_address)
+            self.baseline_read(b_address, "Read B ({})".format(b_address))
+
+            self.setup_write_measurements(c_address)
+            self.baseline_write(c_address, data_three, mask_three, "Write C ({})".format(c_address))
+
+            self.setup_read_measurements(a_address)
+            self.baseline_read(a_address, "Read A ({})".format(a_address))
 
             self.setup_read_measurements(b_address)
             self.baseline_read(b_address, "Read B ({})".format(b_address))
 
-            self.setup_read_measurements(a_address)
-            self.baseline_read(a_address, "Read A ({})".format(a_address))
+            self.setup_write_measurements(a_address)
+            self.baseline_write(a_address, data_three, mask_three, "Write A ({})".format(a_address))
+
+
 
         else:
             self.bank_sel = 1
@@ -272,7 +283,6 @@ class SimStepsGenerator(SequentialDelay):
                                  sr_out="s_sr", comment=" A + B")
 
             self.sr_en = 0
-
             self.write_back(c_address, bus_sel="s_sum", sr_in="s_mask_in", sr_out="s_sr",
                             comment="Write-back MASK-IN to C ({})".format(c_address))
 
@@ -427,6 +437,7 @@ class SimStepsGenerator(SequentialDelay):
 
         self.update_output()
 
+
     def write_back(self, address_int, bus_sel="s_sum", sr_in="s_mask_in", sr_out="s_sr", comment=""):
         self.setup_mask_measurements()
         address_vec = self.convert_address(address_int)
@@ -449,6 +460,7 @@ class SimStepsGenerator(SequentialDelay):
         self.bank_sel = 0
         current_sr_en = self.sr_en
         self.sr_en = 1
+
         self.set_selects(bus_sel, sr_in, sr_out)
         self.update_output()
         self.bank_sel = 1
@@ -473,6 +485,7 @@ class SimStepsGenerator(SequentialDelay):
 
         self.update_output()
 
+
     def set_selects(self, bus_sel=None, sr_in=None, sr_out=None):
 
         def one_hot_mux(selected, all_sels):
@@ -495,6 +508,387 @@ class SimStepsGenerator(SequentialDelay):
             selected = [bus_sel, sr_in, sr_out]
             for i in range(3):
                 one_hot_mux(selected[i], selects[i])
+    # uOPS
+    def rd(self, addr):
+        """Read an address. Address is binary vector"""
+        addr_v = self.convert_address(addr)
+
+        self.command_comments.append("* [{: >20}] rd {}\n".format(self.current_time, addr_v))
+
+        self.address = list(reversed(addr_v))
+
+        self.read = 1
+
+        self.en_0 = 1
+        self.en_1 = 0
+
+        self.diff = 1
+        self.diffb = 0
+
+        if OPTS.serial:
+            self.mask_en = 0
+            self.sr_en   = 0
+            self.s_cout  = 1
+        else:
+            self.sr_en   = 0
+
+        self.set_selects(bus_sel="s_and")
+
+        self.acc_en     = 1
+        self.acc_en_inv = 0
+
+        self.duty_cycle = self.read_duty_cycle
+        self.period = self.read_period
+
+        self.update_output()
+
+    def wr(self, addr, data_v, mask_v):
+        """Write data to an address. Data can be integer or binary vector. Address is binary vector"""
+        #self.setup_mask_measurements()
+
+        addr_v = self.convert_address(addr)
+        #data_v = self.convert_address(data)
+        #mask_v = self.convert_address(mask)
+
+        self.command_comments.append("* [{: >20}] wr {}, {}\n".format(self.current_time, addr_v, data_v))
+
+        self.mask = list(reversed(mask_v))
+        self.address = list(reversed(addr_v))
+        self.data = list(reversed(data_v))
+
+        self.set_selects(bus_sel="s_data", sr_in="s_mask_in", sr_out="s_sr")
+
+        self.read = 0
+
+        if OPTS.serial:
+            self.mask_en = 1
+            self.sr_en   = 0
+            self.s_cout  = 1
+        else:
+            self.sr_en   = 1
+
+        self.en_0 = 1
+        self.en_1 = 0
+
+        self.acc_en     = 0
+        self.acc_en_inv = 1
+
+        self.update_output()
+
+    def blc(self, addr0, addr1):
+        addr0_v = self.convert_address(addr0)
+        addr1_v = self.convert_address(addr1)
+
+        self.command_comments.append("* [{: >20}] blc {}, {}\n".format(self.current_time, addr0_v, addr1_v))
+
+        self.address   = list(reversed(self.convert_address(addr0_v)))
+        self.address_1 = list(reversed(self.convert_address(addr1_v)))
+
+        self.read = 1
+
+        self.diff = 0
+        self.diffb = 1
+
+        self.en_0 = 1
+        self.en_1 = 1
+
+        if OPTS.serial:
+            self.mask_en = 0
+            self.sr_en   = 0
+            self.s_cout  = 1
+        else:
+            self.sr_en   = 0
+
+        #self.set_selects(bus_sel, sr_in, sr_out)
+
+        self.acc_en     = 1
+        self.acc_en_inv = 0
+
+        self.update_output()
+
+    def wb(self, addr, src, cond):
+        #self.setup_mask_measurements()
+
+        addr_v = self.convert_address(addr)
+
+        # Conditional Execution Selection
+        if   cond == 'msb'   : cond_str = 'if_msb.'
+        elif cond == 'lsb'   : cond_str = 'if_lsb.'
+        else                 : cond_str = ''
+
+        # Source Selection
+        if   src == 'and'    : src_str = '.and'
+        elif src == 'nand'   : src_str = '.nand'
+        elif src == 'nor'    : src_str = '.nor'
+        elif src == 'or'     : src_str = '.or'
+
+        elif src == 'xor'    : src_str = '.xor'
+        elif src == 'xnor'   : src_str = '.xnor'
+
+        elif src == 'add'    : src_str = '.add'
+
+        elif src == 'data_in': src_str = '.data_in'
+
+        else                 : src_str = '.and'
+
+        self.command_comments.append("* [{: >20}] {}wb{} {}\n".format(self.current_time, cond_str, src_str, addr_v))
+
+        self.address = list(reversed(addr_v))
+
+        # Generate Signals
+        if   src == 'and'    : bus_sel = 's_and'
+        elif src == 'nand'   : bus_sel = 's_nand'
+        elif src == 'nor'    : bus_sel = 's_nor'
+        elif src == 'or'     : bus_sel = 's_or'
+
+        elif src == 'xor'    : bus_sel = 's_xor'
+        elif src == 'xnor'   : bus_sel = 's_xnor'
+
+        elif src == 'add'    : bus_sel = 's_sum'
+
+        elif src == 'data_in': bus_sel = 's_data_in'
+
+        else                 : bus_sel = 's_and'
+
+
+        # Conditionals/Masking Signals
+        sr_en = 0
+
+        if   cond == 'msb'   : pass
+        elif cond == 'lsb'   : pass
+        else                 : sr_en = 1; sr_in = 's_mask_in'
+
+        if   cond == 'msb'   : sr_out = 's_msb'
+        elif cond == 'lsb'   : sr_out = 's_lsb'
+        else                 : sr_out = 's_sr'
+
+        self.set_selects(bus_sel, sr_in, sr_out)
+
+        self.read = 0
+
+        self.sr_en = sr_en
+
+        self.en_0 = 1
+        self.en_1 = 0
+
+        self.acc_en     = 0
+        self.acc_en_inv = 1
+
+        if OPTS.serial:
+            self.mask_en = 0
+            self.sr_en   = 1 if src == 'add' else 0
+            self.s_cout  = 1
+        else:
+            self.sr_en   = 0
+
+        self.update_output()
+
+    # All possible variants
+    def        wb_and    (self, addr): self.wb(addr, 'and'    , ''   )
+    def if_msb_wb_and    (self, addr): self.wb(addr, 'and'    , 'msb')
+    def if_lsb_wb_and    (self, addr): self.wb(addr, 'and'    , 'lsb')
+    def        wb_nand   (self, addr): self.wb(addr, 'nand'   , ''   )
+    def if_msb_wb_nand   (self, addr): self.wb(addr, 'nand'   , 'msb')
+    def if_lsb_wb_nand   (self, addr): self.wb(addr, 'nand'   , 'lsb')
+    def        wb_or     (self, addr): self.wb(addr, 'or'     , ''   )
+    def if_msb_wb_or     (self, addr): self.wb(addr, 'or'     , 'msb')
+    def if_lsb_wb_or     (self, addr): self.wb(addr, 'or'     , 'lsb')
+    def        wb_nor    (self, addr): self.wb(addr, 'nor'    , ''   )
+    def if_msb_wb_nor    (self, addr): self.wb(addr, 'nor'    , 'msb')
+    def if_lsb_wb_nor    (self, addr): self.wb(addr, 'nor'    , 'lsb')
+
+    def        wb_xor    (self, addr): self.wb(addr, 'xor'    , ''   )
+    def if_msb_wb_xor    (self, addr): self.wb(addr, 'xor'    , 'msb')
+    def if_lsb_wb_xor    (self, addr): self.wb(addr, 'xor'    , 'lsb')
+    def        wb_xnor   (self, addr): self.wb(addr, 'xnor'   , ''   )
+    def if_msb_wb_xnor   (self, addr): self.wb(addr, 'xnor'   , 'msb')
+    def if_lsb_wb_xnor   (self, addr): self.wb(addr, 'xnor'   , 'lsb')
+
+    def        wb_add    (self, addr): self.wb(addr, 'add'    , ''   )
+    def if_msb_wb_add    (self, addr): self.wb(addr, 'add'    , 'msb')
+    def if_lsb_wb_add    (self, addr): self.wb(addr, 'add'    , 'lsb')
+    def        wb_data_in(self, addr): self.wb(addr, 'data_in', ''   )
+    def if_msb_wb_data_in(self, addr): self.wb(addr, 'data_in', 'msb')
+    def if_lsb_wb_data_in(self, addr): self.wb(addr, 'data_in', 'lsb')
+
+    # Shift-Register
+    def srl(self):
+        self.command_comments.append("* [{: >20}] srl\n".format(self.current_time))
+
+        self.set_selects(sr_in = 's_shift')
+
+        self.sr_in = 1
+
+        self.read = 0
+        self.en_0 = 0
+        self.en_1 = 0
+
+        self.acc_en     = 0
+        self.acc_en_inv = 1
+
+        self.update_output()
+
+    # CIN
+    def set_cin(self, val):
+        val = [0] * len(self.c_val)
+
+        self.c_val = val
+
+        self.sr_en = 1
+
+        self.read = 0
+        self.en_0 = 0
+        self.en_1 = 0
+
+        self.acc_en     = 0
+        self.acc_en_inv = 1
+
+        self.update_output()
+
+    def wb_mask(self, src):
+        #self.setup_mask_measurements()
+
+        # Source Selection
+        if   src == 'and'    : src_str = '.and'
+        elif src == 'nand'   : src_str = '.nand'
+        elif src == 'nor'    : src_str = '.nor'
+        elif src == 'or'     : src_str = '.or'
+
+        elif src == 'xor'    : src_str = '.xor'
+        elif src == 'xnor'   : src_str = '.xnor'
+
+        elif src == 'add'    : src_str = '.add'
+
+        elif src == 'data_in': src_str = '.data_in'
+
+        else                 : src_str = '.and'
+
+        self.command_comments.append("* [{: >20}] wb_mask{}\n".format(self.current_time, src_str))
+
+        # Generate Signals
+        sr_in = 's_bus'
+
+        if   src == 'and'    : bus_sel = 's_and'
+        elif src == 'nand'   : bus_sel = 's_nand'
+        elif src == 'nor'    : bus_sel = 's_nor'
+        elif src == 'or'     : bus_sel = 's_or'
+
+        elif src == 'xor'    : bus_sel = 's_xor'
+        elif src == 'xnor'   : bus_sel = 's_xnor'
+
+        elif src == 'add'    : bus_sel = 's_sum'
+
+        elif src == 'data_in': bus_sel = 's_data_in'
+
+        else                 : bus_sel = 's_and'
+
+        self.set_selects(bus_sel = bus_sel, sr_in = sr_in)
+
+        if OPTS.serial:
+            self.mask_en = 1
+            self.sr_en   = 0
+            self.s_cout  = 1
+        else:
+            self.sr_en   = 1
+
+        self.read = 0
+        self.en_0 = 0
+        self.en_1 = 0
+
+        self.acc_en     = 0
+        self.acc_en_inv = 1
+
+        self.update_output()
+
+    # All possible variants
+    def wb_mask_and    (self): self.wb('and'    )
+    def wb_mask_nand   (self): self.wb('nand'   )
+    def wb_mask_or     (self): self.wb('or'     )
+    def wb_mask_nor    (self): self.wb('nor'    )
+
+    def wb_mask_xor    (self): self.wb('xor'    )
+    def wb_mask_xnor   (self): self.wb('xnor'   )
+
+    def wb_mask_add    (self): self.wb('add'    )
+    def wb_mask_data_in(self): self.wb('data_in')
+
+    # Macro-Operations
+    def add(self):
+        num_cols = self.num_cols
+        word_size = self.word_size
+
+        def select_cols(x):
+            if len(x) >= num_cols:
+                return x[:num_cols]
+            else:
+                repeats = ceil(num_cols/len(x))
+                return (x*repeats)[:num_cols]
+
+        data_one = select_cols([0]*word_size + [1, 0, 0, 1]*int(word_size/4))
+        data_two = select_cols([0]*(word_size-1) + [1] + [1, 0, 1, 0]*int(word_size/4))
+        data_three = select_cols([1] * word_size + [1, 1, 0, 0] * int(word_size / 4))
+
+        mask_all = select_cols([1] * (2 * word_size))
+
+        bit_sz  = int(32 / 8)
+        MAX_INT = 1 << bit_sz
+
+        A = [random.randint(0, MAX_INT - 1) for i in range(32)]
+        B = [random.randint(0, MAX_INT - 1) for i in range(32)]
+
+        C = []
+        for a, b in zip(A, B):
+            C += [a + b]
+
+        verify_C = [0 for i in range(32)]
+
+        # Load Data
+        addr_A = 0 * bit_sz
+        addr_B = 1 * bit_sz
+        addr_C = 2 * bit_sz
+
+        self.set_cin(0)
+
+        for bit in range(0, bit_sz):
+            mask   = 1 << bit
+            # A
+            data_A = []
+            for i in range(32):
+                val     = 1 if (A[i] & mask) != 0 else 0
+                data_A += [val]
+
+            # B
+            data_B = []
+            for i in range(32):
+                val     = 1 if (B[i] & mask) != 0 else 0
+                data_B += [val]
+
+            # Write data
+            self.wr(bit + addr_A, data_A, mask_all)
+            self.wr(bit + addr_B, data_B, mask_all)
+
+        # Add two numbers
+        for i in range(bit_sz):
+          self.blc(addr_A + i, addr_B + i)
+          self.wb_add(addr_C + i)
+
+        # Verify
+        for bit in range(0, bit_sz):
+            mask   = 1 << bit
+
+            # Read
+            self.rd(addr_C + bit)
+
+            # Parse
+           #mask   = 1 << bit
+
+            # A
+            data_C = []
+            for i in range(32):
+                val     = 1 if (C[i] & mask) != 0 else 0
+                data_C += [val]
+
+            self.command_comments.append("* expected = {}\n".format(data_C))
 
     def setup_write_measurements(self, address_int):
         """new_val is MSB first"""

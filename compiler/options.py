@@ -96,6 +96,10 @@ class options(optparse.Values):
 
     cells_per_group = 1
 
+    sense_amp_type = "sense_amp"
+    LATCHED_SENSE_AMP = "latched_sense_amp"
+    MIRROR_SENSE_AMP = "sense_amp"
+
     def __init__(self):
         super().__init__()
         self.set_temp_folder()

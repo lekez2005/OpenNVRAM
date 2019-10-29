@@ -12,11 +12,28 @@ from testutils import parse_args
 class TestBase(testutils.OpenRamTest):
     config_template = "config_bl_{}"
 
+    def setUp(self):
+        super().setUp()
+        from globals import OPTS
+        OPTS.serial = getattr(self, "serial", False)
+
+        if getattr(self, "latched", False):
+            OPTS.configure_sense_amps(OPTS.LATCHED_SENSE_AMP)
+        else:
+            OPTS.configure_sense_amps(OPTS.MIRROR_SENSE_AMP)
+
     @staticmethod
     def run_tests(name):
         if name == "__main__":
             if "baseline" in sys.argv:
+                TestBase.baseline = True
                 TestBase.config_template = "config_baseline_{}"
                 sys.argv.remove("baseline")
+            elif "serial" in sys.argv:
+                TestBase.serial = True
+                sys.argv.remove("serial")
+            if "latched" in sys.argv:
+                TestBase.latched = True
+                sys.argv.remove("latched")
             parse_args()
             unittest.main()

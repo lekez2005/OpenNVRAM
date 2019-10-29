@@ -24,7 +24,10 @@ class SpiceDut(stimuli):
                 self.sf.write("A[{0}] ".format(i))
             self.sf.write(" read ")
             self.sf.write("{0} ".format(tech.spice["clk"]))
-            self.sf.write(" bank_sel sense_trig {0} {1} ".format(self.vdd_name, self.gnd_name))
+            if OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
+                self.sf.write(" {0} {0} {1} ".format(self.vdd_name, self.gnd_name))
+            else:
+                self.sf.write(" bank_sel sense_trig {0} {1} ".format(self.vdd_name, self.gnd_name))
 
         else:
             for i in range(dbits):
@@ -40,8 +43,8 @@ class SpiceDut(stimuli):
 
             if OPTS.serial:
                 for col in range(dbits):
-                    self.sf.write(" c_val[{0}] cin[{0}] cout[{0}] ".format(col))
-                    # self.sf.write(" c_val[{0}] ".format(col))
+                    # self.sf.write(" c_val[{0}] cin[{0}] cout[{0}] ".format(col))
+                    self.sf.write(" c_val[{0}] ".format(col))
             else:
                 for word in range(self.words_per_row):
                     self.sf.write(" cin[{0}] cout[{0}] ".format(word))
@@ -51,13 +54,17 @@ class SpiceDut(stimuli):
             if OPTS.serial:
                 self.sf.write(" s_and s_nand s_or s_nor s_xor s_xnor s_sum s_data s_cout "
                               "s_mask_in s_bus ")
-
-                self.sf.write(" read bank_sel sense_trig diff diffb  mask_en sr_en ")
+                if OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
+                    self.sf.write(" read bank_sel mask_en sr_en ")
+                else:
+                    self.sf.write(" read bank_sel sense_trig diff diffb  mask_en sr_en ")
             else:
                 self.sf.write(" s_and s_nand s_or s_nor s_xor s_xnor s_sum s_data "
                               "s_mask_in s_bus s_shift s_sr s_lsb s_msb ")
-
-                self.sf.write(" read bank_sel sense_trig diff diffb sr_en ")
+                if OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
+                    self.sf.write(" read bank_sel sr_en ")
+                else:
+                    self.sf.write(" read bank_sel sense_trig diff diffb sr_en ")
             self.sf.write("{0} ".format(tech.spice["clk"]))
 
             self.sf.write("{0} {1} ".format(self.vdd_name, self.gnd_name))

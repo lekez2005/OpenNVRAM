@@ -10,7 +10,6 @@ from globals import OPTS
 class BlSimulator(TestBase):
     baseline = False
     run_optimizations = True
-    serial = False
     energy_sim = False
 
     def setUp(self):
@@ -34,9 +33,7 @@ class BlSimulator(TestBase):
 
         OPTS.run_optimizations = self.run_optimizations
 
-        OPTS.serial = self.serial
-
-        if self.serial:
+        if OPTS.serial:
             sram_class = BsSram
         elif OPTS.baseline:
             sram_class = BaselineSram
@@ -76,11 +73,11 @@ class BlSimulator(TestBase):
         delay.stim.run_sim()
 
     def test_schematic(self):
-        use_pex = False
+        use_pex = True
         OPTS.trim_netlist = False
-        OPTS.run_drc = False
-        OPTS.run_lvs = False
-        OPTS.run_pex = False
+        OPTS.run_drc = True
+        OPTS.run_lvs = True
+        OPTS.run_pex = True
 
         OPTS.top_level_pex = True
 
@@ -97,12 +94,10 @@ if 'fixed_buffers' in sys.argv:
 else:
     BlSimulator.run_optimizations = False  # for now just always use the hand-tuned values
 
-force_bit_serial = False  # just to make testing easier
-word_size = 32
-num_words = 32
+word_size = 256
+num_words = 128
 
-if "serial" in sys.argv or force_bit_serial:
-    force_bit_serial = True
+if "serial" in sys.argv:
     folder_name = "serial"
 elif "baseline" in sys.argv:
     folder_name = "baseline"
@@ -113,13 +108,13 @@ for arg in sys.argv:
     if "energy=" in arg:
         BlSimulator.energy_sim = arg[7:]
 
-BlSimulator.serial = force_bit_serial
+if "latched" in sys.argv:
+    folder_name += "_latched"
 
 openram_temp = os.path.join(os.environ["SCRATCH"], "openram", "bl_sram")
 
 temp_folder = os.path.join(openram_temp, "{}_{}_{}".format(folder_name, word_size, num_words))
-if not BlSimulator.run_optimizations:
-    temp_folder += "_fixed3"
+
 BlSimulator.temp_folder = temp_folder
 
 BlSimulator.run_tests(__name__)

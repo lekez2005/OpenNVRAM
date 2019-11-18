@@ -8,7 +8,7 @@ class sf_wordline_driver(design.design):
     """
     wordline driver
     """
-    pin_names = "wl_in en vbias_p vbias_n wl vdd vdd_lo gnd".split()
+    pin_names = "wl_in en vbias_p vbias_n wl vdd gnd".split()
     lib_name = "sot_wordline_driver"
 
 
@@ -63,7 +63,7 @@ class sot_wl_driver_array(design.design):
             driver_inst = self.add_inst("driver{}".format(row), mod=self.wl_driver,
                                         offset=vector(0, y_offset), mirror=mirror)
             self.connect_inst(["in[{}]".format(row), "en", "vbias_p", "vbias_n", "wl[{}]".format(row), "vdd",
-                               "vdd_lo", "gnd"])
+                               "gnd"])
 
             self.module_insts.append(driver_inst)
 
@@ -74,7 +74,7 @@ class sot_wl_driver_array(design.design):
 
         for row in range(self.rows):
             self.copy_layout_pin(self.module_insts[row], "wl", "wl[{}]".format(row))
-            for pin_name in ["vdd_lo", "gnd"]:
+            for pin_name in ["gnd"]:
                 self.copy_layout_pin(self.module_insts[row], pin_name, pin_name)
 
     def analytical_delay(self, slew, load=0):

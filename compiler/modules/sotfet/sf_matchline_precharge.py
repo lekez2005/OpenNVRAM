@@ -15,6 +15,7 @@ class sf_matchline_precharge(design):
     """
 
     bitcell = None
+    test_contact = None
 
     def __init__(self, size=1):
         design.__init__(self, "matchline_precharge")
@@ -137,12 +138,10 @@ class sf_matchline_precharge(design):
                       height=self.height - nwell_y)
         
     def add_ml_pin(self):
-        bitcell_ml = self.bitcell.get_pin("ML")
-        y_offset = self.active_y_offset + 0.5*self.ptx_width - 0.5*self.m2_width
-        self.add_layout_pin("ml", "metal1", offset=vector(self.source_positions[-1], bitcell_ml.by()),
-                      width=self.width-self.source_positions[-1])
-        # self.add_layout_pin("ml", "metal1", offset=vector(self.width, y_offset),
-        #                     height=bitcell_ml.cy()-y_offset)
+        y_offset = self.active_y_offset + 0.5*self.ptx_width - 0.5*self.test_contact.second_layer_height
+        self.add_layout_pin("ml", "metal1",
+                            offset=vector(self.source_positions[-1]-0.5*self.test_contact.width, y_offset),
+                            width=self.test_contact.width, height=self.test_contact.second_layer_height)
 
     def add_gnd_pin(self):
         gnd_pin = self.bitcell.get_pin("gnd")
@@ -214,20 +213,22 @@ class sf_matchline_precharge(design):
             self.add_contact_center(contact.active_layers, offset=vector(x_offset, active_mid_y),
                                     size=(1, num_contacts))
 
+        self.test_contact = test_contact = contact(layer_stack=poly_contact.layer_stack,
+                                                   dimensions=[1, num_contacts])
         if self.tx_mults > 1:
-            test_contact = contact(layer_stack=contact.active_layers, dimensions=[1, num_contacts])
+
             for x_offset in self.source_positions:
                 self.add_contact_center(m1m2.layer_stack, offset=vector(x_offset, active_mid_y))
 
             # check height of contacts
 
-                if test_contact.second_layer_width * test_contact.second_layer_height < drc["minarea_metal1_minwidth"]:
+                if test_contact.second_layer_width * test_contact.second_layer_height < drc["minarea_metal1_contact"]:
                     # min m1 drc area
                     fill_width = 2*(self.contact_pitch - 0.5*self.m1_width - self.m1_space)
                     fill_height = utils.ceil(drc["minarea_metal1_contact"]/fill_width)
                     if fill_height < test_contact.second_layer_height:
                         fill_height = test_contact.second_layer_height
-                        fill_width = utils.ceil(drc["minarea_metal1_contact"]/fill_height)
+                        fill_width = max(utils.ceil(drc["minarea_metal1_contact"]/fill_height), self.m1_width)
                     self.add_rect_center("metal1", offset=vector(x_offset, active_mid_y), width=fill_width,
                                          height=fill_height)
 

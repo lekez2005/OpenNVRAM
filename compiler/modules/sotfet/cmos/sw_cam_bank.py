@@ -157,9 +157,8 @@ class SwCamBank(SfCamBank):
                              self.row_decoder_inst.by() - 0.5 * self.rail_height)
 
     def get_right_gnd_offset(self):
-        body_tap_width = self.bitcell_array.body_tap.width
         # need m3 -> m2 -> m1 via for ml
-        return body_tap_width - self.wide_m1_space - self.vdd_rail_width - self.m2_width - self.m2_space
+        return - self.wide_m1_space - self.vdd_rail_width
 
     def get_num_left_rails(self):
         # ml_chb, wordline_en, 2 will be below decoder
@@ -205,29 +204,33 @@ class SwCamBank(SfCamBank):
             precharge_ml = self.ml_precharge_array_inst.get_pin("ml[{}]".format(row))
             bitcell_ml = self.bitcell_array_inst.get_pin("ml[{}]".format(row))\
 
+            y_offset = bitcell_ml.by()
+            via_x_offset = bitcell_ml.lx() - self.line_end_space - m2m3.height
 
+            bend_x = precharge_ml.rx() + self.parallel_line_space
 
-            x_offset = bitcell_ml.lx() - self.m2_space - self.m2_width
-            y_offset = bitcell_ml.uy() - m1m2.second_layer_height if row % 2 == 1 else bitcell_ml.by()
-            self.add_contact(m1m2.layer_stack, offset=vector(x_offset, y_offset))
-            self.add_contact(m2m3.layer_stack, offset=vector(x_offset, y_offset))
-
-            x_offset2 = precharge_ml.rx() + self.parallel_line_space + self.m1_width
             if row % 2 == 0:
-                self.add_rect("metal1", offset=precharge_ml.lr(), width=x_offset2 - precharge_ml.rx())
-                self.add_rect("metal1", offset=vector(x_offset2, precharge_ml.by()),
-                              height=bitcell_ml.uy() - precharge_ml.by())
-                self.add_rect("metal1", offset=vector(x_offset2, y_offset), width=x_offset-x_offset2)
+                self.add_rect("metal1", offset=precharge_ml.ul() - vector(0, self.m2_width),
+                              width=bend_x - precharge_ml.lx() + self.m1_width)
+                self.add_rect("metal1", offset=vector(bend_x, precharge_ml.uy()),
+                              height=bitcell_ml.uy() - precharge_ml.uy())
+                self.add_rect("metal1", offset=vector(bend_x, y_offset), width=via_x_offset - bend_x)
             else:
-                self.add_rect("metal1", offset=precharge_ml.lr(), width=x_offset2 - precharge_ml.rx())
-                self.add_rect("metal1", offset=vector(x_offset2, y_offset),
-                              height=precharge_ml.uy() - y_offset)
-                self.add_rect("metal1", offset=vector(x_offset2, y_offset), width=x_offset - x_offset2)
+                self.add_rect("metal1", offset=precharge_ml.lr(), width=bend_x - precharge_ml.rx() + self.m1_width)
+                self.add_rect("metal1", offset=vector(bend_x, y_offset),
+                              height=precharge_ml.by() - y_offset)
+                self.add_rect("metal1", offset=vector(bend_x, y_offset), width=via_x_offset - bend_x)
 
-            self.add_rect("metal3", offset=vector(x_offset, bitcell_ml.by()), width=bitcell_ml.lx()-x_offset)
-            m2_fill_height = utils.ceil(self.minarea_metal1_minwidth/self.m2_width)
-            y_offset = bitcell_ml.uy() - m2_fill_height if row % 2 == 0 else bitcell_ml.by()
-            self.add_rect("metal2", offset=vector(x_offset, y_offset), height=m2_fill_height)
+            self.add_contact(m1m2.layer_stack, offset=vector(via_x_offset, y_offset), rotate=90)
+            self.add_contact(m2m3.layer_stack, offset=vector(via_x_offset, y_offset), rotate=90)
+
+            self.add_rect("metal3", offset=vector(via_x_offset, bitcell_ml.by()), width=bitcell_ml.lx()-via_x_offset)
+            m2_fill_height = m2m3.second_layer_height
+            m2_fill_height, m2_fill_width = self.calculate_min_m1_area(m2_fill_height, self.m2_width)
+
+            y_offset = bitcell_ml.cy() - 0.5*m2_fill_height
+            x_offset = via_x_offset - 0.5*(m2m3.second_layer_height + m2_fill_width)
+            self.add_rect("metal2", offset=vector(x_offset, y_offset), height=m2_fill_height, width=m2_fill_width)
 
             # bitcell ml to sense_amp
             sense_amp_ml = self.search_sense_inst.get_pin("ml[{}]".format(row))
@@ -341,7 +344,6 @@ class SwCamBank(SfCamBank):
 
                 write_driver_pin = self.write_driver_array_inst.get_pin(pin_name)
                 self.add_rect("metal4", offset=write_driver_pin.ul(), height=bitcell_pin.by()-write_driver_pin.uy())
-
 
     def get_collisions(self):
         write_en = self.write_driver_array_inst.get_pin("en")

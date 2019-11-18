@@ -61,7 +61,8 @@ class options(optparse.Values):
 
     spectre_format = "psfbin"
     decoder_flops = False
-    
+
+    verbose_save = False  # whether to save all lots of internal nodes e.g. cols for control signals, currents
 
     # These are the default modules that can be over-riden
     decoder = "hierarchical_decoder"
@@ -101,6 +102,8 @@ class options(optparse.Values):
     column_mux_size = 4
 
     cells_per_group = 1
+
+    predecode_sizes = [1, 2]
 
     sense_amp_type = "sense_amp"
     LATCHED_SENSE_AMP = "latched_sense_amp"

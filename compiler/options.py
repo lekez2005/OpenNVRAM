@@ -27,6 +27,12 @@ class options(optparse.Values):
     drc_exe = None
     lvs_exe = None
     pex_exe = None
+
+    use_ultrasim = False
+    ultrasim_threads = 8
+    ultrasim_speed = 3  # 1 (most accurate) -> 8 (least accurate)
+    ultrasim_mode = "a"  # a for analog, s for spice
+
     # The spice executable being used which is derived from the user PATH.
     spice_exe = ""
     # Run with extracted parasitics

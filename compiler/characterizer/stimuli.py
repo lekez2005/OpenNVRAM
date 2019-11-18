@@ -238,22 +238,40 @@ class stimuli():
 
     def write_control_spectre(self, end_time):
         self.sf.write("simulator lang=spectre\n")
-        self.sf.write("simulatorOptions options reltol=1e-3 vabstol=1e-6 iabstol=1e-12 temp={0} try_fast_op=no "
-                      "scalem=1.0 scale=1.0 gmin={1} rforce=100m maxnotes=10 maxwarns=10 "
-                      " preservenode=all topcheck=fixall "
-                      "digits=5 cols=80 dc_pivot_check=yes pivrel=1e-3\n".format(self.temperature, tech.spice["gmin"]))
-        self.sf.write('dcOp dc write="spectre.dc" readns="spectre.dc" maxiters=150 maxsteps=10000 annotate=status\n')
-        tran_options = OPTS.tran_options if hasattr(OPTS, "tran_options") else ""
-        self.sf.write('tran tran step={} stop={}n annotate=status maxiters=5 {}\n'.format("5p", end_time, tran_options))
-        if OPTS.use_pex:
-            nestlvl = 1
+        use_ultrasim = OPTS.use_ultrasim
+        if use_ultrasim:
+            from globals import find_exe
+            OPTS.spice_exe = find_exe("ultrasim")
+            self.sf.write("""
+usim_opt  dc=3
+usim_opt  sim_mode={}
+usim_opt  speed={}
+usim_opt  mt={}
+usim_opt  wf_format=psf
+usim_opt  postl=1
+usim_opt  rcr_fmax=20G
+                        """.format(OPTS.ultrasim_mode, OPTS.ultrasim_speed, OPTS.ultrasim_threads))
+            self.sf.write("tran tran step={} stop={}n ic=node write=spectre.dc \n".format("5p", end_time))
+            self.sf.write("simulator lang=spice\n")
+            self.sf.write(".probe v(*) depth=1 \n")  # save top level signals
         else:
-            nestlvl = OPTS.nestlvl if hasattr(OPTS, 'nestlvl') else 2
+            self.sf.write("simulatorOptions options reltol=1e-3 vabstol=1e-6 iabstol=1e-12 temp={0} try_fast_op=no "
+                          "scalem=1.0 scale=1.0 gmin={1} rforce=10m maxnotes=10 maxwarns=10 "
+                          " preservenode=all topcheck=fixall "
+                          "digits=5 cols=80 dc_pivot_check=yes pivrel=1e-3\n".format(self.temperature,
+                                                                                     tech.spice["gmin"]))
+            self.sf.write('dcOp dc write="spectre.dc" readns="spectre.dc" maxiters=150 maxsteps=10000 annotate=status\n')
+            tran_options = OPTS.tran_options if hasattr(OPTS, "tran_options") else ""
+            self.sf.write('tran tran step={} stop={}n ic=node write=spectre.dc annotate=status maxiters=5 {}\n'.format("5p", end_time, tran_options))
+            if OPTS.use_pex:
+                nestlvl = 1
+            else:
+                nestlvl = OPTS.nestlvl if hasattr(OPTS, 'nestlvl') else 2
 
-        self.sf.write('saveOptions options save=lvlpub nestlvl={} pwr=total \n'.format(nestlvl))
-        # self.sf.write('saveOptions options save=all pwr=total \n')
+            self.sf.write('saveOptions options save=lvlpub nestlvl={} pwr=total \n'.format(nestlvl))
+            # self.sf.write('saveOptions options save=all pwr=total \n')
 
-        self.sf.write("simulator lang=spice\n")
+            self.sf.write("simulator lang=spice\n")
 
     def write_include(self, circuit):
         """Writes include statements, inputs are lists of model files"""
@@ -315,17 +333,21 @@ class stimuli():
                                                          os.path.join(OPTS.openram_temp, "timing"))
             valid_retcode = 0
         elif OPTS.spice_name == "spectre":
-            extra_options = OPTS.spectre_options if hasattr(OPTS, "spectre_options") else " +aps +mt=32 "
-            if OPTS.use_pex:
-                # postlayout is more aggressive than +parasitics
-                extra_options += " +dcopt +postlayout "
-                # extra_options += " +dcopt +parasitics=20 "
-            cmd = "{0} -64 {1} -format {2} -raw {3} {4} -maxwarnstolog 1000 -maxnotestolog 1000 ".format(OPTS.spice_exe,
-            # cmd = "{0} -64 {1} -format {2} -raw {3} +aps {4} ".format(OPTS.spice_exe,
-                                                                       temp_stim,
-                                                                       OPTS.spectre_format,
-                                                                       OPTS.openram_temp,
-                                                                       extra_options)
+            use_ultrasim = OPTS.use_ultrasim
+            if use_ultrasim:
+                cmd = "{0} -64 {1} -raw {2}".format(OPTS.spice_exe, temp_stim, OPTS.openram_temp)
+            else:
+                extra_options = OPTS.spectre_options if hasattr(OPTS, "spectre_options") else " +aps +mt=32 "
+                if OPTS.use_pex:
+                    # postlayout is more aggressive than +parasitics
+                    extra_options += " +dcopt +postlayout "
+                    # extra_options += " +dcopt +parasitics=20 "
+                cmd = "{0} -64 {1} -format {2} -raw {3} {4} -maxwarnstolog 1000 -maxnotestolog 1000 ".format(OPTS.spice_exe,
+                # cmd = "{0} -64 {1} -format {2} -raw {3} +aps {4} ".format(OPTS.spice_exe,
+                                                                           temp_stim,
+                                                                           OPTS.spectre_format,
+                                                                           OPTS.openram_temp,
+                                                                           extra_options)
             valid_retcode = 0
         else:
             # ngspice 27+ supports threading with "set num_threads=4" in the stimulus file or a .spiceinit 

@@ -36,6 +36,8 @@ class SfCam(sram):
             connections.append("DATA[{0}]".format(i))
         for i in range(self.word_size):
             connections.append("MASK[{0}]".format(i))
+        for i in range(self.word_size):
+            connections.append("search_out[{0}]".format(i))
         for i in range(self.bank_addr_size):
             connections.append("ADDR[{0}]".format(i))
         if self.num_banks > 1:
@@ -70,6 +72,8 @@ class SfCam(sram):
         for i in range(self.word_size):
             self.copy_layout_pin(self.bank_inst, "DATA[{}]".format(i))
             self.copy_layout_pin(self.bank_inst, "MASK[{}]".format(i))
+        for row in range(self.num_rows):
+            self.copy_layout_pin(self.bank_inst, "search_out[{}]".format(row))
 
         for i in range(self.addr_size):
             self.copy_layout_pin(self.bank_inst, "ADDR[{}]".format(i))
@@ -102,6 +106,8 @@ class SfCam(sram):
             self.add_pin("MASK[{0}]".format(i), "INPUT")
         for i in range(self.addr_size):
             self.add_pin("ADDR[{0}]".format(i), "INPUT")
+        for row in range(self.num_rows):
+            self.add_pin("search_out[{0}]".format(row), "OUTPUT")
 
         self.add_pin_list(["search", "search_ref", "clk"], "INPUT")
 

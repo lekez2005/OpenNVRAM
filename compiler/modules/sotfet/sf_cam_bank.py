@@ -828,6 +828,8 @@ class SfCamBank(bank.bank):
         for col in range(self.num_cols):
             self.copy_layout_pin(self.data_in_flops_inst, "din[{}]".format(col), "DATA[{}]".format(col))
             self.copy_layout_pin(self.mask_in_flops_inst, "din[{}]".format(col), "MASK[{}]".format(col))
+        for row in range(self.num_rows):
+            self.copy_layout_pin(self.search_sense_inst, "dout[{}]".format(row), "search_out[{}]".format(row))
 
         for pin_name in ["bank_sel", "clk", "search"]:
             self.copy_layout_pin(self.logic_buffers_inst, pin_name, pin_name)
@@ -847,6 +849,8 @@ class SfCamBank(bank.bank):
             self.add_pin("DATA[{0}]".format(i))
         for i in range(self.word_size):
             self.add_pin("MASK[{0}]".format(i))
+        for i in range(self.word_size):
+            self.add_pin("search_out[{0}]".format(i))
         for i in range(self.addr_size):
             self.add_pin("ADDR[{0}]".format(i))
 

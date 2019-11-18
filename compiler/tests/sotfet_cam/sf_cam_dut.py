@@ -43,6 +43,8 @@ class SfCamDut(stimuli):
             self.sf.write("mask[{0}] ".format(i))
         for i in range(abits):
             self.sf.write("A[{0}] ".format(i))
+        for row in range(OPTS.num_words):
+            self.sf.write("search_out[{0}] ".format(row))
         self.sf.write(" search search_ref ")
         self.sf.write("{0} ".format(tech.spice["clk"]))
         if self.is_sotfet:

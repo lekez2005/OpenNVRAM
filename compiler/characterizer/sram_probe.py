@@ -1,3 +1,4 @@
+import re
 from subprocess import check_output, CalledProcessError
 
 import numpy as np
@@ -26,11 +27,13 @@ class SramProbe(object):
         utils.get_libcell_pins(["QBAR"], "cell_6t", tech.GDS["unit"], tech.layer["boundary"]).get("QBAR")[0]
 
         self.bitcell_probes = {}
+        self.br_probes = {}
         self.bitline_probes = {}
         self.wordline_probes = {}
         self.sense_amp_probes = {}
         self.word_driver_clk_probes = {}
         self.decoder_probes = {}
+        self.clk_probe = self.get_clk_probe()
         self.probe_labels = set()
 
     def probe_bit_cells(self, address, pin_name="Q"):
@@ -46,28 +49,11 @@ class SramProbe(object):
 
         bank_index, bank_inst, row, col_index = self.decode_address(address)
 
-        if OPTS.use_pex:
-            if pin_name == "Q":
-                pin = self.q_pin
-            elif pin_name == "QBAR":
-                pin = self.qbar_pin
-            else:
-                pin = utils.get_libcell_pins([pin_name], "cell_6t", tech.GDS["unit"],
-                                             tech.layer["boundary"]).get(pin_name)[0]
-        else:
-            pin = None
-
         pin_labels = [""] * self.sram.word_size
         for i in range(self.sram.word_size):
             col = i * self.sram.words_per_row + self.address_to_int(col_index)
-            if OPTS.use_pex:
-                ll, ur = self.get_bitcell_pin(pin, bank_inst, row, col)
-                pin_loc = [0.5 * (ll[0] + ur[0]), 0.5 * (ll[1] + ur[1])]
-                pin_label = "{}_b{}r{}c{}".format(pin_name, bank_index, row, col)
-                self.sram.add_label(pin_label, pin.layer, pin_loc, zoom=0.025)
-                pin_labels[i] = pin_label
-            else:
-                pin_labels[i] = self.get_bitcell_label(bank_index, row, col, pin_name)
+            pin_labels[i] = self.get_bitcell_label(bank_index, row, col, pin_name)
+
         pin_labels.reverse()
         self.probe_labels.update(pin_labels)
 
@@ -75,12 +61,28 @@ class SramProbe(object):
             self.bitcell_probes[pin_name] = {}
         self.bitcell_probes[pin_name][address_int] = pin_labels
 
-    def get_bitcell_pin(self, pin, bank_inst, row, col):
-        return utils.get_pin_rect(pin, [bank_inst, bank_inst.mod.bitcell_array_inst,
-                                              bank_inst.mod.bitcell_array_inst.mod.cell_inst[row, col]])
-
     def get_bitcell_label(self, bank_index, row, col, pin_name):
         return "Xsram.Xbank{}.Xbitcell_array.Xbit_r{}_c{}.{}".format(bank_index, row, col, pin_name)
+
+    def probe_bitlines(self, bank, row=None):
+        if row is None:
+            row = self.sram.num_rows - 1
+        for col in range(self.sram.num_cols):
+            for pin_name in ["bl", "br"]:
+                pin_label = self.get_bitline_label(bank, col, pin_name, row)
+                self.probe_labels.add(pin_label)
+                if pin_name == "bl":
+                    self.bitline_probes[col] = pin_label
+                else:
+                    self.br_probes[col] = pin_label
+
+    def get_bitline_label(self, bank, col, label, row):
+        if OPTS.use_pex:  # select top right bitcell
+            pin_label = "Xsram.Xbank{bank}_{pin_name}[{col}]_Xbank{bank}_Xbitcell_array" \
+                        "_Xbit_r{row}_c{col}".format(bank=bank, col=col, pin_name=label, row=row)
+        else:
+            pin_label = "Xsram.Xbank{}.{}[{}]".format(bank, label, col)
+        return pin_label
 
     def get_bitcell_probes(self, address, pin_name="Q", pex_file=None):
         """Retrieve simulation probe name based on extracted file"""
@@ -165,8 +167,11 @@ class SramProbe(object):
         self.probe_labels.update(pin_labels)
         self.bitline_probes[label_key] = pin_labels
 
-    def get_bitline_label(self, bank_index, pin_name, col):
-        return "Xsram.Xbank{}.Xbitcell_array.{}[{}]".format(bank_index, pin_name, col)
+    def get_clk_probe(self, bank=0):
+        if OPTS.use_pex:
+            return "Xsram.Xbank{bank}_clk_buf_Xbank{bank}_Xcontrol_buffers".format(bank=bank)
+        else:
+            return "Xsram.Xbank{}.clk_buf".format(bank)
 
     def get_bitline_pin(self, pin_name, bank_inst, col):
         pin = bank_inst.mod.bitcell_array_inst.get_pin("{}[{}]".format(pin_name, col))
@@ -231,8 +236,13 @@ class SramProbe(object):
         self.decoder_probes[address_int] = decoder_label
         self.probe_labels.add(decoder_label)
 
-    def get_wordline_label(self, bank_index, row, col_index):
-        return "Xsram.Xbank{}.Xbitcell_array.wl[{}]".format(bank_index, row)
+    def get_wordline_label(self, bank_index, row, col):
+        if OPTS.use_pex:
+            wl_label = "Xsram.Xbank{bank}.wl[{row}]_Xbank{bank}" \
+                       "_Xbitcell_array_Xbit_r{row}_c{col}".format(bank=bank_index, row=row, col=col)
+        else:
+            wl_label = "Xsram.Xbank{}.wl[{}]".format(bank_index, row)
+        return wl_label
 
     def get_wordline_pin(self, bank_inst, row, col_index):
         pin = bank_inst.mod.bitcell_array_inst.get_pin("wl[{}]".format(row))
@@ -376,6 +386,8 @@ class SramProbe(object):
         return 'Xsram.' + match.decode().strip()
 
     def decode_address(self, address):
+        if isinstance(address, int):
+            address = self.address_to_vector(address)
         if self.sram.num_banks == 4:
             bank_index = 2 ** address[0] + address[1]
             bank_inst = self.sram.bank_inst[bank_index]
@@ -419,6 +431,7 @@ class SramProbe(object):
         self.sram.objs = list(filter(lambda x: not x.name == "label", self.sram.objs))
 
     def add_pin_label(self, pin, module_insts, label_key):
+        debug.error("DO NOT USE", -1)
         ll, ur = utils.get_pin_rect(pin, module_insts)
         pin_loc = [0.5 * (ll[0] + ur[0]), 0.5 * (ll[1] + ur[1])]
         # self.sram.add_rect(pin.layer, offset=ll, width=pin.width(), height=pin.height())

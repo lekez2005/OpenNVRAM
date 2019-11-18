@@ -211,7 +211,8 @@ class SequentialDelay(delay):
             self.v_data[key] = "V{0} {0} gnd PWL ( ".format(key)
             self.v_comments[key] = "* (time, data): [ "
         self.current_time = self.setup_time + 0.5 * self.slew
-        self.update_output()
+        self.update_output(increment_time=False)
+        self.current_time += self.slew
 
     def finalize_output(self):
         """Complete pwl statements"""
@@ -248,7 +249,7 @@ class SequentialDelay(delay):
         self.write_pwl(key, prev_val, curr_val)
         setattr(self, "prev_" + key, curr_val)
 
-    def update_output(self):
+    def update_output(self, increment_time=True):
         """Generate voltage at current time for each pwl voltage supply"""
         # control signals
         for key in self.control_sigs:
@@ -267,11 +268,12 @@ class SequentialDelay(delay):
             key = "data[{}]".format(i)
             self.write_pwl(key, self.prev_data[i], self.data[i])
         self.prev_data = self.data
-        # write clk
-        self.write_pwl("clk", 0, 1)
-        self.current_time += self.duty_cycle * self.period
-        self.write_pwl("clk", 1, 0)
-        self.current_time += (1 - self.duty_cycle) * self.period
+        if increment_time:
+            # write clk
+            self.write_pwl("clk", 0, 1)
+            self.current_time += self.duty_cycle * self.period
+            self.write_pwl("clk", 1, 0)
+            self.current_time += (1 - self.duty_cycle) * self.period
 
     def write_data(self, address_vec, data, comment=""):
         """Write data to an address. Data can be integer or binary vector. Address is binary MSB first vector"""

@@ -88,7 +88,6 @@ class SfCamBank(bank.bank):
         self.route_right_logic_buffer()
 
         self.calculate_rail_vias()
-
         self.route_vdd_supply()
         self.route_gnd_supply()
         self.connect_supply_rails()
@@ -323,8 +322,13 @@ class SfCamBank(bank.bank):
         self.left_rail_x = (self.left_vdd_x_offset - (self.num_left_rails-1)*self.m2_pitch - self.m2_width -
                             self.wide_m1_space)  # to the left of the data flops
 
+        # leave space for ml and wl vias
+        pin_offset = self.ml_precharge_array.width - self.ml_precharge_array.get_pin("precharge_bar").rx()
+        space = self.wide_m1_space + self.m2_width + self.parallel_line_space
+
+        self.ml_precharge_x_offset = self.left_vdd_x_offset - space + pin_offset - self.ml_precharge_array.width
+
         # find left edge of decoder
-        self.ml_precharge_x_offset = -max(abs(self.left_rail_x) - self.parallel_line_space, self.ml_precharge_array.width)
         row_decoder_x = self.ml_precharge_x_offset - self.wordline_driver.width - self.decoder.row_decoder_width
         if row_decoder_x > self.left_rail_x - self.decoder.width - self.parallel_line_space:
             row_decoder_x = self.left_rail_x - self.decoder.width - self.parallel_line_space
@@ -335,8 +339,16 @@ class SfCamBank(bank.bank):
         self.logic_buffers_x = (self.address_flop_x + self.address_flops_horz*self.horizontal_flop.width +
                                 2*self.poly_pitch)
 
+        right_rail_names = self.get_right_rail_pins()
+
+        right_rail_pins = [self.logic_buffers.get_pin(x) for x in right_rail_names]
+        right_rail_offsets = [self.logic_buffers_x + self.logic_buffers.width - x.lx() for x in right_rail_pins]
+
         self.right_rail_x = max(self.mask_in_flops_inst.rx(),
-                                self.logic_buffers_x + self.logic_buffers.width) + 2 * self.m2_pitch  # to the right of data flops
+                                max(right_rail_offsets)) + 2 * self.m2_pitch  # to the right of data flops
+
+    def get_right_rail_pins(self):
+        return ["clk_buf", "write_bar", "search_cbar", "sense_amp_en"]
 
     def get_right_gnd_offset(self):
         body_tap_width = self.bitcell_array.body_tap.width
@@ -382,7 +394,8 @@ class SfCamBank(bank.bank):
 
         # vdd and gnd rails
         top = self.bitcell_array_inst.uy()
-        x_offsets = [self.search_sense_inst.rx() + self.wide_m1_space, self.left_vdd_x_offset,
+        rightmost_x = max(self.search_sense_inst.rx(), self.logic_buffers_inst.rx(), self.sense_en_rail.rx())
+        x_offsets = [rightmost_x + self.wide_m1_space, self.left_vdd_x_offset,
                      self.row_decoder_inst.lx() - self.wide_m1_space - self.vdd_rail_width, self.right_gnd_x_offset]
         layers = ["metal1", "metal2", "metal1", "metal2"]
         pin_names = ["vdd", "vdd", "gnd", "gnd"]
@@ -691,11 +704,7 @@ class SfCamBank(bank.bank):
         self.add_rect("metal2", offset=vector(pin.lx(), rail.uy()), height=pin.by()-rail.uy(), width=pin.width())
 
         # create vcomp pin
-        pin = self.search_sense_inst.get_pin("vcomp")
-        x_offset = rail.rx() + self.wide_m1_space
-        self.add_rect("metal2", offset=pin.ll(), width=x_offset-pin.lx())
-        self.add_contact(m2m3.layer_stack, offset=vector(x_offset, pin.by()+self.m2_width-m2m3.first_layer_height))
-        self.add_layout_pin("search_ref", "metal3", offset=vector(x_offset, self.min_point), height=pin.by()-self.min_point)
+        self.copy_layout_pin(self.search_sense_inst, "vcomp", "search_ref")
 
     def connect_bitline_controls(self):
         for pin in self.bitline_logic_array_inst.get_pins("search_cbar"):

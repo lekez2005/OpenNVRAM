@@ -144,7 +144,36 @@ class SfCamDelay(SequentialDelay):
         for i in range(cam.num_words):
             probe.probe_matchline(i)
 
-    def update_output(self):
+    def write_ic(self, ic, col_node, col_voltage):
+        if self.cmos:
+            ic.write("ic {}={} \n".format(col_node, col_voltage))
+        else:
+            phi = 0.1
+            bank, col, row = re.findall("Xbank([0-9]+).*mz1_c([0-9]+)_r([0-9]+)", col_node)[0]
+
+            phi1_node = "Xsram.Xbank{bank}_Xbitcell_array_Xbit_r{row}_c{col}.XI8.phi".format(bank=bank,
+                                                                                             row=row, col=col)
+            phi2_node = "Xsram.Xbank{bank}_Xbitcell_array_Xbit_r{row}_c{col}.XI9.phi".format(bank=bank,
+                                                                                             row=row, col=col)
+            theta1_node = "Xsram.Xbank{bank}_Xbitcell_array_Xbit_r{row}_c{col}.XI8.theta".format(bank=bank,
+                                                                                                 row=row, col=col)
+            theta2_node = "Xsram.Xbank{bank}_Xbitcell_array_Xbit_r{row}_c{col}.XI9.theta".format(bank=bank,
+                                                                                                 row=row, col=col)
+            nodes = [phi1_node, phi2_node, theta1_node, theta2_node]
+            values = [phi, phi, np.arccos(col_voltage), np.arccos(-col_voltage)]
+            if not OPTS.use_pex:
+                nodes = [x.replace("_Xbitcell_array_", ".Xbitcell_array.") for x in nodes]
+            for i in range(4):
+                # ic.write("ic {}={} \n".format(nodes[i], values[i]))
+                ic.write("ic {}={} \n".format(nodes[i], values[i]))
+
+    def binary_to_voltage(self, x):
+        if self.cmos:
+            return x*self.vdd_voltage
+        else:
+            return 0.995 * ((x*2) - 1)  # close to +-1 but not exactly equal for convergence reasons
+
+    def update_output(self, increment_time=True):
         # write mask
         for i in range(self.word_size):
             key = "mask[{}]".format(i)

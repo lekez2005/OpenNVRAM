@@ -99,6 +99,38 @@ class SramProbe(object):
                 pin_labels_pex.append(self.extract_from_pex(label, pex_file))
             return pin_labels_pex
 
+    def get_bitcell_storage_nodes(self):
+        nodes_map = {}
+        pattern = self.get_storage_node_pattern()
+        for address in range(self.sram.num_words):
+            bank_index, bank_inst, row, col_index = self.decode_address(address)
+            address_nodes = [""]*self.sram.word_size
+            nodes_map[address] = address_nodes
+            for i in range(self.sram.word_size):
+                col = i * self.sram.words_per_row + self.address_to_int(col_index)
+                address_nodes[i] = pattern.format(bank=bank_index, row=row, col=col)
+        return nodes_map
+
+    def get_storage_node_pattern(self):
+        general_pattern = list(self.bitcell_probes.values())[0][0]  # type: str
+
+        def sub_specific(pattern, prefix, key):
+            pattern = re.sub(prefix + "\[[0-9]+\]", prefix + "[{" + key + "}]", pattern)
+            delims = ["_", "\."]
+            replacements = ["_", "."]
+            for i in range(2):
+                delim = delims[i]
+                replacement = replacements[i]
+                pattern = re.sub(delim + prefix + "[0-9]+",
+                                 replacement + prefix + "{" + key + "}",
+                                 pattern)
+            return pattern
+
+        general_pattern = sub_specific(general_pattern, "Xbank", "bank")
+        general_pattern = sub_specific(general_pattern, "r", "row")
+        general_pattern = sub_specific(general_pattern, "c", "col")
+        return general_pattern
+
     def get_decoder_probes(self, address):
         if OPTS.use_pex:
             return self.extract_from_pex(self.decoder_probes[address])

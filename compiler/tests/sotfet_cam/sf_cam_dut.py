@@ -119,6 +119,8 @@ XI9 gnd ML net30 BR gnd mz2 / sotfet gate_R=1000 tx_l=30n tx_w=200n
 
         self.write_sotfet_includes()
 
+        self.sf.write(".include {}\n".format(OPTS.ic_file))
+
     def write_sotfet_includes(self):
         cadence_work_dir = os.environ["SYSTEM_CDS_LIB_DIR"]
         p_to_vg = os.path.join(cadence_work_dir, "spintronics/p_to_ids/va_include/p_to_vg.scs")

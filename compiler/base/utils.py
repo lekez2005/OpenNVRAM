@@ -1,6 +1,7 @@
 import importlib.util
 import math
 import os
+import random
 import subprocess
 import time
 from importlib import reload
@@ -138,6 +139,9 @@ def get_body_tap_width():
     from modules.body_tap import body_tap
     return body_tap().width
 
+
+def get_random_vector(word_size):
+    return [int(random.uniform(0, 1) > 0.5) for _ in range(word_size)]
 
 
 def auto_measure_libcell(pin_list, name, units, layer):

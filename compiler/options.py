@@ -125,4 +125,5 @@ class options(optparse.Values):
         self.pex_spice = os.path.join(openram_temp, 'pex.sp')
         self.reduced_spice = os.path.join(openram_temp, 'reduced.sp')
         self.gds_file = os.path.join(openram_temp, 'temp.gds')
+        self.ic_file = os.path.join(openram_temp, "sram.ic")
 

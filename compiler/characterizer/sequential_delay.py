@@ -4,6 +4,8 @@ import numpy as np
 
 import debug
 import tech
+from base import utils
+from characterizer.sram_probe import SramProbe
 from globals import OPTS
 from . import delay
 from . import stimuli
@@ -54,6 +56,7 @@ class SequentialDelay(delay):
         self.saved_nodes = set()
         self.measure_commands = []
         self.command_comments = []
+        self.existing_data = {}
         if initialize:
             self.initialize_output()
 
@@ -102,6 +105,39 @@ class SequentialDelay(delay):
         self.stim.write_control(self.current_time + self.period)
 
         self.sf.close()
+
+    def initialize_sram(self, probe: SramProbe, existing_data):
+        import random
+        random.seed(0)
+
+        for address in range(self.sram.num_words):
+            if address not in existing_data:
+                existing_data[address] = utils.get_random_vector(self.sram.word_size)
+
+        self.existing_data = existing_data
+
+        ic_file = getattr(OPTS, "ic_file", os.path.join(OPTS.openram_temp, "sram.ic"))
+
+        with open(ic_file, "w") as ic:
+
+            ic.write("simulator lang=spectre \n")
+
+            storage_nodes = probe.get_bitcell_storage_nodes()
+            for address in range(self.sram.num_words):
+                address_data = list(reversed(existing_data[address]))
+                for col in range(self.sram.word_size):
+                    col_voltage = self.binary_to_voltage(address_data[col])
+                    col_node = storage_nodes[address][col]
+                    self.write_ic(ic, col_node, col_voltage)
+
+            ic.write("simulator lang=spice \n")
+            ic.flush()
+
+    def write_ic(self, ic, col_node, col_voltage):
+        ic.write("ic {}={} \n".format(col_node, col_voltage))
+
+    def binary_to_voltage(self, x):
+        return x*self.vdd_voltage
 
     def generate_steps(self):
         for addr_dict in self.addresses:

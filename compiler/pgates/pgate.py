@@ -17,7 +17,7 @@ class pgate(design.design):
     """
 
     c = __import__(OPTS.bitcell)
-    bitcell = getattr(c, OPTS.bitcell)
+    bitcell = getattr(c, OPTS.bitcell)()
 
     def __init__(self, name, height, size=1, beta=parameter["beta"], contact_pwell=True, contact_nwell=True,
                  align_bitcell=False, same_line_inputs=True):

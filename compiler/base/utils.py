@@ -98,7 +98,7 @@ def get_tap_positions(num_columns):
     # bitcell positions are calculated such that bitcells are only appended at the beginning
     # of groups and not in the middle
     c = __import__(OPTS.bitcell)
-    bitcell = getattr(c, OPTS.bitcell)
+    bitcell = getattr(c, OPTS.bitcell)()
 
     cells_per_group = OPTS.cells_per_group
 

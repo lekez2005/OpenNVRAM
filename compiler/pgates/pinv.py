@@ -19,7 +19,7 @@ class pinv(pgate.pgate, metaclass=unique_meta.Unique):
     output to the right side of the cell for easier access.
     """
     c = __import__(OPTS.bitcell)
-    bitcell = getattr(c, OPTS.bitcell)
+    bitcell = getattr(c, OPTS.bitcell)()
 
     @classmethod
     def get_name(cls, size=1, beta=None, height=pgate.pgate.get_default_height(),

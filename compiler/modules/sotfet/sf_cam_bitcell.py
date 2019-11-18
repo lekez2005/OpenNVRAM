@@ -1,9 +1,9 @@
+from base.design import design
 from base.library_import import library_import
-from modules import bitcell
 
 
 @library_import
-class sf_cam_bitcell(bitcell.bitcell):
+class sf_cam_bitcell(design):
     """
     A single SOTFET CAM bit cell. It is a hand-made cell, so
     the layout and netlist should be available in the technology

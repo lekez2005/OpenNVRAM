@@ -29,7 +29,7 @@ class hierarchical_predecode(design.design):
         self.use_flops = use_flops
 
         c = __import__(OPTS.bitcell)
-        self.mod_bitcell = getattr(c, OPTS.bitcell)
+        self.mod_bitcell = getattr(c, OPTS.bitcell)()
         self.bitcell_height = self.mod_bitcell.height
 
         if self.use_flops:
@@ -45,7 +45,6 @@ class hierarchical_predecode(design.design):
         else:
             self.module_height = pgate.get_default_height()
 
-    
     def add_pins(self):
         in_name = "flop_in[{}]" if self.use_flops else "in[{}]"
         for k in range(self.number_of_inputs):

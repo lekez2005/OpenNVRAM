@@ -131,7 +131,7 @@ class PsfReader:
                 return trans2 - trans1
 
         if num_bits == 1:
-            return internal_delay(signal_name2)
+            return internal_delay(signal_name2.format(0))
         else:
             return list(reversed([internal_delay(signal_name2.format(i)) for i in range(num_bits)]))
 

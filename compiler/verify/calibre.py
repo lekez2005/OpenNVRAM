@@ -336,14 +336,14 @@ def run_pex(cell_name, gds_name, sp_name, output=None, run_drc_lvs=True, correct
         'pexMaskDBFile': cell_name + ".maskdb",
         'cmnFDIDEFLayoutPath': cell_name + ".def",
         'cmnRunMT': "1",
-        'cmnNumTurbo': "8",
+        'cmnNumTurbo': "16",
         'pexPowerNames': "vdd",
         'pexGroundNames': "gnd",
         'pexPexGroundName': "1",
         'pexPexGroundNameValue': "gnd",
         'pexPexSeparator': "1",
         'pexPexSeparatorValue': "_",
-        'pexPexNetlistNameSource': 'SCHEMATICONLY',
+        'pexPexNetlistNameSource': 'SOURCENAMES',
         'pexSVRFCmds': '{LVS PRESERVE BOX CELLS YES} {}',
         'pexIncludeCmdsType': 'SVRF',  # used for preserving lvs box names
     }

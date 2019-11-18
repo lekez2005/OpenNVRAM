@@ -268,7 +268,7 @@ def setup_paths():
 
 def is_exe(fpath):
     """ Return true if the given is an executable file that exists. """
-    return os.path.exists(fpath) and os.access(fpath, os.X_OK)
+    return os.path.exists(fpath) and not os.path.isdir(fpath) and os.access(fpath, os.X_OK)
 
 def find_exe(check_exe):
     """ Check if the binary exists in any path dir and return the full path. """

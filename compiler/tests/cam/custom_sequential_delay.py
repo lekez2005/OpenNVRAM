@@ -76,13 +76,13 @@ class CustomSequentialDelay(SequentialDelay):
         self.read_data(col_zero_address)  # should be 00000....10101...
         self.read_data(col_one_address)  # should be 00000...01010...
 
-    def update_output(self):
+    def update_output(self, increment_time=True):
         # write mask
         for i in range(self.word_size):
             key = "mask[{}]".format(i)
             self.write_pwl(key, self.prev_mask[i], self.mask[i])
         self.prev_mask = self.mask
-        super(CustomSequentialDelay, self).update_output()
+        super().update_output(increment_time)
 
 
     def search_data(self, data, mask, comment=""):

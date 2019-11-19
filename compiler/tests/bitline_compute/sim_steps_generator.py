@@ -279,10 +279,12 @@ class SimStepsGenerator(SequentialDelay):
 
             # BL compute C = A + B
             self.cin = [0, 1]*max(1, int(self.words_per_row/2))
+            self.setup_read_measurements(a_address)
             self.bitline_compute(a_address, b_address, bus_sel="s_sum", sr_in="s_mask_in",
                                  sr_out="s_sr", comment=" A + B")
 
             self.sr_en = 0
+            self.setup_write_measurements(c_address)
             self.write_back(c_address, bus_sel="s_sum", sr_in="s_mask_in", sr_out="s_sr",
                             comment="Write-back MASK-IN to C ({})".format(c_address))
 
@@ -302,6 +304,7 @@ class SimStepsGenerator(SequentialDelay):
 
             if not OPTS.serial:
                 # Write back B + C if MSB
+                self.setup_read_measurements(b_address)
                 self.sr_en = 0
                 self.bitline_compute(b_address, c_address, bus_sel="s_sum", sr_in="s_shift",
                                      sr_out="s_sr", comment=" B + C ")
@@ -310,10 +313,11 @@ class SimStepsGenerator(SequentialDelay):
                 self.write_back(c_address, bus_sel="s_sum", sr_in="s_shift", sr_out="s_msb",
                                 comment="Write-back MSB mask to C ({})".format(c_address))
                 # Write back B + C if MSB
-
+                self.setup_read_measurements(b_address)
                 self.bitline_compute(b_address, c_address, bus_sel="s_sum", sr_in="s_bus",
                                      sr_out="s_sr", comment=" B + C")
                 self.sr_en = 1  # shift once, here measure lsb to mask_in_bar transition
+                self.setup_write_measurements(c_address)
                 self.write_back(c_address, bus_sel="s_sum", sr_in="s_shift", sr_out="s_lsb",
                                 comment="Write-back LSB mask to C ({})".format(c_address))
 
@@ -333,7 +337,7 @@ class SimStepsGenerator(SequentialDelay):
         for i in range(cam.num_words):
             probe.probe_matchline(i)
 
-    def update_output(self):
+    def update_output(self, increment_time=True):
         # write address1
         if not OPTS.baseline:
             for i in range(self.addr_size):
@@ -362,7 +366,7 @@ class SimStepsGenerator(SequentialDelay):
         if self.read:
             self.write_pwl("sense_trig", 0, 1)
 
-        super().update_output()
+        super().update_output(increment_time)
 
         if self.read:
             self.write_pwl("sense_trig", 1, 0)

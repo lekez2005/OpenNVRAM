@@ -1,9 +1,11 @@
 import itertools
 import os
+import re
 from importlib import reload
 
+import numpy as np
+
 import characterizer
-import debug
 import verify
 from characterizer.sequential_delay import SequentialDelay
 from globals import OPTS
@@ -19,6 +21,8 @@ class SfCamDelay(SequentialDelay):
     saved_nodes = []
     ml_precharge_addresses = None  # for search delays
 
+    clk_probe = "clk"
+
     sf = None
 
     def __init__(self, sram, spfile, corner, initialize=False):
@@ -28,8 +32,8 @@ class SfCamDelay(SequentialDelay):
 
         self.separate_vdd = OPTS.separate_vdd if hasattr(OPTS, 'separate_vdd') else False
 
-        # set up for write
-        self.search = self.prev_search = 0
+        # set up for search
+        self.search = self.prev_search = 1
         self.mask = self.prev_mask = [1] * OPTS.word_size
         for i in range(self.word_size):
             self.bus_sigs.append("mask[{}]".format(i))
@@ -52,13 +56,13 @@ class SfCamDelay(SequentialDelay):
         self.sf.write("{} \n".format(self.sram))
         if OPTS.spice_name == "spectre":
             self.sf.write("simulator lang=spice\n")
-        self.sf.write("* Delay stimulus for search period = {0}n, write period = {1} load={2}fF slew={3}ns\n\n".format(
+        self.sf.write("* Delay stimulus for search period = {0}n, write period = {1}n load={2}fF slew={3}ns\n\n".format(
             self.search_period, self.write_period, self.load, self.slew))
 
+        self.sf.write("* search_duty = {0}n, write_duty = {1}n".format(self.search_duty_cycle, self.write_duty_cycle))
+        self.sf.write("* Area = {0:.0f}um2".format(self.sram.width*self.sram.height))
+
         self.stim = SfCamDut(self.sf, self.corner)
-        self.stim.add_power_labels(self.sram)
-
-
 
         self.write_generic_stimulus()
 
@@ -66,7 +70,8 @@ class SfCamDelay(SequentialDelay):
 
         self.generate_steps()
 
-        for node in self.saved_nodes:
+        self.saved_nodes.append(self.clk_probe)
+        for node in set(self.saved_nodes):
             self.sf.write(".probe V({0}) \n".format(node))
 
         self.finalize_output()
@@ -89,9 +94,13 @@ class SfCamDelay(SequentialDelay):
         for address in addresses:
             probe.probe_address(address)
 
+        self.sf.write("* saved addresses = {} \n".format(", ".join(map(str, addresses))))
+
         self.run_drc_lvs_pex()
 
         probe.extract_probes()
+
+        self.clk_probe = probe.clk_probe
 
         self.ml_precharge_addresses = probe.get_matchline_probes()
 
@@ -103,6 +112,14 @@ class SfCamDelay(SequentialDelay):
         max_address = self.sram.num_words - 1
         probe = self.probe_addresses([zero_address, max_address])
 
+        data = [1]*self.word_size
+        data_mismatch = [1]*(self.word_size-1) + [0]
+
+        self.initialize_sram(probe, {
+            zero_address: data,
+            max_address: data_mismatch
+        })
+
         zero_one_mix = list(itertools.chain.from_iterable(zip([1]*self.word_size, [0]*self.word_size)))
         one_zero_data = zero_one_mix[:self.word_size]
 
@@ -113,6 +130,15 @@ class SfCamDelay(SequentialDelay):
         # one_mismatch = [1] * self.word_size
 
         mask = [1] * self.word_size
+
+        # search for inverse if sotfet
+        if not self.cmos and not OPTS.series:
+            data = self.invert_vec(data)
+            data_mismatch = self.invert_vec(data_mismatch)
+
+        self.search_data(data, mask, "".format(data))
+        self.search_data(data_mismatch, mask, "".format(data_mismatch))
+
         self.write_masked_data(self.convert_address(zero_address), self.invert_vec(one_zero_data), mask,
                                "reset address".format(zero_address))
         self.write_masked_data(self.convert_address(max_address), self.invert_vec(one_mismatch), mask,
@@ -179,7 +205,7 @@ class SfCamDelay(SequentialDelay):
             key = "mask[{}]".format(i)
             self.write_pwl(key, self.prev_mask[i], self.mask[i])
         self.prev_mask = self.mask
-        super().update_output()
+        super().update_output(increment_time)
 
     def search_data(self, data, mask, comment=""):
         """data and mask are MSB first"""
@@ -231,12 +257,12 @@ class SfCamDelay(SequentialDelay):
 
         for addr in self.ml_precharge_addresses:
             self.stim.gen_meas_delay(meas_name="ML_rise_a{}_{}".format(addr["addr_int"], time_suffix),
-                                     trig_name="clk", trig_val=0.9 * self.vdd_voltage, trig_dir="RISE",
+                                     trig_name=self.clk_probe, trig_val=0.9 * self.vdd_voltage, trig_dir="RISE",
                                      trig_td=time,
                                      targ_name=addr["ml_label"], targ_val=0.9 * self.vdd_voltage, targ_dir="RISE",
                                      targ_td=time)
             self.stim.gen_meas_delay(meas_name="dout_fall_a{}_{}".format(addr["addr_int"], time_suffix),
-                                     trig_name="clk", trig_val=0.1 * self.vdd_voltage, trig_dir="FALL",
+                                     trig_name=self.clk_probe, trig_val=0.1 * self.vdd_voltage, trig_dir="FALL",
                                      trig_td=time + self.duty_cycle*self.period,
                                      targ_name=addr["dout_label"], targ_val=0.1 * self.vdd_voltage, targ_dir="FALL",
                                      targ_td=time + self.duty_cycle*self.period)
@@ -252,7 +278,7 @@ class SfCamDelay(SequentialDelay):
                                  t_final=time + self.period - self.setup_time)
         # decoder delay
         self.stim.gen_meas_delay(meas_name="decoder_a{}_t{}".format(address_int, time_suffix),
-                                 trig_name="clk", trig_val=0.9 * self.vdd_voltage, trig_dir="RISE",
+                                 trig_name=self.clk_probe, trig_val=0.9 * self.vdd_voltage, trig_dir="RISE",
                                  trig_td=time,
                                  targ_name=decoder_label, targ_val=0.9 * self.vdd_voltage, targ_dir="RISE",
                                  targ_td=time)
@@ -269,13 +295,13 @@ class SfCamDelay(SequentialDelay):
                 targ_val = -0.8 if transition == "LH" else 0.8
                 targ_dir = "FALL" if transition == "LH" else "RISE"
                 self.stim.gen_meas_delay(meas_name=meas_name,
-                                         trig_name="clk", trig_val=0.9 * self.vdd_voltage, trig_dir="RISE",
+                                         trig_name=self.clk_probe, trig_val=0.9 * self.vdd_voltage, trig_dir="RISE",
                                          trig_td=time,
                                          targ_name=state_labels[i], targ_val=0, targ_dir=targ_dir,
                                          targ_td=time)
             meas_name = "STATE_DELAY_a{}_c{}_t{}".format(address_int, i, time_suffix)
             self.stim.gen_meas_delay(meas_name=meas_name,
-                                     trig_name="clk", trig_val=0.1 * self.vdd_voltage, trig_dir="FALL",
+                                     trig_name=self.clk_probe, trig_val=0.1 * self.vdd_voltage, trig_dir="FALL",
                                      trig_td=time + self.duty_cycle*self.period,
                                      targ_name=state_labels[i], targ_val=targ_val, targ_dir=targ_dir,
                                      targ_td=time + self.duty_cycle*self.period)

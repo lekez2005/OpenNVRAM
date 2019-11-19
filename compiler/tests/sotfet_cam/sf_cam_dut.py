@@ -9,32 +9,6 @@ from globals import OPTS
 class SfCamDut(stimuli):
     is_sotfet = True
 
-    def add_power_labels(self, cam):
-        if OPTS.separate_vdd:
-            self.add_power_label(cam, 'wordline_driver_inst', 'vdd_wordline', 'vdd_lo')
-            self.add_power_label(cam, 'row_decoder_inst', 'vdd_decoder')
-            self.add_power_label(cam, 'logic_buffers_inst', 'vdd_logic_buffers')
-            self.add_power_label(cam, cam.bank.address_flops[-1], 'vdd_logic_buffers')
-            self.add_power_label(cam, 'data_in_flops_inst', 'vdd_data_flops')
-            self.add_power_label(cam, 'mask_in_flops_inst', 'vdd_data_flops')
-            self.add_power_label(cam, 'bitline_buffer_array_inst', 'vdd_bitline_buffer')
-            self.add_power_label(cam, 'bitline_logic_array_inst', 'vdd_bitline_logic')
-            self.add_power_label(cam, 'search_sense_inst', 'vdd_sense_amp')
-
-            if cam.bank.address_flops_vert == 2:
-                self.add_power_label(cam, cam.bank.address_flops[0], 'vdd_decoder')
-                self.add_power_label(cam, cam.bank.address_flops[1], 'vdd_decoder')
-
-    def add_power_label(self, cam, module_inst, label, pin_name='vdd'):
-
-        bank_inst = cam.bank_inst
-        if isinstance(module_inst, str):
-            module_inst = getattr(bank_inst.mod, module_inst)
-        for pin in module_inst.get_pins(pin_name):
-            ll, ur = utils.get_pin_rect(pin, [bank_inst])
-            pin_loc = [0.5 * (ll[0] + ur[0]), 0.5 * (ll[1] + ur[1])]
-            cam.add_layout_pin(label, pin.layer, pin_loc)
-
     def inst_sram(self, abits, dbits, sram_name):
         self.sf.write("Xsram ")
         for i in range(dbits):
@@ -66,11 +40,18 @@ class SfCamDut(stimuli):
         self.gen_constant("search_ref", OPTS.search_ref, gnd_node="gnd")
 
     def write_include(self, circuit):
-        cam_cell_def = """simulator lang=spice
-.SUBCKT sot_cam_cell {}
+        pcam_cell_def = """simulator lang=spice
+.SUBCKT sot_cam_cell {pins}
 MM0 net29 WL net30 gnd nch_mac l=30n w=200n m=1 nf=1
-XI8 gnd ML net29 BL gnd mz1 / sotfet gate_R=1000 tx_l=30n tx_w=200n
-XI9 gnd ML net30 BR gnd mz2 / sotfet gate_R=1000 tx_l=30n tx_w=200n
+XI8 gnd ML net29 BL gnd mz1 / sotfet gate_R=1000 tx_l=30n tx_w=200n {sotfet_params}
+XI9 gnd ML net30 BR gnd mz2 / sotfet gate_R=1000 tx_l=30n tx_w=200n {sotfet_params}
+.ENDS
+        """
+        scam_cell_def = """simulator lang=spice
+.SUBCKT sot_cam_cell {pins}
+MM0 net29 WL net30 gnd nch_mac l=30n w=200n m=1 nf=1
+XI8 gnd ML BL net29 int mz1 / sotfet gate_R=1000 tx_l=30n tx_w=200n {sotfet_params}
+XI9 gnd int BR net30 gnd mz2 / sotfet gate_R=1000 tx_l=30n tx_w=200n {sotfet_params}
 .ENDS
         """
         super().write_include(circuit)
@@ -114,8 +95,14 @@ XI9 gnd ML net30 BR gnd mz2 / sotfet gate_R=1000 tx_l=30n tx_w=200n
                     if orig_name.lower() in actual_name.lower():
                         ordered_pin_names.append(orig_name)
                         continue
-        assert len(ordered_pin_names) == 6, "extracted module should have 6 pins"
-        self.sf.write(cam_cell_def.format(' '.join(ordered_pin_names)))
+            if not len(ordered_pin_names) == 6:  # layout names preserved in extraction
+                ordered_pin_names = orig_names
+            cam_cell_def = scam_cell_def if OPTS.series else pcam_cell_def
+            pins = ' '.join(ordered_pin_names)
+            sotfet_params = "ferro_ratio={} reference_vt={} delta_vt={}".format(OPTS.ferro_ratio,
+                                                                                OPTS.reference_vt,
+                                                                                OPTS.delta_vt)
+            self.sf.write(cam_cell_def.format(pins=pins, sotfet_params=sotfet_params))
 
         self.write_sotfet_includes()
 

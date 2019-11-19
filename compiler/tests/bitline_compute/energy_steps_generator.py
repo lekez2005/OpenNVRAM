@@ -1,5 +1,6 @@
 import os
 import shutil
+import random
 
 from bl_probe import BlProbe
 from globals import OPTS
@@ -9,6 +10,7 @@ from sim_steps_generator import SimStepsGenerator
 class EnergyStepsGenerator(SimStepsGenerator):
 
     def write_delay_stimulus(self):
+        OPTS.num_tries = 10
         self.sim_folder = os.path.join(OPTS.openram_temp, OPTS.energy_sim)
 
         if not os.path.exists(self.sim_folder):
@@ -34,7 +36,7 @@ class EnergyStepsGenerator(SimStepsGenerator):
             q_label = self.probe.state_probes[address][col]
             self.sf.write("ic {}={} \n".format(q_label, data[self.sram.num_cols-1-col]*0.9))
 
-    def probe_addresses(self, address_data_dict):
+    def initialize(self, address_data_dict):
 
         addresses = list(address_data_dict.keys())
 
@@ -52,8 +54,6 @@ class EnergyStepsGenerator(SimStepsGenerator):
         probe.extract_probes()
 
         self.sf.write("simulator lang=spectre \n")
-        self.sf.write("ic en_0=0 \n")
-        self.sf.write("ic en_1=0 \n")
 
         for address in addresses:
             self.set_data(address, address_data_dict[address])
@@ -72,6 +72,8 @@ class EnergyStepsGenerator(SimStepsGenerator):
 
     def generate_steps(self):
 
+        self.en_0 = self.prev_en_0 = self.en_1 = self.prev_en_1 = 0
+
         if OPTS.baseline:
             self.generate_baseline_energy()
         elif OPTS.serial:
@@ -86,21 +88,31 @@ class EnergyStepsGenerator(SimStepsGenerator):
 
 
     def generate_bit_serial_energy(self):
-        pass
+        func_name = 'test_bs_{}'.format(OPTS.energy_sim)
+
+        if not hasattr(self, func_name):
+            return
+        else:
+            getattr(self, func_name)()
 
     def generate_bit_parallel_energy(self):
-        pass
+        func_name = 'test_bs_{}'.format(OPTS.energy_sim)
+
+        if not hasattr(self, func_name):
+            return
+        else:
+            getattr(self, func_name)()
 
     def generate_baseline_energy(self):
         if OPTS.energy_sim == "read":
-            self.probe_addresses({0: [1, 0]*int(self.sram.num_cols/2)})
+            self.initialize({0: [1, 0]*int(self.sram.num_cols/2)})
             self.baseline_read(0, "Read B ({})".format(0))
             # self.baseline_read(0, "Read B ({})".format(0))
             # self.baseline_read(0, "Read B ({})".format(0))
             # self.baseline_read(0, "Read B ({})".format(0))
 
     # Helpers
-    def get_random_bin_vector(bit_sz):
+    def get_random_bin_vector(self, bit_sz):
         MAX_INT = 1 << bit_sz
 
         _val = random.randint(0, MAX_INT - 1)
@@ -113,7 +125,7 @@ class EnergyStepsGenerator(SimStepsGenerator):
 
         return val
  
-    def gen_init():
+    def gen_init(self):
         num_rows = self.num_rows
         num_cols = self.num_cols
         word_size = self.word_size
@@ -125,7 +137,7 @@ class EnergyStepsGenerator(SimStepsGenerator):
 
         init = {}
         for idx in range(num_rows):
-            init[idx] = get_random_bin_vector(num_rows)
+            init[idx] = self.get_random_bin_vector(num_cols)
 
         return init
  
@@ -142,6 +154,9 @@ class EnergyStepsGenerator(SimStepsGenerator):
           addr = random.randint(0, num_rows - 1)
           self.rd(addr)
 
+    def test_bs_rd(self): self.test_rd()
+    def test_bp_rd(self): self.test_rd()
+
     def test_wr(self):
         num_rows = self.num_rows
         num_cols = self.num_cols
@@ -154,8 +169,11 @@ class EnergyStepsGenerator(SimStepsGenerator):
 
         for i in range(OPTS.num_tries):
           addr = random.randint(0, num_rows - 1)
-          data = get_random_bin_vector(num_cols)
+          data = self.get_random_bin_vector(num_cols)
           self.wr(addr, data, mask_all)
+
+    def test_bs_wr(self): self.test_wr()
+    def test_bp_wr(self): self.test_wr()
 
     def test_blc(self):
         num_rows = self.num_rows
@@ -168,6 +186,9 @@ class EnergyStepsGenerator(SimStepsGenerator):
           addr0 = random.randint(0, num_rows - 1)
           addr1 = random.randint(0, num_rows - 1)
           self.blc(addr0, addr1)
+
+    def test_bs_blc(self): self.test_blc()
+    def test_bp_blc(self): self.test_blc()
 
     def test_wb(self):
         num_rows = self.num_rows
@@ -182,6 +203,9 @@ class EnergyStepsGenerator(SimStepsGenerator):
           func_name = 'wb_{}'.format(src)
           getattr(self, func_name)()
 
+    def test_bs_wb(self): self.test_wb()
+    def test_bp_wb(self): self.test_wb()
+
     def test_wb_add(self):
         num_rows = self.num_rows
         num_cols = self.num_cols
@@ -192,6 +216,9 @@ class EnergyStepsGenerator(SimStepsGenerator):
         for i in range(OPTS.num_tries):
           func_name = 'wb_{}'.format('add')
           getattr(self, func_name)()
+
+    def test_bs_wb_add(self): self.test_wb_add()
+    def test_bp_wb_add(self): self.test_wb_add()
 
     def test_wb_mask(self):
         num_rows = self.num_rows
@@ -207,6 +234,9 @@ class EnergyStepsGenerator(SimStepsGenerator):
           func_name = 'wb_mask_{}'.format(src)
           getattr(self, func_name)()
 
+    def test_bs_wb_mask(self): self.test_wb_mask()
+    def test_bp_wb_mask(self): self.test_wb_mask()
+
     def test_wb_mask_add(self):
         num_rows = self.num_rows
         num_cols = self.num_cols
@@ -217,3 +247,6 @@ class EnergyStepsGenerator(SimStepsGenerator):
         for i in range(OPTS.num_tries):
           func_name = 'wb_mask_{}'.format('add')
           getattr(self, func_name)()
+
+    def test_bs_wb_mask_add(self): self.test_wb_mask_add()
+    def test_bp_wb_mask_add(self): self.test_wb_mask_add()

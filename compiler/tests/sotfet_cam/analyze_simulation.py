@@ -4,141 +4,143 @@ import os
 import re
 import sys
 
-sys.path.append('..')
 import numpy as np
-from psf_reader import PsfReader
 
-tech = 'sotfet'
-size = 64
+sys.path.append("..")
+from sim_analyzer import setup
 
-search_period = 2e-9
-write_period = 3e-9
-search_duty = 0.4
-setup_time = 0.015e-9
 
-if tech == 'cmos':
-    write_duty = 0.3
-else:
-    write_duty = 0.6
+usim = False
+sotfet = True
+tech = "sotfet" if sotfet else 'cmos'
+num_rows = 64
+num_cols = 64
+separate_vdd = False
+address_width = int(np.log2(num_rows))
+
+suffix = "_usim"*usim
 
 # sim_dir = '/scratch/ota2/openram/sotfet_cam'
-sim_dir = os.path.join('/scratch/ota2/openram/sotfet_cam', '{0}_{1}_{1}'.format(tech, size))
+sim_dir = os.path.join('/scratch/ota2/openram/sotfet_cam', '{0}_{1}_{2}{3}'.format(tech, num_cols, num_rows, suffix))
 
-stim_file = os.path.join(sim_dir, "stim.sp")
-meas_file = os.path.join(sim_dir, "stim.measure")
+setup(num_cols_=num_cols, num_rows_=num_rows, sim_dir_=sim_dir)
 
-sim_file = os.path.join(sim_dir, 'transient1.tran.tran')
-sim_data = PsfReader(sim_file)
-
-with open(meas_file, 'r') as f:
-    meas_str = f.read()
-with open(stim_file, 'r') as f:
-    spice_str = f.read()
+from sim_analyzer import sim_data, digit_regex, standardize_pattern, extract_probe_pattern,\
+    measure_delay_from_meas, get_address_data
+import sim_analyzer
 
 
-def get_command(label):
-    command_pattern = re.compile('meas tran {}.*TD=(?P<start_time>\S+)n.*TD=(?P<end_time>\S+)n'.format(label),
-                                 re.IGNORECASE)
-    result = command_pattern.search(spice_str)
-    return result
+def search_stim(pattern):
+    return sim_analyzer.search_file(sim_analyzer.stim_file, pattern)
 
 
-def measure_energy(times, verbose=True):
+def measure_energy(times, verbose=False):
+    if separate_vdd:
+        vdd_names = ["vdd_wordline", "vdd_decoder", "vdd_logic_buffers", "vdd_data_flops", "vdd_bitline_buffer",
+                     "vdd_bitline_logic", "vdd_sense_amp", "vdd"]
+    else:
+        vdd_names = ["vdd"]
     total_power = 0
-    for net in ["vdd_wordline", "vdd_decoder", "vdd_logic_buffers", "vdd_data_flops", "vdd_bitline_buffer",
-                "vdd_bitline_logic", "vdd_sense_amp", "vdd"]:
-
+    for net in vdd_names:
         current = sim_data.get_signal('V{}:p'.format(net), times[0], times[1])
         time = sim_data.slice_array(sim_data.time, times[0], times[1])
-        power = -np.trapz(current, time)*0.9
+        power = -np.trapz(current, time) * 0.9
         total_power += power
         if net == 'vdd':
             net = 'vdd_precharge'
         if verbose:
             print("{} energy = {}".format(net, power))
-    print()
+    if verbose:
+        print()
     return total_power
 
-# Search measurements
 
-search_op_pattern = '(?P<label>{}(?P<address>[0-9]+)_(?P<time>[0-9_]+))\s+=\s+(?P<delay>.+)\n'
+def get_address(time_):
+    return sim_analyzer.vector_to_int(sim_data.get_bus_binary(address_pattern, address_width, time_))
 
-# get search times
-ml_rise_pattern = re.compile(search_op_pattern.format('ml_rise_a'))
-all_rise = list(ml_rise_pattern.finditer(meas_str))
 
-ml_rise_pattern.search(meas_str)
+delay_regex = "(?P<delay>\S+)\s\n"
 
-unique_searches = set([x['time'] for x in all_rise])
+saved_addresses = list(map(int, search_stim("saved addresses = (.*)").split(",")))
 
-rise_times = [float(x['delay']) for x in all_rise]
-valid_rise_times = list(filter(lambda x: x < 0.9*search_period, rise_times))
-max_rise_time = max(valid_rise_times)
+search_period = float(search_stim("search period = {}n".format(digit_regex)))*1e-9
+write_period = float(search_stim("write period = {}n".format(digit_regex)))*1e-9
+search_duty = float(search_stim("search_duty = {}".format(digit_regex)))
+write_duty = float(search_stim("write_duty = {}".format(digit_regex)))
 
-fall_results = list(re.compile(search_op_pattern.format('dout_fall_a')).finditer(meas_str))
-fall_times = [float(x['delay']) for x in fall_results]
-valid_fall_times = list(filter(lambda x: x < 0.9*search_period, fall_times))
-max_fall_time = max(valid_fall_times)
+address_pattern = "A[{}]"
+clk_reference = "v(" + re.search(".meas tran {}.* TRIG v\((\S+)\) VAL".format("STATE_DELAY"),
+                                 sim_analyzer.stim_str).group(1) + ")"
+
+sim_analyzer.clk_reference = clk_reference
+
+ml_pattern = standardize_pattern(extract_probe_pattern("ML_rise"))
+dout_pattern = standardize_pattern(extract_probe_pattern("dout_fall"))
+
+# Precharge delay
+max_precharge, _ = measure_delay_from_meas(re.compile('ml_rise_a.*= {}'.format(delay_regex)),
+                                           write_duty * write_period)
+
+max_dout, _ = measure_delay_from_meas(re.compile('dout_fall_a.*= {}'.format(delay_regex)),
+                                      write_duty * write_period)
 
 print('\n-----------------Search ops--------------------')
-print('Search precharge time: ', max_rise_time)
-print('Search match time: ', max_fall_time)
-print('Search delay = ', max_rise_time + max_fall_time, '\n')
 
-for time_str in unique_searches:
-    actual_time = next(get_command(x['label'])['start_time'] for x in all_rise if x['time'] == time_str)
-    time = float(actual_time)*1e-9
-    precharge_time = [time-setup_time, time+max_rise_time]
-    discharge_time = [time+search_duty*search_period, time+search_duty*search_period+max_fall_time]
-    print('Time = {:3g}n'.format(time*1e9))
-    print('Precharge Search energy: ', measure_energy(precharge_time), '\n')
-    print('Match Search energy: ', measure_energy(discharge_time), '\n')
-    print('Total search energy: ', measure_energy(precharge_time) + measure_energy(discharge_time), '\n')
+print('Precharge:\t\t {:.4g} ps'.format(max_precharge*1e12))
+print('Search match:\t {:.4g} ps'.format(max_dout*1e12))
+print('Total Search:\t {:.4g} ps \n'.format((max_precharge + max_dout)*1e12))
+
+search_times = [1e-9*float(x) for x in search_stim("t = ([0-9\.]+) Search .*")]
+
+all_precharges = []
+for search_time in search_times:
+    mid_cycle = search_time + search_duty*search_period
+    cycle_end = search_time + search_period
+    precharge_energy = measure_energy((search_time, mid_cycle))
+    search_energy = measure_energy((mid_cycle, cycle_end))
+    print("t = {:2g} ns \t Precharge energy = {:.3g} pJ \t Search energy = {:.3g} pJ".format(search_time*1e9,
+          precharge_energy*1e12, search_energy*1e12))
+
+    # verify search
+    search_data = sim_data.get_bus_binary(sim_analyzer.data_pattern, num_cols, mid_cycle)
+    search_mask = sim_data.get_bus_binary(sim_analyzer.mask_pattern, num_cols, mid_cycle)
+    for address in saved_addresses:
+        current_data = get_address_data(address, search_time)
+        matches = [(not z) or x == y for x, y, z in zip(current_data, search_data, search_mask)]
+        expected_match = all(matches)
+        actual_match = bool(sim_data.get_binary(dout_pattern.format(address), cycle_end)[0])
+        if not expected_match == actual_match:
+            print("Search failure at time {:.3g} ns address {}".format(search_time*1e9, address))
 
 # Write measurements
 print('\n-----------------Write ops--------------------')
 
-decoder_pattern = re.compile('decoder_a.*= (?P<delay>\S+)\s\n')
-decoder_delays = [float(x) for x in decoder_pattern.findall(meas_str)]
-max_decoder_delay = max(decoder_delays)
+# Decoder delay
+max_decoder_delay, _ = measure_delay_from_meas(re.compile('decoder_a.*= {}'.format(delay_regex)), 0.9 * write_period)
 
-print('Decoder delay: ', max_decoder_delay)
+print('Decoder delay: \t{:.4g} ps'.format(max_decoder_delay*1e12))
 
+if not sotfet:
+    max_write_delay, _ = measure_delay_from_meas(re.compile('state_delay_a.*= {}'.format(delay_regex)),
+                                                 0.9 * write_period)
 
-write_command_pattern = re.compile('(?P<label>state_delay_a.*_t(?P<time>[0-9_]+))\s+=\s+(?P<delay>.+)\n',
-                                   re.IGNORECASE)
-all_writes = list(write_command_pattern.finditer(meas_str))
-
-write_delays = [float(x['delay']) for x in all_writes]
-valid_write_delays = list(filter(lambda x: x < (1-write_duty)*write_period, write_delays))
-
-if tech == "sotfet": # get initial cross points
-    cross_command_pattern = re.compile('(?P<label>state_cross_a.*_t(?P<time>[0-9_]+))\s+=\s+(?P<delay>.+)\n',
-                                       re.IGNORECASE)
-    all_cross = list(cross_command_pattern.finditer(meas_str))
-    cross_delays = [float(x['delay']) for x in all_cross]
-    valid_cross_delays = list(filter(lambda x: x < 0.9 * write_period, cross_delays))
-    max_cross_delay = max(valid_cross_delays)
-    print('State cross time: ', max_cross_delay)
-else:
-    max_cross_delay = 0
+    print('State delay: \t{:.4g} ps'.format(max_write_delay * 1e12))
+    print('Total write : \t{:.4g} ps\n'.format((max_decoder_delay + max_write_delay) * 1e12))
 
 
-max_write_time = max(valid_write_delays) + max_cross_delay
+write_times = [1e-9*float(x) for x in search_stim("t = ([0-9\.]+) Write .*")]
 
-print('State transition time: ', max_write_time)
-print('Total write time: ', max_write_time + max_decoder_delay, '\n')
+sim_analyzer.period = write_period
+sim_analyzer.duty_cycle = write_duty
 
-unique_writes = set([x['time'] for x in all_writes])
+for write_time in write_times:
+    mid_cycle = write_time + write_duty*write_period
+    cycle_end = write_time + write_period
+    first_half_energy = measure_energy((write_time, mid_cycle))
+    second_half_energy = measure_energy((mid_cycle, cycle_end))
+    print("t = {:.4g} ns \t First energy = {:.3g} pJ   \t Second energy = {:.3g} pJ"
+          .format(write_time * 1e9, first_half_energy * 1e12, second_half_energy * 1e12))
 
-for time_str in unique_writes:
-    actual_time = next(get_command(x['label'])['start_time'] for x in all_writes if x['time'] == time_str)
-    time = float(actual_time)*1e-9 - write_duty*write_period
-
-    decode_time = [time - setup_time, time + max_decoder_delay]
-    discharge_time = [time + write_duty * write_period, time + write_duty*write_period + max_write_time]
-    print('Time = {:3g}n'.format(time * 1e9))
-    print('Decoding energy: ', measure_energy(decode_time), '\n')
-    print('Write energy: ', measure_energy(discharge_time), '\n')
-    print('Total Write energy: ', measure_energy(decode_time, verbose=False) +
-          measure_energy(discharge_time, verbose=False), '\n')
+    # verify write
+    write_address = get_address(mid_cycle)
+    sim_analyzer.verify_write_event(write_time*1e9, write_address, sotfet)

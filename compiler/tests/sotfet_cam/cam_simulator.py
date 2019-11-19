@@ -1,5 +1,6 @@
-
+#!/usr/bin/env python
 import os
+import sys
 
 from cam_test_base import CamTestBase
 from globals import OPTS
@@ -9,23 +10,13 @@ class CamSimulator(CamTestBase):
     cmos = False
 
     def setUp(self):
+        self.cmos = not sotfet
         super(CamSimulator, self).setUp()
 
         self.corner = (OPTS.process_corners[0], OPTS.supply_voltages[0], OPTS.temperatures[0])
 
-    def replace_temp_folder(self, new_temp):
-        if not os.path.exists(new_temp):
-            os.makedirs(new_temp)
-        OPTS.openram_temp = new_temp
-        for attr, file_name in [("spice_file", "temp.sp"), ("pex_spice", "pex.sp"),
-                                ("reduced_spice", "reduced.sp"), ("gds_file", "temp.gds")]:
-            new_val = os.path.join(new_temp, file_name)
-            setattr(OPTS, attr, new_val)
+    def run_commands(self, use_pex=False, num_banks=1):
 
-    def run_commands(self, use_pex=False, word_size=64, num_words=64, num_banks=1):
-        folder_name = "cmos" if self.cmos else "sotfet"
-        temp_folder = os.path.join(OPTS.openram_temp, "{}_{}_{}".format(folder_name, word_size, num_words))
-        self.replace_temp_folder(temp_folder)
         from modules.sotfet.sf_cam import SfCam
         from modules.sotfet.cmos.sw_cam import SwCam
         from sf_cam_delay import SfCamDelay
@@ -46,8 +37,8 @@ class CamSimulator(CamTestBase):
 
         delay.trimsp = False
 
-        delay.search_period = 2
-        delay.write_period = 3
+        delay.search_period = 1.8
+        delay.write_period = 2.5
         delay.search_duty_cycle = 0.4
         if not self.cmos:
             delay.write_duty_cycle = 0.6
@@ -74,10 +65,50 @@ class CamSimulator(CamTestBase):
     def test_schematic(self):
         OPTS.trim_netlist = False
         OPTS.run_drc = False
-        OPTS.run_lvs = True
-        OPTS.run_pex = True
-        OPTS.separate_vdd = True
+        OPTS.run_lvs = False
+        OPTS.run_pex = False
+        OPTS.separate_vdd = False
+        OPTS.verbose_save = True
+
+        OPTS.use_ultrasim = ultrasim
+        OPTS.series = series
+
+        if series:
+            device_mode = "OR"
+        else:
+            device_mode = "AND"
+        OPTS.configure_sotfet_params(device_mode)
+
         self.run_commands(use_pex=True)
+
+
+def check_arg(arg):
+    if arg in sys.argv:
+        sys.argv.remove(arg)
+        return True
+    return False
+
+
+if "cmos" in sys.argv:
+    sotfet = False
+else:
+    sotfet = True
+
+series = check_arg("series")
+ultrasim = check_arg("usim")
+
+if sotfet:
+    folder_prefix = "scam" if series else "pcam"
+else:
+    folder_prefix = "cmos"
+
+suffix = ultrasim*"_usim"
+
+word_size = 64
+num_words = 64
+openram_temp = os.path.join(os.environ["SCRATCH"], "openram", "sotfet_cam")
+temp_folder = os.path.join(openram_temp, "{}_{}_{}{}".format(folder_prefix, word_size, num_words, suffix))
+CamSimulator.temp_folder = temp_folder
 
 
 CamTestBase.run_tests(__name__)

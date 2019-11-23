@@ -54,15 +54,16 @@ class SfCamProbe(SramProbe):
         nets = {
             "clk_buf": "Xmask_in_Xdff{col}",
             "wordline_en": "Xwordline_driver_Xdriver{row}",
-            "matchline_chb": "Xml_precharge_array_Xprecharge_{row}",
-            "write_bar": "Xbitline_logic_Xbitline_logic{col}",
-            "search_cbar": "Xbitline_logic_Xbitline_logic{col}",
+            "precharge_en_bar": "Xml_precharge_array_Xprecharge_{row}",
+            "bitline_en": "Xbitline_logic_Xbitline_logic{col}",
             "sense_amp_en": "Xsearch_sense_amps_Xamp[{row}]"
         }
 
-        net_keys = ["clk_buf", "sense_amp_en", "wordline_en", "matchline_chb"]
+        net_keys = ["clk_buf", "sense_amp_en", "wordline_en", "precharge_en_bar"]
         if self.sotfet:
-            net_keys += ["write_bar", "search_cbar"]
+            net_keys += ["bitline_en"]
+
+        self.probe_labels.add("Xsram.Xbank{}.Xlogic_buffers.clk_search_bar".format(bank))
 
         for key in net_keys:
             if OPTS.use_pex:

@@ -57,6 +57,25 @@ class BitlineBufferTap(design.design):
         self.add_contact_center(contact.active_layers, offset=vector(0.5*self.width, vdd_pin.cy()),
                                 size=[1, num_contacts])
 
+        # psub contact
+        bottom_nimplant = min(self.bitline_buffer.get_layer_shapes("nimplant"), key=lambda x: x.by())
+        implant_top = bottom_nimplant.uy() - self.implant_space
+        implant_bottom = implant_top - implant_height
+        implant_x = 0.5*(self.width - implant_width)
+        self.add_rect("pimplant", offset=vector(implant_x, implant_bottom), width=implant_width, height=implant_height)
+
+        center_y = implant_bottom+0.5*implant_height
+        self.add_rect_center("active", offset=vector(0.5 * self.width, center_y),
+                             width=active_width, height=active_height)
+
+        cont = self.add_contact_center(contact.active_layers, offset=vector(0.5 * self.width, center_y),
+                                       size=[1, num_contacts])
+        gnd_pin = min(self.bitline_buffer.get_pins("gnd"), key=lambda x: x.by())
+        self.add_rect("metal1", offset=vector(0.5*self.width - 0.5*gnd_pin.height(), cont.by()),
+                      width=gnd_pin.height(), height=gnd_pin.by()-cont.by())
+
+
+
         # fill pins
         pin_names = ["vdd", "gnd"]
         for pin_name in pin_names:

@@ -8,8 +8,8 @@ from cam_test_base import CamTestBase
 
 class LogicBuffersTest(CamTestBase):
     def test_logic_buffers(self):
-        from modules.sotfet.logic_buffers import LogicBuffers
-        a = LogicBuffers()
+        from modules.sotfet.sf_control_buffers import SfControlBuffers
+        a = SfControlBuffers()
         self.local_check(a)
 
 

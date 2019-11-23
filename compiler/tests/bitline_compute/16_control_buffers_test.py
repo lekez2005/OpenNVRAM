@@ -8,7 +8,7 @@ from test_base import TestBase
 
 class ControlBuffersTest(TestBase):
     def test_control_buffers(self):
-        from modules.bitline_compute.bl_control_buffers import ControlBuffers
+        from modules.control_buffers import ControlBuffers
         a = ControlBuffers()
         self.local_check(a)
 

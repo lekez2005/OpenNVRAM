@@ -9,9 +9,9 @@ class SfBitlineLogic(design):
     search pin: 0 indicates write operation, 1 indicates search operation
     data pin: data to be written or searched
     mask pin: 1 indicates search/write this column
-    logic operation: bl = search_cbar.mask.data + write_bar.mask_bar + write_bar.data
-    logic operation: br = search_cbar.mask.data_bar + write_bar.mask_bar + write_bar.data_barc
-    subckt def: .SUBCKT sot_bitline_logic write_bar search_cbar data data_bar mask mask_bar bl br vdd gnd
+    logic operation: bl = en.mask.data
+    logic operation: br = en.mask.data_bar
+    subckt def: .SUBCKT sot_bitline_logic data data_bar mask mask_bar en bl br vdd gnd
     """
-    pin_names = ["write_bar", "search_cbar", "data", "data_bar", "mask", "mask_bar", "bl", "br", "vdd", "gnd"]
+    pin_names = ["en", "data", "data_bar", "mask", "bl", "br", "vdd", "gnd"]
     lib_name = "sot_bitline_logic"

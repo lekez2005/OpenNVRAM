@@ -6,7 +6,7 @@ from base.vector import vector
 from globals import OPTS
 from modules import bank
 from modules.sotfet.current_mirror import current_mirror
-from modules.sotfet.logic_buffers import LogicBuffers
+from modules.sotfet.sf_control_buffers import SfControlBuffers
 from modules.sotfet.sf_bitline_buffer_array import SfBitlineBufferArray
 from modules.sotfet.sf_bitline_logic_array import SfBitlineLogicArray
 from modules.sotfet.sot_wl_driver_array import sot_wl_driver_array
@@ -55,7 +55,7 @@ class SfCamBank(bank.bank):
         self.bitline_logic_array = SfBitlineLogicArray(word_size=self.word_size)
         self.add_mod(self.bitline_logic_array)
 
-        self.logic_buffers = LogicBuffers()
+        self.logic_buffers = SfControlBuffers()
         self.add_mod(self.logic_buffers)
 
     def add_modules(self):
@@ -195,12 +195,11 @@ class SfCamBank(bank.bank):
             connections.append("data_in_bar[{0}]".format(i))
         for i in range(self.word_size):
             connections.append("mask_in[{0}]".format(i))
-            connections.append("mask_in_bar[{0}]".format(i))
         for i in range(0, self.bitline_logic_array.columns, self.bitline_logic_array.words_per_row):
             connections.append("bl_val[{0}]".format(i))
             connections.append("br_val[{0}]".format(i))
         vdd_name = "vdd_bitline_logic" if self.separate_vdd else "vdd"
-        connections.extend([self.prefix + "write_bar", self.prefix + "search_cbar", vdd_name, "gnd"])
+        connections.extend([self.prefix + "bitline_en", vdd_name, "gnd"])
 
         self.connect_inst(connections)
 
@@ -246,8 +245,8 @@ class SfCamBank(bank.bank):
                                                 offset=vector(self.logic_buffers_x + self.logic_buffers.width,
                                                               self.logic_buffers_bottom), mirror="MY")
         connections = ["bank_sel", "clk", "search"]
-        connections.extend([self.prefix + x for x in ["clk_buf", "write_bar", "search_cbar", "sense_amp_en",
-                                                      "wordline_en", "matchline_chb"]])
+        connections.extend([self.prefix + x for x in ["clk_buf", "bitline_en", "sense_amp_en",
+                                                      "wordline_en", "precharge_en_bar"]])
         vdd_name = "vdd_logic_buffers" if self.separate_vdd else "vdd"
         connections.extend([vdd_name, "gnd"])
         self.connect_inst(connections)
@@ -348,7 +347,7 @@ class SfCamBank(bank.bank):
                                 max(right_rail_offsets)) + 2 * self.m2_pitch  # to the right of data flops
 
     def get_right_rail_pins(self):
-        return ["clk_buf", "write_bar", "search_cbar", "sense_amp_en"]
+        return ["bitline_en", "sense_amp_en"]
 
     def get_right_gnd_offset(self):
         body_tap_width = self.bitcell_array.body_tap.width
@@ -423,7 +422,7 @@ class SfCamBank(bank.bank):
         # right rails
         rail_y = self.address_flops[-1].get_pin("vdd").uy()
         rail_x = self.right_rail_x
-        rail_names = ["clk_buf", "write_bar", "search_cbar", "sense_en"]
+        rail_names = ["clk_buf", "bitline_en", "sense_en"]
         top_clk = max(self.data_in_flops_inst.get_pins("clk"), key=lambda x: x.uy())
         top_search_cbar = max(self.bitline_logic_array_inst.get_pins("search_cbar"), key=lambda x: x.uy())
         top_write_bar = max(self.bitline_logic_array_inst.get_pins("write_bar"), key=lambda x: x.uy())
@@ -707,10 +706,8 @@ class SfCamBank(bank.bank):
         self.copy_layout_pin(self.search_sense_inst, "vcomp", "search_ref")
 
     def connect_bitline_controls(self):
-        for pin in self.bitline_logic_array_inst.get_pins("search_cbar"):
-            self.connect_logic_buffer_to_pin("search_cbar", "search_cbar", pin)
-        for pin in self.bitline_logic_array_inst.get_pins("write_bar"):
-            self.connect_logic_buffer_to_pin("write_bar", "write_bar", pin)
+        for pin in self.bitline_logic_array_inst.get_pins("en"):
+            self.connect_logic_buffer_to_pin("bitline_en", "bitline_en", pin)
 
     def connect_logic_buffer_to_pin(self, buffer_name, rail_name, target_pin=None):
         rail = getattr(self, rail_name+"_rail")

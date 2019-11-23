@@ -2,25 +2,16 @@ import debug
 from base import design, utils
 from base.library_import import library_import
 from base.vector import vector
+from modules.sotfet.sf_bitline_logic import SfBitlineLogic
 
 
 @library_import
-class sot_dual_bitline_tap(design.design):
+class sot_bitline_logic_tap(design.design):
     """
     Nwell and Psub body taps for bitline logic
     """
     pin_names = []
-    lib_name = "dual_bitline_tap"
-
-
-@library_import
-class dual_bitline_logic(design.design):
-    """
-    Contains two bitline logic cells stacked vertically
-    """
-    pin_names = ("data<0> data_bar<0> mask<0> mask_bar<0> bl<0> br<0> data<1> data_bar<1> mask<1> " +
-                 "mask_bar<1> bl<1> br<1> search_cbar write_bar vdd gnd").split()
-    lib_name = "sot_dual_bitline_logic"
+    lib_name = "sot_bitline_logic_tap"
 
 
 class SfBitlineLogicArray(design.design):
@@ -45,10 +36,10 @@ class SfBitlineLogicArray(design.design):
         self.create_layout()
 
     def create_modules(self):
-        self.bitline_mod = dual_bitline_logic()
+        self.bitline_mod = SfBitlineLogic()
         self.add_mod(self.bitline_mod)
 
-        self.body_tap = sot_dual_bitline_tap()
+        self.body_tap = sot_bitline_logic_tap()
         self.add_mod(self.body_tap)
 
     def create_layout(self):
@@ -60,19 +51,16 @@ class SfBitlineLogicArray(design.design):
 
     def create_array(self):
         (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
-        for i in range(0, self.columns, 2):
-            name = "bitline_logic{}_{}".format(i, i + 1)
+        for i in range(0, self.columns):
+            name = "bitline_logic_{}".format(i)
             offset = vector(self.bitcell_offsets[i], 0)
             instance = self.add_inst(name=name, mod=self.bitline_mod, offset=offset)
 
-            connection_str = ("data[{c0}] data_bar[{c0}] mask[{c0}] mask_bar[{c0}] bl[{c0}] br[{c0}] data[{c1}]" +
-                              " data_bar[{c1}] mask[{c1}] mask_bar[{c1}] bl[{c1}] br[{c1}]" +
-                              " search_cbar write_bar vdd gnd").format(c0=i, c1=i + 1)
+            connection_str = "data[{0}] data_bar[{0}] mask[{0}] en bl[{0}] br[{0}] vdd gnd".format(i)
             self.connect_inst(connection_str.split())
             # copy layout pins
-            for pin_name in ["data", "data_bar", "mask", "mask_bar", "bl", "br"]:
-                for j in range(2):
-                    self.copy_layout_pin(instance, "{}<{}>".format(pin_name, j), "{}[{}]".format(pin_name, i+j))
+            for pin_name in ["data", "data_bar", "mask", "bl", "br"]:
+                self.copy_layout_pin(instance, pin_name, pin_name+"[{0}]".format(i))
 
             self.mod_insts.append(instance)
 
@@ -85,7 +73,7 @@ class SfBitlineLogicArray(design.design):
         self.height = self.mod_insts[-1].uy()
 
     def add_layout_pins(self):
-        pin_names = ["search_cbar", "write_bar", "vdd", "gnd"]
+        pin_names = ["en", "vdd", "gnd"]
         for pin_name in pin_names:
             pins = self.mod_insts[0].get_pins(pin_name)
             for pin in pins:
@@ -107,9 +95,8 @@ class SfBitlineLogicArray(design.design):
             self.add_pin("data_bar[{0}]".format(i))
         for i in range(self.word_size):
             self.add_pin("mask[{0}]".format(i))
-            self.add_pin("mask_bar[{0}]".format(i))
         for i in range(0, self.columns, self.words_per_row):
             self.add_pin("bl[{0}]".format(i))
             self.add_pin("br[{0}]".format(i))
 
-        self.add_pin_list(["write_bar", "search_cbar", "vdd", "gnd"])
+        self.add_pin_list(["en", "vdd", "gnd"])

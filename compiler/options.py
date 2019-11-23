@@ -68,6 +68,8 @@ class options(optparse.Values):
     decoder = "hierarchical_decoder"
     col_decoder = "column_decoder"
     ms_flop = "ms_flop"
+    predecoder_flop = "ms_flop_horz_pitch"
+    predecoder_flop_layout = "h"  # v for side by side, h for one above the other
     ms_flop_array = "ms_flop_array"
     ms_flop_array_horizontal = "ms_flop_array_horizontal"
     ms_flop_horz_pitch = "ms_flop_horz_pitch"

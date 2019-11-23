@@ -34,9 +34,9 @@ class BlBankTest(TestBase):
         from base import design
         from globals import OPTS
         from modules.bitline_compute.bl_bank import BlBank
-        from modules.bitline_compute.baseline.bl_baseline_bank import BlBaselineBank
+        from modules.baseline_bank import BaselineBank
         if OPTS.baseline:
-            bank_class = BlBaselineBank
+            bank_class = BaselineBank
         else:
             bank_class = BlBank
 

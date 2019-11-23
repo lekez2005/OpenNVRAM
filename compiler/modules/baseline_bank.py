@@ -1,3 +1,6 @@
+from importlib import reload
+from math import log
+
 import debug
 from base import utils
 from base.contact import m2m3, m1m2, m3m4, contact
@@ -5,17 +8,16 @@ from base.contact_full_stack import ContactFullStack
 from base.design import design
 from base.vector import vector
 from globals import OPTS
-from modules.bank import bank
-from modules.control_buffers import ControlBuffers
 from modules.bitline_compute.bl_control_buffers_sense_trig import ControlBuffersSenseTrig
 from modules.bitline_compute.bl_latched_control_buffers import LatchedControlBuffers
 from modules.bitline_compute.decoder_logic import DecoderLogic
 from modules.bitline_compute.flop_buffer import FlopBuffer
+from modules.control_buffers import ControlBuffers
 from tech import delay_strategy_class
-from tech import drc
+from tech import drc, power_grid_layers
 
 
-class BaselineBank(bank):
+class BaselineBank(design):
     control_buffers = control_buffers_inst = data_in_flops_inst = write_driver_array_inst = None
     sense_amp_array_inst = None
 
@@ -48,6 +50,19 @@ class BaselineBank(bank):
         self.calculate_dimensions()
 
         self.offset_all_coordinates()
+
+    def set_modules(self, mod_list):
+        for mod_name in mod_list:
+            config_mod_name = getattr(OPTS, mod_name)
+            class_file = reload(__import__(config_mod_name))
+            mod_class = getattr(class_file, config_mod_name)
+            setattr(self, "mod_"+mod_name, mod_class)
+
+    @staticmethod
+    def get_module_list():
+        return ["tri_gate", "bitcell", "decoder", "ms_flop_array", "ms_flop_array_horizontal", "wordline_driver",
+                "bitcell_array", "sense_amp_array", "precharge_array",
+                "column_mux_array", "write_driver_array", "tri_gate_array"]
 
     def calculate_dimensions(self):
         self.width = self.bitcell_array_inst.rx() - self.right_decoder_inst.lx()
@@ -185,6 +200,59 @@ class BaselineBank(bank):
         self.add_mod(self.control_flop)
 
         self.m9m10 = ContactFullStack(start_layer=8, stop_layer=-1, centralize=False)
+
+    def create_module(self, mod_name, *args, **kwargs):
+        mod = getattr(self, 'mod_' + mod_name)(*args, **kwargs)
+        self.add_mod(mod)
+        return mod
+
+    def compute_sizes(self):
+        """  Computes the required sizes to create the bank """
+
+        self.num_cols = int(self.words_per_row*self.word_size)
+        self.num_rows = int(self.num_words / self.words_per_row)
+
+        self.row_addr_size = int(log(self.num_rows, 2))
+        self.col_addr_size = int(log(self.words_per_row, 2))
+        self.addr_size = self.col_addr_size + self.row_addr_size
+
+        debug.check(self.num_rows*self.num_cols==self.word_size*self.num_words,"Invalid bank sizes.")
+        debug.check(self.addr_size==self.col_addr_size + self.row_addr_size,"Invalid address break down.")
+
+        # Width for left gnd rail
+        self.vdd_rail_width = 5*self.m2_width
+        self.gnd_rail_width = 5*self.m2_width
+
+        # m2 fill width for m1-m3 via
+        min_area = drc["minarea_metal1_contact"]
+        self.via_m2_fill_height = m1m2.second_layer_height
+        self.via_m2_fill_width = utils.ceil(min_area/self.via_m2_fill_height)
+
+        # Number of control lines in the bus
+        self.num_control_lines = 6
+        # The order of the control signals on the control bus:
+        self.input_control_signals = ["clk_buf", "tri_en", "w_en", "s_en"]
+        self.control_signals = list(map(lambda x: self.prefix + x,
+                                        ["s_en", "clk_bar", "clk_buf", "tri_en_bar", "tri_en", "w_en"]))
+
+        # The central bus is the column address (both polarities), row address
+        self.num_addr_lines = self.row_addr_size
+
+        # M1/M2 routing pitch is based on contacted pitch
+        self.m1_pitch = m1m2.width + self.parallel_line_space
+        self.m2_pitch = m2m3.width + self.parallel_line_space
+
+        # Overall central bus gap. It includes all the column mux lines,
+        # control lines, address flop to decoder lines and a GND power rail in M2
+        # 1.5 pitches on the right on the right of the control lines for vias (e.g. column mux addr lines)
+        self.start_of_right_central_bus = -self.m2_pitch * (self.num_control_lines + 1.5)
+        # one pitch on the right on the addr lines and one on the right of the gnd rail
+
+        self.gnd_x_offset = self.start_of_right_central_bus - self.gnd_rail_width - self.m2_pitch
+
+        self.start_of_left_central_bus = self.gnd_x_offset - self.m2_pitch*(self.num_addr_lines+1)
+        # add a pitch on each end and around the gnd rail
+        self.overall_central_bus_width = - self.start_of_left_central_bus + self.m2_width
 
     def get_wordline_in_net(self):
         return "dec_out_0[{}]"
@@ -1051,6 +1119,72 @@ class BaselineBank(bank):
             self.add_inst(self.m1mtop.name, mod=self.m1mtop,
                           offset=vector(gnd_x, rect.by()), mirror="MY")
             self.connect_inst([])
+
+    def calculate_rail_vias(self):
+        """Calculates positions of power grid rail to M1/M2 vias. Avoids internal metal3 control pins"""
+        # need to avoid the metal3 control signals
+
+        via_positions = []
+
+        self.m1mtop = m1mtop = ContactFullStack.m1mtop()
+        self.add_mod(m1mtop)
+        self.m2mtop = m2mtop = ContactFullStack.m2mtop()
+        self.add_mod(m2mtop)
+
+        self.bottom_power_layer = power_grid_layers[0]
+        self.top_power_layer = power_grid_layers[1]
+
+        self.grid_rail_height = grid_rail_height = max(m1mtop.first_layer_height, m2mtop.first_layer_height)
+        self.grid_rail_width = m1mtop.second_layer_width
+
+        grid_space = drc["power_grid_space"]
+        grid_pitch = grid_space + grid_rail_height
+        via_space = self.wide_m1_space
+
+        bank_top = self.min_point + self.height
+
+        collisions = list(sorted(self.get_collisions() +
+                                 [(self.min_point, self.min_point + 2*self.wide_m1_space),
+                                  (bank_top - grid_pitch, bank_top)],
+                                 key=lambda x: x[0]))
+
+        # combine/collapse overlapping collisions
+        while True:
+            i = 0
+            num_overlaps = 0
+            num_iterations = len(collisions)
+            new_collisions = []
+            while i < num_iterations:
+
+                collision = collisions[i]
+                if i < num_iterations - 1:
+                    next_collision = collisions[i + 1]
+                    if next_collision[0] <= collision[1]:
+                        collision = (collision[0], max(collision[1], next_collision[1]))
+                        num_overlaps += 1
+                        i += 2
+                    else:
+                        i += 1
+                else:
+                    i += 1
+                new_collisions.append(collision)
+            collisions = new_collisions
+            if num_overlaps == 0:
+                break
+
+        # calculate via positions
+        for i in range(len(collisions)-1):
+            collision = collisions[i]
+            current_y = collision[1] + self.wide_m1_space
+            next_collision = collisions[i+1][0]
+            while True:
+                via_top = current_y + grid_rail_height
+                if via_top > bank_top or via_top + via_space > next_collision:
+                    break
+                via_positions.append(current_y)
+                current_y += grid_pitch
+
+        self.power_grid_vias = via_positions
 
     def calculate_body_tap_rails_vias(self):
         self.m4m9 = ContactFullStack(start_layer=3, stop_layer=-2, centralize=False)

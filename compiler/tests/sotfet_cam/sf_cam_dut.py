@@ -55,7 +55,6 @@ XI9 gnd int BR net30 gnd mz2 / sotfet gate_R=1000 tx_l=30n tx_w=200n {sotfet_par
 .ENDS
         """
         super().write_include(circuit)
-        ordered_pin_names = ["BL", "BR", "ML", "WL", "mz1", "gnd"]
         if self.is_sotfet and not OPTS.use_pex:
             # remove empty sotfet model. Empty model is used for lvs and pex (box)
             model_file = os.path.join(OPTS.openram_temp, "sram.sp")
@@ -76,27 +75,32 @@ XI9 gnd int BR net30 gnd mz2 / sotfet gate_R=1000 tx_l=30n tx_w=200n {sotfet_par
             current_mirror_mod = os.path.join(OPTS.openram_tech, "sp_lib", "current_mirror.sp")
             self.sf.write(".include {}\n".format(current_mirror_mod))
             # pex mangles box sot_cam_cell pin order, retrieve order from pex and replace in sotfet model
-            pex_file = OPTS.pex_spice
-            model_instance = ''
-            with open(pex_file, 'r') as f:
-                previous_line = ''
-                for line in f.readlines():
-                    if 'sot_cam_cell' in line:
-                        model_instance = previous_line + line
-                        break
-                    previous_line = line
-            model_instance = model_instance.replace('\n', '')
-            model_instance = model_instance.replace('+', '')
-            actual_names = model_instance.split()[1:7]
-            orig_names = ["gnd", "ML", "WL", "BL", "BR", "mz1"]
-            ordered_pin_names = []
-            for actual_name in actual_names:
-                for orig_name in orig_names:
-                    if orig_name.lower() in actual_name.lower():
-                        ordered_pin_names.append(orig_name)
-                        continue
-            if not len(ordered_pin_names) == 6:  # layout names preserved in extraction
-                ordered_pin_names = orig_names
+
+        if self.is_sotfet:
+            if OPTS.use_pex:
+                pex_file = OPTS.pex_spice
+                model_instance = ''
+                with open(pex_file, 'r') as f:
+                    previous_line = ''
+                    for line in f.readlines():
+                        if 'sot_cam_cell' in line:
+                            model_instance = previous_line + line
+                            break
+                        previous_line = line
+                model_instance = model_instance.replace('\n', '')
+                model_instance = model_instance.replace('+', '')
+                actual_names = model_instance.split()[1:7]
+                orig_names = ["gnd", "ML", "WL", "BL", "BR", "mz1"]
+                ordered_pin_names = []
+                for actual_name in actual_names:
+                    for orig_name in orig_names:
+                        if orig_name.lower() in actual_name.lower():
+                            ordered_pin_names.append(orig_name)
+                            continue
+                if not len(ordered_pin_names) == 6:  # layout names preserved in extraction
+                    ordered_pin_names = orig_names
+            else:
+                ordered_pin_names = ["BL", "BR", "ML", "WL", "mz1", "gnd"]
             cam_cell_def = scam_cell_def if OPTS.series else pcam_cell_def
             pins = ' '.join(ordered_pin_names)
             sotfet_params = "ferro_ratio={} reference_vt={} delta_vt={}".format(OPTS.ferro_ratio,

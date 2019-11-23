@@ -247,8 +247,13 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
         def add_fill(x_offset, direction="left"):
             for rect in cell_fills[direction]:
-                self.add_rect("po_dummy", offset=vector(x_offset + rect[0][0], rect[0][1]),
-                              width=self.poly_width, height=rect[1][1] - rect[0][1])
+                height = rect[1][1] - rect[0][1]
+                if instances[0].mirror == "MX":
+                    y_offset = instances[0].by() + instances[0].height - height - rect[0][1]
+                else:
+                    y_offset = instances[0].by() + rect[0][1]
+                self.add_rect("po_dummy", offset=vector(x_offset + rect[0][0], y_offset),
+                              width=self.poly_width, height=height)
 
         if len(cell_fills.values()) > 0:
             if words_per_row > 1:

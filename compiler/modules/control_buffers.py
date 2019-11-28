@@ -50,7 +50,10 @@ class ControlBuffers(design.design):
         self.create_modules()
         self.calculate_rail_positions()
         self.add_modules()
-        self.width = self.sense_amp_buf_inst.rx()
+
+        rightmost_module = max(filter(lambda x: hasattr(x.mod, "pins") and len(x.mod.pins) > 0, self.insts),
+                               key=lambda x: x.rx())
+        self.width = rightmost_module.rx()
 
         self.add_input_pins()
         self.route_internal_signals()
@@ -178,6 +181,31 @@ class ControlBuffers(design.design):
         self.add_rect("metal2", offset=vector(x_offset, pin.cy() - 0.5 * self.m2_width),
                       width=pin.lx() - x_offset)
         self.add_contact_center(m1m2.layer_stack, offset=pin.center())
+
+    def connect_c_pin(self, inst, rail, via_dir="right"):
+        c_pin = inst.get_pin("C")
+        b_pin = inst.get_pin("B")
+        a_pin = inst.get_pin("A")
+        x_offset = b_pin.lx()
+        if via_dir == "right":
+            via_x = x_offset + m2m3.height
+        else:
+            via_x = x_offset + self.m2_width
+        self.add_contact(m2m3.layer_stack, offset=vector(via_x, rail.by()), rotate=90)
+        self.add_rect("metal2", offset=vector(x_offset, rail.by()), height=a_pin.uy() - rail.by())
+        self.add_rect("metal2", offset=vector(x_offset, a_pin.uy()-self.m2_width),
+                      width=c_pin.lx()-x_offset)
+        self.add_contact(m1m2.layer_stack, offset=vector(c_pin.lx(), a_pin.uy() - 0.5 * m1m2.height))
+
+    def create_output_rail(self, output_pin, existing_rail, destination_pin):
+        if not isinstance(existing_rail, float):
+            existing_rail = existing_rail.by()
+        rail = self.add_rect("metal3", offset=vector(output_pin.lx(), existing_rail),
+                             width=destination_pin.lx() - output_pin.lx())
+        self.add_rect("metal2", offset=vector(output_pin.lx(), rail.by()),
+                      height=output_pin.by() - rail.by())
+        self.add_contact(m2m3.layer_stack, offset=vector(output_pin.lx() + m2m3.height, rail.by()), rotate=90)
+        return rail
 
     def connect_z_to_b(self, z_pin, b_pin):
         y_offset = b_pin.cy() - 0.5 * self.m2_width

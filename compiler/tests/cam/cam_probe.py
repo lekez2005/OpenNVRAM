@@ -171,8 +171,6 @@ class CamProbe(SramProbe):
                 self.probe_labels.add("Xsram.Xbank{}.Xcam_block{}.data_in[{}]".format(0, block, col))
                 self.probe_labels.add("Xsram.Xbank{}.Xcam_block{}.bl[{}]".format(0, block, col))
                 self.probe_labels.add("Xsram.Xbank{}.Xcam_block{}.br[{}]".format(0, block, col))
-                self.probe_labels.add("Xsram.Xbank{}.Xcam_block{}.sl[{}]".format(0, block, col))
-                self.probe_labels.add("Xsram.Xbank{}.Xcam_block{}.slb[{}]".format(0, block, col))
             for row in range(self.sram.num_rows):
                 self.probe_labels.add("Xsram.Xbank{}.Xcam_block{}.wl_in[{}]".format(0, block, row))
                 self.probe_labels.add("Xsram.Xbank{}.Xcam_block{}.dec_out[{}]".format(0, block, row))

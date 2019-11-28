@@ -12,7 +12,7 @@ class FlopBufferTest(TestBase):
         import tech
         from globals import OPTS
         tech.drc_exceptions["DecoderLogic"] = tech.drc_exceptions["latchup"]
-        a = FlopBuffer(OPTS.control_flop, OPTS.control_buffers)
+        a = FlopBuffer(OPTS.control_flop, OPTS.control_flop_buffers)
         self.local_check(a)
 
 

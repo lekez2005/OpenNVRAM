@@ -18,8 +18,7 @@ class pinv(pgate.pgate, metaclass=unique_meta.Unique):
     from center of rail to rail..  The route_output will route the
     output to the right side of the cell for easier access.
     """
-    c = __import__(OPTS.bitcell)
-    bitcell = getattr(c, OPTS.bitcell)()
+    num_tracks = 1
 
     @classmethod
     def get_name(cls, size=1, beta=None, height=pgate.pgate.get_default_height(),
@@ -42,8 +41,6 @@ class pinv(pgate.pgate, metaclass=unique_meta.Unique):
         if same_line_inputs:
             name += "bend_x"
         return name
-
-
 
     def __init__(self, size=1, beta=None, height=pgate.pgate.get_default_height(),
                  contact_pwell=True, contact_nwell=True, align_bitcell=False, same_line_inputs=False):
@@ -73,7 +70,6 @@ class pinv(pgate.pgate, metaclass=unique_meta.Unique):
 
         self.nmos_scale = 1
         self.pmos_scale = 1
-        self.no_tracks = 1
 
         # sometimes width/tx_mults < min_width,
         # in such case, round up to min_width and scale width accordingly

@@ -24,11 +24,6 @@ class SfCamProbe(SramProbe):
         self.dout_probes = {}
         self.decoder_probes = {}
 
-    def probe_search_lines(self, bank):
-        for i in range(self.sram.num_cols):
-            for net in ["sl", "slb"]:
-                self.probe_labels.add("Xsram.Xbank{}.{}[{}]".format(bank, net, i))
-
     def get_bitcell_label(self, bank_index, row, col, pin_name):
         if self.sotfet:
             return "Xsram.Xbank{}.Xbitcell_array.mz1_c{}_r{}".format(bank_index, col, row)
@@ -59,9 +54,7 @@ class SfCamProbe(SramProbe):
             "sense_amp_en": "Xsearch_sense_amps_Xamp[{row}]"
         }
 
-        net_keys = ["clk_buf", "sense_amp_en", "wordline_en", "precharge_en_bar"]
-        if self.sotfet:
-            net_keys += ["bitline_en"]
+        net_keys = ["clk_buf", "sense_amp_en", "wordline_en", "precharge_en_bar", "bitline_en"]
 
         self.probe_labels.add("Xsram.Xbank{}.Xlogic_buffers.clk_search_bar".format(bank))
 

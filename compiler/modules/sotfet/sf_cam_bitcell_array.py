@@ -22,7 +22,7 @@ class sf_cam_bitcell_array(bitcell_array.bitcell_array):
         self.add_pin("gnd")
 
     def create_layout(self):
-        (self.bitcell_offsets, tap_offsets) = utils.get_tap_positions(self.column_size)
+        (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.column_size)
         yoffset = 0.0
         for row in range(self.row_size):
             if row % 2 == 1:
@@ -45,7 +45,7 @@ class sf_cam_bitcell_array(bitcell_array.bitcell_array):
                 ]
                 self.connect_inst(connections)
 
-            for x_offset in tap_offsets:
+            for x_offset in self.tap_offsets:
                 self.body_tap_insts.append(self.add_inst(name=self.body_tap.name, mod=self.body_tap,
                                                          offset=vector(x_offset, tempy), mirror=dir_key))
                 self.connect_inst([])

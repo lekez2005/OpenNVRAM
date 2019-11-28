@@ -39,7 +39,7 @@ class pnand3(pgate.pgate):
         """ Calls all functions related to the generation of the layout """
         self.nmos_scale = 2.5  # should ideally be 3 but need to implement multi-finger
         self.pmos_scale = 1
-        self.no_tracks = 3
+        self.num_tracks = 3
 
         self.shrink_if_needed()
 

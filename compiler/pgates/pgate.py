@@ -4,6 +4,7 @@ import debug
 from base import contact
 from base import design
 from base import utils
+from base.contact import m1m2
 from base.utils import round_to_grid
 from base.vector import vector
 from globals import OPTS
@@ -18,6 +19,7 @@ class pgate(design.design):
 
     c = __import__(OPTS.bitcell)
     bitcell = getattr(c, OPTS.bitcell)()
+    num_tracks = 1
 
     def __init__(self, name, height, size=1, beta=parameter["beta"], contact_pwell=True, contact_nwell=True,
                  align_bitcell=False, same_line_inputs=True):
@@ -54,6 +56,38 @@ class pgate(design.design):
             if self.determine_tx_mults():
                 break
 
+    def get_total_vertical_space(self):
+        self.gate_rail_pitch = 0.5 * contact.m1m2.second_layer_height + self.line_end_space + 0.5 * self.m2_width
+        track_extent = (self.num_tracks - 1) * self.gate_rail_pitch
+        self.middle_space = track_extent + max(contact.poly.second_layer_height, contact.m1m2.second_layer_height) + (
+                2 * self.line_end_space)
+
+        min_tx_width = drc["minwidth_tx"]
+
+        min_n_width = self.nmos_scale * min_tx_width
+        min_p_width = self.pmos_scale * self.beta * min_tx_width
+
+        rail_extent = 0.5 * self.rail_height + self.line_end_space
+        self.top_space = max(contact.m1m2.first_layer_height - min_p_width, 0) + rail_extent
+        self.bottom_space = max(contact.m1m2.first_layer_height - min_n_width, 0) + rail_extent
+
+        self.well_contact_active_height = contact.active.first_layer_width
+        self.well_contact_implant_height = drc["minwidth_implant"]
+
+        active_contact_space = self.poly_extend_active + self.poly_to_active + 0.5 * self.well_contact_active_height
+        implant_active_space = drc["ptx_implant_enclosure_active"] + 0.5 * self.well_contact_implant_height
+        poly_poly_allowance = self.poly_extend_active + 0.5 * drc["poly_end_to_end"]
+
+        self.top_space = max(self.top_space, active_contact_space, implant_active_space, poly_poly_allowance)
+        self.bottom_space = max(self.bottom_space, active_contact_space, implant_active_space, poly_poly_allowance)
+
+        if self.align_bitcell and OPTS.use_body_taps:
+            self.top_space = self.bottom_space = self.poly_extend_active + 0.5 * self.poly_to_field_poly
+            if self.same_line_inputs:
+                self.middle_space = max(contact.poly.second_layer_height, contact.m1m2.second_layer_height,
+                                        contact.m2m3.second_layer_height,
+                                        drc["pgate_contact_height"]) + 2 * self.line_end_space
+        return self.top_space + self.middle_space + self.bottom_space
 
     def determine_tx_mults(self):
         """
@@ -64,39 +98,13 @@ class pgate(design.design):
         self.nmos_size = self.nmos_scale * self.size
         self.pmos_size = self.beta * self.pmos_scale * self.size
 
-        self.gate_rail_pitch = 0.5*contact.m1m2.second_layer_height + self.line_end_space + 0.5*self.m2_width
 
-        track_extent = (self.no_tracks - 1) * self.gate_rail_pitch
-        self.middle_space = track_extent + max(contact.poly.second_layer_height, contact.m1m2.second_layer_height) + (
-                2 * self.line_end_space)
+
+        self.tx_height_available = tx_height_available = self.height - self.get_total_vertical_space()
 
         min_tx_width = drc["minwidth_tx"]
-
         min_n_width = self.nmos_scale * min_tx_width
         min_p_width = self.pmos_scale * self.beta * min_tx_width
-
-        rail_extent = 0.5*self.rail_height + self.line_end_space
-        self.top_space = max(contact.m1m2.first_layer_height - min_p_width, 0) + rail_extent
-        self.bottom_space = max(contact.m1m2.first_layer_height - min_n_width, 0) + rail_extent
-
-        self.well_contact_active_height = contact.active.first_layer_width
-        self.well_contact_implant_height = drc["minwidth_implant"]
-
-        active_contact_space = self.poly_extend_active + self.poly_to_active + 0.5*self.well_contact_active_height
-        implant_active_space = drc["ptx_implant_enclosure_active"] + 0.5*self.well_contact_implant_height
-        poly_poly_allowance = self.poly_extend_active + 0.5*drc["poly_end_to_end"]
-
-        self.top_space = max(self.top_space, active_contact_space, implant_active_space, poly_poly_allowance)
-        self.bottom_space = max(self.bottom_space, active_contact_space, implant_active_space, poly_poly_allowance)
-
-        if self.align_bitcell and OPTS.use_body_taps:
-            self.top_space = self.bottom_space = self.poly_extend_active + 0.5*self.poly_to_field_poly
-            if self.same_line_inputs:
-                self.middle_space = max(contact.poly.second_layer_height, contact.m1m2.second_layer_height,
-                                        contact.m2m3.second_layer_height, drc["pgate_contact_height"]) + 2 * self.line_end_space
-
-        self.tx_height_available = tx_height_available = self.height - (self.top_space +
-                                                                        self.middle_space + self.bottom_space)
 
         if tx_height_available < min_n_width + min_p_width:
             debug.info(2, "Warning: Cell height {0} too small for simple pmos height {1}, nmos height {2}.".format(
@@ -304,25 +312,25 @@ class pgate(design.design):
         max_metal_fill_width = 2 * (self.poly_pitch - 0.5 * self.m1_width - self.m1_space)
         output_x = self.output_x = max_sd_x + 0.5 * max_metal_fill_width + self.m1_space
 
+        self.connect_to_out_pin(positions, mid_y, contact_shift)
+
+        return output_x
+
+    def connect_to_out_pin(self, positions, mid_y, contact_shift):
         min_drain_x = min(positions)
         offset = vector(positions[0], mid_y - 0.5 * self.m2_width)
-        self.add_rect("metal2", offset=offset, width=output_x - min_drain_x)
-        offset = vector(output_x + 0.5*contact.m1m2.first_layer_width, mid_y + contact_shift)
-        self.add_contact_center(layers=m1m2_layers, offset=offset)
-        return output_x
+        self.add_rect("metal2", offset=offset, width=self.output_x - min_drain_x)
+        offset = vector(self.output_x + 0.5 * contact.m1m2.first_layer_width, mid_y + contact_shift)
+        self.add_contact_center(layers=m1m2.layer_stack, offset=offset)
 
     def connect_s_or_d(self, pmos_positions, nmos_positions):
 
         self.connect_positions_m2(positions=pmos_positions, mid_y=self.active_mid_y_pmos, tx_width=self.pmos_width,
                                   no_contacts=self.pmos_contacts,
                                   contact_shift=0.0)
-        output_x = self.connect_positions_m2(positions=nmos_positions, mid_y=self.active_mid_y_nmos, tx_width=self.nmos_width,
+        self.connect_positions_m2(positions=nmos_positions, mid_y=self.active_mid_y_nmos, tx_width=self.nmos_width,
                                   no_contacts=self.nmos_contacts,
                                   contact_shift=0.0)
-
-        offset = vector(output_x, self.active_mid_y_nmos)
-        self.add_rect("metal1", offset=offset, height=self.active_mid_y_pmos - self.active_mid_y_nmos)
-
 
     def add_poly_contacts(self, pin_names, y_shifts):
         fill_height = (self.middle_space - 2 * self.line_end_space)
@@ -355,7 +363,7 @@ class pgate(design.design):
             self.extra_implant = max(0.0, drc["ptx_implant_enclosure_active"] - 0.5*self.poly_to_field_poly)
             nimplant_y = -self.extra_implant
             self.nimplant_height = self.mid_y + self.extra_implant
-            self.pimplant_height = self.nwell_height = self.height - self.mid_y + self.extra_implant
+            self.pimplant_height = self.height - self.mid_y + self.extra_implant
 
         else:
             nimplant_y = 0.5*self.well_contact_implant_height

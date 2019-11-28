@@ -21,7 +21,7 @@ class sot_wl_driver_array(design.design):
     module_insts = []
 
     def __init__(self, rows):
-        design.design.__init__(self, "wordline_driver")
+        design.design.__init__(self, "wordline_driver_array")
         self.rows = rows
         self.add_pins()
         self.create_layout()
@@ -74,6 +74,7 @@ class sot_wl_driver_array(design.design):
 
         for row in range(self.rows):
             self.copy_layout_pin(self.module_insts[row], "wl", "wl[{}]".format(row))
+            self.copy_layout_pin(self.module_insts[row], "wl_in", "in[{}]".format(row))
             for pin_name in ["gnd"]:
                 self.copy_layout_pin(self.module_insts[row], pin_name, pin_name)
 

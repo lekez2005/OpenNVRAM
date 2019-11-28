@@ -64,6 +64,8 @@ class options(optparse.Values):
 
     verbose_save = False  # whether to save all lots of internal nodes e.g. cols for control signals, currents
 
+    separate_vdd = False
+
     # These are the default modules that can be over-riden
     decoder = "hierarchical_decoder"
     col_decoder = "column_decoder"
@@ -92,6 +94,7 @@ class options(optparse.Values):
     bitcell = "bitcell"
     delay_chain = "delay_chain"
     body_tap = "body_tap"
+    control_flop = "ms_flop_horz_pitch"
 
     # buffer stages
     control_logic_clk_buffer_stages = [2, 6, 16, 24]  # buffer stages for control logic clk_bar and clk_buf
@@ -106,6 +109,7 @@ class options(optparse.Values):
     cells_per_group = 1
 
     predecode_sizes = [1, 2]
+    control_flop_buffers = [2]  # buffer for control flop
 
     sense_amp_type = "sense_amp"
     LATCHED_SENSE_AMP = "latched_sense_amp"

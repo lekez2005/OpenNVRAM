@@ -6,10 +6,10 @@ Run a regression test on a logic_buffers module.
 from cam_test_base import CamTestBase
 
 
-class LogicBuffersTest(CamTestBase):
+class SwControlBuffersTest(CamTestBase):
     def test_logic_buffers(self):
-        from modules.sotfet.cmos.sw_logic_buffers import SwLogicBuffers
-        a = SwLogicBuffers()
+        from modules.sotfet.cmos.sw_control_buffers import SwControlBuffers
+        a = SwControlBuffers()
         self.local_check(a)
 
 

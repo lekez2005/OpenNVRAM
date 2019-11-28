@@ -35,7 +35,7 @@ class pnor2(pgate.pgate):
     def create_layout(self):
         self.nmos_scale = 1
         self.pmos_scale = 2
-        self.no_tracks = 2
+        self.num_tracks = 2
 
         self.determine_tx_mults()
         # FIXME: Allow multiple fingers

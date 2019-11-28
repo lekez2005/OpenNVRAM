@@ -424,6 +424,7 @@ class hierarchical_decoder(design.design):
             y_offset = self.nand_inst[0].by() - nwell_height
             self.add_rect("nwell", offset=vector(x_offset, y_offset),
                           width=nwell_width, height=nwell_height)
+            
 
         for row in range(self.rows):
 
@@ -588,9 +589,15 @@ class hierarchical_decoder(design.design):
             inst = self.nand_inst[i]
             self.copy_power_pin(inst.get_pin("vdd"))
             self.copy_power_pin(inst.get_pin("gnd"))
+
+        extend_power = (self.pre2x4_inst + self.pre3x8_inst)[0].mod.vertical_flops
         for predecoder in self.pre2x4_inst + self.pre3x8_inst:
-            for pin in predecoder.get_pins("vdd") + predecoder.get_pins("gnd"):
-                self.copy_power_pin(pin)
+            if extend_power:
+                self.copy_layout_pin(predecoder, "vdd")
+                self.copy_layout_pin(predecoder, "gnd")
+            else:
+                for pin in predecoder.get_pins("vdd") + predecoder.get_pins("gnd"):
+                    self.copy_power_pin(pin)
 
         
 

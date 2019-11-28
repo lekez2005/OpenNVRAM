@@ -88,7 +88,7 @@ class SfCam(sram):
         """ Route a single bank SRAM """
         # route bank_sel to vdd
         bank_sel_pin = self.bank_inst.get_pin("bank_sel")
-        (ll, ur) = utils.get_pin_rect(self.bank.logic_buffers_inst.get_pin("vdd"), [self.bank_inst])
+        (ll, ur) = utils.get_pin_rect(self.bank.control_buffers_inst.get_pin("vdd"), [self.bank_inst])
         self.add_rect("metal3", offset=vector(bank_sel_pin.rx()-0.5*self.m3_width, ll[1]),
                       height=bank_sel_pin.uy()-ll[1])
         m2_fill_height = drc["minside_metal1_contact"]

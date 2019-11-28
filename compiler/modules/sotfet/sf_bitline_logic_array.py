@@ -2,6 +2,7 @@ import debug
 from base import design, utils
 from base.library_import import library_import
 from base.vector import vector
+from globals import OPTS
 from modules.sotfet.sf_bitline_logic import SfBitlineLogic
 
 
@@ -36,10 +37,10 @@ class SfBitlineLogicArray(design.design):
         self.create_layout()
 
     def create_modules(self):
-        self.bitline_mod = SfBitlineLogic()
+        self.bitline_mod = SfBitlineLogic(OPTS.bitline_logic)
         self.add_mod(self.bitline_mod)
 
-        self.body_tap = sot_bitline_logic_tap()
+        self.body_tap = sot_bitline_logic_tap(OPTS.bitline_logic_tap)
         self.add_mod(self.body_tap)
 
     def create_layout(self):

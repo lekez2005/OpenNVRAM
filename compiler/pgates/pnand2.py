@@ -35,7 +35,7 @@ class pnand2(pgate.pgate):
         """ Calls all functions related to the generation of the layout """
         self.nmos_scale = 2
         self.pmos_scale = 1
-        self.no_tracks = 2
+        self.num_tracks = 2
 
         self.shrink_if_needed()
 

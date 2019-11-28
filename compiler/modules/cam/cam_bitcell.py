@@ -13,7 +13,7 @@ class cam_bitcell(bitcell.bitcell):
     library.
     """
 
-    pin_names = ["BL", "BR", "SL", "SLB", "WL", "ML", "vdd", "gnd"]
+    pin_names = ["BL", "BR", "WL", "ML", "vdd", "gnd"]
     (width, height) = utils.get_libcell_size("cam_cell_6t", GDS["unit"], layer["boundary"])
     pin_map = utils.get_libcell_pins(pin_names, "cam_cell_6t", GDS["unit"], layer["boundary"])
 

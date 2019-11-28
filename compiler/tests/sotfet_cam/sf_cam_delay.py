@@ -86,8 +86,7 @@ class SfCamDelay(SequentialDelay):
     def probe_addresses(self, addresses):
         probe = SfCamProbe(self.sram, OPTS.pex_spice)
         self.probe_matchlines(probe, self.sram)
-        if self.cmos:
-            probe.probe_search_lines(0)
+
         probe.probe_bitlines(0)
         probe.probe_misc_bank(0)
 

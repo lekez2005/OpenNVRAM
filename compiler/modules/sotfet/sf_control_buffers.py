@@ -1,8 +1,8 @@
 from base.contact import m2m3
 from base.vector import vector
 from globals import OPTS
-from modules.control_buffers import ControlBuffers
 from modules.buffer_stage import BufferStage
+from modules.control_buffers import ControlBuffers
 from modules.logic_buffer import LogicBuffer
 from pgates.pinv import pinv
 from pgates.pnand2 import pnand2
@@ -49,18 +49,23 @@ class SfControlBuffers(ControlBuffers):
         self.bitline_en = LogicBuffer(buffer_stages=OPTS.write_buffers, logic="pnand2", **self.get_logic_args())
         self.add_mod(self.bitline_en)
 
+        self.create_wordline_en()
+        self.create_sense_amp_en()
+
+        assert len(OPTS.chb_buffers) % 2 == 1, "Number of matchline buffers should be odd"
+        self.chb_buf = LogicBuffer(buffer_stages=OPTS.chb_buffers, logic="pnor2", **self.get_logic_args())
+        self.add_mod(self.chb_buf)
+
+    def create_wordline_en(self):
         assert len(OPTS.wordline_en_buffers) % 2 == 0, "Number of wordline buffers should be even"
         self.wordline_buf = LogicBuffer(buffer_stages=OPTS.wordline_en_buffers, logic="pnor2",
                                         **self.get_logic_args())
         self.add_mod(self.wordline_buf)
 
+    def create_sense_amp_en(self):
         assert len(OPTS.sense_amp_buffers) % 2 == 0, "Number of sense_amp buffers should be even"
         self.sense_amp_buf = LogicBuffer(buffer_stages=OPTS.sense_amp_buffers, logic="pnor2", **self.get_logic_args())
         self.add_mod(self.sense_amp_buf)
-
-        assert len(OPTS.chb_buffers) % 2 == 1, "Number of matchline buffers should be odd"
-        self.chb_buf = LogicBuffer(buffer_stages=OPTS.chb_buffers, logic="pnor2", **self.get_logic_args())
-        self.add_mod(self.chb_buf)
 
     def add_modules(self):
         y_offset = self.rail_pos[-1] + self.m3_width + 0.5 * self.rail_height
@@ -136,18 +141,23 @@ class SfControlBuffers(ControlBuffers):
 
     def add_output_pins(self):
         pin_names = ["precharge_en_bar", "clk_buf", "sense_amp_en", "bitline_en", "wordline_en"]
-        mod_names = ["out_inv", "out_inv", "out", "out_inv", "out"]
+        mod_names = self.get_output_pins()
         instances = [self.chb_buf_inst, self.clk_buf_inst, self.sense_amp_buf_inst, self.bitline_en_inst,
                      self.wordline_buf_inst]
         for i in range(len(pin_names)):
             out_pin = instances[i].get_pin(mod_names[i])
             self.add_layout_pin(pin_names[i], "metal2", offset=out_pin.ul(), height=self.height-out_pin.uy())
 
+    @staticmethod
+    def get_output_pins():
+        return ["out_inv", "out_inv", "out", "out_inv", "out"]
+
     def add_power_pins(self):
-        first_module_gnd = self.clk_search_inst_bar.get_pin("gnd")
+        first_module = min(self.insts, key=lambda x: x.lx())
+        first_module_gnd = first_module.get_pin("gnd")
         self.add_layout_pin("gnd", "metal1", offset=first_module_gnd.ll(), width=self.width-first_module_gnd.lx(),
                             height=first_module_gnd.height())
-        first_module_vdd = self.clk_search_inst_bar.get_pin("vdd")
+        first_module_vdd = first_module.get_pin("vdd")
         self.add_layout_pin("vdd", "metal1", offset=first_module_vdd.ll(), width=self.width-first_module_vdd.lx(),
                             height=first_module_vdd.height())
 

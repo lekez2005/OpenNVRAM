@@ -38,16 +38,20 @@ class CharTestBase(testutils.OpenRamTest):
         from globals import OPTS
         return os.path.join(OPTS.openram_temp, filename)
 
-    def run_pex_extraction(self, module, name_prefix):
+    def run_pex_extraction(self, module, name_prefix, run_drc=False, run_lvs=False):
         import verify
 
         spice_file = self.prefix("{}.sp".format(name_prefix))
         gds_file = self.prefix("{}.gds".format(name_prefix))
         pex_file = self.prefix("{}.pex.sp".format(name_prefix))
-        if self.run_pex:
+        if self.run_pex or run_lvs or run_drc:
             module.sp_write(spice_file)
             module.gds_write(gds_file)
-
+        if run_drc:
+            verify.run_drc(module.name, gds_file)
+        if run_lvs:
+            verify.run_lvs(module.name, gds_file, spice_file, final_verification=False)
+        if self.run_pex:
             errors = verify.run_pex(module.name, gds_file, spice_file, pex_file,
                                     run_drc_lvs=self.run_drc_lvs)
             if errors:

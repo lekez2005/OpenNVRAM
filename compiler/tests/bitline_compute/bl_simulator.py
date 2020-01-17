@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-
+import json
+import math
 import os
 import sys
 
@@ -44,7 +45,7 @@ class BlSimulator(TestBase):
                                words_per_row=OPTS.words_per_row)
         self.sram.sp_write(OPTS.spice_file)
 
-        OPTS.pex_submodules = [self.sram.bank]
+        #OPTS.pex_submodules = [self.sram.bank]
 
         # TODO you can define custom steps generators here following the pattern in EnergyStepsGenerator
         if OPTS.energy_sim:
@@ -54,12 +55,52 @@ class BlSimulator(TestBase):
 
         delay.trimsp = False
 
-        OPTS.sense_trigger_delay = 0.6
+        # probe these cols
+        points = 5
+        spacing = (word_size - 1) / (points - 1)
+        cols = [math.floor(i * spacing) for i in range(points)] + [233] * (self.sram.num_cols > 233)
+        OPTS.probe_cols = cols
 
-        delay.read_period = 2.2
-        delay.write_period = 2.2
-        delay.read_duty_cycle = 0.4
-        delay.write_duty_cycle = 0.4
+        OPTS.sense_amp_ref = 0.7
+        OPTS.diff_setup_time = 0.2
+
+        if OPTS.baseline:
+            if OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
+                period = 1.1
+                duty_cycle = 0.35
+                OPTS.sense_trigger_delay = 0.2
+            else:
+                period = 1.8
+                duty_cycle = 0.35
+                OPTS.sense_trigger_delay = 0.4
+        elif OPTS.serial:
+            if OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
+                period = 1.1
+                duty_cycle = 0.4
+                OPTS.sense_trigger_delay = 0.2
+            else:
+                period = 2.2
+                duty_cycle = 0.4
+                OPTS.sense_trigger_delay = 0.5
+                OPTS.sense_amp_ref = 0.78
+        else:
+            if OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
+                period = 1.5
+                duty_cycle = 0.4
+                OPTS.sense_trigger_delay = 0.25
+            else:
+                period = 2.2
+                duty_cycle = 0.4
+                OPTS.sense_trigger_delay = 0.5
+                OPTS.sense_amp_ref = 0.78
+        OPTS.verbose_save = False
+
+        delay.period = period
+        delay.duty_cycle = duty_cycle
+        delay.read_period = period
+        delay.write_period = period
+        delay.read_duty_cycle = duty_cycle
+        delay.write_duty_cycle = duty_cycle
 
         delay.slew = OPTS.slew_rate
         delay.setup_time = OPTS.setup_time
@@ -70,14 +111,24 @@ class BlSimulator(TestBase):
 
         delay.write_delay_stimulus()
 
+        def dump_obj(x, f):
+            for key in sorted(dir(x)):
+                if type(getattr(x, key)).__name__ in ["str", "list", "int", "float"]:
+                    f.write("{} = {}\n".format(key, getattr(x, key)))
+
+        with open(os.path.join(OPTS.openram_temp, "config.py"), "w") as config_file:
+            dump_obj(OPTS, config_file)
+            config_file.write("\n\n")
+            dump_obj(delay, config_file)
+
         delay.stim.run_sim()
 
     def test_schematic(self):
         use_pex = True
         OPTS.trim_netlist = False
-        OPTS.run_drc = True
-        OPTS.run_lvs = True
-        OPTS.run_pex = True
+        OPTS.run_drc = False
+        OPTS.run_lvs = False
+        OPTS.run_pex = False
 
         OPTS.top_level_pex = True
 
@@ -94,8 +145,12 @@ if 'fixed_buffers' in sys.argv:
 else:
     BlSimulator.run_optimizations = False  # for now just always use the hand-tuned values
 
-word_size = 256
-num_words = 128
+if "small" in sys.argv:
+    word_size = 64
+    num_words = 32
+else:
+    word_size = 256
+    num_words = 128
 
 if "serial" in sys.argv:
     folder_name = "serial"

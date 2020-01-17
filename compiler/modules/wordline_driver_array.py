@@ -15,8 +15,7 @@ class wordline_driver_array(design.design):
     """
 
     logic_buffer = None
-    buffer_insts = []
-    module_insts = []
+
     inv1 = None
 
     def __init__(self, rows, buffer_stages=None):
@@ -26,6 +25,9 @@ class wordline_driver_array(design.design):
         if buffer_stages is None:
             buffer_stages = [2, 8]
         self.buffer_stages = buffer_stages
+
+        self.buffer_insts = []
+        self.module_insts = []
 
         self.add_pins()
         self.create_layout()

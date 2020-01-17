@@ -1,0 +1,17 @@
+#!/bin/sh
+
+for design in "bp-vram" "bs-vram"; do
+
+  echo "* ${design}:"
+
+  for uop in "rd" "wr" "blc" "wb" "wb_add" "wb_mask" "wb_mask_add" "srl"; do
+
+    cmd="./analyze_energy.py --design=${design} --uop=${uop} --brief"
+
+    val=$(${cmd} 2>/dev/null || echo -ne "0")
+
+    echo "    - ${uop} = ${val} pJ/Op"
+
+  done
+
+done

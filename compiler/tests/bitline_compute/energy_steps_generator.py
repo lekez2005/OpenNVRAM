@@ -96,7 +96,7 @@ class EnergyStepsGenerator(SimStepsGenerator):
             getattr(self, func_name)()
 
     def generate_bit_parallel_energy(self):
-        func_name = 'test_bs_{}'.format(OPTS.energy_sim)
+        func_name = 'test_bp_{}'.format(OPTS.energy_sim)
 
         if not hasattr(self, func_name):
             return
@@ -200,8 +200,9 @@ class EnergyStepsGenerator(SimStepsGenerator):
         sources = ['and', 'nand', 'nor', 'or', 'xor', 'xnor','data_in']
         for i in range(OPTS.num_tries):
           src = random.choice(sources)
+          addr = random.randint(0, num_rows - 1)
           func_name = 'wb_{}'.format(src)
-          getattr(self, func_name)()
+          getattr(self, func_name)(addr)
 
     def test_bs_wb(self): self.test_wb()
     def test_bp_wb(self): self.test_wb()
@@ -214,11 +215,27 @@ class EnergyStepsGenerator(SimStepsGenerator):
         self.initialize(self.gen_init())
 
         for i in range(OPTS.num_tries):
+          addr = random.randint(0, num_rows - 1)
           func_name = 'wb_{}'.format('add')
-          getattr(self, func_name)()
+          getattr(self, func_name)(addr)
 
     def test_bs_wb_add(self): self.test_wb_add()
     def test_bp_wb_add(self): self.test_wb_add()
+
+    def test_wb_and(self):
+        num_rows = self.num_rows
+        num_cols = self.num_cols
+        word_size = self.word_size
+
+        self.initialize(self.gen_init())
+
+        for i in range(OPTS.num_tries):
+          addr = random.randint(0, num_rows - 1)
+          func_name = 'wb_{}'.format('and')
+          getattr(self, func_name)(addr)
+
+    def test_bs_wb_and(self): self.test_wb_and()
+    def test_bp_wb_and(self): self.test_wb_and()
 
     def test_wb_mask(self):
         num_rows = self.num_rows
@@ -250,3 +267,33 @@ class EnergyStepsGenerator(SimStepsGenerator):
 
     def test_bs_wb_mask_add(self): self.test_wb_mask_add()
     def test_bp_wb_mask_add(self): self.test_wb_mask_add()
+
+    def test_wb_mask_and(self):
+        num_rows = self.num_rows
+        num_cols = self.num_cols
+        word_size = self.word_size
+
+        self.initialize(self.gen_init())
+
+        for i in range(OPTS.num_tries):
+          func_name = 'wb_mask_{}'.format('and')
+          getattr(self, func_name)()
+
+    def test_bs_wb_mask_and(self): self.test_wb_mask_and()
+    def test_bp_wb_mask_and(self): self.test_wb_mask_and()
+
+    def test_srl(self):
+        num_rows = self.num_rows
+        num_cols = self.num_cols
+        word_size = self.word_size
+
+        mask = [1, 1, 0, 0] * int(num_cols / 4)
+
+        self.initialize({})
+        self.set_mask(mask)
+
+        for i in range(OPTS.num_tries - 1):
+          func_name = '{}'.format('srl')
+          getattr(self, func_name)()
+
+    def test_bp_srl(self): self.test_srl()

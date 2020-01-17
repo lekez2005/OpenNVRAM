@@ -75,7 +75,7 @@ class SimStepsGenerator(SequentialDelay):
         self.bank_sel = self.prev_bank_sel = 1
         self.sr_en = self.prev_sr_en = 1
         self.read = self.prev_read = 1
-        self.en_0 = self.prev_en_0 = 1
+        self.en_0 = self.prev_en_0 = 0
         self.en_1 = self.prev_en_1 = 0
         self.mask = self.prev_mask = [1] * OPTS.word_size
         self.cin = self.prev_cin = [1]*self.words_per_row
@@ -237,8 +237,8 @@ class SimStepsGenerator(SequentialDelay):
         self.command_comments.append("* Period = {} \n".format(self.period))
         self.command_comments.append("* Duty Cycle = {} \n".format(self.duty_cycle))
 
-        quick_read = True
-
+        self.test_blc()
+        quick_read = False
         if OPTS.baseline:
             self.baseline_write(a_address, data_one, mask_one, "Write A ({})".format(a_address))
 
@@ -380,6 +380,7 @@ class SimStepsGenerator(SequentialDelay):
         self.prev_mask = self.mask
 
         # # write sense_trig
+        self.write_pwl("sense_trig", 0, 0)
         if self.read and increment_time:
             self.write_pwl("sense_trig", 0, 1)
             if not OPTS.baseline and increment_time:
@@ -544,6 +545,8 @@ class SimStepsGenerator(SequentialDelay):
 
         self.address = list(reversed(addr_v))
 
+        # Needed signals
+        self.sel_bank = 1
         self.read = 1
 
         self.en_0 = 1
@@ -561,13 +564,21 @@ class SimStepsGenerator(SequentialDelay):
 
         self.set_selects(bus_sel="s_and")
 
-        self.acc_en     = 1
-        self.acc_en_inv = 0
+        self.acc_en     = 0
+        self.acc_en_inv = 1
 
         self.duty_cycle = self.read_duty_cycle
         self.period = self.read_period
 
         self.update_output()
+
+        # Reset important signals
+        self.sel_bank = 0
+        self.read = 0
+        self.en_0 = self.en_1 = 0
+        self.sr_en = 0
+        if OPTS.serial:
+            self.mask_en = 0
 
     def wr(self, addr, data_v, mask_v):
         """Write data to an address. Data can be integer or binary vector. Address is binary vector"""
@@ -585,6 +596,8 @@ class SimStepsGenerator(SequentialDelay):
 
         self.set_selects(bus_sel="s_data", sr_in="s_mask_in", sr_out="s_sr")
 
+        # Needed signals
+        self.sel_bank = 1
         self.read = 0
 
         if OPTS.serial:
@@ -602,6 +615,46 @@ class SimStepsGenerator(SequentialDelay):
 
         self.update_output()
 
+        # Reset important signals
+        self.sel_bank = 0
+        self.read = 0
+        self.en_0 = self.en_1 = 0
+        self.sr_en = 0
+        if OPTS.serial:
+            self.mask_en = 0
+
+    def set_mask(self, mask_v):
+        self.command_comments.append("* [{: >20}] set_mask {}\n".format(self.current_time, mask_v))
+
+        self.mask = list(reversed(mask_v))
+
+        self.set_selects(sr_in="s_mask_in")
+
+        self.read = 0
+
+        if OPTS.serial:
+            self.mask_en = 1
+            self.sr_en   = 0
+            self.s_cout  = 1
+        else:
+            self.sr_en   = 1
+
+        self.en_0 = 0
+        self.en_1 = 0
+
+        self.acc_en     = 0
+        self.acc_en_inv = 1
+
+        self.update_output()
+
+        # Reset important signals
+        self.sel_bank = 0
+        self.read = 0
+        self.en_0 = self.en_1 = 0
+        self.sr_en = 0
+        if OPTS.serial:
+            self.mask_en = 0
+
     def blc(self, addr0, addr1):
         addr0_v = self.convert_address(addr0)
         addr1_v = self.convert_address(addr1)
@@ -611,6 +664,8 @@ class SimStepsGenerator(SequentialDelay):
         self.address   = list(reversed(self.convert_address(addr0_v)))
         self.address_1 = list(reversed(self.convert_address(addr1_v)))
 
+        # Needed signals
+        self.sel_bank = 1
         self.read = 1
 
         self.diff = 0
@@ -628,10 +683,18 @@ class SimStepsGenerator(SequentialDelay):
 
         #self.set_selects(bus_sel, sr_in, sr_out)
 
-        self.acc_en     = 1
-        self.acc_en_inv = 0
+        self.acc_en     = 0
+        self.acc_en_inv = 1
 
         self.update_output()
+
+        # Reset important signals
+        self.sel_bank = 0
+        self.read = 0
+        self.en_0 = self.en_1 = 0
+        self.sr_en = 0
+        if OPTS.serial:
+            self.mask_en = 0
 
     def wb(self, addr, src, cond):
         #self.setup_mask_measurements()
@@ -661,6 +724,7 @@ class SimStepsGenerator(SequentialDelay):
         self.command_comments.append("* [{: >20}] {}wb{} {}\n".format(self.current_time, cond_str, src_str, addr_v))
 
         self.address = list(reversed(addr_v))
+        self.mask = [1] * self.num_cols
 
         # Generate Signals
         if   src == 'and'    : bus_sel = 's_and'
@@ -673,7 +737,7 @@ class SimStepsGenerator(SequentialDelay):
 
         elif src == 'add'    : bus_sel = 's_sum'
 
-        elif src == 'data_in': bus_sel = 's_data_in'
+        elif src == 'data_in': bus_sel = 's_data'
 
         else                 : bus_sel = 's_and'
 
@@ -691,9 +755,9 @@ class SimStepsGenerator(SequentialDelay):
 
         self.set_selects(bus_sel, sr_in, sr_out)
 
+        # Needed signals
+        self.sel_bank = 1
         self.read = 0
-
-        self.sr_en = sr_en
 
         self.en_0 = 1
         self.en_1 = 0
@@ -702,13 +766,21 @@ class SimStepsGenerator(SequentialDelay):
         self.acc_en_inv = 1
 
         if OPTS.serial:
-            self.mask_en = 0
+            self.mask_en = sr_en
             self.sr_en   = 1 if src == 'add' else 0
             self.s_cout  = 1
         else:
-            self.sr_en   = 0
+            self.sr_en   = sr_en
 
         self.update_output()
+
+        # Reset important signals
+        self.sel_bank = 0
+        self.read = 0
+        self.en_0 = self.en_1 = 0
+        self.sr_en = 0
+        if OPTS.serial:
+            self.mask_en = 0
 
     # All possible variants
     def        wb_and    (self, addr): self.wb(addr, 'and'    , ''   )
@@ -755,6 +827,14 @@ class SimStepsGenerator(SequentialDelay):
 
         self.update_output()
 
+        # Reset important signals
+        self.sel_bank = 0
+        self.read = 0
+        self.en_0 = self.en_1 = 0
+        self.sr_en = 0
+        if OPTS.serial:
+            self.mask_en = 0
+
     # CIN
     def set_cin(self, val):
         val = [0] * len(self.c_val)
@@ -771,6 +851,14 @@ class SimStepsGenerator(SequentialDelay):
         self.acc_en_inv = 1
 
         self.update_output()
+
+        # Reset important signals
+        self.sel_bank = 0
+        self.read = 0
+        self.en_0 = self.en_1 = 0
+        self.sr_en = 0
+        if OPTS.serial:
+            self.mask_en = 0
 
     def wb_mask(self, src):
         #self.setup_mask_measurements()
@@ -805,7 +893,7 @@ class SimStepsGenerator(SequentialDelay):
 
         elif src == 'add'    : bus_sel = 's_sum'
 
-        elif src == 'data_in': bus_sel = 's_data_in'
+        elif src == 'data_in': bus_sel = 's_data'
 
         else                 : bus_sel = 's_and'
 
@@ -827,19 +915,40 @@ class SimStepsGenerator(SequentialDelay):
 
         self.update_output()
 
+        # Reset important signals
+        self.sel_bank = 0
+        self.read = 0
+        self.en_0 = self.en_1 = 0
+        self.sr_en = 0
+        if OPTS.serial:
+            self.mask_en = 0
+
     # All possible variants
-    def wb_mask_and    (self): self.wb('and'    )
-    def wb_mask_nand   (self): self.wb('nand'   )
-    def wb_mask_or     (self): self.wb('or'     )
-    def wb_mask_nor    (self): self.wb('nor'    )
+    def wb_mask_and    (self): self.wb(0, 'and'    , '')
+    def wb_mask_nand   (self): self.wb(0, 'nand'   , '')
+    def wb_mask_or     (self): self.wb(0, 'or'     , '')
+    def wb_mask_nor    (self): self.wb(0, 'nor'    , '')
 
-    def wb_mask_xor    (self): self.wb('xor'    )
-    def wb_mask_xnor   (self): self.wb('xnor'   )
+    def wb_mask_xor    (self): self.wb(0, 'xor'    , '')
+    def wb_mask_xnor   (self): self.wb(0, 'xnor'   , '')
 
-    def wb_mask_add    (self): self.wb('add'    )
-    def wb_mask_data_in(self): self.wb('data_in')
+    def wb_mask_add    (self): self.wb(0, 'add'    , '')
+    def wb_mask_data_in(self): self.wb(0, 'data_in', '')
 
-    # Macro-Operations
+    # Helpers
+    def get_random_bin_vector(self, bit_sz):
+        MAX_INT = 1 << bit_sz
+
+        _val = random.randint(0, MAX_INT - 1)
+
+        val = []
+        for i in range(bit_sz):
+            mask   = 1 << i
+            digit  = 0 if (_val & mask) == 0 else 1
+            val   += [digit]
+
+        return val
+     # Macro-Operations
     def add(self):
         num_cols = self.num_cols
         word_size = self.word_size
@@ -899,6 +1008,7 @@ class SimStepsGenerator(SequentialDelay):
           self.blc(addr_A + i, addr_B + i)
           self.wb_add(addr_C + i)
 
+        verify_file = open("verify.data", "w")
         # Verify
         for bit in range(0, bit_sz):
             mask   = 1 << bit
@@ -916,6 +1026,93 @@ class SimStepsGenerator(SequentialDelay):
                 data_C += [val]
 
             self.command_comments.append("* expected = {}\n".format(data_C))
+            verify_file.write("[{}, {}],\n".format(self.current_time, data_C))
+
+        verify_file.close()
+
+    def test_wr_rd(self):
+        num_cols = self.num_cols
+        word_size = self.word_size
+
+        def select_cols(x):
+            if len(x) >= num_cols:
+                return x[:num_cols]
+            else:
+                repeats = ceil(num_cols/len(x))
+                return (x*repeats)[:num_cols]
+
+        data_one = select_cols([0]*word_size + [1, 0, 0, 1]*int(word_size/4))
+        data_two = select_cols([0]*(word_size-1) + [1] + [1, 0, 1, 0]*int(word_size/4))
+        data_three = select_cols([1] * word_size + [1, 1, 0, 0] * int(word_size / 4))
+
+        mask_all = select_cols([1] * (2 * word_size))
+
+        bit_sz  = int(32 / 8)
+        MAX_INT = 1 << bit_sz
+
+        # Load Data
+        verify_file = open("verify.data", "w")
+        verify_data = []
+        for addr in range(0, 8):
+            data = self.get_random_bin_vector(32)
+
+            # Write data
+            self.wr(addr, data, mask_all)
+
+            # Remember
+            verify_data += data
+
+
+        for data in verify_data:
+            # Read the data
+            verify_file.write("[{}, {}],\n".format(self.current_time + 1.9, data))
+            self.rd(addr)
+
+        verify_file.close()
+
+    def test_blc(self):
+        num_cols = self.num_cols
+        word_size = self.word_size
+
+        def select_cols(x):
+            if len(x) >= num_cols:
+                return x[:num_cols]
+            else:
+                repeats = ceil(num_cols/len(x))
+                return (x*repeats)[:num_cols]
+
+        data_one = select_cols([0]*word_size + [1, 0, 0, 1]*int(word_size/4))
+        data_two = select_cols([0]*(word_size-1) + [1] + [1, 0, 1, 0]*int(word_size/4))
+        data_three = select_cols([1] * word_size + [1, 1, 0, 0] * int(word_size / 4))
+
+        mask_all = select_cols([1] * (2 * word_size))
+
+        bit_sz  = int(32 / 8)
+        MAX_INT = 1 << bit_sz
+
+        # Load Data
+        verify_file = open("verify.data", "w")
+        verify_data = []
+        for addr in range(0, 2):
+            data = self.get_random_bin_vector(32)
+
+            # Write data
+            self.wr(addr, data, mask_all)
+
+            # Remember
+            verify_data.append([addr, data])
+
+        for entry in verify_data:
+            addr = entry[0]
+            data = entry[1]
+
+            # Read the data
+            self.blc(addr, addr)
+
+            verify_file.write("[{}, {}],\n".format(self.current_time + 1.9, data))
+            self.wb_and(addr)
+
+        verify_file.close()
 
     def setup_write_measurements(self, address_int):
         """new_val is MSB first"""

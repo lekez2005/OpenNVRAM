@@ -300,6 +300,9 @@ usim_opt  rcr_fmax=20G
                 else:
                     debug.error(
                         "Could not find spice model: {0}\nSet SPICE_MODEL_DIR to over-ride path.\n".format(item))
+        # initial condition file
+        if hasattr(OPTS, 'ic_file') and os.path.isfile(OPTS.ic_file):
+            self.sf.write(".include {}\n".format(OPTS.ic_file))
 
     def write_supply(self):
         """ Writes supply voltage statements """

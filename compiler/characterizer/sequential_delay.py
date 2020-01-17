@@ -212,7 +212,7 @@ class SequentialDelay(delay):
             self.v_comments[key] = "* (time, data): [ "
         self.current_time = self.setup_time + 0.5 * self.slew
         self.update_output(increment_time=False)
-        self.current_time += self.slew
+        self.current_time += 2*self.slew
 
     def finalize_output(self):
         """Complete pwl statements"""
@@ -253,7 +253,7 @@ class SequentialDelay(delay):
         """Generate voltage at current time for each pwl voltage supply"""
         # control signals
         for key in self.control_sigs:
-            if key == "sense_trig":
+            if key in ["sense_trig", "diff", "diffb"]:
                 continue
             self.write_pwl_from_key(key)
 

@@ -74,7 +74,7 @@ class SimStepsGenerator(SequentialDelay):
         self.sense_trig = self.prev_sense_trig = 0
         self.bank_sel = self.prev_bank_sel = 1
         self.sr_en = self.prev_sr_en = 1
-        self.read = self.prev_read = 0
+        self.read = self.prev_read = 1
         self.en_0 = self.prev_en_0 = 1
         self.en_1 = self.prev_en_1 = 0
         self.mask = self.prev_mask = [1] * OPTS.word_size
@@ -104,6 +104,8 @@ class SimStepsGenerator(SequentialDelay):
                 setup_time = -(self.duty_cycle*self.period + OPTS.sense_trigger_delay)
             else:
                 setup_time = -self.slew
+        elif (key == "diff" and prev_val == 1) or (key == "diffb" and prev_val == 0):
+            setup_time = ((1-self.duty_cycle) * self.period) + OPTS.diff_setup_time
         else:
             setup_time = self.setup_time
 
@@ -179,12 +181,14 @@ class SimStepsGenerator(SequentialDelay):
         probe.probe_misc_bank(0)
         probe.probe_write_drivers()
         probe.probe_dout_masks()
+        probe.probe_latched_sense_amps()
         if not OPTS.baseline:
             probe.probe_alu()
         probe.probe_currents(addresses)
 
         for address in addresses:
             probe.probe_address(address)
+        probe.bitcell_probes = probe.state_probes
 
         self.run_drc_lvs_pex()
 
@@ -233,6 +237,8 @@ class SimStepsGenerator(SequentialDelay):
         self.command_comments.append("* Period = {} \n".format(self.period))
         self.command_comments.append("* Duty Cycle = {} \n".format(self.duty_cycle))
 
+        quick_read = True
+
         if OPTS.baseline:
             self.baseline_write(a_address, data_one, mask_one, "Write A ({})".format(a_address))
 
@@ -253,9 +259,20 @@ class SimStepsGenerator(SequentialDelay):
 
             self.setup_write_measurements(a_address)
             self.baseline_write(a_address, data_three, mask_three, "Write A ({})".format(a_address))
-
-
-
+        elif quick_read:
+            self.bank_sel = 1
+            self.acc_en = self.read = 1
+            self.acc_en_inv = 0
+            existing_data = {
+                a_address: [0, 0, 1, 1] * int(num_cols / 4),
+                b_address: [0, 1, 0, 1] * int(num_cols / 4)
+            }
+            self.initialize_sram(probe, existing_data)
+            self.setup_read_measurements(b_address)
+            self.bitline_compute(a_address, b_address, bus_sel="s_nor", sr_in="s_mask_in",
+                                 sr_out="s_sr", comment=" A + B")
+            self.setup_write_measurements(a_address)
+            self.write_masked_data(b_address, data_two, mask_two, "Write B ({})".format(b_address))
         else:
             self.bank_sel = 1
             self.acc_en = self.read = 0
@@ -363,13 +380,19 @@ class SimStepsGenerator(SequentialDelay):
         self.prev_mask = self.mask
 
         # # write sense_trig
-        if self.read:
+        if self.read and increment_time:
             self.write_pwl("sense_trig", 0, 1)
+            if not OPTS.baseline and increment_time:
+                self.write_pwl("diff", 0, 1)
+                self.write_pwl("diffb", 1, 0)
 
         super().update_output(increment_time)
 
         if self.read:
             self.write_pwl("sense_trig", 1, 0)
+            if not OPTS.baseline and increment_time:
+                self.write_pwl("diff", 1, 0)
+                self.write_pwl("diffb", 0, 1)
 
     def baseline_read(self, address_int, comment=""):
         address_vec = self.convert_address(address_int)

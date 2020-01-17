@@ -1,3 +1,4 @@
+import math
 import os
 from subprocess import CalledProcessError, check_output
 
@@ -30,6 +31,11 @@ class BlProbe(SramProbe):
         if OPTS.baseline:
             return
         if OPTS.use_pex:
+            # internal alu bus
+            for col in OPTS.probe_cols:
+                self.probe_labels.add("Xalu_Xmcc{0}_and_Xalu_Xmcc{0}".format(col))
+                self.probe_labels.add("Xalu_Xmcc{0}_nand_Xalu_Xmcc{0}".format(col))
+                self.probe_labels.add("bus[{0}]_Xalu_Xmcc{0}".format(col))
 
             for col in range(self.sram.num_cols):
                 if OPTS.serial:
@@ -130,7 +136,7 @@ class BlProbe(SramProbe):
 
                 if OPTS.use_pex:
                     # clk_buf at flop in
-                    self.probe_labels.add("Xsram.Xbank{bank}_clk_bar_Xbank{bank}_Xdata_in_XXdff{col}".
+                    self.probe_labels.add("Xsram.Xbank{bank}_clk_bar_Xbank{bank}_Xdata_in_Xdff{col}".
                                           format(bank=0, col=col))
                     # write_en
                     self.probe_labels.add("Xsram.Xbank{bank}_write_en_Xbank{bank}_Xwrite_driver_array_Xdriver_{col}".
@@ -151,9 +157,9 @@ class BlProbe(SramProbe):
             # flop in
             if OPTS.use_pex:
                 if OPTS.baseline:
-                    pin_label = "DATA[{col}]_Xbank{bank}_Xdata_in_XXdff{col}".format(bank=0, col=col)
+                    pin_label = "DATA[{col}]_Xbank{bank}_Xdata_in_Xdff{col}".format(bank=0, col=col)
                 else:
-                    pin_label = "bus[{col}]_Xbank{bank}_Xdata_in_XXdff{col}". \
+                    pin_label = "bus[{col}]_Xbank{bank}_Xdata_in_Xdff{col}". \
                         format(bank=0, col=col)
             else:
                 if OPTS.baseline:
@@ -182,11 +188,25 @@ class BlProbe(SramProbe):
                 pin_label = "Xsram.Xbank{bank}.mask_in_bar[{col}]".format(bank=0, col=col)
             self.probe_labels.add(pin_label)
 
+    def probe_latched_sense_amps(self):
+        if OPTS.baseline or OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
+            return
+        for col in range(self.sram.num_cols):
+            for net in ["int1", "int2"]:
+                if OPTS.use_pex:
+                    pin_label = "Xsram.Xbank{bank}_Xsense_amp_array_Xsa_d{col}_{net}_"\
+                                "Xbank{bank}_Xsense_amp_array.Xsa_d{col}". \
+                        format(bank=0, col=col, net=net)
+                    self.probe_labels.add(pin_label)
+                else:
+                    self.probe_labels.add("Xsram.Xbank{bank}.Xsense_amp_array.Xsa_d{col}.{net}".format(
+                        bank=0, col=col, net=net))
+
     def probe_misc_bank(self, bank):
 
         # control buffers
         nets = {
-            "clk_bar": "Xdata_in_XXdff{col}",
+            "clk_bar": "Xdata_in_Xdff{col}",
             "wordline_en": "Xwordline_driver_Xdriver{row}",
             "precharge_en_bar": "Xprecharge_array_Xpre_column_{col}",
             "write_en": "Xwrite_driver_array_Xdriver_{col}",
@@ -196,24 +216,23 @@ class BlProbe(SramProbe):
         }
 
         row = self.sram.num_rows - 1
-        cols = [0, int(self.sram.num_cols/2), self.sram.num_cols-1]
+        cols = OPTS.probe_cols
 
-        if OPTS.verbose_save:
-            for col in cols:
+        for net in nets:
+            self.probe_labels.add("Xsram.Xbank{bank}_{net}_Xbank{bank}_Xcontrol_buffers".format(bank=bank, net=net))
 
-                destination_format = "Xsram.Xbank{bank}_{net}_Xbank{bank}_{net_location}"
-                origin_format = "Xsram.Xbank{bank}_{net}_Xbank{bank}_Xcontrol_buffers"
+        for col in cols:
 
-                for net in nets:
-                    if OPTS.use_pex:
-                        probe_label = destination_format.format(bank=bank, net=net,
-                                                                net_location=nets[net].format(col=col, row=row))
-                        self.probe_labels.add(probe_label)
-                        probe_label = origin_format.format(bank=bank, net=net)
-                        self.probe_labels.add(probe_label)
-                    else:
-                        probe_label = "Xsram.Xbank{}.{}".format(bank, net)
-                        self.probe_labels.add(probe_label)
+            net_format = "Xsram.Xbank{bank}_{net}_Xbank{bank}_{net_location}"
+
+            for net in nets:
+                if OPTS.use_pex:
+                    probe_label = net_format.format(bank=bank, net=net,
+                                                            net_location=nets[net].format(col=col, row=row))
+                    self.probe_labels.add(probe_label)
+                else:
+                    probe_label = "Xsram.Xbank{}.{}".format(bank, net)
+                    self.probe_labels.add(probe_label)
 
         if OPTS.use_pex:
             if OPTS.baseline:
@@ -222,6 +241,12 @@ class BlProbe(SramProbe):
                 self.clk_buf_probe = "clk_buf_Xbank{bank}_Xcontrol_buffers".format(bank=bank)
         else:
             self.clk_buf_probe = "Xsram.Xbank{}.clk_buf".format(bank)
+
+        if OPTS.use_pex:
+            # sense_amp_ref
+            for col in OPTS.probe_cols:
+                self.probe_labels.add("sense_amp_ref_Xbank{bank}_Xsense_amp_array_Xsa_d{col}".
+                                      format(bank=bank, col=col))
 
         # output of data_in flops
         if OPTS.verbose_save:
@@ -274,7 +299,7 @@ class BlProbe(SramProbe):
                 self.dout_probes[col] = "Xsram.Xbank{bank}.DATA[{col}]".format(bank=bank, col=col)
                 self.mask_probes[col] = "Xsram.Xbank{bank}.mask_in_bar[{col}]".format(bank=bank, col=col)
             else:
-                self.dout_probes[col] = "bus[{col}]_Xbank{bank}_Xdata_in_XXdff{col}".format(
+                self.dout_probes[col] = "bus[{col}]_Xbank{bank}_Xdata_in_Xdff{col}".format(
                     bank=bank, col=col)
                 self.mask_probes[col] = "mask_bar[{col}]_Xbank{bank}_Xwrite_driver_array" \
                                         "_Xdriver_{col}".format(bank=bank, col=col)
@@ -319,7 +344,8 @@ class BlProbe(SramProbe):
                 except CalledProcessError:
                     debug.warning("Probe {} not found in extracted netlist".format(label))
             try:
-                bus_probes = [self.bitline_probes, self.decoder_probes, self.dout_probes, self.mask_probes]
+                bus_probes = [self.bitline_probes, self.br_probes, self.decoder_probes,
+                              self.dout_probes, self.mask_probes]
                 for bus_probe in bus_probes:
                     if bus_probe == self.dout_probes and OPTS.baseline:
                         continue

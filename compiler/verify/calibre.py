@@ -245,28 +245,7 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
     debug.info(2, cmd)
     utils.run_command(cmd, outfile, errfile, verbose_level=3, cwd=OPTS.openram_temp)
 
-    # check the result for these lines in the summary:
-    f = open(lvs_runset['lvsReportFile'], "r")
-    results = f.readlines()
-    f.close()
-
-    # NOT COMPARED
-    # CORRECT
-    # INCORRECT
-    test = re.compile("#     CORRECT     #")
-    correct = list(filter(test.search, results))
-    test = re.compile("NOT COMPARED")
-    notcompared = list(filter(test.search, results))
-    test = re.compile("#     INCORRECT     #")
-    incorrect = list(filter(test.search, results))
-
-    # Errors begin with "Error:"
-    test = re.compile(r"\s+Error:")
-    errors = list(filter(test.search, results))
-    for e in errors:
-        debug.error(e.strip("\n"))
-
-    summary_errors = len(notcompared) + len(incorrect) + len(errors)
+    summary_errors = get_lvs_summary_errors(lvs_runset['lvsReportFile'])
 
     # also check the extraction summary file
     f = open(lvs_runset['lvsReportFile'] + ".ext", "r")
@@ -303,6 +282,32 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
 
     total_errors = summary_errors + out_errors + ext_errors
     return total_errors
+
+
+def get_lvs_summary_errors(report_file):
+    # check the result for these lines in the summary:
+    f = open(report_file, "r")
+    results = f.readlines()
+    f.close()
+
+    # NOT COMPARED
+    # CORRECT
+    # INCORRECT
+    test = re.compile("#     CORRECT     #")
+    correct = list(filter(test.search, results))
+    test = re.compile("NOT COMPARED")
+    notcompared = list(filter(test.search, results))
+    test = re.compile("#     INCORRECT     #")
+    incorrect = list(filter(test.search, results))
+
+    # Errors begin with "Error:"
+    test = re.compile(r"\s+Error:")
+    errors = list(filter(test.search, results))
+    for e in errors:
+        debug.error(e.strip("\n"))
+
+    summary_errors = len(notcompared) + len(incorrect) + len(errors)
+    return summary_errors
 
 
 def run_pex(cell_name, gds_name, sp_name, output=None, run_drc_lvs=True, correct_port_order=True):
@@ -364,6 +369,9 @@ def run_pex(cell_name, gds_name, sp_name, output=None, run_drc_lvs=True, correct
     debug.info(2, cmd)
     utils.run_command(cmd, outfile, errfile, verbose_level=3, cwd=OPTS.openram_temp)
 
+    summary_errors = get_lvs_summary_errors(get_temp_file(cell_name + ".lvs.report"))
+    if summary_errors > 0:
+        debug.error("LVS errors during PEX: {}".format(summary_errors))
 
     # also check the output file
     f = open(outfile, "r")

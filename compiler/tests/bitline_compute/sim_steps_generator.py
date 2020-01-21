@@ -103,7 +103,7 @@ class SimStepsGenerator(SequentialDelay):
             if prev_val == 0:
                 setup_time = -(self.duty_cycle*self.period + OPTS.sense_trigger_delay)
             else:
-                setup_time = -self.slew
+                setup_time = -(self.slew + 0.03)  # temporary hard-code to minimize glitch
         elif (key == "diff" and prev_val == 1) or (key == "diffb" and prev_val == 0):
             setup_time = ((1-self.duty_cycle) * self.period) + OPTS.diff_setup_time
         else:
@@ -380,7 +380,6 @@ class SimStepsGenerator(SequentialDelay):
         self.prev_mask = self.mask
 
         # # write sense_trig
-        self.write_pwl("sense_trig", 0, 0)
         if self.read and increment_time:
             self.write_pwl("sense_trig", 0, 1)
             if not OPTS.baseline and increment_time:
@@ -1238,7 +1237,7 @@ class SimStepsGenerator(SequentialDelay):
 
         if getattr(OPTS, 'run_lvs', True):
             lvs_result = verify.run_lvs(self.sram.name, OPTS.gds_file, OPTS.spice_file,
-                                        final_verification=not OPTS.separate_vdd)
+                                        final_verification=True)
             if lvs_result:
                 raise AssertionError("LVS Failed")
 

@@ -5,9 +5,11 @@ import random
 import subprocess
 import time
 from importlib import reload
+from typing import List
 
 import globals
 import tech
+from base.geometry import rectangle
 from base.pin_layout import pin_layout
 from base.vector import vector
 from gdsMill import gdsMill
@@ -205,6 +207,61 @@ def get_libcell_pins(pin_list, name, units=None, layer=None):
             # this is a list because other cells/designs may have must-connect pins
             cell[str(pin)].append(pin_layout(pin, rect, layer))
     return cell
+
+
+def get_clearances(cell, layer, purpose="drawing"):
+    all_rects = list(sorted(cell.get_gds_layer_rects(layer, purpose),
+                            key=lambda x: x.height))  # type: List[rectangle]
+
+    def remove_empty(rects):
+        return list(filter(lambda rect: rect[1] > rect[0], rects))
+
+    height = cell.height
+    if len(all_rects) == 0:
+        return [(0, height)]
+    elif len(all_rects) == 1:
+        top_rect = all_rects[0]
+        return remove_empty([(0, top_rect.by()), (top_rect.uy(), height)])
+
+
+
+    def overlaps(rect1, rect2):
+        return rect1.by() <= rect2.by() <= rect1.uy() or rect2.by() <= rect1.by() <= rect2.uy()
+
+    def combine_rects(original, rect2):
+        original.boundary = [vector(original.lx(), min(original.by(), rect2.by())),
+                             vector(original.rx(), max(original.uy(), rect2.uy()))]
+
+    def find_overlaps(rects):
+        original_length = len(rects)
+        obstructions = [rects[0]]
+        for rect in rects[1:]:
+            found = False
+            for obstruction in obstructions:
+                if overlaps(rect, obstruction):
+                    combine_rects(obstruction, rect)
+                    found = True
+                    break
+            if not found:
+                obstructions.append(rect)
+        final_length = len(obstructions)
+        return original_length == final_length, obstructions
+
+    obstructions = all_rects
+    while True:
+        stabilized, obstructions = find_overlaps(obstructions)
+        if stabilized:
+            break
+    obstructions = list(sorted(obstructions, key=lambda x: x.by()))
+
+    results = []
+    prev_top = 0
+    for obstruction in obstructions:
+        results.append((prev_top, obstruction.by()))
+        prev_top = obstruction.uy()
+    results.append((prev_top, height))
+
+    return remove_empty(results)
 
 
 def load_class(class_name):

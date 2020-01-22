@@ -189,8 +189,21 @@ class BlProbe(SramProbe):
             self.probe_labels.add(pin_label)
 
     def probe_latched_sense_amps(self):
-        if OPTS.baseline or OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
+        if OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
             return
+
+        cols = range(self.sram.num_cols) if OPTS.verbose_save else OPTS.probe_cols
+        if OPTS.baseline:
+            for col in cols:
+                self.probe_labels.add("Xbank0_Xsense_amp_array_Xsa_d{}_outb_Xbank0_Xsense_amp_array".format(col))
+                self.probe_labels.add("Xbank0_and_out[{}]_Xbank0_Xsense_amp_array".format(col))
+            return
+
+        if OPTS.use_pex:
+            self.probe_labels.add("Xsram.Xbank{bank}_read_buf_Xbank{bank}_"
+                                  "Xcontrol_buffers_Xsample_bar_int".format(bank=0))
+            self.probe_labels.add("Xbank0_Xcontrol_buffers_sample_bar_int")
+
         for col in range(self.sram.num_cols):
             for net in ["int1", "int2"]:
                 if OPTS.use_pex:
@@ -242,7 +255,7 @@ class BlProbe(SramProbe):
         else:
             self.clk_buf_probe = "Xsram.Xbank{}.clk_buf".format(bank)
 
-        if OPTS.use_pex:
+        if OPTS.use_pex and not OPTS.baseline:
             # sense_amp_ref
             for col in OPTS.probe_cols:
                 self.probe_labels.add("sense_amp_ref_Xbank{bank}_Xsense_amp_array_Xsa_d{col}".
@@ -312,7 +325,7 @@ class BlProbe(SramProbe):
         bank_index, bank_inst, row, col_index = self.decode_address(address)
 
         if OPTS.baseline:
-            decoder_label = "Xsram.Xbank{}.dec_out_0[{}]".format(bank_index, row)
+            decoder_label = "Xsram.Xbank{}.dec_out[{}]".format(bank_index, row)
         else:
             decoder_label = "Xsram.Xbank{}.wl_in[{}]".format(bank_index, row)
         self.decoder_probes[address_int] = decoder_label

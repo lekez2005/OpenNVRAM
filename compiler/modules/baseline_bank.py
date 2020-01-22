@@ -9,16 +9,16 @@ from base.design import design
 from base.vector import vector
 from globals import OPTS
 from modules.bitline_compute.bl_control_buffers_sense_trig import ControlBuffersSenseTrig
-from modules.bitline_compute.bl_latched_control_buffers import LatchedControlBuffers
 from modules.bitline_compute.flop_buffer import FlopBuffer
 from modules.buffer_stage import BufferStage
 from modules.control_buffers import ControlBuffers
+from modules.control_buffers_bank_mixin import ControlBuffersMixin
 from pgates.pgate import pgate
 from tech import delay_strategy_class
 from tech import drc, power_grid_layers
 
 
-class BaselineBank(design):
+class BaselineBank(design, ControlBuffersMixin):
     control_buffers = control_buffers_inst = data_in_flops_inst = write_driver_array_inst = None
     sense_amp_array_inst = None
 
@@ -88,6 +88,7 @@ class BaselineBank(design):
         self.add_vdd_gnd_rails()
 
     def route_layout(self):
+        self.connect_buffer_rails()
         self.route_control_buffer()
         self.route_read_buf()
         self.route_precharge()
@@ -107,6 +108,7 @@ class BaselineBank(design):
         self.add_right_rails_vias()
 
         self.route_body_tap_supplies()
+        self.route_control_buffers_power()
 
     def add_pins(self):
         """ Adding pins for Bank module"""
@@ -263,6 +265,10 @@ class BaselineBank(design):
             else:
                 self.control_buffers = ControlBuffers()
         else:
+            if OPTS.baseline:
+                from modules.bitline_compute.baseline_latched_control_buffers import LatchedControlBuffers
+            else:
+                from modules.bitline_compute.bl_latched_control_buffers import LatchedControlBuffers
             self.control_buffers = LatchedControlBuffers()
         self.add_mod(self.control_buffers)
 
@@ -319,13 +325,11 @@ class BaselineBank(design):
 
         self.copy_layout_pin(self.read_buf_inst, "din", "read")
 
-
     def add_read_flop(self):
 
         x_offset = self.control_buffers_inst.rx() + self.poly_pitch + self.control_flop.width
         offset = vector(x_offset, self.logic_buffers_bottom + self.control_buffers.height - self.control_flop.height)
         self.add_operation_flop(offset)
-
 
         # fill implants between read_buf and logic_buffers
         flop_inverter = self.control_flop.buffer.buffer_invs[-1]
@@ -354,7 +358,7 @@ class BaselineBank(design):
             control_rect = self.rightmost_largest_rect(control_mod.get_layer_shapes(layer))
 
             bottom = max(flop_rect.by() + flop_y_offset, control_rect.by() + control_y_offset)
-            top = max(flop_rect.uy() + flop_y_offset, control_rect.uy() + control_y_offset)
+            top = min(flop_rect.uy() + flop_y_offset, control_rect.uy() + control_y_offset)
 
             left = control_x_offset - control_rect.lx()
             right = flop_x_offset - flop_rect.rx()
@@ -398,9 +402,9 @@ class BaselineBank(design):
         self.data_in_flops_inst = self.add_inst("data_in", mod=self.msf_data_in, offset=vector(0, y_offset))
         self.connect_inst(data_connections)
 
-    def get_mask_clk(self): return "clk_bar"
+    def get_mask_clk(self): return "clk_buf"
 
-    def get_data_clk(self): return "clk_buf"
+    def get_data_clk(self): return "clk_bar"
 
     def get_mask_flops_y_offset(self):
         return self.tri_gate_array_inst.uy()
@@ -576,8 +580,8 @@ class BaselineBank(design):
             self.add_rect("metal2", offset=control_pin.ul(), height=y_offset-control_pin.uy())
             self.add_rect("metal3", offset=vector(x_offset, y_offset), width=control_pin.rx()-x_offset)
 
-            self.add_contact(m2m3.layer_stack, offset=vector(control_pin.lx(),
-                                                             y_offset+self.m2_width-m2m3.second_layer_height))
+            self.add_contact_center(m2m3.layer_stack, offset=vector(control_pin.cx(),
+                                                                    y_offset+0.5*self.m2_width), rotate=90)
 
             dest_pins = destination_pins[rail_name]
 
@@ -1125,6 +1129,8 @@ class BaselineBank(design):
             for x_offset in [self.left_gnd.cx(), self.left_vdd.cx()]:
                 self.add_via_center(m2m3.layer_stack, offset=vector(x_offset, y_offset), size=[2, 2])
                 self.add_via_center(m3m4.layer_stack, offset=vector(x_offset, y_offset), size=[2, 2])
+                if x_offset == self.left_gnd.cx() and row > 0:
+                    self.add_via_center(m1m2.layer_stack, offset=vector(x_offset, y_offset), size=[2, 2])
 
         # add Mtop vdd/gnd rails within decoder
         wide_m10_space = drc["wide_metal10_to_metal10"]
@@ -1355,6 +1361,50 @@ class BaselineBank(design):
                     self.add_inst(self.m9m10.name, mod=self.m9m10,
                                   offset=vector(x_offset, rect.by()))
                     self.connect_inst([])
+
+    def route_control_buffers_power(self):
+        obstructions = [(self.control_buffers_inst.lx() - self.wide_m1_space,
+                         self.control_buffers_inst.rx()+self.wide_m1_space)]
+        if hasattr(self, "max_right_buffer_x"):
+            obstructions.append((self.min_right_buffer_x - self.wide_m1_space,
+                                 self.max_right_buffer_x + self.wide_m1_space))
+
+        rails = utils.get_libcell_pins(["vdd", "gnd"], OPTS.body_tap)
+        tap_width = self.bitcell_array.body_tap.width
+        vdd_rail = rails["vdd"][0]
+        gnd_rail = rails["gnd"][0]
+
+        def filter_func(offset):
+            for obstruction in obstructions:
+                if obstruction[0] <= offset <= obstruction[1] or offset <= obstruction[0] <= offset + tap_width:
+                    return False
+            return True
+
+        tap_offsets = [self.bitcell_array_inst.lx() + x for x in self.bitcell_array.tap_offsets]
+        tap_offsets = list(filter(filter_func, tap_offsets))
+        vdd_pin = self.control_buffers.get_pin("vdd")
+        gnd_pin = self.control_buffers.get_pin("gnd")
+
+        via_size = [2, 1]
+        dummy_via = contact(m1m2.layer_stack, dimensions=via_size)
+        fill_width = vdd_rail.width()
+        min_area = drc["minarea_metal1_contact"]
+
+        fill_height = max(utils.ceil(min_area / fill_width), dummy_via.width)
+
+        for tap_offset in tap_offsets:
+            for (pin, rail) in [(vdd_pin, vdd_rail), (gnd_pin, gnd_rail)]:
+                x_offset = rail.lx() + tap_offset
+                self.add_rect("metal4", offset=vector(x_offset, pin.by()),
+                              height=self.data_in_flops_inst.by()-pin.by(), width=rail.width())
+                if rail == vdd_rail:
+                    y_offset = pin.uy() - fill_height
+                else:
+                    y_offset = pin.by()
+                for via in [m1m2, m2m3, m3m4]:
+                    self.add_contact(via.layer_stack,
+                                     offset=vector(x_offset+0.5*(rail.width()+dummy_via.height),
+                                                   y_offset), size=via_size, rotate=90)
 
     @staticmethod
     def rightmost_largest_rect(rects):

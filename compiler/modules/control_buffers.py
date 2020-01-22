@@ -41,9 +41,12 @@ class ControlBuffers(design.design):
         self.contact_pwell = contact_pwell
         self.contact_nwell = contact_nwell
 
-        self.rail_pos = [0.0] * 4
+        self.rail_pos = [0.0] * self.get_num_rails()
 
         self.create_layout()
+
+    def get_num_rails(self):
+        return 4
 
     def create_layout(self):
         self.add_pins()

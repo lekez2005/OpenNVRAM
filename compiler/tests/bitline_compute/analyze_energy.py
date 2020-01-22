@@ -2,8 +2,69 @@
 import re
 import os, sys
 import builtins
+import argparse
 
-# Helper Function
+#-------------------------------------------------------------------------
+# Command line processing
+#-------------------------------------------------------------------------
+
+class ArgumentParserWithCustomError(argparse.ArgumentParser):
+  def error( self, msg = "" ):
+    if ( msg ): print("\n ERROR: %s" % msg)
+    print("")
+    file = open( sys.argv[0] )
+    for ( lineno, line ) in enumerate( file ):
+      if ( line[0] != '#' ): sys.exit(msg != "")
+      if ( (lineno == 2) or (lineno >= 4) ): print( line[1:].rstrip("\n") )
+
+def parse_cmdline():
+  p = ArgumentParserWithCustomError( add_help=False )
+
+  # Standard command line arguments
+
+  p.add_argument("-h", "--help",    action="store_true")
+
+  # Additional commane line arguments for the simulator
+
+  p.add_argument("-g", "--view", default="verilog", choices=["verilog", "db", "lef", "lib"] )
+
+  p.add_argument( "-o", "--output", default = "."     ,
+                                    action  = "store" )
+
+  p.add_argument( "specs_filename" )
+
+  opts = p.parse_args()
+  if opts.help: p.error()
+  return opts
+
+#-------------------------------------------------------------------------
+# Subshell stuff
+#-------------------------------------------------------------------------
+
+def subshell( cmd ):
+
+  # get shell's enviornment
+  env = {}
+  env.update(os.environ)
+
+  process        = subprocess.Popen( cmd                     ,
+                                     stdin  = subprocess.PIPE,
+                                     stdout = subprocess.PIPE,
+                                     stderr = subprocess.PIPE,
+                                     shell  = True           ,
+                                     env    = env            )
+
+  stdout, stderr = process.communicate()
+  status         = process.returncode
+
+  del process
+
+  return stdout, stderr, status
+
+#-------------------------------------------------------------------------
+# Helper Functions
+#-------------------------------------------------------------------------
+
 def getArg(arg_n, val, prev = None):
 
     ret = prev
@@ -14,7 +75,10 @@ def getArg(arg_n, val, prev = None):
 
     return ret
 
-# Starts
+#-------------------------------------------------------------------------
+# Main
+#-------------------------------------------------------------------------
+
 design = ''
 uop    = ''
 brief  = False

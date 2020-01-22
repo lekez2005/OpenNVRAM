@@ -2,10 +2,72 @@
 import json
 import os
 import sys
+import argparse
 
 from test_base import TestBase
 from globals import OPTS
 
+#-------------------------------------------------------------------------
+# Command line processing
+#-------------------------------------------------------------------------
+
+class ArgumentParserWithCustomError(argparse.ArgumentParser):
+  def error( self, msg = "" ):
+    if ( msg ): print("\n ERROR: %s" % msg)
+    print("")
+    file = open( sys.argv[0] )
+    for ( lineno, line ) in enumerate( file ):
+      if ( line[0] != '#' ): sys.exit(msg != "")
+      if ( (lineno == 2) or (lineno >= 4) ): print( line[1:].rstrip("\n") )
+
+def parse_cmdline():
+  p = ArgumentParserWithCustomError( add_help=False )
+
+  # Standard command line arguments
+
+  p.add_argument( "-h", "--help",    action="store_true" )
+
+  # Additional commane line arguments for the simulator
+
+  p.add_argument( "-g", "--view", default="verilog",
+                  choices=["verilog", "db", "lef", "lib"] )
+
+  p.add_argument( "-o", "--output", default = "."     ,
+                                    action  = "store" )
+
+  p.add_argument( "specs_filename" )
+
+  opts = p.parse_args()
+  if opts.help: p.error()
+  return opts
+
+#-------------------------------------------------------------------------
+# Subshell stuff
+#-------------------------------------------------------------------------
+
+def subshell( cmd ):
+
+  # get shell's enviornment
+  env = {}
+  env.update(os.environ)
+
+  process        = subprocess.Popen( cmd                     ,
+                                     stdin  = subprocess.PIPE,
+                                     stdout = subprocess.PIPE,
+                                     stderr = subprocess.PIPE,
+                                     shell  = True           ,
+                                     env    = env            )
+
+  stdout, stderr = process.communicate()
+  status         = process.returncode
+
+  del process
+
+  return stdout, stderr, status
+
+#-------------------------------------------------------------------------
+# Helper Functions
+#-------------------------------------------------------------------------
 
 class BlSimulator(TestBase):
     baseline = False
@@ -55,6 +117,7 @@ class BlSimulator(TestBase):
         delay.trimsp = False
 
         OPTS.sense_amp_ref = 0.7
+        OPTS.diff_setup_time = 0.2
 
         if OPTS.baseline:
             if OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
@@ -152,7 +215,7 @@ for arg in sys.argv:
 if "latched" in sys.argv:
     folder_name += "_latched"
 
-openram_temp = os.path.join(os.environ["SCRATCH"], "openram", "bl_sram")
+openram_temp = os.path.join(os.environ["SCRATCH"])
 
 temp_folder = os.path.join(openram_temp, "{}_{}_{}".format(folder_name, word_size, num_words))
 

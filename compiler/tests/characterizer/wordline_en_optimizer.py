@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import itertools
+import os
+import sys
 from importlib import reload
 
 from char_test_base import CharTestBase
@@ -132,6 +134,7 @@ class WordlineEnOptimizer(CharTestBase):
         thresh = 0.45
         N = 20
         MAX_SIZE = 100
+        MIN_SIZE = 2
 
         self.run_drc_lvs = False
 
@@ -140,10 +143,10 @@ class WordlineEnOptimizer(CharTestBase):
         end_time = 4
 
         self.run_lvs = True
-        self.run_pex = False
+        self.run_pex = True
 
-        load_dut = self.make_wordline_driver()
-        self.load_pex = self.run_pex_extraction(load_dut, "wordline_en_dut", run_drc=False, run_lvs=False)
+        load_dut = self.make_wordline_driver()()
+        self.load_pex = self.run_pex_extraction(load_dut, load_dut.name, run_drc=False, run_lvs=False)
 
         self.run_lvs = False
         self.run_pex = True
@@ -155,7 +158,7 @@ class WordlineEnOptimizer(CharTestBase):
 
         delays = np.zeros([N, 3], np.double)
         # buffer_sizes = np.logspace(0, np.log10(MAX_SIZE), N)
-        buffer_sizes = np.linspace(2, MAX_SIZE, N)
+        buffer_sizes = np.linspace(MIN_SIZE, MAX_SIZE, N)
         half_N = int(N/2)
 
         buffer_sizes = [x for x in itertools.chain(
@@ -207,6 +210,11 @@ class WordlineEnOptimizer(CharTestBase):
 
                 for j in range(num_rows):
                     stim_file.write(".probe v(wl[{}]) \n".format(j))
+                pen_row = OPTS.num_rows - 1
+                stim_file.write(".probe v(Xdut.N_Xdriver_array_Xdriver{0}_Xbuffer_out_1_Xdriver_array"
+                                "_Xdriver{0}_Xbuffer_Xinv0_Mpinv_nmos_d) \n".format(pen_row))
+                stim_file.write(".probe v(Xdut.N_Xdriver_array_wl_bar[{0}]_"
+                                "Xdriver_array_Xdriver{0}_Xbuffer_Xinv1_Mpinv_nmos_d) \n".format(pen_row))
 
             if self.run_sim:
                 stim.run_sim()
@@ -221,7 +229,13 @@ class WordlineEnOptimizer(CharTestBase):
 
             delays[i][2] = energy*1e15
 
-            np.savetxt(self.prefix("wordline_en.csv"), delays, fmt="%10.5g")
+            np.savetxt(self.prefix("wordline_en_min.csv"), delays, fmt="%10.5g")
 
 
-WordlineEnOptimizer.run_tests(__name__)
+if "analyze" in sys.argv:
+    analyze()
+else:
+    sim_dir = os.path.join(os.environ["SCRATCH"], "openram", "characterization", "wordline_en_old")
+    WordlineEnOptimizer.temp_folder = sim_dir
+
+    WordlineEnOptimizer.run_tests(__name__)

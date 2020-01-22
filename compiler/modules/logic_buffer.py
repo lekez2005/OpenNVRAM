@@ -58,7 +58,7 @@ class LogicBuffer(design.design, metaclass=Unique):
             name += "_h_{:.2g}".format(height).replace('.', '_')
         if align_bitcell:
             name += "_align"
-        return name
+        return name.replace(".", "_")
 
     def add_pins(self):
         self.add_pin("A")
@@ -134,8 +134,8 @@ class LogicBuffer(design.design, metaclass=Unique):
         else:
             self.copy_layout_pin(self.logic_inst, "A", "A")
             self.copy_layout_pin(self.logic_inst, "B", "B")
-            if self.logic == self.PNAND_3:
-                self.copy_layout_pin(self.logic_inst, "C", "C")
+        if self.logic == self.PNAND_3:
+            self.copy_layout_pin(self.logic_inst, "C", "C")
 
         # logic output to buffer input
         logic_out = self.logic_inst.get_pin("Z")

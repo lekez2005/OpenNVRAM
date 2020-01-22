@@ -221,7 +221,8 @@ def run_command(command, stdout_file, stderror_file, verbose_level=1, cwd=None):
         cwd = OPTS.openram_temp
     with open(stdout_file, "w") as stdout_f, open(stderror_file, "w") as stderr_f:
         stdout = subprocess.PIPE if verbose else stdout_f
-        process = subprocess.Popen(command, stdout=stdout, stderr=stderr_f, shell=True, cwd=cwd)
+        stderr = subprocess.PIPE if verbose else stderr_f
+        process = subprocess.Popen(command, stdout=stdout, stderr=stderr, shell=True, cwd=cwd)
         while verbose:
             line = process.stdout.readline().decode()
             if not line:

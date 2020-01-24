@@ -278,7 +278,7 @@ class BaselineBank(design, ControlBuffersMixin):
                     "sense_en_bar", "sense_en"]
         else:
             return ["precharge_en_bar", "write_en_bar", "write_en", "clk_bar", "clk_buf", "wordline_en",
-                    "sense_en_bar", "sense_en", "sample_en_bar"]
+                    "sense_en", "tri_en", "tri_en_bar", "sample_en_bar"]
 
     def calculate_rail_offsets(self):
         self.control_names = self.get_control_names()
@@ -308,9 +308,10 @@ class BaselineBank(design, ControlBuffersMixin):
                 connections.append("sense_trig")
             self.connect_inst(connections)
         else:
+            tri_pins = ["tri_en", "tri_en_bar"] if OPTS.baseline else ["sense_en_bar"]
             self.connect_inst(["bank_sel", "read_buf", "clk", "sense_trig", "clk_buf", "clk_bar", "wordline_en",
                                "precharge_en_bar", "write_en", "write_en_bar",
-                               "sense_en", "sense_en_bar", "sample_en_bar", vdd_name, "gnd"])
+                               "sense_en"] + tri_pins + ["sample_en_bar", vdd_name, "gnd"])
 
     def add_control_buffers(self):
         offset = vector(self.control_buffers.width, self.logic_buffers_bottom)
@@ -376,7 +377,7 @@ class BaselineBank(design, ControlBuffersMixin):
             temp.append("and_out[{0}]".format(i))
         for i in range(self.word_size):
             temp.append("DATA[{0}]".format(i))
-        temp.extend(["sense_en", "sense_en_bar", "vdd", "gnd"])
+        temp.extend(["tri_en", "tri_en_bar", "vdd", "gnd"])
         self.connect_inst(temp)
 
     def add_data_mask_flops(self):
@@ -550,8 +551,9 @@ class BaselineBank(design, ControlBuffersMixin):
             }
         else:
             destination_pins = {
-                "sense_en": self.tri_gate_array_inst.get_pins("en") + self.sense_amp_array_inst.get_pins("en"),
-                "sense_en_bar": self.tri_gate_array_inst.get_pins("en_bar"),
+                "sense_en": self.sense_amp_array_inst.get_pins("en"),
+                "tri_en": self.tri_gate_array_inst.get_pins("en"),
+                "tri_en_bar": self.tri_gate_array_inst.get_pins("en_bar"),
                 "sample_en_bar": self.sense_amp_array_inst.get_pins("sampleb"),
                 "precharge_en_bar": self.precharge_array_inst.get_pins("en")
                                     + self.sense_amp_array_inst.get_pins("preb"),
@@ -969,9 +971,13 @@ class BaselineBank(design, ControlBuffersMixin):
             if self.left_gnd.layer == "metal2":
                 self.add_power_via(pin, self.left_gnd)
 
-        for pin in self.row_decoder_inst.get_pins("vdd"):
+        for pin in self.row_decoder_inst.get_pins("vdd"):  # ensure decoder vdd is connected to wordline driver's
+            if pin.uy() > self.wordline_driver_inst.by():
+                pin_right = self.wordline_driver_inst.lx()
+            else:
+                pin_right = pin.lx()
             self.add_rect("metal1", offset=vector(self.left_vdd.lx(), pin.by()),
-                          width=pin.lx() - self.left_vdd.lx(), height=pin.height())
+                          width=pin_right - self.left_vdd.lx(), height=pin.height())
             self.add_power_via(pin, self.left_vdd)
 
     def join_right_decoder_nwell(self):

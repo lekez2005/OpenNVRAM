@@ -24,6 +24,7 @@ class ControlBuffersMixin:
         self.via_enclose = drc["min_wide_metal_via_extension"]
         self.connect_clk()
         self.connect_sense_en()
+        self.connect_tri_en()
         self.connect_write_en()
         self.connect_sample_b()
         self.connect_precharge_bar()
@@ -170,41 +171,42 @@ class ControlBuffersMixin:
                                  width=fill_width, height=fill_width)
 
     def connect_sense_en(self: design_control):
-        fill_width = self.get_fill_width()
         x_shift = self.bitcell_array.cell.get_pin("BL").rx() + self.line_end_space + 0.5*self.m4_width
         # sense_en
+        dest_pin = self.sense_amp_array_inst.get_pin("en")
         for source_pin in self.get_all_control_pins("sense_en"):
-            for dest_pin, is_tri in [
-                (self.sense_amp_array_inst.get_pin("en"), False),
-                (self.tri_gate_array_inst.get_pin("en"), True)
-            ]:
-                source_rail = self.sense_en_rail
-                m4_x_offset = self.connect_rail_to_pin(source_rail, source_pin, dest_pin, x_shift=x_shift)
+            source_rail = self.sense_en_rail
+            m4_x_offset = self.connect_rail_to_pin(source_rail, source_pin, dest_pin, x_shift=x_shift)
 
-                if is_tri:
-                    self.add_contact_center(m3m4.layer_stack, offset=vector(m4_x_offset, dest_pin.cy()), rotate=90)
-                    self.add_contact_center(m2m3.layer_stack, offset=vector(m4_x_offset, dest_pin.cy()), rotate=90)
-                    self.add_rect_center("metal3", offset=vector(m4_x_offset, dest_pin.by()+0.5*fill_width),
-                                         width=fill_width, height=fill_width)
-                else:
-                    fill_height = m2m3.height
-                    fill_width = drc["minarea_metal3_drc"]/fill_height
-                    for via_layer in ["via1", "via2"]:
-                        self.add_rect_center(via_layer, offset=vector(m4_x_offset, dest_pin.cy()))
-                    self.add_contact_center(m3m4.layer_stack, offset=vector(m4_x_offset, dest_pin.cy()))
-                    x_offset = m4_x_offset + 0.5 * self.m3_width + self.via_enclose - fill_width
-                    self.add_rect("metal2", offset=vector(x_offset, dest_pin.cy() - 0.5 * fill_height),
-                                  height=fill_height, width=fill_width)
-                    x_offset = m4_x_offset - self.m3_width - self.via_enclose
-                    self.add_rect("metal3", offset=vector(x_offset, dest_pin.cy() - 0.5 * fill_height),
-                                  height=fill_height, width=fill_width)
+            fill_height = m2m3.height
+            fill_width = drc["minarea_metal3_drc"]/fill_height
+            for via_layer in ["via1", "via2"]:
+                self.add_rect_center(via_layer, offset=vector(m4_x_offset, dest_pin.cy()))
+            self.add_contact_center(m3m4.layer_stack, offset=vector(m4_x_offset, dest_pin.cy()))
+            x_offset = m4_x_offset + 0.5 * self.m3_width + self.via_enclose - fill_width
+            self.add_rect("metal2", offset=vector(x_offset, dest_pin.cy() - 0.5 * fill_height),
+                          height=fill_height, width=fill_width)
+            x_offset = m4_x_offset - self.m3_width - self.via_enclose
+            self.add_rect("metal3", offset=vector(x_offset, dest_pin.cy() - 0.5 * fill_height),
+                          height=fill_height, width=fill_width)
 
-                    fill_width = self.get_fill_width()
+    def connect_tri_en(self: design_control):
+        fill_width = self.get_fill_width()
+        x_shift = self.bitcell_array.cell.get_pin("BL").rx() + self.line_end_space + 0.5 * self.m4_width
+        dest_pin = self.tri_gate_array_inst.get_pin("en")
+        for source_pin in self.get_all_control_pins("tri_en"):
+            source_rail = self.tri_en_rail
+            m4_x_offset = self.connect_rail_to_pin(source_rail, source_pin, dest_pin, x_shift=x_shift)
 
-        # sense_en_bar
-        for source_pin in self.get_all_control_pins("sense_en_bar"):
-            dest_pin = self.tri_gate_array_inst.get_pin("en_bar")
-            m4_x_offset = self.connect_rail_to_pin(self.sense_en_bar_rail, source_pin, dest_pin)
+            self.add_contact_center(m3m4.layer_stack, offset=vector(m4_x_offset, dest_pin.cy()), rotate=90)
+            self.add_contact_center(m2m3.layer_stack, offset=vector(m4_x_offset, dest_pin.cy()), rotate=90)
+            self.add_rect_center("metal3", offset=vector(m4_x_offset, dest_pin.by()+0.5*fill_width),
+                                 width=fill_width, height=fill_width)
+
+        # tri_en_bar
+        dest_pin = self.tri_gate_array_inst.get_pin("en_bar")
+        for source_pin in self.get_all_control_pins("tri_en_bar"):
+            m4_x_offset = self.connect_rail_to_pin(self.tri_en_bar_rail, source_pin, dest_pin)
             self.add_contact_center(m3m4.layer_stack, offset=vector(m4_x_offset, dest_pin.cy()), rotate=90)
             self.add_contact_center(m2m3.layer_stack, offset=vector(m4_x_offset, dest_pin.cy()), rotate=90)
             self.add_rect_center("metal3", offset=vector(m4_x_offset, dest_pin.cy()),

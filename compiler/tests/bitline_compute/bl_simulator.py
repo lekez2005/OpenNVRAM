@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import json
 import math
 import os
 import sys
@@ -56,9 +55,15 @@ class BlSimulator(TestBase):
         delay.trimsp = False
 
         # probe these cols
-        points = 5
-        spacing = (word_size - 1) / (points - 1)
-        cols = [math.floor(i * spacing) for i in range(points)] + [233] * (self.sram.num_cols > 233)
+        if OPTS.energy_sim:
+            cols = [255]
+        else:
+            points = 5
+            spacing = (word_size - 1) / (points - 1)
+            cols = [math.floor(i * spacing) for i in range(points)] + [233] * (self.sram.num_cols > 233)
+            if OPTS.baseline:
+                cols += [17, 202]
+
         OPTS.probe_cols = cols
 
         OPTS.sense_amp_ref = 0.7
@@ -70,29 +75,29 @@ class BlSimulator(TestBase):
                 duty_cycle = 0.35
                 OPTS.sense_trigger_delay = 0.2
             else:
-                period = 1.8
-                duty_cycle = 0.35
-                OPTS.sense_trigger_delay = 0.4
+                period = 0.9
+                duty_cycle = 0.5
+                OPTS.sense_trigger_delay = 0.35
         elif OPTS.serial:
             if OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
                 period = 1.1
                 duty_cycle = 0.4
                 OPTS.sense_trigger_delay = 0.2
             else:
-                period = 2.2
+                period = 1.1
                 duty_cycle = 0.4
-                OPTS.sense_trigger_delay = 0.5
-                OPTS.sense_amp_ref = 0.78
+                OPTS.sense_trigger_delay = 0.47
+                OPTS.sense_amp_ref = 0.8
         else:
             if OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
                 period = 1.5
                 duty_cycle = 0.4
                 OPTS.sense_trigger_delay = 0.25
             else:
-                period = 2.2
-                duty_cycle = 0.4
-                OPTS.sense_trigger_delay = 0.5
-                OPTS.sense_amp_ref = 0.78
+                period = 1.57
+                duty_cycle = 0.42
+                OPTS.sense_trigger_delay = 0.47
+                OPTS.sense_amp_ref = 0.8
         OPTS.verbose_save = False
 
         delay.period = period

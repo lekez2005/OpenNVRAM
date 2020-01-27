@@ -308,10 +308,14 @@ class BaselineBank(design, ControlBuffersMixin):
                 connections.append("sense_trig")
             self.connect_inst(connections)
         else:
-            tri_pins = ["tri_en", "tri_en_bar"] if OPTS.baseline else ["sense_en_bar"]
+            if OPTS.baseline:
+
+                extra_pins = ["tri_en", "tri_en_bar"]
+            else:
+                extra_pins = ["sense_precharge_bar"]
             self.connect_inst(["bank_sel", "read_buf", "clk", "sense_trig", "clk_buf", "clk_bar", "wordline_en",
                                "precharge_en_bar", "write_en", "write_en_bar",
-                               "sense_en"] + tri_pins + ["sample_en_bar", vdd_name, "gnd"])
+                               "sense_en"] + extra_pins + ["sample_en_bar", vdd_name, "gnd"])
 
     def add_control_buffers(self):
         offset = vector(self.control_buffers.width, self.logic_buffers_bottom)
@@ -555,8 +559,7 @@ class BaselineBank(design, ControlBuffersMixin):
                 "tri_en": self.tri_gate_array_inst.get_pins("en"),
                 "tri_en_bar": self.tri_gate_array_inst.get_pins("en_bar"),
                 "sample_en_bar": self.sense_amp_array_inst.get_pins("sampleb"),
-                "precharge_en_bar": self.precharge_array_inst.get_pins("en")
-                                    + self.sense_amp_array_inst.get_pins("preb"),
+                "precharge_en_bar": self.precharge_array_inst.get_pins("en"),
                 "clk_buf": self.mask_in_flops_inst.get_pins("clk"),
                 "clk_bar": self.data_in_flops_inst.get_pins("clk"),
                 "write_en": self.write_driver_array_inst.get_pins("en"),
@@ -1370,7 +1373,7 @@ class BaselineBank(design, ControlBuffersMixin):
 
     def route_control_buffers_power(self):
         obstructions = [(self.control_buffers_inst.lx() - self.wide_m1_space,
-                         self.control_buffers_inst.rx()+self.wide_m1_space)]
+                         self.read_buf_inst.rx()+self.wide_m1_space)]
         if hasattr(self, "max_right_buffer_x"):
             obstructions.append((self.min_right_buffer_x - self.wide_m1_space,
                                  self.max_right_buffer_x + self.wide_m1_space))

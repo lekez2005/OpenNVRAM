@@ -90,6 +90,7 @@ class ControlBuffersMixin:
                 output_rail = getattr(self, net+"_rail")
                 self.add_rect("metal2", offset=output_pin.ul(), height=output_rail.by()-output_pin.uy())
                 self.add_rect("metal3", offset=vector(output_pin.lx(), output_rail.by()), width=min_rail_width)
+                self.add_label(net, "metal3", vector(output_pin.lx(), output_rail.by()))
                 self.add_contact(m2m3.layer_stack, offset=vector(output_pin.cx()+0.5*m2m3.height, output_rail.by()),
                                  rotate=90)
 
@@ -178,17 +179,35 @@ class ControlBuffersMixin:
             source_rail = self.sense_en_rail
             m4_x_offset = self.connect_rail_to_pin(source_rail, source_pin, dest_pin, x_shift=x_shift)
 
-            fill_height = m2m3.height
-            fill_width = drc["minarea_metal3_drc"]/fill_height
-            for via_layer in ["via1", "via2"]:
-                self.add_rect_center(via_layer, offset=vector(m4_x_offset, dest_pin.cy()))
-            self.add_contact_center(m3m4.layer_stack, offset=vector(m4_x_offset, dest_pin.cy()))
-            x_offset = m4_x_offset + 0.5 * self.m3_width + self.via_enclose - fill_width
-            self.add_rect("metal2", offset=vector(x_offset, dest_pin.cy() - 0.5 * fill_height),
-                          height=fill_height, width=fill_width)
-            x_offset = m4_x_offset - self.m3_width - self.via_enclose
-            self.add_rect("metal3", offset=vector(x_offset, dest_pin.cy() - 0.5 * fill_height),
-                          height=fill_height, width=fill_width)
+            if source_pin.cx() < dest_pin.cx(): # for left connection
+
+                fill_height = m2m3.height
+                fill_width = drc["minarea_metal3_drc"]/fill_height
+                for via_layer in ["via1", "via2"]:
+                    self.add_rect_center(via_layer, offset=vector(m4_x_offset, dest_pin.cy()))
+                self.add_contact_center(m3m4.layer_stack, offset=vector(m4_x_offset, dest_pin.cy()))
+                x_offset = m4_x_offset + 0.5 * self.m3_width + self.via_enclose - fill_width
+                self.add_rect("metal2", offset=vector(x_offset, dest_pin.cy() - 0.5 * fill_height),
+                              height=fill_height, width=fill_width)
+                x_offset = m4_x_offset - self.m3_width - self.via_enclose
+                self.add_rect("metal3", offset=vector(x_offset, dest_pin.cy() - 0.5 * fill_height),
+                              height=fill_height, width=fill_width)
+            else:
+                sample_b_pin = self.sense_amp_array_inst.get_pin("sampleb")
+                y_bend = 0.5*(sample_b_pin.cy() + dest_pin.cy()) - 0.5*self.m3_width
+                self.add_rect("metal4", offset=vector(m4_x_offset-0.5*self.m4_width, dest_pin.cy()),
+                              height=y_bend-dest_pin.cy())
+                tap_offsets = [x + self.bitcell_array_inst.lx() + 0.5 * self.bitcell_array.body_tap.width -
+                               self.wide_m1_space
+                               for x in self.bitcell_array.tap_offsets]
+                closest_tap = min(tap_offsets, key=lambda x: abs(x - m4_x_offset))
+                self.add_contact_center(m3m4.layer_stack, offset=vector(m4_x_offset, y_bend+0.5*self.m3_width))
+                self.add_rect("metal3", offset=vector(m4_x_offset, y_bend), width=closest_tap-m4_x_offset)
+                self.add_contact_center(m2m3.layer_stack, offset=vector(closest_tap+0.5*self.m2_width,
+                                                                        y_bend+0.5*self.m3_width))
+                self.add_rect("metal2", offset=vector(closest_tap, dest_pin.cy()), height=y_bend-dest_pin.cy())
+                self.add_contact_center(m1m2.layer_stack, offset=vector(closest_tap+0.5*self.m2_width,
+                                                                        dest_pin.cy()), rotate=90)
 
     def connect_tri_en(self: design_control):
         fill_width = self.get_fill_width()
@@ -244,21 +263,46 @@ class ControlBuffersMixin:
 
         x_shift = self.bitcell_array.cell.get_pin("BL").rx() + self.line_end_space + 0.5 * self.m4_width
         dest_pin = self.sense_amp_array_inst.get_pin("sampleb")
+        vdd_pin = min(self.sense_amp_array_inst.get_pins("vdd"), key=lambda x: abs(x.cy() - dest_pin.cy()))
+        en_pin = self.sense_amp_array_inst.get_pin("en")
 
         for source_pin in self.get_all_control_pins("sample_en_bar"):
             m4_x_offset = self.connect_rail_to_pin(self.sample_en_bar_rail, source_pin,
-                                                   dest_pin, x_shift=x_shift)
+                                                   en_pin,
+                                                   x_shift=x_shift)
 
-            self.add_contact_center(m3m4.layer_stack, vector(m4_x_offset, dest_pin.cy()))
-            x_offset = m4_x_offset - x_shift - 0.5*self.m2_width - self.via_enclose
-            self.add_rect("metal3", offset=vector(x_offset, dest_pin.cy()-0.5*m3m4.height),
-                          width=m4_x_offset+0.5*self.m3_width+self.via_enclose-x_offset,
-                          height=m3m4.height)
-            via_x = m4_x_offset - x_shift
-            self.add_contact_center(m2m3.layer_stack, offset=vector(via_x, dest_pin.cy()))
-            self.add_contact_center(m1m2.layer_stack, offset=vector(via_x, dest_pin.cy()), rotate=90)
-            self.add_rect("metal2", offset=vector(via_x-0.5*fill_width, dest_pin.cy()-0.5*fill_width),
-                          height=fill_width, width=fill_width)
+            cell_mid = m4_x_offset - x_shift + 0.5 * self.bitcell.width - 0.5*self.m4_width
+            cell_start = m4_x_offset - x_shift
+
+            dout_pin = self.sense_amp_array_inst.get_pin("data[0]")
+
+            y_bend = dout_pin.uy() + self.line_end_space + m3m4.height
+
+            # avoid coupling to and_pin and bl by going to the middle
+
+            self.add_rect("metal4", offset=vector(m4_x_offset-0.5*self.m2_width, en_pin.cy()),
+                          height=y_bend - en_pin.cy())
+
+            self.add_rect("metal4", offset=vector(m4_x_offset - 0.5 * self.m4_width, y_bend),
+                          width=cell_mid - m4_x_offset + 0.5*self.m4_width)
+
+            self.add_rect("metal4", offset=vector(cell_mid, y_bend), height=vdd_pin.cy()-y_bend)
+            self.add_contact_center(m3m4.layer_stack, offset=vector(cell_mid+0.5*self.m4_width,
+                                                                    vdd_pin.cy()))
+
+            # go to beginning of cell
+
+            self.add_rect("metal3", offset=vector(cell_start, vdd_pin.cy()-0.5*self.m3_width),
+                          width=cell_mid-cell_start)
+            self.add_contact_center(m2m3.layer_stack, offset=vector(cell_start, vdd_pin.cy()))
+
+            # go down to sampleb pin
+
+            fill_width = m1m2.height
+            fill_height = utils.ceil(self.minarea_metal1_contact/fill_width)
+            self.add_rect("metal2", offset=vector(cell_start-0.5*fill_width, dest_pin.by()),
+                          height=fill_height, width=fill_width)
+            self.add_contact_center(m1m2.layer_stack, offset=vector(cell_start, dest_pin.cy()), rotate=90)
 
     def connect_precharge_bar(self: design_control):
         fill_width = self.get_fill_width()

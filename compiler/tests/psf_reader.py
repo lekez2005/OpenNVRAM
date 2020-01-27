@@ -105,7 +105,7 @@ class PsfReader:
         return time
 
     def get_delay(self, signal_name1, signal_name2, t1=0, t2=None, stop_time=None, edgetype1=None,
-                  edgetype2=None, edge1=None, edge2=None, thresh1=0.5, thresh2=0.5, num_bits=1):
+                  edgetype2=None, edge1=None, edge2=None, thresh1=0.5, thresh2=0.5, num_bits=1, bit=0):
 
         if t2 is None:
             t2 = t1
@@ -131,7 +131,7 @@ class PsfReader:
                 return trans2 - trans1
 
         if num_bits == 1:
-            return internal_delay(signal_name2.format(0))
+            return internal_delay(signal_name2.format(bit))
         else:
             return list(reversed([internal_delay(signal_name2.format(i)) for i in range(num_bits)]))
 

@@ -224,7 +224,7 @@ def cleanup_paths():
     We should clean up the temp directory after execution.
     """
     if not OPTS.purge_temp:
-        debug.info(0,"Preserving temp directory: {}".format(OPTS.openram_temp))
+        debug.info(1,"Preserving temp directory: {}".format(OPTS.openram_temp))
         return
     if os.path.exists(OPTS.openram_temp):
         shutil.rmtree(OPTS.openram_temp, ignore_errors=True)

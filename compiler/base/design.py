@@ -1,6 +1,7 @@
 import copy
 import math
 import os
+from collections import Iterable
 
 import debug
 import verify
@@ -109,7 +110,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.minarea_metal1_contact = drc["minarea_metal1_contact"]
 
         self.wide_m1_space = drc["wide_metal1_to_metal1"]
-        self.line_end_space = drc["metal1_to_metal1_line_end"]
+        self.line_end_space = drc["line_end_space_metal1"]
         self.parallel_line_space = drc["parallel_line_space"]
         self.metal1_minwidth_fill = utils.ceil(drc["minarea_metal1_minwidth"]/self.m1_width)
         self.minarea_metal1_minwidth = drc["minarea_metal1_minwidth"]
@@ -118,13 +119,40 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.metal1_min_enclosed_area = drc["metal1_min_enclosed_area"]
 
     @classmethod
-    def get_space_by_width_and_length(cls, layer, max_width=None, run_length=None):
-        if cls.is_above_layer_threshold(layer, "wide", max_width, run_length):
+    def get_space_by_width_and_length(cls, layer, max_width=None, run_length=None, heights=None):
+        if cls.is_line_end(layer, heights):
+            return cls.get_line_end_space(layer)
+        elif cls.is_above_layer_threshold(layer, "wide", max_width, run_length):
             return cls.get_space(layer, prefix="wide")
         elif cls.is_above_layer_threshold(layer, "parallel", max_width, run_length):
             return cls.get_space(layer, prefix="parallel")
         else:
             return cls.get_space(layer, prefix=None)
+
+    @classmethod
+    def get_drc_by_layer(cls, layer, prefix):
+        # check for example [metal3, metal2, metal1, ""] for metal3 input
+        layer_num = int(layer[5:])
+        suffixes = ["_metal{}".format(x) for x in range(layer_num, 0, -1)] + [""]
+        keys = ["{}{}".format(prefix, suffix) for suffix in suffixes]
+        for key in keys:
+            if key in drc:
+                return drc[key]
+        return None
+
+    @classmethod
+    def is_line_end(cls, layer, heights=None):
+        if heights is None or "metal" not in layer:
+            return False
+        if not isinstance(heights, Iterable) or not len(heights) == 2:
+            raise ValueError("heights must be iterable of length 2")
+        min_height = min(heights)
+        line_end_threshold = cls.get_drc_by_layer(layer, "line_end_threshold")
+        return min_height < line_end_threshold
+
+    @classmethod
+    def get_line_end_space(cls, layer):
+        return cls.get_drc_by_layer(layer, "line_end_space")
 
     @classmethod
     def get_wide_space(cls, layer):
@@ -148,28 +176,15 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         if max_width is None:
             return False
 
-        layer_num = int(layer[5:])
-        suffixes = ["_metal{}".format(x) for x in range(layer_num, 0, -1)] + [""]
-        keys = ["{}_width_threshold{}".format(prefix, suffix) for suffix in suffixes]
-
-        threshold = None
-        for key in keys:
-            if key in drc:
-                threshold = drc[key]
-                break
-        if threshold is None or max_width < threshold:
+        width_threshold = cls.get_drc_by_layer(layer, prefix+"_width_threshold")
+        if width_threshold is None or max_width < width_threshold:
             return False
 
         if run_length is None:
             return True
 
-        keys = ["{}_length_threshold{}".format(prefix, suffix) for suffix in suffixes]
-        threshold = None
-        for key in keys:
-            if key in drc:
-                threshold = drc[key]
-                break
-        if threshold is None or run_length < threshold:
+        length_threshold = cls.get_drc_by_layer(layer, prefix + "_length_threshold")
+        if length_threshold is None or run_length < length_threshold:
             return False
         return True
 
@@ -194,13 +209,10 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             # check if prefix specified
             if not prefix:
                 return max_space
-            # check for example [metal3, metal2, metal1, ""] for metal3 input
-            suffixes = ["_metal{}".format(x) for x in range(layer_num, 0, -1)] + [""]
-            for suffix in suffixes:
-                key = "{0}_line_space{1}".format(prefix, suffix)
-                if key in drc:
-                    max_space = max(max_space, drc[key])
-                    break
+
+            layer_space = cls.get_drc_by_layer(layer, prefix + "_line_space")
+            if layer_space is not None:
+                max_space = max(max_space, layer_space)
 
         return max_space
 

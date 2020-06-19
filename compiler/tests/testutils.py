@@ -33,7 +33,8 @@ class OpenRamTest(unittest.TestCase):
             config_template = cls.config_template
         parse_args()
         globals.init_openram(config_template.format(OPTS.tech_name), openram_temp=cls.temp_folder)
-        header(inspect.getfile(cls), OPTS.tech_name)
+        if OPTS.debug_level > 0:
+            header(inspect.getfile(cls), OPTS.tech_name)
 
     @classmethod
     def setUpClass(cls):

@@ -65,22 +65,22 @@ class library_drc_test(OpenRamTest):
         drc["metal3_to_metal3"] = 0.3
 
         # with no dimensions specified
-        self.assertEquals(cl.get_space_by_width_and_length(METAL1), 0.1, "metal1 no spec")
-        self.assertEquals(cl.get_space_by_width_and_length(METAL2), 0.1, "metal2 no spec")
-        self.assertEquals(cl.get_space_by_width_and_length(METAL3), 0.3, "metal3 no spec")
+        self.assertEqual(cl.get_space_by_width_and_length(METAL1), 0.1, "metal1 no spec")
+        self.assertEqual(cl.get_space_by_width_and_length(METAL2), 0.1, "metal2 no spec")
+        self.assertEqual(cl.get_space_by_width_and_length(METAL3), 0.3, "metal3 no spec")
 
         # with max_width
-        self.assertEquals(cl.get_space_by_width_and_length(METAL1, 0.2), 0.1, "metal1 max_width")
-        self.assertEquals(cl.get_space_by_width_and_length(METAL2, 0.2), 0.1, "metal2 max_width")
-        self.assertEquals(cl.get_space_by_width_and_length(METAL3, 0.2), 0.3, "metal3 max_width")
+        self.assertEqual(cl.get_space_by_width_and_length(METAL1, 0.2), 0.1, "metal1 max_width")
+        self.assertEqual(cl.get_space_by_width_and_length(METAL2, 0.2), 0.1, "metal2 max_width")
+        self.assertEqual(cl.get_space_by_width_and_length(METAL3, 0.2), 0.3, "metal3 max_width")
 
         # with max_width
-        self.assertEquals(cl.get_space_by_width_and_length(METAL1, 0.2, 0.5), 0.1,
-                          "metal1 max_width and length")
-        self.assertEquals(cl.get_space_by_width_and_length(METAL2, 0.2, 0.5), 0.1,
-                          "metal2 max_width and length")
-        self.assertEquals(cl.get_space_by_width_and_length(METAL3, 0.2, 0.5), 0.3,
-                          "metal3 max_width and length")
+        self.assertEqual(cl.get_space_by_width_and_length(METAL1, 0.2, 0.5), 0.1,
+                         "metal1 max_width and length")
+        self.assertEqual(cl.get_space_by_width_and_length(METAL2, 0.2, 0.5), 0.1,
+                         "metal2 max_width and length")
+        self.assertEqual(cl.get_space_by_width_and_length(METAL3, 0.2, 0.5), 0.3,
+                         "metal3 max_width and length")
 
     def test_parallel_space(self):
         from base import design
@@ -129,7 +129,7 @@ class library_drc_test(OpenRamTest):
     def test_wide_space(self):
         from base import design
         from base.design import design as cl
-        from base.design import METAL1, METAL2, METAL3, METAL4
+        from base.design import METAL1, METAL2, METAL3
         design.drc = drc
 
         self.assertEqual(cl.get_space_by_width_and_length(METAL1, max_width=0.5),
@@ -142,6 +142,31 @@ class library_drc_test(OpenRamTest):
                          basic_rules["parallel_line_space"], "metal3 use parallel space")
         self.assertEqual(cl.get_space_by_width_and_length(METAL3, max_width=0.7),
                          drc["wide_line_space_metal3"], "metal3 use wide space")
+
+    def test_line_end_space(self):
+        from base import design
+        from base.design import design as cl
+        from base.design import METAL1, METAL2, METAL3
+        design.drc = drc
+
+        drc["line_end_threshold"] = 0.06
+        drc["line_end_space"] = 0.013
+
+        self.assertEqual(cl.get_space_by_width_and_length(METAL1, heights=(0.05, 0.1)),
+                         drc["line_end_space"], "metal1 should use line end space")
+
+        self.assertEqual(cl.get_space_by_width_and_length(METAL2, heights=(0.05, 0.04)),
+                         drc["line_end_space"], "metal2 should use line end space")
+
+        drc["line_end_threshold_metal2"] = 0.08
+        self.assertEqual(cl.get_space_by_width_and_length(METAL1, heights=(0.07, 0.1)),
+                         drc["metal1_to_metal1"], "metal1 should use regular space")
+        self.assertEqual(cl.get_space_by_width_and_length(METAL2, heights=(0.07, 0.1)),
+                         drc["line_end_space"], "metal2 should use line end space")
+        self.assertEqual(cl.get_space_by_width_and_length(METAL3, heights=(0.07, 0.1)),
+                         drc["line_end_space"], "metal3 should also use line end space")
+
+        self.assertRaises(ValueError, cl.get_space_by_width_and_length, METAL1, heights=0.1)
 
 
 OpenRamTest.run_tests(__name__)

@@ -15,6 +15,17 @@ from tech import layer as tech_layers
 from tech import purpose as tech_purpose
 
 
+POLY = "poly"
+NWELL = "nwell"
+NIMP = "nimplant"
+PIMP = "pimplant"
+METAL1 = "metal1"
+METAL2 = "metal2"
+METAL3 = "metal3"
+METAL4 = "metal4"
+METAL5 = "metal5"
+
+
 class design(hierarchy_spice.spice, hierarchy_layout.layout):
     """
     Design Class for all modules to inherit the base features.
@@ -97,14 +108,102 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
         self.minarea_metal1_contact = drc["minarea_metal1_contact"]
 
-        self.wide_m1_space = drc["metal1_to_metal1_wide"]
+        self.wide_m1_space = drc["wide_metal1_to_metal1"]
         self.line_end_space = drc["metal1_to_metal1_line_end"]
-        self.parallel_line_space = drc["parallel_metal1_to_metal1"]
+        self.parallel_line_space = drc["parallel_line_space"]
         self.metal1_minwidth_fill = utils.ceil(drc["minarea_metal1_minwidth"]/self.m1_width)
         self.minarea_metal1_minwidth = drc["minarea_metal1_minwidth"]
         self.poly_vert_space = drc["poly_end_to_end"]
         self.parallel_via_space = drc["parallel_via_space"]
         self.metal1_min_enclosed_area = drc["metal1_min_enclosed_area"]
+
+    @classmethod
+    def get_space_by_width_and_length(cls, layer, max_width=None, run_length=None):
+        if cls.is_above_layer_threshold(layer, "wide", max_width, run_length):
+            return cls.get_space(layer, prefix="wide")
+        elif cls.is_above_layer_threshold(layer, "parallel", max_width, run_length):
+            return cls.get_space(layer, prefix="parallel")
+        else:
+            return cls.get_space(layer, prefix=None)
+
+    @classmethod
+    def get_wide_space(cls, layer):
+        return cls.get_space(layer, "wide")
+
+    @classmethod
+    def get_parallel_space(cls, layer):
+        return cls.get_space(layer, "parallel")
+
+    @classmethod
+    def is_above_layer_threshold(cls, layer, prefix, max_width, run_length):
+        """
+        :param layer:
+        :param prefix: parallel, wide, ""
+        :param max_width: if None returns False, else checks if
+            max_width > threshold and run_length > threshold
+        :param run_length: if None and max_width > threshold
+            (we don't know length yet, just be conservative) -> return True
+        :return:
+        """
+        if max_width is None:
+            return False
+
+        layer_num = int(layer[5:])
+        suffixes = ["_metal{}".format(x) for x in range(layer_num, 0, -1)] + [""]
+        keys = ["{}_width_threshold{}".format(prefix, suffix) for suffix in suffixes]
+
+        threshold = None
+        for key in keys:
+            if key in drc:
+                threshold = drc[key]
+                break
+        if threshold is None or max_width < threshold:
+            return False
+
+        if run_length is None:
+            return True
+
+        keys = ["{}_length_threshold{}".format(prefix, suffix) for suffix in suffixes]
+        threshold = None
+        for key in keys:
+            if key in drc:
+                threshold = drc[key]
+                break
+        if threshold is None or run_length < threshold:
+            return False
+        return True
+
+    @classmethod
+    def get_space(cls, layer, prefix=None):
+        """
+        finds space min space between parallel lines on layer
+        for metals, counts down from layer to metal1 until match it found
+        first checks for wide, then checks for regular space and returns the max of the two
+        Assumes spaces increase with layer
+        :param prefix: e.g. parallel, wide
+        :param layer:
+        :return: parallel space
+        """
+
+        if "implant" in layer:
+            return drc["implant_to_implant"]
+        max_space = 0.0
+        if "metal" in layer:
+            layer_num = int(layer[5:])
+            max_space = max(max_space, drc["metal{0}_to_metal{0}".format(layer_num)])
+            # check if prefix specified
+            if not prefix:
+                return max_space
+            # check for example [metal3, metal2, metal1, ""] for metal3 input
+            suffixes = ["_metal{}".format(x) for x in range(layer_num, 0, -1)] + [""]
+            for suffix in suffixes:
+                key = "{0}_line_space{1}".format(prefix, suffix)
+                if key in drc:
+                    max_space = max(max_space, drc[key])
+                    break
+
+        return max_space
+
 
     def get_layout_pins(self,inst):
         """ Return a map of pin locations of the instance offset """

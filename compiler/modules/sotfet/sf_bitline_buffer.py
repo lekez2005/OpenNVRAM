@@ -102,7 +102,7 @@ class SfBitlineBuffer(design.design):
         # add nmos active
         active_height = self.tx_widths[0]
 
-        # gnd_contact_width = drc["metal1_to_metal1_line_end"]
+        # gnd_contact_width = drc["line_end_space_metal1"]
         gnd_contact_width = self.m1_width
         x_end = self.mid_x - 0.5 * gnd_contact_width - self.m1_space
         drain_contact_width = x_end - x_start

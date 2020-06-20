@@ -44,7 +44,7 @@ class library_drc_test(OpenRamTest):
         self.assertEqual(cl.get_space_by_width_and_length(METAL1),
                          basic_rules["metal1_to_metal1"], "metal1 no width space specified")
 
-        self.assertEqual(cl.get_space_by_width_and_length(METAL1, 0.2, 0.1),
+        self.assertEqual(cl.get_space_by_width_and_length(METAL1, 0.2, 0.2, 0.1),
                          basic_rules["metal1_to_metal1"], "metal1 regular width space width")
 
         self.assertEqual(cl.get_space_by_width_and_length(METAL2),
@@ -74,12 +74,12 @@ class library_drc_test(OpenRamTest):
         self.assertEqual(cl.get_space_by_width_and_length(METAL2, 0.2), 0.1, "metal2 max_width")
         self.assertEqual(cl.get_space_by_width_and_length(METAL3, 0.2), 0.3, "metal3 max_width")
 
-        # with max_width
-        self.assertEqual(cl.get_space_by_width_and_length(METAL1, 0.2, 0.5), 0.1,
+        # with max_width and length
+        self.assertEqual(cl.get_space_by_width_and_length(METAL1, 0.2, 0.2, 0.5), 0.1,
                          "metal1 max_width and length")
-        self.assertEqual(cl.get_space_by_width_and_length(METAL2, 0.2, 0.5), 0.1,
+        self.assertEqual(cl.get_space_by_width_and_length(METAL2, 0.2, 0.2, 0.5), 0.1,
                          "metal2 max_width and length")
-        self.assertEqual(cl.get_space_by_width_and_length(METAL3, 0.2, 0.5), 0.3,
+        self.assertEqual(cl.get_space_by_width_and_length(METAL3, 0.2, 0.2, 0.5), 0.3,
                          "metal3 max_width and length")
 
     def test_parallel_space(self):

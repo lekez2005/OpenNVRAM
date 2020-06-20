@@ -285,8 +285,8 @@ class pgate(design.design):
                                     size=(1, max(1, no_contacts-1)))
             if active_cont.mod.first_layer_height < drc["minarea_metal1_minwidth"]/active_cont.mod.first_layer_width:
 
-                if tx_width > drc["parallel_threshold"]:
-                    m1_space = drc["parallel_metal1_to_metal1"]
+                if tx_width > drc["parallel_length_threshold"]:
+                    m1_space = drc["parallel_line_space"]
                 else:
                     m1_space = self.m1_space
                 metal_fill_width = round_to_grid(2*(self.poly_pitch - 0.5*self.m1_width - m1_space))

@@ -7,6 +7,32 @@ sys.path.append('..')
 import testutils
 
 
+def parallel_sim(command_iterator, max_jobs=50, nice=15, **subprocess_params):
+    import psutil
+    import time
+    import subprocess
+
+    def preexec_fn():
+        pid = os.getpid()
+        ps = psutil.Process(pid)
+        ps.nice(nice)
+    processes = set()
+    for command in command_iterator:
+        processes.add(subprocess.Popen(command, preexec_fn=preexec_fn, **subprocess_params))
+        time.sleep(0.1)
+
+        if len(processes) >= max_jobs:
+            os.wait()
+            processes.difference_update([
+                p for p in processes if p.poll() is not None])
+
+    # ensure all done
+    while len(processes) > 0:
+        os.wait()
+        processes.difference_update([
+            p for p in processes if p.poll() is not None])
+
+
 class CharTestBase(testutils.OpenRamTest):
     config_template = "config_20_{}"
     spice_template = "cin_template.sp"

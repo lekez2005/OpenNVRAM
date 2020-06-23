@@ -286,7 +286,7 @@ def run_command(command, stdout_file, stderror_file, verbose_level=1, cwd=None):
                 process.stdout.close()
                 break
             else:
-                debug.print_str(line)
+                debug.print_str(line.rstrip())
                 stdout_f.write(line)
 
     if process is not None:

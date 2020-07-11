@@ -17,7 +17,7 @@ class WriteDriverIn(CharTestBase):
         OPTS.write_driver_mod = "write_driver_mask_3x"
         OPTS.write_driver_tap = "write_driver_mask_3x_tap"
 
-        from modules.bitline_compute.write_driver_mask_array import write_driver_mask_array
+        from modules.write_driver_mask_array import write_driver_mask_array
 
         OPTS.check_lvsdrc = False
         self.run_drc_lvs = False

@@ -9,7 +9,7 @@ from base.design import design
 from base.vector import vector
 from globals import OPTS
 from modules.bitline_compute.bl_control_buffers_sense_trig import ControlBuffersSenseTrig
-from modules.bitline_compute.flop_buffer import FlopBuffer
+from modules.flop_buffer import FlopBuffer
 from modules.buffer_stage import BufferStage
 from modules.control_buffers import ControlBuffers
 from modules.control_buffers_bank_mixin import ControlBuffersMixin

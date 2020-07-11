@@ -13,7 +13,6 @@ class FlopBuffer(design):
     """
 
     def __init__(self, flop_module_name, buffer_stages):
-        super().__init__("flop_buffer")
 
         if buffer_stages is None or len(buffer_stages) < 1:
             debug.error("There should be at least one buffer stage", 1)
@@ -68,11 +67,11 @@ class FlopBuffer(design):
         if len(self.buffer_stages) % 2 == 0:
             nets = ["flop_out", "dout_bar", "dout"]
             flop_out = self.flop_inst.get_pin("dout")
-            path_start = vector(flop_out.rx(), flop_out.uy() - self.m2_width)
+            path_start = vector(flop_out.rx(), flop_out.uy() - 0.5 * self.m2_width)
         else:
             nets = ["flop_out_bar", "dout", "dout_bar"]
             flop_out = self.flop_inst.get_pin("dout_bar")
-            path_start = vector(flop_out.rx(), flop_out.uy()-0.5*self.m2_width)
+            path_start = vector(flop_out.rx(), flop_out.uy() - 0.5 * self.m2_width)
 
         self.connect_inst(nets + ["vdd", "gnd"])
 
@@ -103,7 +102,9 @@ class FlopBuffer(design):
                 tap_rect = min(all_right_rects, key=lambda x: x.height)
                 # add tap rect
                 left = rightmost.rx()
-                right = inv_layer.rx() + self.buffer_inst.lx()
+                # leave space to avoid spacing issues with adjacent modules
+                implant_space = self.get_space_by_width_and_length(layer)
+                right = inv_layer.rx() + self.buffer_inst.lx() - implant_space
                 self.add_rect(layer, offset=vector(left, tap_rect.by()), width=right - left,
                               height=tap_rect.height)
 
@@ -121,11 +122,11 @@ class FlopBuffer(design):
             buffer_pin = self.buffer_inst.get_pin(pin_name)
             flop_pin = self.flop_inst.get_pin(pin_name)
             if pin_name == "gnd":
-                y_offset = min(buffer_pin.by(), flop_pin.by())
+                y_offset = max(buffer_pin.by(), flop_pin.by())
                 y_top = min(buffer_pin.uy(), flop_pin.uy())
             else:
                 y_offset = max(buffer_pin.by(), flop_pin.by())
-                y_top = max(buffer_pin.uy(), flop_pin.uy())
+                y_top = min(buffer_pin.uy(), flop_pin.uy())
             self.add_layout_pin(pin_name, buffer_pin.layer, offset=vector(0, y_offset), width=self.width,
                                 height=y_top - y_offset)
         self.copy_layout_pin(self.flop_inst, "clk", "clk")

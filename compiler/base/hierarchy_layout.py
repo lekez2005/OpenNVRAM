@@ -116,6 +116,8 @@ class layout(lef.lef):
         """
         for obj in self.objs:
             obj.offset = vector(obj.offset - offset)
+            if isinstance(obj, geometry.rectangle):
+                obj.compute_boundary(obj.offset)
         for inst in self.insts:
             inst.offset = vector(inst.offset - offset)
             # The instances have a precomputed boundary that we need to update.

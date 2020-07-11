@@ -75,10 +75,11 @@ class sense_amp_array(design.design):
         self.amp_insts = []
         
         for i in range(0, self.row_size, self.words_per_row):
-            name = "sa_d{0}".format(i)
+            index = int(i / self.words_per_row)
+            name = "sa_d{0}".format(index)
             amp_position = vector(self.bitcell_offsets[i], 0)
             self.amp_insts.append(self.add_inst(name=name, mod=self.amp, offset=amp_position))
-            self.connect_inst(self.get_connections(i))
+            self.connect_inst(self.get_connections(index))
 
         if self.body_tap is not None:
             for x_offset in self.tap_offsets:
@@ -96,8 +97,7 @@ class sense_amp_array(design.design):
         if output_name is None:
             output_name = pin_name
         for i in range(len(self.amp_insts)):
-            index = int(i / self.words_per_row)
-            self.copy_layout_pin(self.amp_insts[i], pin_name, output_name + "[{}]".format(index))
+            self.copy_layout_pin(self.amp_insts[i], pin_name, output_name + "[{}]".format(i))
 
     def extend_horizontal_pins(self, pin_name, output_name=None):
         if output_name is None:

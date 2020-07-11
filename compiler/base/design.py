@@ -120,6 +120,10 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.metal1_min_enclosed_area = drc["metal1_min_enclosed_area"]
 
     @classmethod
+    def get_min_layer_width(cls, layer):
+        return drc["minwidth_{}".format(layer)]
+
+    @classmethod
     def get_space_by_width_and_length(cls, layer, max_width=None, min_width=None,
                                       run_length=None, heights=None):
         if cls.is_thin_implant(layer, min_width):
@@ -159,7 +163,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
     @classmethod
     def is_thin_implant(cls, layer, min_width):
-        if "implant" in layer:
+        if min_width is not None and "implant" in layer:
             threshold = cls.get_drc_by_layer(layer, "thin_threshold")
             return threshold and min_width < threshold
 
@@ -270,9 +274,12 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                     x.layerPurpose == tech_purpose[purpose])
         return list(filter(filter_match, self.objs))
 
-    def get_gds_layer_shapes(self, cell, layer, purpose="drawing"):
-        # TODO get from sub-cells
-        return cell.gds.getShapesInLayer(tech_layers[layer], tech_purpose[purpose])
+    def get_gds_layer_shapes(self, cell, layer, purpose="drawing", recursive=False):
+        if recursive:
+            return cell.gds.getShapesInLayerRecursive(tech_layers[layer],
+                                                      tech_purpose[purpose])
+        else:
+            return cell.gds.getShapesInLayer(tech_layers[layer], tech_purpose[purpose])
 
     def get_gds_layer_rects(self, layer, purpose="drawing", recursive=False):
         def rect(shape):
@@ -286,18 +293,18 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
 
     def get_poly_fills(self, cell):
-        poly_dummies = self.get_gds_layer_shapes(cell, "po_dummy", "po_dummy")
-        poly_rects = self.get_gds_layer_shapes(cell, "poly")
+        poly_dummies = self.get_gds_layer_shapes(cell, "po_dummy", "po_dummy", recursive=True)
+        poly_rects = self.get_gds_layer_shapes(cell, "poly", recursive=True)
 
         # only polys with active layer interaction need to be filled
         polys = []
-        actives = self.get_gds_layer_shapes(cell, "active")
+        actives = self.get_gds_layer_shapes(cell, "active", recursive=True)
         for poly_rect in poly_rects:
             for active in actives:
                 if (poly_rect[0][0] > active[0][0] and poly_rect[1][0] < active[1][0]  # contained in x_direction
                         and poly_rect[0][1] < active[0][1] and poly_rect[1][1] > active[1][1]):
                     polys.append(poly_rect)
-        if len(polys) == 0 and len(poly_dummies) == 2: # this may be a composite cell. In which case dummy polys should be added to guide
+        if len(polys) == 0 and len(poly_dummies) == 2:
             result = {}
             left = copy.deepcopy(min(poly_dummies, key=lambda rect: rect[0][0]))
             left[0][0] -= self.poly_pitch
@@ -334,6 +341,9 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         merged_fills = {"left": [], "right": []}
 
         def add_to_merged(fill):
+            # discard ceils that appear within cell
+            if fill[0][0] > 0 and fill[1][0] < cell.width:
+                return
             if fill[0][0] < 0.5*cell.width:
                 merged_fills["left"].append(fill)
             else:
@@ -388,6 +398,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             else:
                 add_fill(instances[0].lx(), "left")
                 add_fill(instances[-1].lx(), "right")
+
             if hasattr(self, "tap_offsets") and len(self.tap_offsets) > 0:
                 tap_width = utils.get_body_tap_width()
                 tap_offsets = self.tap_offsets
@@ -396,33 +407,38 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                         add_fill(offset - instances[-1].width, "right")
                         add_fill(offset + tap_width, "left")
 
-    def fill_array_layer(self, layer, cell, module_insts=[]):
+                if hasattr(OPTS, "right_buffers_offsets") and len(OPTS.right_buffers_offsets) > 0:
+                    add_fill(OPTS.right_buffers_offsets[-1] + tap_width, "left")
+                    add_fill(OPTS.right_buffers_offsets[0] - instances[0].width, "right")
+
+    def fill_array_layer(self, layer, cell, purpose="drawing"):
         if not (hasattr(self, "tap_offsets") and len(self.tap_offsets) > 0):
             return
 
-        if layer in tech_purpose:
-            purpose = tech_purpose[layer]
-        else:
-            purpose = tech_purpose["drawing"]
-        rects = cell.gds.getShapesInLayer(tech_layers[layer], purpose=purpose)
-        tap_offsets = self.tap_offsets[1:] # first tap offset doesn't have to be filled
+        rects = cell.get_layer_shapes(layer, purpose=purpose, recursive=False)
+        if not rects:
+            rects = cell.get_layer_shapes(layer, purpose=purpose, recursive=True)
+
         tap_width = utils.get_body_tap_width()
 
+        right_buffer_x_offsets = getattr(OPTS, "right_buffers_offsets", [])
+
+        tap_offsets = []
+        if layer == NWELL:
+            tap_offsets = self.tap_offsets[1:]  # first tap offset doesn't have to be filled
+            if len(right_buffer_x_offsets) > 0:
+                tap_offsets += right_buffer_x_offsets
+
         for rect in rects:
-            (ll, ur) = rect
             # only right hand side  needs to be extended
-            if ur[0] >= cell.width:
-                right_extension = ur[0] - cell.width
+            if rect.rx() >= cell.width:
+                right_extension = rect.rx() - cell.width
                 for tap_offset in tap_offsets:
-                    self.add_rect(layer, offset=vector(tap_offset, ll[1]), height=ur[1] - ll[1],
+                    self.add_rect(layer, offset=vector(tap_offset, rect.by()), height=rect.height,
                                   width=tap_width + right_extension)
-                for i in range(1, len(module_insts)):
-                    current_inst = module_insts[i]
-                    prev_inst = module_insts[i-1]
-                    if current_inst.lx() == prev_inst.rx():
-                        continue
-                    self.add_rect(layer, offset=vector(prev_inst.rx() + right_extension, ll[1]), height=ur[1] - ll[1],
-                                  width=current_inst.lx() - prev_inst.rx())
+                for x_offset in self.bitcell_offsets:
+                    self.add_rect(layer, offset=vector(x_offset+rect.lx(), rect.by()),
+                                  height=rect.height, width=rect.width)
 
     def evaluate_vertical_module_spacing(self, top_modules: List["design"],
                                          bottom_modules: List["design"], reference_bottom=None,

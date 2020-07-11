@@ -32,14 +32,14 @@ class ControlBuffersMixin:
     def create_buffer_modules(self: design_control):
         module_defs = getattr(OPTS, "right_buffers", [])
 
+        module_height = self.control_buffers.logic_heights
+
         modules_x_offset = OPTS.right_buffers_x
-        y_offset = self.read_buf_inst.by()
+        y_offset = self.control_buffers_inst.uy() - module_height
 
         module_defs = list(sorted(module_defs, key=lambda x: self.control_buffers_inst.get_pin(x[0]).cx()))
 
         buffer_dict = self.buffer_dict
-
-        module_height = self.control_buffers_inst.get_pin("vdd").cy() - self.read_buf_inst.by()
 
         min_rail_width = utils.ceil(self.get_fill_width()**2/self.m3_width)
 

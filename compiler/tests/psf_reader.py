@@ -24,7 +24,8 @@ class PsfReader:
     def initialize(self):
         self.data = libpsf.PSFDataSet(self.simulation_file)
         self.time = self.data.get_sweep_values()
-        self.vdd = self.data.get_signal(self.vdd_name)[0]
+        if self.vdd_name:
+            self.vdd = self.data.get_signal(self.vdd_name)[0]
         self.is_open = True
 
         self.cache = {}

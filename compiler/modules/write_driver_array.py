@@ -45,10 +45,10 @@ class write_driver_array(design.design):
     def create_layout(self):
         self.create_write_array()
         self.add_dummy_poly(self.driver, self.driver_insts, 1, from_gds=True)
-        self.fill_array_layer("nwell", self.driver, self.driver_insts)
+        self.fill_array_layer("nwell", self.driver)
         
-        self.fill_array_layer("pimplant", self.driver, self.driver_insts)
-        self.fill_array_layer("nimplant", self.driver, self.driver_insts)
+        self.fill_array_layer("pimplant", self.driver)
+        self.fill_array_layer("nimplant", self.driver)
         self.add_layout_pins()
 
     def get_connections(self, i):

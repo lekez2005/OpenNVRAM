@@ -24,7 +24,7 @@ class BaselineBank(design, ControlBuffersMixin):
 
     external_vdds = ["vdd_buffers", "vdd_data_flops", "vdd_wordline"]
 
-    def __init__(self, word_size, num_words, words_per_row, name=""):
+    def __init__(self, word_size, num_words, words_per_row, num_banks=1, name=""):
         self.set_modules(self.get_module_list())
 
         if name == "":
@@ -35,6 +35,7 @@ class BaselineBank(design, ControlBuffersMixin):
         self.word_size = word_size
         self.num_words = num_words
         self.words_per_row = words_per_row
+        self.num_banks = num_banks
 
         # The local control signals are gated when we have bank select logic,
         # so this prefix will be added to all of the input signals.
@@ -162,6 +163,8 @@ class BaselineBank(design, ControlBuffersMixin):
 
         run_optimizations = hasattr(OPTS, 'run_optimizations') and OPTS.run_optimizations
         if run_optimizations:
+            if hasattr(OPTS, 'configure_sizes'):
+                getattr(OPTS, 'configure_sizes')(self, OPTS)
             delay_strategy = delay_strategy_class()(self)
 
             OPTS.clk_buffers = delay_strategy.get_clk_buffer_sizes()
@@ -239,8 +242,9 @@ class BaselineBank(design, ControlBuffersMixin):
         self.num_addr_lines = self.row_addr_size
 
         # M1/M2 routing pitch is based on contacted pitch
-        self.m1_pitch = m1m2.width + self.parallel_line_space
-        self.m2_pitch = m2m3.width + self.parallel_line_space
+        self.m1_pitch = m1m2.width + self.get_parallel_space("metal1")
+        self.m2_pitch = m2m3.width + self.get_parallel_space("metal2")
+        self.m3_pitch = m2m3.width + self.get_parallel_space("metal3")
 
         # Overall central bus gap. It includes all the column mux lines,
         # control lines, address flop to decoder lines and a GND power rail in M2
@@ -426,20 +430,28 @@ class BaselineBank(design, ControlBuffersMixin):
 
         return self.mask_in_flops_inst.by() + implant_space + top_mask_gnd_pin.uy() - bottom_data_gnd_pin.by()
 
+    def get_write_driver_offset(self):
+        return self.data_in_flops_inst.ul()
+
     def add_write_driver_array(self):
         """Temp write driver, replace with mask support"""
 
         self.write_driver_array_inst = self.add_inst(name="write_driver_array",
                                                      mod=self.write_driver_array,
-                                                     offset=self.data_in_flops_inst.ul())
+                                                     offset=self.get_write_driver_offset())
 
         temp = []
         for i in range(self.word_size):
             temp.append("data_in[{0}]".format(i))
             temp.append("data_in_bar[{0}]".format(i))
+
+        if self.words_per_row > 1:
+            suffix = "_out"
+        else:
+            suffix = ""
         for i in range(self.word_size):
-            temp.append("bl[{0}]".format(i))
-            temp.append("br[{0}]".format(i))
+            temp.append("bl{0}[{1}]".format(suffix, i))
+            temp.append("br{0}[{1}]".format(suffix, i))
         for i in range(self.word_size):
             temp.append("mask_in_bar[{0}]".format(i))
 
@@ -451,9 +463,13 @@ class BaselineBank(design, ControlBuffersMixin):
         self.sense_amp_array_inst = self.add_inst(name="sense_amp_array", mod=self.sense_amp_array,
                                                   offset=self.sense_amp_array_offset)
         temp = []
+        if self.words_per_row > 1:
+            suffix = "_out"
+        else:
+            suffix = ""
         for i in range(self.word_size):
-            temp.append("bl[{0}]".format(i))
-            temp.append("br[{0}]".format(i))
+            temp.append("bl{0}[{1}]".format(suffix, i))
+            temp.append("br{0}[{1}]".format(suffix, i))
 
             temp.append("and_out[{0}]".format(i))
 
@@ -463,9 +479,12 @@ class BaselineBank(design, ControlBuffersMixin):
             temp.extend(["sense_en", "precharge_en_bar", "sample_en_bar", "vdd", "gnd"])
         self.connect_inst(temp)
 
+    def get_precharge_y(self):
+        return self.sense_amp_array_inst.uy() + self.precharge_array.height
+
     def add_precharge_array(self):
         """ Adding Precharge """
-        y_offset = self.sense_amp_array_inst.uy() + self.precharge_array.height
+        y_offset = self.get_precharge_y()
         self.precharge_array_inst=self.add_inst(name="precharge_array",
                                                 mod=self.precharge_array,
                                                 mirror="MX",
@@ -568,6 +587,9 @@ class BaselineBank(design, ControlBuffersMixin):
                 "write_en_bar": self.write_driver_array_inst.get_pins("en_bar"),
                 "wordline_en": self.precharge_array_inst.get_pins("en"),
             }
+            if OPTS.baseline:
+                destination_pins["precharge_en_bar"] += \
+                    self.sense_amp_array_inst.get_pins("preb")
         return destination_pins
 
     def add_control_rails(self):
@@ -580,6 +602,7 @@ class BaselineBank(design, ControlBuffersMixin):
 
         rail_names = list(sorted(destination_pins.keys(),
                                  key=lambda x: self.control_buffers_inst.get_pin(x).lx()))
+        self.rail_names = rail_names
 
         for i in range(len(rail_names)):
             rail_name = rail_names[i]
@@ -748,7 +771,7 @@ class BaselineBank(design, ControlBuffersMixin):
                              size=[2, 1], rotate=90)
 
     def route_write_driver(self):
-        for col in range(self.num_cols):
+        for col in range(0, int(self.num_cols / self.words_per_row)):
             # connect bitline to sense amp
             for pin_name in ["bl", "br"]:
                 driver_pin = self.write_driver_array_inst.get_pin(pin_name + "[{}]".format(col))
@@ -1096,6 +1119,7 @@ class BaselineBank(design, ControlBuffersMixin):
         for i in range(len(self.power_grid_vias)):
             via_y_offset = self.power_grid_vias[i]
             if i % 2 == 0:  # vdd
+                # add vias to top
                 via_x = [self.left_vdd.lx(), self.mid_vdd.lx()]
                 for j in range(2):
                     if j == 0 and via_y_offset > max_left_power_y:

@@ -55,6 +55,7 @@ class ms_flop_array(design.design):
         self.add_pins()
         self.create_ms_flop_array()
         self.add_dummy_poly(self.ms, self.ms_inst.values(), self.words_per_row, from_gds=True)
+        self.fill_array_layer("nwell", self.ms)
         self.add_layout_pins()
         self.DRC_LVS()
 
@@ -82,7 +83,7 @@ class ms_flop_array(design.design):
             index = int(i / self.words_per_row)
             self.ms_inst[index]=self.add_inst(name=name,
                                                              mod=self.ms,
-                                                             offset=base, 
+                                                             offset=base,
                                                              mirror=mirror)
             self.connect_inst(["din[{0}]".format(index),
                                "dout[{0}]".format(index),

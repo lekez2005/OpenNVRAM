@@ -1,6 +1,7 @@
 import debug
 from base import design
 from base import utils
+from base.design import PIMP, NIMP, NWELL
 from base.vector import vector
 from globals import OPTS
 from tech import drc, spice
@@ -60,6 +61,17 @@ class bitcell_array(design.design):
                 self.add_right_dummy = False
                 self.width = self.tap_offsets[-1] + self.body_tap.width
 
+        # find implants in body tap
+        right_buffers_fill_rects = []
+        if len(OPTS.right_buffers_offsets) > 0:
+            right_buffers_fill_layers = [PIMP, NIMP, NWELL]
+            for i in range(len(right_buffers_fill_layers)):
+                layer = right_buffers_fill_layers[i]
+                layer_rects = self.body_tap.get_layer_shapes(layer, recursive=True)
+                for rect in layer_rects:
+                    right_buffers_fill_rects.append((rect, OPTS.right_buffers_offsets[0] + rect.lx(),
+                                                     OPTS.right_buffers_offsets[-1] +
+                                                     self.body_tap.width - rect.lx(), layer))
 
         self.cell_inst = {}
         yoffset = 0.0
@@ -83,10 +95,18 @@ class bitcell_array(design.design):
                                    "wl[{0}]".format(row),
                                    "vdd",
                                    "gnd"])
-            for x_offset in self.tap_offsets:
+            for x_offset in self.tap_offsets + OPTS.right_buffers_offsets:
                 self.body_tap_insts.append(self.add_inst(name=self.body_tap.name, mod=self.body_tap,
                                                          offset=vector(x_offset, tempy), mirror=dir_key))
                 self.connect_inst([])
+
+            for fill_rect, fill_rect_left, fill_rect_right, layer in right_buffers_fill_rects:
+                if row % 2 == 0:
+                    rect_y = yoffset + self.body_tap.height - fill_rect.uy()
+                else:
+                    rect_y = yoffset + fill_rect.by()
+                self.add_rect(layer, offset=vector(fill_rect_left, rect_y), height=fill_rect.height,
+                              width=fill_rect_right - fill_rect_left)
 
             yoffset += self.cell.height
 

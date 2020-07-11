@@ -3,6 +3,7 @@ from importlib import reload
 import debug
 from base import design
 from base import utils
+from base.design import NWELL, PIMP, NIMP
 from base.library_import import library_import
 from base.vector import vector
 from globals import OPTS
@@ -48,7 +49,7 @@ class tri_gate_array(design.design):
         self.create_array()
         self.add_layout_pins()
         self.connect_en_pins()
-        #self.fill_implants_and_nwell()
+        self.fill_implants_and_nwell()
 
     def add_pins(self):
         """create the name of pins depend on the word size"""
@@ -94,26 +95,10 @@ class tri_gate_array(design.design):
                 previous_index = i
 
     def fill_implants_and_nwell(self):
-
-        # fill nwell
-        nwell_rects = self.tri.gds.getShapesInLayer(tech_layers["nwell"])
-        self.fill_layer(nwell_rects[0], "nwell")
-        # fill pimplant
-        nimplants = self.tri.gds.getShapesInLayer(tech_layers["nimplant"])
-        top_implant = max(nimplants, key=lambda x: x[1][1])
-        self.fill_layer(top_implant, "nimplant")
-        
-
-
-    def fill_layer(self, rect, layer_name):
-        # find last tri state
-        last_key = list(range(0, self.columns, self.words_per_row))[-1]
-        last_tri_state = self.tri_inst[last_key]
-
-        (ll, ur) = rect
-        x_extension = ur[0] - self.tri.width
-        self.add_rect(layer_name, offset=ll, width=last_tri_state.rx() + x_extension, height=ur[1] - ll[1])
-
+        layers = [NWELL, PIMP, NIMP]
+        purposes = ["drawing", "drawing", "drawing"]
+        for i in range(len(layers)):
+            self.fill_array_layer(layers[i], self.tri, purpose=purposes[i])
 
     def add_layout_pins(self):
         

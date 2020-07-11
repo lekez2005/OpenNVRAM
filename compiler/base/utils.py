@@ -28,6 +28,15 @@ def ceil(decimal):
     grid = tech.drc["grid"]
     return math.ceil(decimal * 1 / grid) / (1 / grid)
 
+
+def floor(decimal):
+    """
+    Performs a flooring function on the decimal place specified by the DRC grid.
+    """
+    grid = tech.drc["grid"]
+    return math.floor(decimal * 1 / grid) / (1 / grid)
+
+
 def round_to_grid(number):
     """
     Rounds an arbitrary number to the grid.
@@ -122,11 +131,27 @@ def get_tap_positions(num_columns):
     if tap_positions[-1] == num_columns:
         tap_positions[-1] = num_columns - cells_per_group  # prevent clash with cells to the right of bitcell array
 
+    # find column corresponding to
+    add_buffers_rails_space = (num_columns > OPTS.right_buffers_col_threshold and
+                               len(getattr(OPTS, "right_buffers", [])) > 0)
+
+    rails_num_taps = 0
+    if add_buffers_rails_space:
+        from base.design import design
+        output_nets = [x[1] for x in OPTS.right_buffers]
+        flattened_nets = [x for y in output_nets for x in y]
+        num_rails = len(flattened_nets)
+        m4_space = design.get_parallel_space("metal4")
+        m4_pitch = design.get_min_layer_width("metal4") + m4_space
+        rails_num_taps = math.ceil((num_rails * m4_pitch + m4_space) / tap_width)
+        OPTS.right_buffers_num_taps = rails_num_taps
+
     tap_positions = list(sorted(set(tap_positions)))
     x_offset = 0.0
     positions_index = 0
     bitcell_offsets = [None]*num_columns
     tap_offsets = []
+    OPTS.right_buffers_offsets = []
     for i in range(num_columns):
         if positions_index < len(tap_positions) and i == tap_positions[positions_index]:
             tap_offsets.append(x_offset)
@@ -134,6 +159,12 @@ def get_tap_positions(num_columns):
             positions_index += 1
         bitcell_offsets[i] = x_offset
         x_offset += bitcell.width
+        if add_buffers_rails_space:
+            if x_offset > OPTS.right_buffers_x and (i + 1) % cells_per_group == 0:
+                OPTS.right_buffers_x_actual = x_offset
+                OPTS.right_buffers_offsets = [x_offset + i * tap_width for i in range(rails_num_taps)]
+                x_offset += rails_num_taps * tap_width
+                add_buffers_rails_space = False
     return bitcell_offsets, tap_offsets
 
 

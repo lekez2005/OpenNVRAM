@@ -81,6 +81,18 @@ class CmosBank(BaselineBank):
         self.add_pin_list(["bank_sel", "read", "clk", "sense_trig",
                            "clk_buf", "clk_bar", "vdd", "gnd"])
 
+    def create_control_buffers(self):
+        if OPTS.baseline:
+            if self.words_per_row == 1:
+
+                from modules.baseline_latched_control_buffers import LatchedControlBuffers
+            else:
+                from modules.shared_decoder.cmos_baseline_control_buffers import LatchedControlBuffers
+        else:
+            from modules.bitline_compute.bl_latched_control_buffers import LatchedControlBuffers
+        self.control_buffers = LatchedControlBuffers()
+        self.add_mod(self.control_buffers)
+
     def add_control_buffers(self):
         offset = vector(0, self.logic_buffers_bottom)
         self.control_buffers_inst = self.add_inst("control_buffers", mod=self.control_buffers,

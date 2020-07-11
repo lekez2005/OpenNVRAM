@@ -272,7 +272,7 @@ class BaselineBank(design, ControlBuffersMixin):
                 self.control_buffers = ControlBuffers()
         else:
             if OPTS.baseline:
-                from modules.bitline_compute.baseline_latched_control_buffers import LatchedControlBuffers
+                from modules.baseline_latched_control_buffers import LatchedControlBuffers
             else:
                 from modules.bitline_compute.bl_latched_control_buffers import LatchedControlBuffers
             self.control_buffers = LatchedControlBuffers()

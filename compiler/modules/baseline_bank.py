@@ -135,11 +135,13 @@ class BaselineBank(design, ControlBuffersMixin):
 
     def create_modules(self):
 
-        self.msf_mask_in = self.create_module('ms_flop_array', columns=self.word_size, word_size=self.word_size,
-                                              align_bitcell=True)
+        self.msf_mask_in = self.create_module('ms_flop_array', columns=self.num_cols,
+                                              word_size=self.word_size, flop_mod=OPTS.mask_in_flop,
+                                              flop_tap_name=OPTS.mask_in_flop_tap, align_bitcell=True)
 
-        if not getattr(OPTS, "data_in_flop", OPTS.ms_flop) == OPTS.ms_flop:
-            self.msf_data_in = self.create_module('ms_flop_array', columns=self.word_size, word_size=self.word_size,
+        if not getattr(OPTS, "data_in_flop", OPTS.mask_in_flop) == OPTS.mask_in_flop:
+            self.msf_data_in = self.create_module('ms_flop_array', columns=self.num_cols,
+                                                  word_size=self.word_size,
                                                   align_bitcell=True, flop_mod=OPTS.data_in_flop,
                                                   flop_tap_name=OPTS.data_in_flop_tap)
         else:

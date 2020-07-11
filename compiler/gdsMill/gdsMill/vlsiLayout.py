@@ -651,7 +651,7 @@ class VlsiLayout(metaclass=UniqueMeta):
             boundaries += self.getBoundariesInStructure(layer, TreeUnit, purpose=purpose)
 
         boundaries = [list(map(lambda x: x * self.units[0], xx)) for xx in boundaries]
-        boundaries = [((x[0], x[1]), (x[2], x[3])) for x in boundaries]
+        boundaries = [([x[0], x[1]], [x[2], x[3]]) for x in boundaries]
 
         return boundaries
 

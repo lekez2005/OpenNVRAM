@@ -400,12 +400,13 @@ class SramProbe(object):
             bank_index = 0
             bank_inst = self.sram.bank_inst
 
+        address_int = self.address_to_int(address)
+
         words_per_row = self.sram.words_per_row
         no_col_bits = int(np.log2(words_per_row))
-        col_address = address[:no_col_bits] or [0]
-        row_address = address[no_col_bits:]
+        row_address = address[:-no_col_bits]
         row = self.address_to_int(row_address)
-        col_index = self.address_to_int(col_address)
+        col_index = address_int % self.sram.words_per_row
 
         return bank_index, bank_inst, row, col_index
 

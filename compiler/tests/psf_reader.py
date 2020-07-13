@@ -18,6 +18,7 @@ class PsfReader:
     def __init__(self, simulation_file, vdd_name="vdd"):
         self.simulation_file = simulation_file
         self.vdd_name = vdd_name
+        self.thresh = 0.5
 
         self.initialize()
 
@@ -73,20 +74,24 @@ class PsfReader:
     def get_signal_time(self, signal_name, from_t=0.0, to_t=None):
         return self.slice_array(self.time, from_t, to_t), self.get_signal(signal_name, from_t, to_t)
 
-    def get_binary(self, signal_name, from_t, to_t=None, thresh=0.5):
+    def get_binary(self, signal_name, from_t, to_t=None, thresh=None):
         if to_t is None:
             to_t = from_t
+        if thresh is None:
+            thresh = self.thresh
         signal = self.get_signal(signal_name, from_t=from_t, to_t=to_t)
         return 1 * (signal.flatten() > thresh*self.vdd)
 
     def get_transition_time_thresh(self, signal_name, start_time, stop_time=None,
-                                   edgetype=None, edge=None, thresh=0.5):
+                                   edgetype=None, edge=None, thresh=None):
         if edge is None:
             edge = self.FIRST_EDGE
         if edgetype is None:
             edgetype = self.EITHER_EDGE
         if stop_time is None:
             stop_time = self.time[-1]
+        if thresh is None:
+            thresh = self.thresh
         signal_binary = self.get_binary(signal_name, start_time, to_t=stop_time, thresh=thresh)
         sig_prev = signal_binary[0]
         start_time_index = self.find_nearest(start_time)
@@ -106,7 +111,7 @@ class PsfReader:
         return time
 
     def get_delay(self, signal_name1, signal_name2, t1=0, t2=None, stop_time=None, edgetype1=None,
-                  edgetype2=None, edge1=None, edge2=None, thresh1=0.5, thresh2=0.5, num_bits=1, bit=0):
+                  edgetype2=None, edge1=None, edge2=None, thresh1=None, thresh2=None, num_bits=1, bit=0):
 
         if t2 is None:
             t2 = t1
@@ -120,6 +125,10 @@ class PsfReader:
             edgetype1 = self.EITHER_EDGE
         if edgetype2 is None:
             edgetype2 = edgetype1
+        if thresh1 is None:
+            thresh1 = self.thresh
+        if thresh2 is None:
+            thresh2 = self.thresh
 
         trans1 = self.get_transition_time_thresh(signal_name1, t1, stop_time, edgetype1, edge=edge1, thresh=thresh1)
 

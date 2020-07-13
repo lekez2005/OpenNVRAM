@@ -404,7 +404,10 @@ class SramProbe(object):
 
         words_per_row = self.sram.words_per_row
         no_col_bits = int(np.log2(words_per_row))
-        row_address = address[:-no_col_bits]
+        if no_col_bits > 0:
+            row_address = address[:-no_col_bits]
+        else:
+            row_address = address
         row = self.address_to_int(row_address)
         col_index = address_int % self.sram.words_per_row
 

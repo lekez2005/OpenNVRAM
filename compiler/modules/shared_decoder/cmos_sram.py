@@ -35,7 +35,7 @@ class CmosSram(sram):
         self.create_column_decoder()
 
     def add_modules(self):
-        self.right_bank_inst = self.add_bank(1, vector(0, 0), x_flip=0, y_flip=0)
+        self.right_bank_inst = self.bank_inst = self.add_bank(0, vector(0, 0), x_flip=0, y_flip=0)
         self.bank_insts = [self.right_bank_inst]
         if self.num_banks == 1:
             self.add_right_col_decoder()
@@ -44,7 +44,8 @@ class CmosSram(sram):
         if self.num_banks == 2:
             self.add_left_col_decoder()
             x_offset = self.get_left_bank_x()
-            self.left_bank_inst = self.add_bank(2, vector(x_offset, 0), x_flip=0, y_flip=-1)
+            self.left_bank_inst = self.add_bank(1, vector(x_offset, 0), x_flip=0, y_flip=-1)
+            self.bank_inst = [self.right_bank_inst, self.left_bank_inst]
             self.bank_insts.append(self.left_bank_inst)
 
     def route_layout(self):
@@ -71,16 +72,15 @@ class CmosSram(sram):
         if self.words_per_row == 2:
             self.column_decoder = column_decoder = FlopBuffer(OPTS.control_flop, OPTS.column_decoder_buffers)
             column_decoder.pins = ["din", "clk", "dout", "dout_bar", "vdd", "gnd"]
-            flop_out_bar = "out_inv" if len(column_decoder.buffer_stages) % 2 == 0 else "out"
-            column_decoder.copy_layout_pin(column_decoder.buffer_inst, flop_out_bar, "dout_bar")
-            self.col_decoder_connections = ["ADDR[{}]".format(self.addr_size - 1), col_decoder_clk,
-                                            "sel[0]", "sel[1]", "vdd", "gnd"]
+            column_decoder.copy_layout_pin(column_decoder.buffer_inst, "out_inv", "dout_bar")
+            self.col_decoder_connections = ["ADDR[{}]".format(self.bank_addr_size - 1), col_decoder_clk,
+                                            "sel[1]", "sel[0]", "vdd", "gnd"]
         else:
 
             buffer_sizes = [OPTS.predecode_sizes[0]] + OPTS.column_decoder_buffers[1:]
             self.col_decoder_connections = []
             for i in reversed(range(self.col_addr_size)):
-                self.col_decoder_connections.append("ADDR[{}]".format(self.addr_size - 1 - i))
+                self.col_decoder_connections.append("ADDR[{}]".format(self.bank_addr_size - 1 - i))
             for i in range(self.words_per_row):
                 self.col_decoder_connections.append("sel[{}]".format(i))
             self.col_decoder_connections.extend([col_decoder_clk, "vdd", "gnd"])
@@ -91,16 +91,12 @@ class CmosSram(sram):
                 self.column_decoder = hierarchical_predecode3x8(use_flops=True, buffer_sizes=buffer_sizes)
         self.add_mod(self.column_decoder)
 
-    def add_two_bank_modules(self):
-        if not self.num_banks == 2:
-            return
-
     def add_pins(self):
         for j in range(self.num_banks):
             for i in range(self.word_size):
                 self.add_pin("DATA_{0}[{1}]".format(j + 1, i))
                 self.add_pin("MASK_{0}[{1}]".format(j + 1, i))
-        for i in range(self.addr_size):
+        for i in range(self.bank_addr_size):
             self.add_pin("ADDR[{0}]".format(i))
         bank_sel_2 = ["bank_sel_2"] * int(self.num_banks == 2)
         for pin in ["read", "clk", "bank_sel"] + bank_sel_2 + ["sense_trig", "vdd", "gnd"]:
@@ -250,7 +246,7 @@ class CmosSram(sram):
                        max_x_offset - self.row_decoder.width)
         y_offset = self.bank.wordline_driver_inst.by() - self.row_decoder.predecoder_height
 
-        self.row_decoder_inst = self.add_inst(name="right_row_decoder", mod=self.row_decoder,
+        self.row_decoder_inst = self.add_inst(name="row_decoder", mod=self.row_decoder,
                                               offset=vector(x_offset, y_offset))
         temp = []
         for i in range(self.row_addr_size):
@@ -274,8 +270,8 @@ class CmosSram(sram):
     def get_bank_connections(self, bank_num):
         connections = []
         for i in range(self.word_size):
-            connections.append("DATA_{0}[{1}]".format(bank_num, i))
-            connections.append("MASK_{0}[{1}]".format(bank_num, i))
+            connections.append("DATA_{0}[{1}]".format(bank_num+1, i))
+            connections.append("MASK_{0}[{1}]".format(bank_num+1, i))
 
         if self.words_per_row > 1:
             for i in range(self.words_per_row):
@@ -283,9 +279,9 @@ class CmosSram(sram):
         for i in range(self.num_rows):
             connections.append("dec_out[{}]".format(i))
 
-        bank_sel = "bank_sel" if bank_num == 1 else "bank_sel_2"
+        bank_sel = "bank_sel" if bank_num == 0 else "bank_sel_2"
         connections.extend([bank_sel, "read", "clk", "sense_trig",
-                            "clk_buf_{}".format(bank_num), "clk_bar_{}".format(bank_num),
+                            "clk_buf_{}".format(bank_num+1), "clk_bar_{}".format(bank_num+1),
                             "vdd", "gnd"])
         return connections
 

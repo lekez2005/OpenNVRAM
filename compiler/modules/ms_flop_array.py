@@ -77,10 +77,11 @@ class ms_flop_array(design.design):
             self.tap_offsets = []
         self.ms_inst={}
         for i in range(0,self.columns,self.words_per_row):
-            name = "dff{0}".format(i)
+            index = int(i / self.words_per_row)
+            name = "dff{0}".format(index)
             base = vector(self.bitcell_offsets[i], 0)
             mirror = "R0"
-            index = int(i / self.words_per_row)
+
             self.ms_inst[index]=self.add_inst(name=name,
                                                              mod=self.ms,
                                                              offset=base,

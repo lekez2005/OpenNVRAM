@@ -78,11 +78,10 @@ class write_driver_mask_array(design.design):
     def create_array(self):
         (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
         for i in range(0, self.columns, self.words_per_row):
-            name = "driver_{}".format(i)
+            bit_index = int(i / self.words_per_row)
+            name = "driver_{}".format(bit_index)
             offset = vector(self.bitcell_offsets[i], 0)
             instance = self.add_inst(name=name, mod=self.driver, offset=offset)
-
-            bit_index = int(i / self.words_per_row)
 
             connections = ["data[{0}]".format(bit_index), "data_bar[{0}]".format(bit_index),
                            "mask_bar[{0}]".format(bit_index), "en", "en_bar",

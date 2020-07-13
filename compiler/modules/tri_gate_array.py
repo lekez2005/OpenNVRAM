@@ -65,12 +65,13 @@ class tri_gate_array(design.design):
         (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
         self.tri_inst = {}
         for i in range(0,self.columns,self.words_per_row):
-            name = "Xtri_gate{0}".format(i)
+            index = int(i / self.words_per_row)
+            name = "tri_gate{0}".format(index)
             base = vector(self.bitcell_offsets[i], 0)
             self.tri_inst[i]=self.add_inst(name=name,
                                            mod=self.tri,
                                            offset=base)
-            index = int(i/self.words_per_row)
+
             self.connect_inst(["in[{0}]".format(index),
                                "out[{0}]".format(index),
                                "en", "en_bar", "vdd", "gnd"])

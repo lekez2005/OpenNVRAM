@@ -25,7 +25,7 @@ class pgate(design.design):
                  align_bitcell=False, same_line_inputs=True):
         """ Creates a generic cell """
         design.design.__init__(self, name)
-        if align_bitcell or height is None:
+        if (align_bitcell and height == pgate.get_default_height()) or height is None:
             height = pgate.bitcell.height
         self.beta = beta
         self.size = size
@@ -333,9 +333,9 @@ class pgate(design.design):
                                   contact_shift=0.0)
 
     def add_poly_contacts(self, pin_names, y_shifts):
-        fill_height = (self.middle_space - 2 * self.line_end_space)
+        self.gate_fill_height = fill_height = (self.middle_space - 2 * self.line_end_space)
         min_width = utils.ceil(self.minarea_metal1_contact / fill_height)
-        fill_width = max(contact.poly.second_layer_width, min_width)
+        self.gate_fill_width = fill_width = max(contact.poly.second_layer_width, min_width)
 
         if OPTS.use_body_taps and self.align_bitcell and self.same_line_inputs:  # all contacts are centralized and x shifted for min drc fill
             y_shifts = [0.0]*len(y_shifts)

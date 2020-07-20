@@ -3,6 +3,7 @@ from base import contact
 from base import design
 from base import utils
 from base.contact import m1m2, m2m3, m3m4
+from base.design import METAL2
 from base.vector import vector
 from globals import OPTS
 from pgates.ptx_spice import ptx_spice
@@ -292,8 +293,12 @@ class precharge_tap(design.design):
         self.add_rect(vdd_rail.layer, offset=vector(vdd_rail.lx(), 0), width=vdd_rail.width(), height=self.height)
         via_offset = vector(vdd_rail.cx()-0.5*m1m2.second_layer_width,
                             precharge_vdd.uy()-sample_contact.second_layer_height)
-        self.add_contact(m1m2.layer_stack, offset=via_offset, size=[1, num_vias])
+        m1m2_cont = self.add_contact(m1m2.layer_stack, offset=via_offset, size=[1, num_vias])
         self.add_contact(m2m3.layer_stack, offset=via_offset, size=[1, num_vias])
         self.add_contact(m3m4.layer_stack, offset=via_offset, size=[1, num_vias])
+        m2_area = m1m2_cont.width * m1m2.height
+        if m2_area < self.minarea_metal1_contact:
+            self.add_rect(METAL2, offset=vector(vdd_rail.lx(), via_offset.y), width=vdd_rail.width(),
+                          height=m1m2_cont.height)
 
 

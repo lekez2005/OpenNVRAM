@@ -213,6 +213,8 @@ class SequentialDelay(delay):
         self.current_time = self.setup_time + 0.5 * self.slew
         self.update_output(increment_time=False)
         self.current_time += 2*self.slew
+        # to prevent clashes when initialization period is different from first operation period
+        self.current_time += abs(self.read_period - self.write_period)
 
     def finalize_output(self):
         """Complete pwl statements"""

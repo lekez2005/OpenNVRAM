@@ -3,7 +3,7 @@ from base import design
 from base import unique_meta
 from base import utils
 from base.vector import vector
-from tech import drc
+from tech import drc, layer as tech_layer
 
 
 class contact(design.design, metaclass=unique_meta.Unique):
@@ -164,11 +164,37 @@ class contact(design.design, metaclass=unique_meta.Unique):
         well_position = self.first_layer_position - [drc["well_enclosure_active"]]*2
         well_width =  self.first_layer_width  + 2*drc["well_enclosure_active"]
         well_height = self.first_layer_height + 2*drc["well_enclosure_active"]
+
+        well_layer = "{}well".format(self.well_type)
+        # avoid potential pwell issue since pwell could be implicit
+        if well_layer not in tech_layer:
+            return
         self.add_rect(layer="{}well".format(self.well_type),
                       offset=well_position,
                       width=well_width,
                       height=well_height)
         
+
+class cross_contact(contact):
+    def get_name(*args, **kwargs):
+        name = contact.get_name(*args, **kwargs)
+        return "cross_" + name
+
+    def create_second_layer_enclosure(self):
+        self.second_layer_width = self.contact_array_width + \
+            2 * self.second_layer_vertical_enclosure
+        self.second_layer_height = self.contact_array_height + \
+            2 * self.second_layer_horizontal_enclosure
+
+        via_center = vector(0.5 * self.first_layer_width,
+                            0.5 * self.first_layer_height)
+        self.second_layer_position = vector(via_center.x - 0.5 * self.second_layer_width,
+                                            via_center.y - 0.5 * self.second_layer_height)
+
+        self.add_rect(layer=self.second_layer_name,
+                      offset=self.second_layer_position,
+                      width=self.second_layer_width,
+                      height=self.second_layer_height)
 
 
 # This is not instantiated and used for calculations only.
@@ -180,3 +206,5 @@ m1m2 = contact(layer_stack=("metal1", "via1", "metal2"))
 m2m3 = contact(layer_stack=("metal2", "via2", "metal3"))
 m3m4 = contact(layer_stack=("metal3", "via3", "metal4"))
 
+cross_m1m2 = cross_contact(layer_stack=m1m2.layer_stack)
+cross_m2m3 = cross_contact(layer_stack=m2m3.layer_stack)

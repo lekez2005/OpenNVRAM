@@ -163,10 +163,18 @@ class ptx(design.design):
         # poly dummys
         if "po_dummy" in tech_layers:
             self.dummy_height = drc["po_dummy_min_height"]
-            if self.active_height > drc["po_dummy_thresh"]:
-                self.dummy_height = self.active_height + 2 * drc["po_dummy_enc"]
-            # center around active
-            self.dummy_y_offset = self.well_enclose_active + 0.5 * self.active_height
+            # top aligns with actual poly so poly_extend_active
+            # bottom is po_dummy_enc
+            alternative_dummy_height = (self.poly_height - self.poly_extend_active +
+                                        drc["po_dummy_enc"])
+
+            self.dummy_height = max(
+                alternative_dummy_height, self.dummy_height)
+            # align top with real poly top
+            if self.tx_type == "nmos":
+                self.dummy_y_offset = self.poly_top - 0.5 * self.dummy_height
+            else:
+                self.dummy_y_offset = self.poly_offset_y
             self.dummy_top = self.dummy_y_offset + 0.5*self.dummy_height
             self.dummy_bottom = self.dummy_y_offset - 0.5*self.dummy_height
 

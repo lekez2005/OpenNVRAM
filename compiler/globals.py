@@ -2,7 +2,7 @@
 This is called globals.py, but it actually parses all the arguments and performs
 the global OpenRAM setup as well.
 """
-import importlib
+import importlib.util
 import optparse
 import copy
 import os
@@ -165,15 +165,12 @@ def read_config(config_file, is_unit_test=True, openram_temp=None):
     config_file = re.sub(r'\.py$', "", config_file)
     # Expand the user if it is used
     config_file = os.path.expanduser(config_file)
-    # Add the path to the system path so we can import things in the other directory
-    dir_name = os.path.dirname(config_file)
-    file_name = os.path.basename(config_file)
-    # Prepend the path to avoid if we are using the example config
-    sys.path.insert(0,dir_name)
     # Import the configuration file of which modules to use
     debug.info(1, "Configuration file is " + config_file + ".py")
     try:
-        config = importlib.import_module(file_name) 
+        spec = importlib.util.spec_from_file_location("config_file", config_file + ".py")
+        config = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(config)
     except:
         debug.error("Unable to read configuration file: {0}".format(config_file),2)
 

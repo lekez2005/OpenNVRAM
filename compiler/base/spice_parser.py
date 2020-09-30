@@ -123,14 +123,16 @@ class SpiceParser:
 
             pin_index = line.split().index(pin_name) - 1
 
-            if line.startswith("m"):  # end of hierarchy
-                return [line.split()[0], ["d", "g", "s", "b"][pin_index]]
+            if not line.startswith("x"):  # end of hierarchy
+                return [line]
             else:
+                module_branch = []
                 child_module_name = line.split()[-1]
                 child_module = self.get_module(child_module_name)
                 child_pin_name = child_module.pins[pin_index]
-                hierarchy.append(line.split()[0])
-                hierarchy.extend(self.deduce_hierarchy_for_pin(child_pin_name, child_module_name))
-                return hierarchy
-        # probably not attached to a transistor
-        return []
+                module_branch.append(line.split()[0])
+                module_branch.extend(self.deduce_hierarchy_for_pin(child_pin_name, child_module_name))
+
+                hierarchy.append(module_branch)
+
+        return hierarchy

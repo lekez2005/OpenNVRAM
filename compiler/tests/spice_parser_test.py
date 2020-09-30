@@ -116,15 +116,21 @@ class SpiceParserTest(OpenRamTest):
         from base.spice_parser import SpiceParser
         spice_deck = SpiceParser(simple_mod)
         hierarchy = spice_deck.deduce_hierarchy_for_pin("en_bar", "tri_gate")
-        self.assertEqual(hierarchy, ["m_4", "g"])
+        self.assertEqual(hierarchy,
+                         ["M_4 out en_bar net_3 vdd PMOS_VTG W=360.000000n L=50.000000n".lower()])
 
     def test_module_hierarchy(self):
         from base.spice_parser import SpiceParser
         spice_deck = SpiceParser(hierarchical)
         hierarchy = spice_deck.deduce_hierarchy_for_pin("dout_bar", "ms_flop")
-        self.assertEqual(hierarchy, ["xslave", "mpff4", "d"])
+        self.assertEqual(hierarchy, [
+            ["xslave",
+             "mPff4 dout dout_bar vdd vdd PMOS_VTG W=180.0n L=50n m=1".lower()
+             ]])
         hierarchy = spice_deck.deduce_hierarchy_for_pin("dout", "ms_flop")
-        self.assertEqual(hierarchy, ["xslave", "mpff3", "d"])
+        self.assertEqual(hierarchy, [
+            ["xslave",
+             "mPff3 dout_bar int1 vdd vdd PMOS_VTG W=180.0n L=50n m=1".lower()]])
 
 
 OpenRamTest.run_tests(__name__)

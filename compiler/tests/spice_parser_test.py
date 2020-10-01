@@ -116,21 +116,34 @@ class SpiceParserTest(OpenRamTest):
         from base.spice_parser import SpiceParser
         spice_deck = SpiceParser(simple_mod)
         hierarchy = spice_deck.deduce_hierarchy_for_pin("en_bar", "tri_gate")
-        self.assertEqual(hierarchy,
-                         ["M_4 out en_bar net_3 vdd PMOS_VTG W=360.000000n L=50.000000n".lower()])
+        self.assertEqual(hierarchy[0],
+                         [("g", "M_4 out en_bar net_3 vdd PMOS_VTG W=360.000000n L=50.000000n".lower())])
 
     def test_module_hierarchy(self):
         from base.spice_parser import SpiceParser
         spice_deck = SpiceParser(hierarchical)
         hierarchy = spice_deck.deduce_hierarchy_for_pin("dout_bar", "ms_flop")
-        self.assertEqual(hierarchy, [
-            ["xslave",
-             "mPff4 dout dout_bar vdd vdd PMOS_VTG W=180.0n L=50n m=1".lower()
-             ]])
+        self.assertEqual(hierarchy[0],
+                         ["xslave",
+                          ("d", "mPff4 dout dout_bar vdd vdd PMOS_VTG W=180.0n L=50n m=1".lower())
+                          ])
         hierarchy = spice_deck.deduce_hierarchy_for_pin("dout", "ms_flop")
-        self.assertEqual(hierarchy, [
-            ["xslave",
-             "mPff3 dout_bar int1 vdd vdd PMOS_VTG W=180.0n L=50n m=1".lower()]])
+        self.assertEqual(hierarchy[0],
+                         ["xslave",
+                          ("d", "mPff3 dout_bar int1 vdd vdd PMOS_VTG W=180.0n L=50n m=1".lower())
+                          ])
+
+    def test_module_caps(self):
+        from base.spice_parser import SpiceParser
+        spice_deck = SpiceParser(simple_mod)
+        gate_caps = spice_deck.extract_caps_for_pin("in", "tri_gate")
+        self.assertAlmostEqual(gate_caps["n"]["g"][0], 90e-9)
+        self.assertAlmostEqual(gate_caps["p"]["g"][0], 180e-9)
+
+        drain_caps = spice_deck.extract_caps_for_pin("out", "tri_gate")
+        print(drain_caps)
+        self.assertAlmostEqual(drain_caps["n"]["d"][0], 180e-9)
+        self.assertAlmostEqual(drain_caps["p"]["d"][0], 360e-9)
 
 
 OpenRamTest.run_tests(__name__)

@@ -2,15 +2,28 @@
 Implements a simple spice parser to enable constructing cell hierarchy
 """
 import os
+import re
+from copy import deepcopy
 from typing import Union, TextIO, List
 
+SUFFIXES = {
+    "m": 1e-3,
+    "u": 1e-6,
+    "n": 1e-9,
+    "p": 1e-12,
+    "f": 1e-15
+}
 
-class SpiceMod:
-    def __init__(self, name: str, pins: List[str], contents: List[str]):
-        self.name = name
-        self.pins = pins
-        self.contents = contents
-        self.sub_modules = []  # type: List[SpiceMod]
+
+def tx_extract_parameter(param_name, statement):
+    pattern = r"{}\s*=\s*(?P<value>[0-9e\.\-]+)(?P<suffix>[munpf]?)".format(param_name)
+    match = re.search(pattern, statement)
+    if not match:
+        return None
+    value = float(match.groups()[0])
+    if match.groups()[1]:
+        value *= SUFFIXES[match.groups()[1]]
+    return value
 
 
 def load_source(source: Union[str, TextIO]):
@@ -88,6 +101,14 @@ def group_lines_by_mod(all_lines: List[str]):
     return lines_by_module  # List[List[str]]
 
 
+class SpiceMod:
+    def __init__(self, name: str, pins: List[str], contents: List[str]):
+        self.name = name
+        self.pins = pins
+        self.contents = contents
+        self.sub_modules = []  # type: List[SpiceMod]
+
+
 class SpiceParser:
 
     def __init__(self, source: Union[str, TextIO]):
@@ -117,6 +138,8 @@ class SpiceParser:
     def deduce_hierarchy_for_pin(self, pin_name, module_name):
         module = self.get_module(module_name)
         hierarchy = []
+        nested_hierarchy = []
+        # breadth first and then go deep in each
         for line in module.contents:
             if pin_name not in line.split():
                 continue
@@ -124,15 +147,61 @@ class SpiceParser:
             pin_index = line.split().index(pin_name) - 1
 
             if not line.startswith("x"):  # end of hierarchy
-                return [line]
+                pin_index = line.split().index(pin_name) - 1
+                hierarchy.append([(["d", "g", "s", "b"][pin_index], line)])
             else:
-                module_branch = []
                 child_module_name = line.split()[-1]
                 child_module = self.get_module(child_module_name)
                 child_pin_name = child_module.pins[pin_index]
-                module_branch.append(line.split()[0])
-                module_branch.extend(self.deduce_hierarchy_for_pin(child_pin_name, child_module_name))
+                instance_name = line.split()[0]
 
-                hierarchy.append(module_branch)
+                nested_hierarchy.append((instance_name, child_module_name, child_pin_name))
+
+        # Now go deep into each branch
+        for branch in nested_hierarchy:
+            instance_name, child_module_name, child_pin_name = branch
+            branch_hierarchy = self.deduce_hierarchy_for_pin(child_pin_name, child_module_name)
+            for child in branch_hierarchy:
+                hierarchy.append([instance_name] + child)
 
         return hierarchy
+
+    def extract_caps_for_pin(self, pin_name, module_name):
+        """
+        Return caps attached to pin.
+        Assumes transistor model name starts with n for nmos and p for pmos
+        Note: Doesn't consider transistor length
+        :param pin_name:
+        :param module_name:
+        :return: dict for each of nmos, pmos for gate/drain with list: [total, [(m, nf, w)]]
+        """
+
+        hierarchy = self.deduce_hierarchy_for_pin(pin_name, module_name)
+        results = {
+            "n": {
+                "d": [0, []],
+                "g": [0, []]
+            },
+            "p": {
+                "d": [0, []],
+                "g": [0, []]
+            }
+        }
+        for child in hierarchy:
+            spice_statement = child[-1][1]
+            if not spice_statement.startswith("m"):
+                continue
+            line_elements = spice_statement.split()
+            tx_type = line_elements[5][0]
+            m = tx_extract_parameter("m", spice_statement) or 1
+            nf = tx_extract_parameter("nf", spice_statement) or 1
+            num_drains = 1 + int((nf - 1) / 2)
+            width = tx_extract_parameter("w", spice_statement)
+
+            pin_name = child[-1][0]
+            pin_name = "d" if pin_name == "s" else pin_name
+
+            results[tx_type][pin_name][0] += width * m * num_drains
+            results[tx_type][pin_name][1].append((m, nf, width))
+
+        return results

@@ -166,6 +166,21 @@ class SpiceParser:
 
         return hierarchy
 
+    def deduce_hierarchy_for_node(self, node_name, module_name):
+        hierarchy = node_name.split(".")
+        for child in hierarchy[:-1]:
+            module = self.get_module(module_name)
+            found = False
+            for line in module.contents:
+                if line.split()[0] == child:
+                    found = True
+                    module_name = line.split()[-1]
+
+            assert found, "Node {} not found in hierarchy".format(node_name)
+
+        target_pin = hierarchy[-1]
+        return [hierarchy[:-1] + x for x in self.deduce_hierarchy_for_pin(target_pin, module_name)]
+
     def extract_caps_for_pin(self, pin_name, module_name):
         """
         Return caps attached to pin.

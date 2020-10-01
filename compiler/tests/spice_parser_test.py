@@ -133,6 +133,22 @@ class SpiceParserTest(OpenRamTest):
                           ("d", "mPff3 dout_bar int1 vdd vdd PMOS_VTG W=180.0n L=50n m=1".lower())
                           ])
 
+    def test_module_node_hierarchy(self):
+        from base.spice_parser import SpiceParser
+        # first level
+        spice_deck = SpiceParser(simple_mod)
+        hierarchy = spice_deck.deduce_hierarchy_for_node("net_2", "tri_gate")
+        self.assertEqual(hierarchy[1],
+                         [("s", "M_2 out en net_2 gnd NMOS_VTG W=180.000000n L=50.000000n".lower())
+                          ])
+        # deeper level
+        spice_deck = SpiceParser(hierarchical)
+        hierarchy = spice_deck.deduce_hierarchy_for_node("xmaster.int1", "ms_flop")
+        self.assertEqual(hierarchy[0],
+                         ["xmaster",
+                          ("s", "mtmP1 din clk int1 vdd PMOS_VTG W=180.0n L=50n m=1".lower())
+                          ])
+
     def test_module_caps(self):
         from base.spice_parser import SpiceParser
         spice_deck = SpiceParser(simple_mod)

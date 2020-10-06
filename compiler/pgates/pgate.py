@@ -21,12 +21,14 @@ class pgate(design.design):
     bitcell = getattr(c, OPTS.bitcell)()
     num_tracks = 1
 
-    def __init__(self, name, height, size=1, beta=parameter["beta"], contact_pwell=True, contact_nwell=True,
+    def __init__(self, name, height, size=1, beta=None, contact_pwell=True, contact_nwell=True,
                  align_bitcell=False, same_line_inputs=True):
         """ Creates a generic cell """
         design.design.__init__(self, name)
         if (align_bitcell and height == pgate.get_default_height()) or height is None:
             height = pgate.bitcell.height
+        if beta is None:
+            beta = parameter["beta"]
         self.beta = beta
         self.size = size
         self.contact_pwell = contact_pwell

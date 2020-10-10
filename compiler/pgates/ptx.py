@@ -6,7 +6,9 @@ from base import design
 from base import utils
 from base.contact import contact, m1m2, poly as poly_contact
 from base.vector import vector
-from tech import drc, info, spice
+from characterizer.characterization_data import load_data
+from globals import OPTS
+from tech import drc, info, spice, parameter
 from tech import layer as tech_layers
 
 
@@ -78,7 +80,7 @@ class ptx(design.design):
         # Just make a guess since these will actually be decided in the layout later.
         area_sd = 2.5*drc["minwidth_poly"]*self.tx_width
         perimeter_sd = 2*drc["minwidth_poly"] + 2*self.tx_width
-        self.spice_device="M{{0}} {{1}} {0} m={1} w={2}u l={3}u pd={4}u ps={4}u as={5}p ad={5}p".format(spice[self.tx_type],
+        self.spice_device="M{{0}} {{1}} {0} nf={1} w={2}u l={3}u pd={4}u ps={4}u as={5}p ad={5}p".format(spice[self.tx_type],
                                                                                                     self.mults,
                                                                                                     self.tx_width,
                                                                                                     drc["minwidth_poly"],
@@ -510,4 +512,34 @@ class ptx(design.design):
         if self.connect_active:
             self.connect_fingered_active(drain_positions, source_positions)
 
-        
+    @staticmethod
+    def get_tx_cap(tx_type, terminal="g", width=None, nf: int = 1, m: int = 1):
+        """
+        Load transistor parasitic caps
+        :param tx_type: "p" or "n"
+        :param terminal: "d" or "g"
+        :param width: in um
+        :param nf: number of fingers
+        :param m: number of transistors
+        :return: capacitance in F
+        """
+        unit_cap = 0.0
+        if width is None:
+            width = spice["minwidth_tx"]
+        if OPTS.use_characterization_data:
+            cell_name = tx_type + "mos"
+            file_suffixes = [("beta", parameter["beta"])]
+            size = width / spice["minwidth_tx"]
+            size_suffixes = [("nf", nf)]
+            unit_cap = load_data(cell_name=cell_name, pin_name=terminal, size=size,
+                                 file_suffixes=file_suffixes, size_suffixes=size_suffixes)
+        if unit_cap is None:
+            if terminal == "d":
+                unit_cap = spice["min_tx_drain_c"] / spice["minwidth_tx"]
+            elif terminal == "g":
+                unit_cap = spice["min_tx_gate_c"] / spice["minwidth_tx"]
+            else:
+                debug.error("Invalid tx terminal {}".format(terminal))
+        debug.info(4, "Unit cap for terminal {} width {} nf {} = {:.4g}".format(
+            terminal, width, nf, unit_cap))
+        return unit_cap * width * nf * m

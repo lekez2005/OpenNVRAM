@@ -50,11 +50,11 @@ class BufferStage(design.design, metaclass=Unique):
         if not contact_pwell:
             name += "_no_pwell_cont"
         if not height == pinv.bitcell.height:
-            name += "_h_{:.2g}".format(height).replace('.', '_')
+            name += "_h_{:.2g}".format(height)
         if align_bitcell:
             name += "_align"
 
-        return name
+        return name.replace(".", "__")
 
     def add_pins(self):
         self.add_pin("in")

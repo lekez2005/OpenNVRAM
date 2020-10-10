@@ -66,6 +66,13 @@ class options(optparse.Values):
 
     separate_vdd = False
 
+    # cache delay optimization buffer sizes and suffix
+    cache_optimization = True
+    cache_optimization_prefix = ""
+
+    # use data from characterizations or dynamically compute
+    use_characterization_data = True
+
     # These are the default modules that can be over-riden
     decoder = "hierarchical_decoder"
     col_decoder = "column_decoder"

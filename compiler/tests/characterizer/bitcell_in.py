@@ -1,71 +1,90 @@
 #!/usr/bin/env python3
 
+import shutil
+
 from char_test_base import CharTestBase
+from distributed_load_base import DistributedLoadMixin
 
 
-class TriStateIn(CharTestBase):
-    instantiate_dummy = False
+class BitcellIn(DistributedLoadMixin, CharTestBase):
+    instantiate_dummy = True
+    num_rows = num_cols = 1
 
-    def runTest(self):
-        import debug
+    def save_result(self, cell_name, pin, *args, **kwargs):
+        pin = pin.replace("[0]", "")
+        super(BitcellIn, self).save_result(cell_name, pin, *args, **kwargs)
+
+    def get_size_suffixes(self, num_elements):
+        if self.dut_pin == "bl[0]":
+            return [("rows", num_elements), ("wire", self.load.wire_length)]
+        else:
+            return [("cols", num_elements), ("wire", self.load.wire_length)]
+        
+
+    @classmethod
+    def add_additional_options(cls):
+        cls.parser.add_argument("--bitcell", default="bitcell")
+        cls.parser.add_argument("--bitcell_array", default="bitcell_array")
+        cls.parser.add_argument("--bitcell_tap", default="body_tap")
+
+    def setUp(self):
+        super().setUp()
+        self.set_cell_mod()
+
+    def set_cell_mod(self):
         from globals import OPTS
+        OPTS.bitcell = self.options.bitcell
+        OPTS.bitcell_array = self.options.bitcell_array
+        OPTS.body_tap = self.options.bitcell_tap
 
-        from modules.bitcell_array import bitcell_array
+    def get_cell_name(self) -> str:
+        from globals import OPTS
+        return self.load_module_from_str(OPTS.bitcell)().name
 
-        OPTS.check_lvsdrc = False
-        self.run_drc_lvs = False
+    def get_pins(self):
+        return ["bl[0]", "wl[0]"]
 
-        cols = 32
-        rows = 32
+    def make_dut(self, num_elements):
+        bitcell_array_class = self.load_module_from_str(self.options.bitcell_array)
 
-        load = bitcell_array(cols=cols, rows=rows)
+        pin = self.dut_pin
+        if pin == "bl[0]":
+            self.num_rows = num_elements
+            self.num_cols = 1
+        else:
+            self.num_rows = 1
+            self.num_cols = num_elements
 
-        self.load_pex = self.run_pex_extraction(load, "bitcell_array")
-        self.dut_name = load.name
+        name = "bitcell_array_r{}_c{}".format(self.num_rows, self.num_cols)
+        load = bitcell_array_class(cols=self.num_cols, rows=self.num_rows,
+                                  name=name)
+        return load
 
-        self.period = "800ps"
+    def get_dut_instance_statement(self, pin) -> str:
+        cols = self.num_cols
+        rows = self.num_rows
 
-        pin_names = ["wl", "bl", "br"]
-        for i in range(3):
-            pin_name = pin_names[i]
-            debug.info(1, "Characterizing pin {}".format(pin_name))
-            dut_instance = "X4 "
+        dut_instance = "X4 "
+
+        # bit-lines
+        if "bl" in pin:
+            dut_instance += " d d_dummy "
+        else:
+            # connect all bitlines to vdd
             for col in range(cols):
-                if pin_name == "bl" and col == 0:
-                    dut_instance += " d "
-                elif col == 0:
-                    dut_instance += " vdd "
-                else:
-                    dut_instance += " gnd ".format(col)
-                if pin_name == "br" and col == 0:
-                    dut_instance += " d "
-                elif col == 0:
-                    dut_instance += " vdd "
-                else:
-                    dut_instance += " br[{0}] ".format(col)
+                dut_instance += " vdd vdd "
+
+        # word-lines
+        if "wl" in pin:
+            dut_instance += " d "
+        # connect word-lines to gnd
+        else:
             for row in range(rows):
-                if pin_name == "wl" and row == 0:
-                    dut_instance += " d "
-                elif dut_instance == 0:
-                    dut_instance += " vdd "
-                else:
-                    dut_instance += " gnd ".format(row)
+                dut_instance += " gnd "
 
-            dut_instance += " vdd gnd {} \n".format(load.name)
+        dut_instance += " vdd gnd {} \n".format(self.load.name)
 
-            self.dut_instance = dut_instance
-
-            self.run_optimization()
-
-            with open(self.stim_file_name.replace(".sp", ".log"), "r") as log_file:
-                for line in log_file:
-                    if line.startswith("Optimization completed"):
-                        cap_val = float(line.split()[-1])
-                        debug.info(1, "Cap = {:2g}fF".format(cap_val * 1e15))
-                        if pin_name == "wl":
-                            debug.info(1, "Cap per col = {:2g}fF".format(cap_val * 1e15 / rows))
-                        else:
-                            debug.info(1, "Cap per row = {:2g}fF".format(cap_val * 1e15 / cols))
+        return dut_instance
 
 
-TriStateIn.run_tests(__name__)
+BitcellIn.run_tests(__name__)

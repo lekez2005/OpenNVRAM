@@ -1,71 +1,67 @@
 #!/usr/bin/env python3
+from importlib import reload
 
 from char_test_base import CharTestBase
+from distributed_load_base import DistributedLoadMixin
 
 
-class WriteDriverIn(CharTestBase):
+class WriteDriverIn(DistributedLoadMixin, CharTestBase):
     instantiate_dummy = True
 
-    def runTest(self):
-        import debug
+    def setUp(self):
+        super().setUp()
+        self.set_cell_mod()
+
+    def set_cell_mod(self):
         from globals import OPTS
-        import sys
+        OPTS.write_driver = self.options.write_driver
+        OPTS.write_driver_mod = self.options.write_driver_mod
+        OPTS.write_driver_tap = self.options.write_driver_tap
 
-        sys.path.append("../../modules/bitline_compute")
+    @classmethod
+    def add_additional_options(cls):
+        cls.parser.add_argument("--write_driver_array", default="write_driver_array")
+        cls.parser.add_argument("--write_driver", default="write_driver")
+        cls.parser.add_argument("--write_driver_mod", default="write_driver")
+        cls.parser.add_argument("--write_driver_tap", default="write_driver_tap")
 
-        OPTS.write_driver = "write_driver_mask"
-        OPTS.write_driver_mod = "write_driver_mask_3x"
-        OPTS.write_driver_tap = "write_driver_mask_3x_tap"
+    def get_cell_name(self):
+        from globals import OPTS
+        return OPTS.write_driver_mod
 
-        from modules.write_driver_mask_array import write_driver_mask_array
+    def get_pins(self):
+        if self.options.write_driver == "write_driver":
+            return ["en"]
+        elif self.options.write_driver == "write_driver_mask":
+            return ["en", "en_bar"]
 
-        OPTS.check_lvsdrc = False
-        self.run_drc_lvs = False
+    def make_dut(self, num_elements):
 
-        cols = 64
+        mod_class = self.load_module_from_str(self.options.write_driver_array)
+        load = mod_class(columns=num_elements, word_size=num_elements)
+        return load
 
-        self.max_c = 100e-15
-        self.min_c = 1e-15
-        self.start_c = 0.5 * (self.max_c + self.min_c)
+    def get_dut_instance_statement(self, pin):
 
-        load = write_driver_mask_array(columns=cols, word_size=cols)
+        cols = self.load.original_dut.word_size
 
-        self.load_pex = self.run_pex_extraction(load, "write_driver")
-        self.dut_name = load.name
+        dut_instance = "X4 " + " ".join([" vdd gnd "] * cols)
 
-        self.period = "800ps"
+        for col in range(cols):
+            dut_instance += " bl[{0}] br[{0}] ".format(col)
+        dut_instance += " ".join([" gnd "] * cols)
 
-        cap_vals = {}
-
-        for pin in ["en", "en_bar"]:
-
-            dut_instance = "X4 " + " ".join([" vdd gnd "]*cols)
-
-            for col in range(cols):
-                dut_instance += " bl[{0}] br[{0}] ".format(col)
-            dut_instance += " ".join([" gnd "]*cols)
-
+        if self.options.write_driver == "write_driver":
+            dut_instance += " d "
+        else:
             # en pin is just before en_bar pin
             if pin == "en":
                 dut_instance += " d d_dummy "
             else:
                 dut_instance += " d_dummy d "
-            dut_instance += " vdd gnd write_driver_mask_array \n"
 
-            self.dut_instance = dut_instance
-
-            self.run_optimization()
-
-            with open(self.stim_file_name.replace(".sp", ".log"), "r") as log_file:
-                for line in log_file:
-                    if line.startswith("Optimization completed"):
-                        cap_val = float(line.split()[-1])
-                        cap_vals[pin] = cap_val
-
-        for key in cap_vals:
-            cap_val = cap_vals[key]
-            debug.info(1, "{} Cap = {:2g}fF".format(key, cap_val*1e15))
-            debug.info(1, "{} Cap per write driver = {:2g}fF".format(key, cap_val*1e15/cols))
+        dut_instance += " vdd gnd {} \n".format(self.load.name)
+        return dut_instance
 
 
 WriteDriverIn.run_tests(__name__)

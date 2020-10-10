@@ -1,47 +1,51 @@
 #!/usr/bin/env python3
+from importlib import reload
 
 from char_test_base import CharTestBase
+from distributed_load_base import DistributedLoadMixin
 
 
-class PrechargeIn(CharTestBase):
+class PrechargeIn(DistributedLoadMixin, CharTestBase):
     instantiate_dummy = False
 
-    def runTest(self):
-        import debug
+    @classmethod
+    def add_additional_options(cls):
+        cls.parser.add_argument("--size", default=4, type=int)
+        cls.parser.add_argument("--precharge", default="precharge")
+        cls.parser.add_argument("--precharge_array", default="precharge_array")
+
+    def setUp(self):
+        super().setUp()
+        self.set_cell_mod()
+
+    def set_cell_mod(self):
         from globals import OPTS
+        OPTS.precharge = self.options.precharge
+        OPTS.precharge_array = self.options.precharge_array
 
-        from modules.precharge_array import precharge_array
+    def get_cell_name(self) -> str:
+        from globals import OPTS
+        bitcell_name = self.load_module_from_str(OPTS.bitcell)().name
+        return OPTS.precharge + "_" + bitcell_name
 
-        OPTS.check_lvsdrc = False
-        self.run_drc_lvs = False
+    def get_pins(self):
+        return ["en"]
 
-        cols = 64
+    def make_dut(self, num_elements):
+        mod_class = self.load_module_from_str(self.options.precharge_array)
+        load = mod_class(size=self.options.size, columns=num_elements)
+        return load
 
-        load = precharge_array(size=4, columns=cols)
-
-        self.load_pex = self.run_pex_extraction(load, "precharge")
-        self.dut_name = load.name
-
-        self.period = "800ps"
+    def get_dut_instance_statement(self, pin):
+        cols = self.load.original_dut.columns
 
         dut_instance = "X4 "
 
         for col in range(cols):
             dut_instance += " bl[{0}] br[{0}] ".format(col)
 
-        dut_instance += " d vdd {} \n".format(load.name)
-
-        self.dut_instance = dut_instance
-
-        self.run_optimization()
-
-        with open(self.stim_file_name.replace(".sp", ".log"), "r") as log_file:
-            for line in log_file:
-                if line.startswith("Optimization completed"):
-                    cap_val = float(line.split()[-1])
-                    debug.info(1, "Cap = {:.2g}fF".format(cap_val*1e15))
-                    debug.info(1, "Cap per um = {:.2g}fF".format(
-                        cap_val*1e15/(load.pc_cell.ptx_width * cols)))
+        dut_instance += " d vdd {} \n".format(self.load.name)
+        return dut_instance
 
 
 PrechargeIn.run_tests(__name__)

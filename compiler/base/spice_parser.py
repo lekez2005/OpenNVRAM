@@ -6,6 +6,8 @@ import re
 from copy import deepcopy
 from typing import Union, TextIO, List
 
+import debug
+
 SUFFIXES = {
     "m": 1e-3,
     "u": 1e-6,
@@ -17,18 +19,21 @@ SUFFIXES = {
 
 def tx_extract_parameter(param_name, statement):
     pattern = r"{}\s*=\s*(?P<value>[0-9e\.\-]+)(?P<suffix>[munpf]?)".format(param_name)
+    debug.info(4, "Search for parameter {} in {}".format(param_name, statement))
     match = re.search(pattern, statement)
     if not match:
         return None
     value = float(match.groups()[0])
     if match.groups()[1]:
         value *= SUFFIXES[match.groups()[1]]
+    debug.info(4, "extracted transistor parameter {} = {:.3g}".format(param_name, value))
     return value
 
 
 def load_source(source: Union[str, TextIO]):
     if isinstance(source, str):
         if "\n" not in source and os.path.exists(source):
+            debug.info(3, "Loading spice from source file: {}".format(source))
             with open(source, "r") as f:
                 source = f.read()
     else:
@@ -115,7 +120,7 @@ class SpiceParser:
         self.mods = []  # type: List[SpiceMod]
 
         source = load_source(source)
-        all_lines = extract_lines(source)
+        self.all_lines = all_lines = extract_lines(source)
 
         mods_by_lines = group_lines_by_mod(all_lines)
         for mod_lines in mods_by_lines:
@@ -208,8 +213,8 @@ class SpiceParser:
                 continue
             line_elements = spice_statement.split()
             tx_type = line_elements[5][0]
-            m = tx_extract_parameter("m", spice_statement) or 1
-            nf = tx_extract_parameter("nf", spice_statement) or 1
+            m = int(tx_extract_parameter("m", spice_statement)) or 1
+            nf = int(tx_extract_parameter("nf", spice_statement)) or 1
             num_drains = 1 + int((nf - 1) / 2)
             width = tx_extract_parameter("w", spice_statement)
 

@@ -1,42 +1,54 @@
 #!/usr/bin/env python3
 
 from char_test_base import CharTestBase
+from distributed_load_base import DistributedLoadMixin
 
 
-class FlopCin(CharTestBase):
+class FlopCin(DistributedLoadMixin, CharTestBase):
+    instantiate_dummy = True
 
-    def runTest(self):
-        import debug
+    def setUp(self):
+        super().setUp()
+        self.set_cell_mod()
+
+    def set_cell_mod(self):
+        from globals import OPTS
+        if self.options.cell_mod is not None:
+            OPTS.ms_flop_mod = self.options.cell_mod
+            if self.options.body_tap is None:
+                OPTS.ms_flop_tap = self.options.cell_mod + "_tap"
+            else:
+                OPTS.ms_flop_tap = self.options.body_tap
+        else:
+            OPTS.ms_flop_mod = OPTS.ms_flop
+            OPTS.ms_flop_tap = None  # use default
+
+    def get_pins(self):
+        return ["clk"]
+
+    def get_cell_name(self):
+        from globals import OPTS
+        return OPTS.ms_flop_mod
+
+    def make_dut(self, num_elements):
         from modules.ms_flop_array import ms_flop_array
+        from globals import OPTS
 
-        cols = 64
+        cols = num_elements
 
-        self.max_c = 100e-15
-        self.min_c = 1e-15
-        self.start_c = 0.5 * (self.max_c + self.min_c)
+        load = ms_flop_array(columns=cols, word_size=cols, flop_mod=OPTS.ms_flop_mod,
+                             flop_tap_name=OPTS.ms_flop_tap, align_bitcell=True)
+        return load
 
-        load = ms_flop_array(columns=cols, word_size=cols)
+    def get_dut_instance_statement(self, pin):
 
-        self.load_pex = self.run_pex_extraction(load, "out_buffer")
-        self.dut_name = load.name
-
-        self.period = "800ps"
+        cols = self.load.original_dut.word_size
 
         dut_instance = "X4 " + " ".join(["din[{}]".format(x) for x in range(cols)])
         for col in range(cols):
             dut_instance += " dout[{0}] dout_bar[{0}] ".format(col)
-        dut_instance += " d vdd gnd flop_array_c{0}_w{0}".format(cols)
-
-        self.dut_instance = dut_instance
-
-        self.run_optimization()
-
-        with open(self.stim_file_name.replace(".sp", ".log"), "r") as log_file:
-            for line in log_file:
-                if line.startswith("Optimization completed"):
-                    cap_val = float(line.split()[-1])
-                    debug.info(1, "Cap = {:2g}fF".format(cap_val*1e15))
-                    debug.info(1, "Cap per flop = {:2g}fF".format(cap_val*1e15/cols))
+        dut_instance += " d vdd gnd {}".format(self.load.name)
+        return dut_instance
 
 
 FlopCin.run_tests(__name__)

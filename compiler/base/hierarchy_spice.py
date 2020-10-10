@@ -1,9 +1,18 @@
+import io
 import math
 import os
-import re
+from typing import Union, List, Tuple
 
 import debug
 from base import verilog
+from base.spice_parser import SpiceParser
+from characterizer.characterization_data import load_data
+
+INPUT = "INPUT"
+INOUT = "INOUT"
+OUTPUT = "OUTPUT"
+POWER = "POWER"
+GROUND = "GROUND"
 
 
 class spice(verilog.verilog):
@@ -28,40 +37,69 @@ class spice(verilog.verilog):
         self.conns = []
 
         self.sp_read()
+        # string representation of spice_content
+        self.spice_content = None  # type: Union[None, str]
+        self.spice_parser = None  # type: Union[None, SpiceParser]
 
 ############################################################
 # Spice circuit
 ############################################################
 
-    def add_pin(self, name, pin_type="INOUT"):
+    def add_pin(self, name, pin_type=None):
         """ Adds a pin to the pins list. Default type is INOUT signal. """
         self.pins.append(name)
         self.pin_type[name]=pin_type
 
-    def add_pin_list(self, pin_list, pin_type_list="INOUT"):
+    def add_pin_list(self, pin_list, pin_type_list=None):
         """ Adds a pin_list to the pins list """
         # The type list can be a single type for all pins
         # or a list that is the same length as the pin list.
-        if type(pin_type_list)==str:
+        if type(pin_type_list) == str or pin_type_list is None:
             for pin in pin_list:
-                self.add_pin(pin,pin_type_list)
-        elif len(pin_type_list)==len(pin_list):
-            for (pin,ptype) in zip(pin_list, pin_type_list):
-                self.add_pin(pin,ptype)
+                self.add_pin(pin, pin_type_list)
+        elif len(pin_type_list) == len(pin_list):
+            for (pin, ptype) in zip(pin_list, pin_type_list):
+                self.add_pin(pin, ptype)
         else:
             debug.error("Mismatch in type and pin list lengths.", -1)
 
     def get_pin_type(self, name):
-        """ Returns the type of the signal pin. """
+        """ Returns the type of the signal pin.
+            If pin type is not specified when pin was added uses heuristic to determine type
+            vdd is POWER, gnd, vss are GND
+            Otherwise, if attached to at least one gate, it's input, else OUTPUT
+        """
+        if name not in self.pins:
+            debug.error("Invalid pin {} for module {}".format(name, self.name), -1)
+        if name in self.pin_type and self.pin_type[name] is not None:
+            return self.pin_type[name]
+
+        name = name.lower()
+        if name in ["vss", "gnd"]:
+            return GROUND
+        elif name in ["vdd"]:
+            return POWER
+        debug.info(3, "Loading {0} type for module {1} from file".format(name, self.name))
+        spice_parser = self.get_spice_parser()
+        pin_caps = spice_parser.extract_caps_for_pin(name, self.name)
+        if pin_caps["n"]["g"][1] or pin_caps["p"]["g"][1]:
+            pin_type = INPUT
+        else:
+            pin_type = OUTPUT
+        self.pin_type[name] = pin_type
+
+        debug.info(3, "Loaded {0} type for module {1}  = {2}".format(name, self.name,
+                                                                     self.pin_type[name]))
+
         return self.pin_type[name]
 
     def get_pin_dir(self, name):
         """ Returns the direction of the pin. (Supply/ground are INOUT). """
-        if self.pin_type[name] in ["POWER","GROUND"]:
-            return "INOUT"
+        pin_type = self.get_pin_type(name)
+        if pin_type in [POWER, GROUND]:
+            return INOUT
         else:
-            return self.pin_type[name]
-        
+            return pin_type
 
     def add_mod(self, mod):
         """Adds a subckt/submodule to the subckt hierarchy"""
@@ -94,17 +132,9 @@ class spice(verilog.verilog):
            Otherwise, initialize it to null for dynamic generation"""
         if os.path.isfile(self.sp_file):
             debug.info(3, "opening {0}".format(self.sp_file))
-            f = open(self.sp_file)
-            self.spice = f.readlines()
-            for i in range(len(self.spice)):
-                self.spice[i] = self.spice[i].rstrip(" \n")
-            f.close()
-
-            # find the correct subckt line in the file
-            subckt = re.compile(r"^.subckt {}".format(self.name), re.IGNORECASE)
-            subckt_line = list(filter(subckt.search, self.spice))[0]
-            # parses line into ports and remove subckt
-            self.pins = subckt_line.split(" ")[2:]
+            self.spice_parser = SpiceParser(self.sp_file)
+            self.pins = self.spice_parser.get_pins(self.name)
+            self.spice = self.spice_parser.all_lines
         else:
             self.spice = []
 
@@ -130,7 +160,7 @@ class spice(verilog.verilog):
             if self.pins == []:
                 return
 
-            
+
             # write out the first spice line (the subcircuit)
             sp.write("\n.SUBCKT {0} {1}\n".format(self.name,
                                                   " ".join(self.pins)))
@@ -169,7 +199,7 @@ class spice(verilog.verilog):
             #if os.path.isfile(self.sp_file):
             #    sp.write("\n* {0}\n".format(self.sp_file))
             sp.write("\n".join(self.spice))
-            
+
             sp.write("\n")
 
     def sp_write(self, spname):
@@ -182,13 +212,174 @@ class spice(verilog.verilog):
         del usedMODS
         spfile.close()
 
+    def get_spice_content(self):
+        """Content of spice file
+        If module is a custom module, then returns the content of original spice file
+        Else exports netlist to in memory-spice string
+        """
+        if self.spice_content is None:
+            spring_writer = io.StringIO("")
+            used_mods = []
+            self.sp_write_file(spring_writer, used_mods)
+            del used_mods
+            self.spice_content = spring_writer.getvalue()
+            spring_writer.close()
+        return self.spice_content
+
+    def get_spice_parser(self):
+        """gets spice parser"""
+        if self.spice_parser is None:
+            if self.spice_content is None:
+                self.get_spice_content()
+            self.spice_parser = SpiceParser(self.spice_content)
+        return self.spice_parser
+
+    def get_char_data_file_suffixes(self, **kwargs) -> List[Tuple[str, float]]:
+        """
+        Get filters for characterized data file name to guide choice of look up table file
+        :return: list of (filter_name, filter_value) tuples
+        """
+        return []
+
+    def get_char_data_size_suffixes(self, **kwargs) -> List[Tuple[str, float]]:
+        """
+        Get filters for characterized size look up table
+        :return: list of (filter_name, filter_value) tuples
+        """
+        return [(key, value) for key, value in kwargs.items()]
+
+    def get_char_data_size(self):
+        """Size to use for characterization data look up table"""
+        return 1
+
+    def get_char_data_name(self, **kwargs) -> str:
+        """
+        name by which module was characterized
+        :return:
+        """
+        return self.name
+
+    def get_input_cap_from_char(self, pin_name, num_elements: int = 1,
+                                wire_length: float = 0.0, interpolate=True, **kwargs):
+        """Loads input cap from characterized data"""
+        module_name = self.get_char_data_name(**kwargs)
+
+        file_suffixes = self.get_char_data_file_suffixes(**kwargs)
+
+        kwargs["cols"] = num_elements
+        kwargs["wire"] = wire_length
+        size_suffixes = self.get_char_data_size_suffixes(**kwargs)
+        return load_data(cell_name=module_name, pin_name=pin_name,
+                         size=self.get_char_data_size(), file_suffixes=file_suffixes,
+                         size_suffixes=size_suffixes, interpolate_size_suffixes=interpolate)
+
+    def compute_input_cap(self, pin_name, wire_length: float = 0.0):
+        """Compute unit capacitance in F for pin_name and wire_length"""
+
+        from pgates.ptx import ptx
+
+        pin = self.get_pin(pin_name)
+        pin_width = min(pin.width(), pin.height())
+
+        pin_length = max(pin.width(), pin.height(), wire_length)
+
+        wire_cap = self.get_wire_cap(pin.layer, pin_width, pin_length)
+
+        transistor_connections = self.get_spice_parser().extract_caps_for_pin(pin_name, self.name)
+        total_caps = wire_cap
+        for tx_type in transistor_connections:
+            for terminal in transistor_connections[tx_type]:
+                for m, nf, width in transistor_connections[tx_type][terminal][1]:
+                    width *= 1e6
+                    total_caps += ptx.get_tx_cap(tx_type, terminal, width, nf, m)
+
+        debug.info(4, "Computed input cap for {} module {} = {:.4g}fF".
+                   format(pin_name, self.name, total_caps * 1e15))
+
+        return total_caps
+
+    def get_wire_cap(self, wire_layer: str, wire_width: float, wire_length: float):
+        """
+        Return cap in F for given
+        :param wire_layer: layer name
+        :param wire_width: in um
+        :param wire_length: in um
+        :return: cap in F
+        """
+        from tech import delay_params_class
+        unit_cap, res = delay_params_class().get_rc(layer=wire_layer, width=wire_width)
+        return unit_cap * wire_length * 1e-15
+
+    def get_input_cap_from_instances(self, pin_name, wire_length: float = 0.0, **kwargs):
+        instances_groups = {}
+        for i in range(len(self.conns)):
+            conn = self.conns[i]
+            if pin_name not in conn:
+                continue
+            child_module = self.insts[i].mod
+            child_module_pin_name = child_module.pins[conn.index(pin_name)]
+            module_index = self.mods.index(child_module)
+            if module_index not in instances_groups:
+                instances_groups[module_index] = [0, child_module_pin_name]
+            instances_groups[module_index][0] += 1
+
+        results = []
+        for module_index in instances_groups:
+            module = self.mods[module_index]
+            num_elements = instances_groups[module_index][0]
+            pin_name = instances_groups[module_index][1]
+            _, cap_per_stage = module.get_input_cap(pin_name, 1,
+                                                 0.0, interpolate=False, **kwargs)
+            total_cap, _ = module.get_input_cap(pin_name, num_elements, wire_length,
+                                                interpolate=True, **kwargs)
+            total_cap *= num_elements
+            # characterized data may be more accurate so potentially override computed
+            # cap_per_stage if it's less than characterized
+            cap_per_stage = max(cap_per_stage, total_cap / num_elements)
+            results.append((total_cap, cap_per_stage))
+        # cap per stage only makes sense if there is only one type of module
+        if len(results) == 0:
+            return 0.0, 0.0
+        elif len(results) == 1:
+            return results[0]
+        else:
+            total_cap = sum(map(lambda x: x[0], results))
+            total_instances = sum(map(lambda x: x[0], instances_groups.values()))
+            return total_cap, total_cap / total_instances
+
+    def get_input_cap(self, pin_name, num_elements: int = 1, wire_length: float = 0.0,
+                      interpolate=True, **kwargs):
+        """
+        Calculate input capacitance
+        :param pin_name:
+        :param num_elements:
+        :param wire_length:
+        :param interpolate If exact match not found in characterized data,
+         cin is computed rather than interpolated
+        :return: tuple with content (total_cap_in, cap_per_stage)
+        """
+        if self.conns and next(filter(len, self.conns)):
+            # contains instances i.e. probably not an imported custom cell
+            return self.get_input_cap_from_instances(pin_name, wire_length,
+                                                     **kwargs)
+        from globals import OPTS
+        if OPTS.use_characterization_data:
+            cap_value = self.get_input_cap_from_char(pin_name, num_elements=num_elements,
+                                                     wire_length=wire_length,
+                                                     interpolate=interpolate, **kwargs)
+            if cap_value is not None:
+                return cap_value, cap_value / num_elements
+        # compute if not previously characterized
+        cap_value = self.compute_input_cap(pin_name, wire_length)
+        return cap_value / num_elements
+
     def analytical_delay(self, slew, load=0.0):
         """Inform users undefined delay module while building new modules"""
         debug.warning("Design Class {0} delay function needs to be defined"
                       .format(self.__class__.__name__))
         debug.warning("Class {0} name {1}"
-                      .format(self.__class__.__name__, 
-                              self.name))         
+                      .format(self.__class__.__name__,
+                              self.name))
         # return 0 to keep code running while building
         return delay_data(0.0, 0.0)
 
@@ -217,7 +408,7 @@ class spice(verilog.verilog):
 
     def generate_rc_net(self,lump_num, wire_length, wire_width):
         return wire_spice_model(lump_num, wire_length, wire_width)
-        
+
     def return_power(self, dynamic=0.0, leakage=0.0):
         return power_data(dynamic, leakage)
 
@@ -252,7 +443,7 @@ class delay_data:
         assert isinstance(other,delay_data)
         return delay_data(other.delay + self.delay,
                           self.slew)
-                          
+
 class power_data:
     """
     This is the power class to represent the power information
@@ -291,7 +482,7 @@ class wire_spice_model:
     """
     def __init__(self, lump_num, wire_length, wire_width):
         self.lump_num = lump_num # the number of segment the wire delay has
-        self.wire_c = self.cal_wire_c(wire_length, wire_width) # c in each segment  
+        self.wire_c = self.cal_wire_c(wire_length, wire_width) # c in each segment
         self.wire_r = self.cal_wire_r(wire_length, wire_width) # r in each segment
 
     def cal_wire_c(self, wire_length, wire_width):
@@ -315,7 +506,7 @@ class wire_spice_model:
 
         swing_factor = abs(math.log(1-swing)) # time constant based on swing
         sum_factor = (1+self.lump_num) * self.lump_num * 0.5 # sum of the arithmetic sequence
-        delay = sum_factor * swing_factor * self.wire_r * self.wire_c 
+        delay = sum_factor * swing_factor * self.wire_r * self.wire_c
         slew = delay * 2 + slew
         result= delay_data(delay, slew)
         return result

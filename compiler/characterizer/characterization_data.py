@@ -28,8 +28,12 @@ def construct_suffixes_regex(suffixes: List[Tuple[str, float]] = None):
     return ""
 
 
+def get_data_dir():
+    return os.path.join(OPTS.openram_tech, "char_data")
+
+
 def get_data_file(cell_name, file_suffixes: List[Tuple[str, float]] = None):
-    data_directory = os.path.join(OPTS.openram_tech, "char_data")
+    data_directory = get_data_dir()
 
     suffixes = construct_suffixes(file_suffixes)
     if suffixes:
@@ -123,8 +127,27 @@ def filter_suffixes(suffixes: List[Tuple[str, float]], candidates: List[str]):
     return candidates
 
 
+def find_exact_matches(candidates: List[str], suffixes: List[Tuple[str, float]],
+                       rel_tol=0.001):
+
+    for criteria, value in suffixes:
+        exact_matches = []
+        search_pattern = "{}_({})".format(criteria, FLOAT_REGEX)
+        for candidate in candidates:
+            match = re.search(search_pattern, candidate)
+            if match:
+                data_value = float(match.group(1))
+                if value == 0.0 and data_value == 0.0:
+                    exact_matches.append(candidate)
+                elif abs(data_value - value) / abs(value) <= rel_tol:
+                    exact_matches.append(candidate)
+        candidates = exact_matches
+    return candidates
+
+
 def load_specific_data_file(file_name: str, pin_name: str, size: float = 1,
-                            size_suffixes: List[Tuple[str, float]] = None) -> Union[float, None]:
+                            size_suffixes: List[Tuple[str, float]] = None,
+                            interpolate_size_suffixes: bool = True) -> Union[float, None]:
     if not os.path.exists(file_name):
         return None
     with open(file_name, "r") as data_file:
@@ -137,7 +160,7 @@ def load_specific_data_file(file_name: str, pin_name: str, size: float = 1,
         return None
 
     # if only one entry, return immediately
-    if len(pin_data) == 1:
+    if len(pin_data) == 1 and (not size_suffixes or interpolate_size_suffixes):
         return next(iter(pin_data.values()))
 
     if size_suffixes is None:
@@ -158,6 +181,12 @@ def load_specific_data_file(file_name: str, pin_name: str, size: float = 1,
         return sum([pin_data[x] for x in group_]) / len(group_)
 
     if len(match_groups) == 1:
+        candidates = next(iter(match_groups.values()))
+        if not interpolate_size_suffixes:  # ensure exact match
+            candidates = find_exact_matches(candidates, size_suffixes)
+        if not candidates:
+            return None
+
         return mean_group(next(iter(match_groups.values())))
     elif size in match_groups:
         return mean_group(match_groups[size])
@@ -179,7 +208,8 @@ def load_specific_data_file(file_name: str, pin_name: str, size: float = 1,
 
 def load_data(cell_name: str, pin_name: str, size: float = 1,
               file_suffixes: List[Tuple[str, float]] = None,
-              size_suffixes: List[Tuple[str, float]] = None) -> Union[float, None]:
+              size_suffixes: List[Tuple[str, float]] = None,
+              interpolate_size_suffixes: bool = True) -> Union[float, None]:
     """
     Save data from characterization to json
     :param cell_name: name of characterized cell
@@ -190,6 +220,7 @@ def load_data(cell_name: str, pin_name: str, size: float = 1,
                          ("height", 1) adds _height_1 to file name
     :param size_suffixes: e.g. number of fingers or word_size.
                           Adds suffix to the size key similar to file_suffixes
+    :param interpolate_size_suffixes: if false, exact match for size suffixes is used, otherwise None
     :return: closest value from characterization or None if no data is saved
     """
     if not file_suffixes:
@@ -214,7 +245,7 @@ def load_data(cell_name: str, pin_name: str, size: float = 1,
         full_file_name = os.path.join(os.path.dirname(sample_file),
                                       cell_name + matched_file + ".json")
         data_from_file = load_specific_data_file(full_file_name, pin_name, size,
-                                                 size_suffixes)
+                                                 size_suffixes, interpolate_size_suffixes)
         if data_from_file is not None:
             values.append(data_from_file)
     if values:

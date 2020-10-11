@@ -438,9 +438,19 @@ class pgate(design.design):
                         width=nwell_right-nwell_left,
                         height=nwell_top-nwell_bottom)
 
+    def get_char_data_file_suffixes(self, **kwargs):
+        return [("beta", parameter["beta"])]
 
+    def get_char_data_size_suffixes(self, **kwargs):
+        """
+        Get filters for characterized size look up table
+        :return: list of (filter_name, filter_value) tuples
+        """
+        return [("height", self.height)]
 
+    def get_char_data_name(self, **kwargs) -> str:
+        return self.__class__.__name__
 
-
-
-
+    def get_input_cap(self, *args, **kwargs):
+        _, cap_per_unit = super().get_input_cap(num_elements=self.size, *args, **kwargs)
+        return cap_per_unit * self.size

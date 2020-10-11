@@ -6,6 +6,7 @@ import json
 import os
 import pathlib
 import re
+from copy import deepcopy
 from itertools import groupby
 from typing import List, Tuple, Dict, Union
 
@@ -46,6 +47,7 @@ def get_data_file(cell_name, file_suffixes: List[Tuple[str, float]] = None):
 def get_size_key(size: float, size_suffixes: List[Tuple[str, float]] = None):
     if size_suffixes is None:
         size_suffixes = []
+    size_suffixes = deepcopy(size_suffixes)
     size_suffixes.insert(0, ("size", size))
     return construct_suffixes(size_suffixes)
 

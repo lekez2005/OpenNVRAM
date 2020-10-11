@@ -19,7 +19,7 @@ GATE = "gate"
 DRAIN = "drain"
 
 
-class DrainCapacitance(CharTestBase):
+class TxCapacitance(CharTestBase):
     buffer_stages = [1, 2]
 
     @classmethod
@@ -129,32 +129,24 @@ class DrainCapacitance(CharTestBase):
                               sup_title=sup_title, show_plot=False)
             plt.show(block=[False, True][i])
 
-    def run_single_sim(self):
+    @staticmethod
+    def create_mos_wrapper(options, beta_suffix=True):
 
         from base import contact
         from base.design import design
         from base.vector import vector
-        from globals import OPTS
-        from pgates.ptx import ptx
-        from tech import drc
-
-        self.driver_size = self.options.driver_size
-
-        beta_dir = "beta_{:.3g}".format(self.options.beta)
-        OPTS.openram_temp = os.path.join(CharTestBase.temp_folder, beta_dir)
-        if not os.path.exists(OPTS.openram_temp):
-            pathlib.Path(OPTS.openram_temp).mkdir(parents=True, exist_ok=True)
-
-        test_class_self = self
 
         class MosWrapper(design):
             def __init__(self, mos: design):
-                suffix = "_beta{:.3g}".format(test_class_self.options.beta).replace(".", "_")
+                if beta_suffix:
+                    suffix = "_beta{:.3g}".format(options.beta).replace(".", "_")
+                else:
+                    suffix = ""
                 name = "wrap_" + mos.name + suffix
                 super().__init__(name)
                 inst = self.add_inst(mos.name, mos, offset=[0, 0])
 
-                body_pin = "gnd" if test_class_self.options.tx_type == NMOS else "vdd"
+                body_pin = "gnd" if options.tx_type == NMOS else "vdd"
 
                 pin_list = ["D", "G", "S", body_pin]
                 self.connect_inst(pin_list)
@@ -164,7 +156,7 @@ class DrainCapacitance(CharTestBase):
                     self.copy_layout_pin(inst, pin_name, pin_name)
 
                 # add body contacts
-                if test_class_self.options.tx_type == NMOS:
+                if options.tx_type == NMOS:
                     implant_name = "nimplant"
                     body_implant = "p"
                     well_type = "p"
@@ -198,7 +190,7 @@ class DrainCapacitance(CharTestBase):
                                     height=largest_m1.height)
 
                 # connect nwells
-                if test_class_self.options.tx_type == PMOS:
+                if options.tx_type == PMOS:
                     tx_nwell = mos.get_layer_shapes("nwell")[0]
                     contact_nwell = body_contact.get_layer_shapes("nwell")[0]
                     rect_left = min(tx_nwell.lx(), contact_nwell.lx())
@@ -208,6 +200,19 @@ class DrainCapacitance(CharTestBase):
                     self.add_rect("nwell", offset=vector(rect_left, rect_bottom),
                                   width=rect_right - rect_left,
                                   height=rect_top - rect_bottom)
+        return MosWrapper
+
+    def run_single_sim(self):
+        from globals import OPTS
+        from pgates.ptx import ptx
+        from tech import drc
+
+        self.driver_size = self.options.driver_size
+
+        beta_dir = "beta_{:.3g}".format(self.options.beta)
+        OPTS.openram_temp = os.path.join(CharTestBase.temp_folder, beta_dir)
+        if not os.path.exists(OPTS.openram_temp):
+            pathlib.Path(OPTS.openram_temp).mkdir(parents=True, exist_ok=True)
 
         size = self.options.size
 
@@ -215,9 +220,11 @@ class DrainCapacitance(CharTestBase):
         if self.options.tx_type == PMOS:
             tx_width = self.options.beta * tx_width
 
-        tx = MosWrapper(ptx(width=tx_width, mults=self.options.num_fingers,
-                            tx_type=self.options.tx_type,
-                            connect_active=True, connect_poly=True))
+        mos_wrapper_class = self.create_mos_wrapper(self.options, beta_suffix=True)
+
+        tx = mos_wrapper_class(ptx(width=tx_width, mults=self.options.num_fingers,
+                                   tx_type=self.options.tx_type,
+                                   connect_active=True, connect_poly=True))
 
         self.load_pex = self.run_pex_extraction(tx, tx.name,
                                                 run_drc=self.run_drc_lvs,
@@ -253,4 +260,4 @@ class DrainCapacitance(CharTestBase):
         return total_cap, cap_per_diff_micron, cap_per_tx_micron, cap_per_unit
 
 
-DrainCapacitance.run_tests(__name__)
+TxCapacitance.run_tests(__name__)

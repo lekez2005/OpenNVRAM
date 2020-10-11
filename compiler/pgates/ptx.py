@@ -512,8 +512,16 @@ class ptx(design.design):
         if self.connect_active:
             self.connect_fingered_active(drain_positions, source_positions)
 
+    def get_input_cap(self, pin_name, num_elements: int = 1, wire_length: float = 0.0,
+                      interpolate=True, **kwargs):
+        cap_val = self.get_tx_cap(tx_type=self.tx_type, terminal=pin_name,
+                                  width=self.tx_width, nf=self.mults,
+                                  m=1, interpolate=interpolate)
+        return cap_val
+
     @staticmethod
-    def get_tx_cap(tx_type, terminal="g", width=None, nf: int = 1, m: int = 1):
+    def get_tx_cap(tx_type, terminal="g", width=None, nf: int = 1, m: int = 1,
+                   interpolate=True):
         """
         Load transistor parasitic caps
         :param tx_type: "p" or "n"
@@ -521,6 +529,7 @@ class ptx(design.design):
         :param width: in um
         :param nf: number of fingers
         :param m: number of transistors
+        :param interpolate: Interpolate between fingers if exact nf not characterized
         :return: capacitance in F
         """
         unit_cap = 0.0
@@ -532,7 +541,8 @@ class ptx(design.design):
             size = width / spice["minwidth_tx"]
             size_suffixes = [("nf", nf)]
             unit_cap = load_data(cell_name=cell_name, pin_name=terminal, size=size,
-                                 file_suffixes=file_suffixes, size_suffixes=size_suffixes)
+                                 file_suffixes=file_suffixes, size_suffixes=size_suffixes,
+                                 interpolate_size_suffixes=interpolate)
         if unit_cap is None:
             if terminal == "d":
                 unit_cap = spice["min_tx_drain_c"] / spice["minwidth_tx"]

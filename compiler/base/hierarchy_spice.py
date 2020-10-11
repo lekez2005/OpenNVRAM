@@ -351,6 +351,9 @@ class spice(verilog.verilog):
                       interpolate=True, **kwargs):
         """
         Calculate input capacitance
+        First check if first name was characterized
+        If not, use information from instances the pin is connected to
+        Otherwise, extract transistor connections from spice and calculate based on that
         :param pin_name:
         :param num_elements:
         :param wire_length:
@@ -358,20 +361,22 @@ class spice(verilog.verilog):
          cin is computed rather than interpolated
         :return: tuple with content (total_cap_in, cap_per_stage)
         """
-        if self.conns and next(filter(len, self.conns)):
-            # contains instances i.e. probably not an imported custom cell
-            return self.get_input_cap_from_instances(pin_name, wire_length,
-                                                     **kwargs)
         from globals import OPTS
+
         if OPTS.use_characterization_data:
             cap_value = self.get_input_cap_from_char(pin_name, num_elements=num_elements,
                                                      wire_length=wire_length,
                                                      interpolate=interpolate, **kwargs)
             if cap_value is not None:
                 return cap_value, cap_value / num_elements
+
+        if self.conns and next(filter(len, self.conns)):
+            # contains instances i.e. probably not an imported custom cell
+            return self.get_input_cap_from_instances(pin_name, wire_length,
+                                                     **kwargs)
         # compute if not previously characterized
         cap_value = self.compute_input_cap(pin_name, wire_length)
-        return cap_value / num_elements
+        return cap_value, cap_value / num_elements
 
     def analytical_delay(self, slew, load=0.0):
         """Inform users undefined delay module while building new modules"""

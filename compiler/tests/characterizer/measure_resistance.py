@@ -15,8 +15,13 @@ from characterization_utils import (TEN_FIFTY_THRESH, TEN_NINETY,
 
 ACTION_SINGLE = "single"
 ACTION_SWEEP = "sweep"
+ACTION_SWEEP_TX = "sweep_tx"
 ACTION_BETA_SWEEP = "beta_sweep"
 ACTION_BETA_PLOT = "beta_plot"
+
+MOS = "mos"
+NMOS = "nmos"
+PMOS = "pmos"
 
 DEFAULT_PERIOD = 2e-9
 
@@ -30,12 +35,12 @@ class MeasureResistance(CharTestBase):
 
         replace_arg(cls.parser, "period", default=DEFAULT_PERIOD, arg_type=float)
         cls.parser.add_argument("--gate", default=PINV,
-                                choices=[PINV, PNAND2, PNAND3, PNOR2])
+                                choices=[PINV, PNAND2, PNAND3, PNOR2, MOS])
         cls.parser.add_argument("-l", "--load", default=30e-15, type=float)
         cls.parser.add_argument("-m", "--method", default=TEN_FIFTY_THRESH,
                                 choices=[TEN_NINETY, TEN_FIFTY_THRESH])
         cls.parser.add_argument("-a", "--action", default=ACTION_SWEEP,
-                                choices=[ACTION_SINGLE, ACTION_SWEEP,
+                                choices=[ACTION_SINGLE, ACTION_SWEEP, ACTION_SWEEP_TX,
                                          ACTION_BETA_SWEEP, ACTION_BETA_PLOT])
         cls.parser.add_argument("-s", "--size",
                                 default=1, type=float, help="Inverter size")
@@ -46,7 +51,12 @@ class MeasureResistance(CharTestBase):
 
     def add_additional_includes(self, stim_file):
         if self.dut_pex:
-            stim_file.write(".include \"{0}\" \n".format(self.dut_pex))
+            if isinstance(self.dut_pex, str):
+                dut_pex = [self.dut_pex]
+            else:
+                dut_pex = self.dut_pex
+            for f in dut_pex:
+                stim_file.write(".include \"{0}\" \n".format(f))
 
     def run_simulation(self):
         """
@@ -60,6 +70,8 @@ class MeasureResistance(CharTestBase):
         from pgates_caps import PINV
         from pgates_caps import PgateCaps
         from characterizer.stimuli import stimuli
+        from tx_capacitance import TxCapacitance
+        from pgates.ptx import ptx
 
         reload(characterizer)
 
@@ -88,6 +100,26 @@ class MeasureResistance(CharTestBase):
         if gate == PINV:
             dut_instance = "X1 a out_bar out vdd gnd        {}".format(buffer.name)
             self.dut_pex = None
+        elif gate == MOS:
+            self.options.tx_type = NMOS
+            n_tx = ptx(width=self.options.tx_width, mults=self.options.num_fingers,
+                       tx_type=NMOS, connect_active=True, connect_poly=True)
+            nmos_wrapped = TxCapacitance.create_mos_wrapper(self.options, beta_suffix=False)(n_tx)
+
+            self.options.tx_type = PMOS
+            p_tx = ptx(width=self.options.tx_width, mults=self.options.num_fingers,
+                       tx_type=PMOS, connect_active=True, connect_poly=True)
+            pmos_wrapped = TxCapacitance.create_mos_wrapper(self.options, beta_suffix=False)(p_tx)
+
+            nmos_pex = self.run_pex_extraction(nmos_wrapped, nmos_wrapped.name)
+            pmos_pex = self.run_pex_extraction(pmos_wrapped, pmos_wrapped.name)
+            self.dut_pex = [nmos_pex, pmos_pex]
+
+            dut_instance = "X1 a d out vdd gnd        {}\n".format(buffer.name)
+
+            # add nmos
+            dut_instance += "Xnmos out_bar d gnd gnd {} \n".format(nmos_wrapped.name)
+            dut_instance += "Xpmos out_bar d vdd vdd {} \n".format(pmos_wrapped.name)
         else:
             # add buffer stages to shape the input slew, "d" is the equivalent "out_bar"
             dut_instance = "X1 a d out vdd gnd        {}".format(buffer.name)
@@ -177,6 +209,31 @@ class MeasureResistance(CharTestBase):
         if self.options.plot:
             self.plot_sim()
 
+    def test_sweep_tx(self):
+        if not self.options.action == ACTION_SWEEP_TX:
+            return
+        from tech import drc
+        self.options.gate = MOS
+
+        for num_fingers in [1, 2, 3, 4]:
+            print("  fingers: {}".format(num_fingers))
+            self.options.num_fingers = num_fingers
+            for size in [1, 1.1, 1.2, 1.3, 1.5, 2, 3, 5, 10]:
+                self.options.size = size
+                self.options.tx_width = size * drc["minwidth_tx"]
+                r_n, r_p, _, _, _ = self.run_simulation()
+                resistances = [r_n, r_p]
+                gates = [NMOS, PMOS]
+                for ii in range(2):
+                    resistance = resistances[ii]
+                    resistance = resistance * drc["minwidth_tx"] * num_fingers
+
+                    print("    {} size: {:.3g}: {:.6g}".format(gates[ii], size, resistance))
+                    size_suffixes = [("nf", num_fingers)]
+                    self.save_result(gates[ii], "resistance", resistance, size=size,
+                                     size_suffixes=size_suffixes,
+                                     file_suffixes=[])
+
     def test_sweep(self):
         import numpy as np
         from pgates_caps import PINV, PNAND2, PNOR2, PNAND3
@@ -185,31 +242,37 @@ class MeasureResistance(CharTestBase):
 
         initial_size = self.options.size
 
-        for gate in [PINV, PNAND2, PNOR2, PNAND3]:
+        for gate in [PNAND2, PNOR2, PNAND3, PINV]:
             print("\n{}:".format(gate.upper()))
             if gate == PINV:
-                max_log = np.log10(initial_size)
+                max_log = np.log10(self.options.max_size)
                 sizes = np.logspace(0, max_log, self.options.num_sizes)
             else:
-                sizes = [initial_size]
+                sizes = [initial_size, 1.5, 2]
             for size in sizes:
                 print("  size: {:.3g}:".format(size))
                 self.options.gate = gate
                 self.options.size = size
-                r_n, r_p, fall_time, rise_time, scale_factor = self.run_simulation()
+                try:
+                    r_n, r_p, fall_time, rise_time, scale_factor = self.run_simulation()
+                except AssertionError as ex:
+                    if len(ex.args) > 0 and "Only Single finger" in ex.args[0]:
+                        print("    Invalid size {} for {}".format(size, gate))
+                        continue
+                    raise ex
 
-                save_cell_name = "resistance"
                 file_suffixes = [("beta", self.options.beta)]
+                size_suffixes = [("height", self.logic_buffers_height)]
+
                 print("    Rn = {:.4g}".format(r_n))
                 print("    Rp = {:.4g}".format(r_p))
 
-                pin_suffixes = ["_r_n", "_r_p"]
-                values = [r_n, r_p]
-                for i in range(2):
-                    pin_name = gate + pin_suffixes[i]
-                    value = values[i]
-                    self.save_result(save_cell_name, pin_name, value=value,
-                                     size=size, file_suffixes=file_suffixes)
+                pin_names = ["r_n", "r_p", "resistance"]
+                values = [r_n, r_p, max(r_n, r_p)]
+                for i in range(3):
+                    self.save_result(gate, pin_names[i], values[i], size=size,
+                                     size_suffixes=size_suffixes,
+                                     file_suffixes=file_suffixes)
 
     def test_beta_sweep(self):
         from globals import OPTS

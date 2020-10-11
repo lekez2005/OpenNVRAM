@@ -154,7 +154,10 @@ class CharTestBase(testutils.OpenRamTest):
     @staticmethod
     def set_temp_folder(dir_name):
         from globals import OPTS
-        OPTS.openram_temp = os.path.join(CharTestBase.temp_folder, dir_name)
+        openram_temp_ = os.path.join(CharTestBase.temp_folder, dir_name)
+        if openram_temp_ == OPTS.openram_temp:
+            return
+        OPTS.openram_temp = openram_temp_
         if not os.path.exists(OPTS.openram_temp):
             pathlib.Path(OPTS.openram_temp).mkdir(parents=True, exist_ok=True)
         print("\n Temp folder = {}".format(OPTS.openram_temp))

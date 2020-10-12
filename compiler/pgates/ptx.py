@@ -532,7 +532,7 @@ class ptx(design.design):
         :param interpolate: Interpolate between fingers if exact nf not characterized
         :return: capacitance in F
         """
-        unit_cap = 0.0
+        unit_cap = None
         if width is None:
             width = spice["minwidth_tx"]
         if OPTS.use_characterization_data:
@@ -553,3 +553,27 @@ class ptx(design.design):
         debug.info(4, "Unit cap for terminal {} width {} nf {} = {:.4g}".format(
             terminal, width, nf, unit_cap))
         return unit_cap * width * nf * m
+
+    @staticmethod
+    def get_tx_res(tx_type, width=None, nf: int = 1, m: int = 1, interpolate=True, corner=None):
+        """Load resistance for tx. Same parameters as get_tx_cap, Corner is (process, vdd, temperature)"""
+        res_per_micron = None
+        if width is None:
+            width = spice["minwidth_tx"]
+        if OPTS.use_characterization_data:
+            cell_name = tx_type + "mos"
+            if corner is not None:
+                file_suffixes = [("process", corner[0]), ("vdd", corner[1]), ("temp", corner[2])]
+            else:
+                file_suffixes = []
+            size_suffixes = [("nf", nf)]
+            size = width / spice["minwidth_tx"]
+            res_per_micron = load_data(cell_name=cell_name, pin_name="resistance", size=size,
+                                       file_suffixes=file_suffixes, size_suffixes=size_suffixes,
+                                       interpolate_size_suffixes=interpolate)
+
+        if res_per_micron is None:
+            key = "min_tx_r_" + tx_type
+            res_per_micron = spice[key] * spice["minwidth_tx"]
+        return res_per_micron / width / nf / m
+

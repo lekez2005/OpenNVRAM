@@ -378,6 +378,33 @@ class spice(verilog.verilog):
         cap_value = self.compute_input_cap(pin_name, wire_length)
         return cap_value, cap_value / num_elements
 
+    def get_driver_resistance(self, pin_name, interpolate=True, corner=None):
+        """
+        Get driver resistance for given pin_name
+        :param pin_name:
+        :param interpolate: Interpolate transistor properties like width and fingers
+        :param corner: (process, vdd, temperature)
+        :return: {"p": <pull_up_resistance>, "n": <pull_down_resistance>}
+        """
+        from pgates.ptx import ptx
+
+        resistance_paths = self.get_spice_parser().extract_res_for_pin(pin_name, self.name)
+
+        resistances = {}
+        for tx_type, paths in resistance_paths.items():
+            if len(paths) > 0:
+                resistances[tx_type] = 0
+            else:
+                resistances[tx_type] = math.inf
+                continue
+            for path in paths:
+                resistance = 0
+                for m, nf, width in path:
+                    resistance += ptx.get_tx_res(tx_type, width*1e6, nf, m, interpolate=interpolate,
+                                                 corner=corner)
+                resistances[tx_type] = max(resistance, resistances[tx_type])
+        return resistances
+
     def analytical_delay(self, slew, load=0.0):
         """Inform users undefined delay module while building new modules"""
         debug.warning("Design Class {0} delay function needs to be defined"

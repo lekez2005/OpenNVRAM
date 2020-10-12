@@ -141,6 +141,7 @@ class SpiceParser:
         return self.get_module(module_name).pins
 
     def deduce_hierarchy_for_pin(self, pin_name, module_name):
+        pin_name = pin_name.lower()
         module = self.get_module(module_name)
         hierarchy = []
         nested_hierarchy = []
@@ -172,6 +173,7 @@ class SpiceParser:
         return hierarchy
 
     def deduce_hierarchy_for_node(self, node_name, module_name):
+        node_name = node_name.lower()
         hierarchy = node_name.split(".")
         for child in hierarchy[:-1]:
             module = self.get_module(module_name)
@@ -185,6 +187,18 @@ class SpiceParser:
 
         target_pin = hierarchy[-1]
         return [hierarchy[:-1] + x for x in self.deduce_hierarchy_for_pin(target_pin, module_name)]
+
+    @staticmethod
+    def extract_all_tx_properties(spice_statement):
+        """Extract tx_type, m, nf, width from spice statement"""
+        assert spice_statement.startswith("m"), "Line must start with m"
+        line_elements = spice_statement.split()
+        tx_type = line_elements[5][0]
+        m = int(tx_extract_parameter("m", spice_statement) or 1)
+        nf = int(tx_extract_parameter("nf", spice_statement) or 1)
+
+        width = tx_extract_parameter("w", spice_statement)
+        return tx_type, m, nf, width
 
     def extract_caps_for_pin(self, pin_name, module_name):
         """
@@ -211,12 +225,8 @@ class SpiceParser:
             spice_statement = child[-1][1]
             if not spice_statement.startswith("m"):
                 continue
-            line_elements = spice_statement.split()
-            tx_type = line_elements[5][0]
-            m = int(tx_extract_parameter("m", spice_statement)) or 1
-            nf = int(tx_extract_parameter("nf", spice_statement)) or 1
+            tx_type, m, nf, width = self.extract_all_tx_properties(spice_statement)
             num_drains = 1 + int((nf - 1) / 2)
-            width = tx_extract_parameter("w", spice_statement)
 
             pin_name = child[-1][0]
             pin_name = "d" if pin_name == "s" else pin_name
@@ -225,3 +235,74 @@ class SpiceParser:
             results[tx_type][pin_name][1].append((m, nf, width))
 
         return results
+
+    def extract_res_for_pin(self, pin_name, module_name, vdd_name="vdd", gnd_name="gnd",
+                            max_depth=5):
+        """
+
+        :param pin_name: pin to evaluate
+        :param module_name: parent module
+        :param vdd_name: to count as a a path, pmos must terminate on "vdd_name"
+        :param gnd_name: to count as a path, nmos must terminate on "gnd_name"
+        :param max_depth: This is used as a termination condition to prevent infinite cycles
+        :return: max resistance in path
+        """
+        resistance_paths = self.extract_res_paths_for_pin(pin_name, module_name, "", vdd_name, gnd_name,
+                                                          0, max_depth)
+        elements = {
+            "p": [],
+            "n": []
+        }
+        for path in resistance_paths:
+            path_elements = []
+            tx_type = "p"  # will be overridden by last element on path
+            for i in range(len(path)):
+                tx_type, m, nf, width = self.extract_all_tx_properties(path[i])
+                path_elements.append((m, nf, width))
+            elements[tx_type].append(path_elements)
+        return elements
+
+    def extract_res_paths_for_pin(self, pin_name, module_name, adjacent_in="",
+                                  vdd_name="vdd", gnd_name="gnd",
+                                  depth=0, max_depth=5):
+
+        final_paths = []
+        intermediate_paths = []
+
+        hierarchy = self.deduce_hierarchy_for_node(pin_name, module_name)
+
+        for child in hierarchy:
+            tx_terminal, spice_statement = child[-1]
+            if tx_terminal not in ['d', 's']:
+                continue
+
+            line_elements = spice_statement.split()
+
+            tx_type = line_elements[5][0]
+            adjacent_net = line_elements[1] if tx_terminal == 's' else line_elements[3]
+            original_net = line_elements[3] if tx_terminal == 's' else line_elements[1]
+
+            if adjacent_net == adjacent_in:
+                continue
+            elif tx_type == "p" and adjacent_net == vdd_name:  # valid pmos
+                final_paths.append([spice_statement])
+            elif tx_type == "n" and adjacent_net == gnd_name:  # valid nmos
+                final_paths.append([spice_statement])
+            elif adjacent_net in [vdd_name, gnd_name]:  # invalid pull up or pull down
+                continue
+            elif depth >= max_depth:
+                continue
+            else:   # intermediate node
+                if len(child[:-1]) > 0:
+                    next_route = ".".join(child[:-1]) + "." + adjacent_net
+                else:
+                    next_route = adjacent_net
+                intermediate_paths.append((spice_statement, original_net, next_route))
+        # process intermediate paths (i.e. series transisors)
+        for spice_statement, original_net, next_route in intermediate_paths:
+            next_route_paths = self.extract_res_paths_for_pin(next_route, module_name, original_net,
+                                                              vdd_name, gnd_name, depth + 1, max_depth)
+            for path in next_route_paths:
+                final_paths.append([spice_statement] + path)
+
+        return final_paths

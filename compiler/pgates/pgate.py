@@ -438,6 +438,10 @@ class pgate(design.design):
                         width=nwell_right-nwell_left,
                         height=nwell_top-nwell_bottom)
 
+    def is_delay_primitive(self):
+        """Whether to descend into this module to evaluate sub-modules for delay"""
+        return True
+
     def get_char_data_file_suffixes(self, **kwargs):
         return [("beta", parameter["beta"])]
 

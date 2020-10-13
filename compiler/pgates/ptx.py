@@ -5,6 +5,7 @@ import debug
 from base import design
 from base import utils
 from base.contact import contact, m1m2, poly as poly_contact
+from base.hierarchy_spice import INOUT, INPUT
 from base.vector import vector
 from characterizer.characterization_data import load_data
 from globals import OPTS
@@ -73,7 +74,7 @@ class ptx(design.design):
         self.add_active_contacts()
 
     def create_spice(self):
-        self.add_pin_list(["D", "G", "S", "B"])
+        self.add_pin_list(["D", "G", "S", "B"], [INOUT, INPUT, INOUT, INPUT])
         
         # self.spice.append("\n.SUBCKT {0} {1}".format(self.name,
         #                                              " ".join(self.pins)))
@@ -511,6 +512,10 @@ class ptx(design.design):
             
         if self.connect_active:
             self.connect_fingered_active(drain_positions, source_positions)
+
+    def is_delay_primitive(self):
+        """Whether to descend into this module to evaluate sub-modules for delay"""
+        return True
 
     def get_input_cap(self, pin_name, num_elements: int = 1, wire_length: float = 0.0,
                       interpolate=True, **kwargs):

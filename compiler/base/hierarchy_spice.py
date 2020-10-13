@@ -82,7 +82,10 @@ class spice(verilog.verilog):
         debug.info(3, "Loading {0} type for module {1} from file".format(name, self.name))
         spice_parser = self.get_spice_parser()
         pin_caps = spice_parser.extract_caps_for_pin(name, self.name)
-        if pin_caps["n"]["g"][1] or pin_caps["p"]["g"][1]:
+        if ((pin_caps["n"]["g"][1] or pin_caps["p"]["g"][1]) and
+                (pin_caps["n"]["d"][1] or pin_caps["p"]["d"][1])):  # connected to both drains and gates
+            pin_type = INOUT
+        elif pin_caps["n"]["g"][1] or pin_caps["p"]["g"][1]:
             pin_type = INPUT
         else:
             pin_type = OUTPUT
@@ -100,6 +103,14 @@ class spice(verilog.verilog):
             return INOUT
         else:
             return pin_type
+
+    def get_input_pins(self):
+        results = []
+        for pin in self.pins:
+            if self.get_pin_dir(pin) == INPUT:
+                results.append(pin)
+        return results
+
 
     def add_mod(self, mod):
         """Adds a subckt/submodule to the subckt hierarchy"""
@@ -211,6 +222,10 @@ class spice(verilog.verilog):
         self.sp_write_file(spfile, usedMODS)
         del usedMODS
         spfile.close()
+
+    def is_delay_primitive(self):
+        """Whether to descend into this module to evaluate sub-modules for delay"""
+        return not (self.conns and next(filter(len, self.conns)))
 
     def get_spice_content(self):
         """Content of spice file

@@ -63,25 +63,30 @@ class spice(verilog.verilog):
         else:
             debug.error("Mismatch in type and pin list lengths.", -1)
 
-    def get_pin_type(self, name):
+    def get_pin_type(self, name: str):
         """ Returns the type of the signal pin.
             If pin type is not specified when pin was added uses heuristic to determine type
             vdd is POWER, gnd, vss are GND
             Otherwise, if attached to at least one gate, it's input, else OUTPUT
         """
-        if name not in self.pins:
-            debug.error("Invalid pin {} for module {}".format(name, self.name), -1)
-        if name in self.pin_type and self.pin_type[name] is not None:
-            return self.pin_type[name]
+        lower_case_pins = [x.lower() for x in self.pins]
+        name_lower = name.lower()
+        if name_lower not in lower_case_pins:
+            raise ValueError("Invalid pin name {} for module {}".format(name, self.__class__.__name__))
 
-        name = name.lower()
-        if name in ["vss", "gnd"]:
+        pin_index = lower_case_pins.index(name_lower)
+        actual_pin_name = self.pins[pin_index]
+
+        if actual_pin_name in self.pin_type and self.pin_type[actual_pin_name] is not None:
+            return self.pin_type[actual_pin_name]
+
+        if name_lower in ["vss", "gnd"]:
             return GROUND
-        elif name in ["vdd"]:
+        elif name_lower in ["vdd"]:
             return POWER
-        debug.info(3, "Loading {0} type for module {1} from file".format(name, self.name))
+        debug.info(3, "Loading pin type for pin {0} type for module {1} from file".format(name, self.name))
         spice_parser = self.get_spice_parser()
-        pin_caps = spice_parser.extract_caps_for_pin(name, self.name)
+        pin_caps = spice_parser.extract_caps_for_pin(name_lower, self.name)
         if ((pin_caps["n"]["g"][1] or pin_caps["p"]["g"][1]) and
                 (pin_caps["n"]["d"][1] or pin_caps["p"]["d"][1])):  # connected to both drains and gates
             pin_type = INOUT
@@ -89,12 +94,13 @@ class spice(verilog.verilog):
             pin_type = INPUT
         else:
             pin_type = OUTPUT
-        self.pin_type[name] = pin_type
+        self.pin_type[actual_pin_name] = pin_type
 
-        debug.info(3, "Loaded {0} type for module {1}  = {2}".format(name, self.name,
-                                                                     self.pin_type[name]))
+        debug.info(3, "Loaded pin type for pin {0} in module {1}  = {2}".format(actual_pin_name,
+                                                                                self.__class__.__name__,
+                                                                                self.pin_type[actual_pin_name]))
 
-        return self.pin_type[name]
+        return self.pin_type[actual_pin_name]
 
     def get_pin_dir(self, name):
         """ Returns the direction of the pin. (Supply/ground are INOUT). """

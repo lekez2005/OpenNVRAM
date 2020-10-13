@@ -20,6 +20,8 @@ class GraphNode:
         self.parent_out_net = parent_out_net
         self.parent_module = parent_module
 
+        debug.info(3, "Created GraphNode: {}".format(str(self)))
+
     def __str__(self):
         return " {}:{}-> | {} | -> {}:{} ".format(self.parent_in_net, self.in_net,
                                                   self.module.name, self.parent_out_net,
@@ -34,6 +36,7 @@ class GraphPath:
 
     def __init__(self, nodes=None):
         self.nodes = nodes if nodes is not None else []  # type: List[GraphNode]
+        debug.info(3, "Created GraphPath: {}".format(str(self)))
 
     def prepend_node(self, node: GraphNode):
         return GraphPath([node] + self.nodes)
@@ -138,7 +141,7 @@ def get_driver_for_pin(net: str, parent_module: design):
     if child_module.is_delay_primitive():
         return [parent_module, child_module, (child_pin, net, conn)]
     descendants = get_driver_for_pin(child_pin, child_module)
-    return [(parent_module, net, conn)] + descendants
+    return [(parent_module, conn)] + descendants
 
 
 def construct_paths(driver_hierarchy, index=0, max_depth=20, max_adjacent_modules=50):
@@ -161,7 +164,7 @@ def construct_paths(driver_hierarchy, index=0, max_depth=20, max_adjacent_module
     driver_module = driver_hierarchy[-2]  # type: design
     immediate_parent_module = original_parent = driver_hierarchy[-3]
 
-    parent_modules = driver_hierarchy[:-3]  # type: List[Tuple[design, str, List[str]]]
+    parent_modules = driver_hierarchy[:-3]  # type: List[Tuple[design, List[str]]]
 
     input_pins = driver_module.get_input_pins()
     for pin in input_pins:
@@ -221,7 +224,7 @@ def construct_paths(driver_hierarchy, index=0, max_depth=20, max_adjacent_module
     final_paths = processed_paths
 
     # Process ancestors
-    for ancestor_module, ancestor_net, ancestor_conn in reversed(parent_modules):
+    for ancestor_module, ancestor_conn in reversed(parent_modules):
         processing_queue = [x for x in processed_paths]
         processed_paths = []
         for path in processing_queue:
@@ -230,6 +233,7 @@ def construct_paths(driver_hierarchy, index=0, max_depth=20, max_adjacent_module
             pin_net_in_ancestor = ancestor_conn[child_pin_index]
             if pin_net_in_ancestor in ancestor_module.pins:
                 source_node.parent_in_net = pin_net_in_ancestor
+                source_node.parent_module = ancestor_module
                 processed_paths.append(path)
             else:
                 # derive the path

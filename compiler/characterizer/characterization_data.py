@@ -154,10 +154,14 @@ def load_specific_data_file(file_name: str, pin_name: str, size: float = 1,
         return None
     with open(file_name, "r") as data_file:
         char_data = json.load(data_file)
-    if pin_name not in char_data:
+
+    if pin_name in char_data:
+        pin_data = char_data[pin_name]
+    elif pin_name.lower() in char_data:
+        pin_data = char_data[pin_name.lower()]
+    else:
         return None
 
-    pin_data = char_data[pin_name]
     if not pin_data:
         return None
 

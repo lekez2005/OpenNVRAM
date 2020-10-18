@@ -25,7 +25,7 @@ class precharge(design.design):
         self.bitcell = self.mod_bitcell()
 
         self.beta = parameter["beta"]
-        self.ptx_width = utils.round_to_grid(size*self.beta*parameter["min_tx_size"])
+        self.ptx_width = utils.round_to_grid(size * self.beta * parameter["min_tx_size"])
         self.width = self.bitcell.width
 
         self.add_pins()
@@ -45,10 +45,9 @@ class precharge(design.design):
         self.drc_fill()
         self.add_ptx_inst()
 
-
     def set_layout_constants(self):
 
-        self.mid_x = 0.5*self.width
+        self.mid_x = 0.5 * self.width
 
         # TODO should depend on bitcell width
         self.mults = 3
@@ -58,8 +57,8 @@ class precharge(design.design):
 
         self.well_contact_active_height = contact.active.first_layer_height
         # nwell contact top space requirement
-        nwell_top_space = (0.5*self.well_contact_implant_height +
-                           0.5*self.well_contact_active_height + self.poly_to_active)
+        nwell_top_space = (0.5 * self.well_contact_implant_height +
+                           0.5 * self.well_contact_active_height + self.poly_to_active)
 
         # space to add poly contacts
         poly_top_space = self.line_end_space  # space to the en metal1
@@ -82,19 +81,20 @@ class precharge(design.design):
 
         self.active_width = 2 * self.end_to_poly + self.mults * self.poly_pitch - self.poly_space
         self.active_bot_y = self.bottom_space
-        self.active_mid_y = self.active_bot_y + 0.5*self.ptx_width
+        self.active_mid_y = self.active_bot_y + 0.5 * self.ptx_width
         self.active_top = self.active_bot_y + self.ptx_width
 
         self.poly_contact_mid_y = self.active_top + self.active_to_poly_cont_mid
 
         self.poly_x_start = (self.mid_x - 0.5 * self.active_width +
                              self.end_to_poly - 2 * self.poly_pitch + 0.5 * self.poly_width)
+        
 
         self.contact_pitch = 2 * self.contact_to_gate + self.contact_width + self.poly_width
         self.contact_space = self.contact_pitch - self.contact_width
         self.calculate_body_contacts()
 
-        self.nwell_height = self.contact_y + 0.5*self.well_contact_active_height + drc["well_enclosure_active"]
+        self.nwell_height = self.contact_y + 0.5 * self.well_contact_active_height + drc["well_enclosure_active"]
         
         self.implant_height = self.height - self.well_contact_implant_height
         implant_enclosure_active = drc["ptx_implant_enclosure_active"]
@@ -123,15 +123,15 @@ class precharge(design.design):
             poly_heights = [self.poly_height] * self.mults
 
         for i in range(len(poly_layers)):
-            offset = vector(poly_x_start + i*self.poly_pitch - 0.5*self.poly_width, self.poly_y_offset)
+            offset = vector(poly_x_start + i * self.poly_pitch - 0.5 * self.poly_width, self.poly_y_offset)
             self.add_rect(poly_layers[i], offset=offset, height=poly_heights[i], width=self.poly_width)
 
         # add implant
-        self.add_rect_center("pimplant", offset=vector(self.mid_x, 0.5*self.implant_height),
+        self.add_rect_center("pimplant", offset=vector(self.mid_x, 0.5 * self.implant_height),
                              width=self.implant_width, height=self.implant_height)
 
         # add nwell
-        x_offset = - 0.5*(self.implant_width - self.width)
+        x_offset = - 0.5 * (self.implant_width - self.width)
         self.add_rect("nwell", offset=vector(x_offset, 0), width=self.implant_width, height=self.nwell_height)
 
         
@@ -157,8 +157,8 @@ class precharge(design.design):
         else:
             no_contacts = self.mults
         self.no_body_contacts = no_contacts = max(3, no_contacts)
-        contact_extent = no_contacts*self.contact_pitch - self.contact_space
-        self.contact_x_start = self.mid_x - 0.5*contact_extent + 0.5*self.contact_width
+        contact_extent = no_contacts * self.contact_pitch - self.contact_space
+        self.contact_x_start = self.mid_x - 0.5 * contact_extent + 0.5 * self.contact_width
         min_active_width = utils.ceil(drc["minarea_cont_active_thin"] / self.well_contact_active_height)
         active_width = max(2 * contact.active.first_layer_vertical_enclosure + contact_extent,
                            min_active_width)
@@ -167,14 +167,14 @@ class precharge(design.design):
             active_width = max(active_width, self.width)
         self.well_contact_active_width = active_width
 
-        self.contact_y = self.height - 0.5*self.well_contact_implant_height
+        self.contact_y = self.height - 0.5 * self.well_contact_implant_height
 
     def add_nwell_contacts(self):
         self.add_rect_center("nimplant", offset=vector(self.mid_x, self.contact_y), width=self.implant_width,
                              height=self.well_contact_implant_height)
         # TODO temp fix since sense amps expect vdd rail to extend by 0.5*self.rail_height
 
-        vdd_pin_y = self.poly_contact_mid_y + 0.5*self.m1_width + self.get_parallel_space(METAL1)
+        vdd_pin_y = self.poly_contact_mid_y + 0.5 * self.m1_width + self.get_parallel_space(METAL1)
         pin_height = self.height - vdd_pin_y
         self.add_layout_pin("vdd", "metal1", offset=vector(0, vdd_pin_y),
                             width=self.width, height=pin_height)
@@ -195,8 +195,8 @@ class precharge(design.design):
 
     def add_active_contacts(self):
         no_contacts = self.calculate_num_contacts(self.ptx_width)
-        m1m2_contacts = max(1, no_contacts-1)
-        active_left = self.mid_x - 0.5*self.active_width + 0.5*self.m1_width  # left edge of active layer
+        m1m2_contacts = max(1, no_contacts - 1)
+        active_left = self.mid_x - 0.5 * self.active_width + 0.5 * self.m1_width  # left edge of active layer
 
         self.source_drain_pos = []
 
@@ -233,14 +233,14 @@ class precharge(design.design):
 
         x_offsets = [0, 0, self.width - self.m1_width]
         for i in [1, 2]:
-            x_offset = self.source_drain_pos[i] - 0.5*self.m2_width
+            x_offset = self.source_drain_pos[i] - 0.5 * self.m2_width
             self.add_rect("metal2", offset=vector(x_offset, bottom_connection_y),
-                          height=self.active_mid_y-bottom_connection_y)
+                          height=self.active_mid_y - bottom_connection_y)
 
-        offset = vector(bl_x, bottom_connection_y-self.m2_width)
-        self.add_rect("metal2", offset=offset, width=self.source_drain_pos[1] + 0.5*self.m2_width - bl_x)
-        offset = vector(self.source_drain_pos[2] - 0.5*self.m2_width, bottom_connection_y-self.m2_width)
-        self.add_rect("metal2",offset=offset, width=br_x-offset.x)
+        offset = vector(bl_x, bottom_connection_y - self.m2_width)
+        self.add_rect("metal2", offset=offset, width=self.source_drain_pos[1] + 0.5 * self.m2_width - bl_x)
+        offset = vector(self.source_drain_pos[2] - 0.5 * self.m2_width, bottom_connection_y - self.m2_width)
+        self.add_rect("metal2", offset=offset, width=br_x - offset.x)
 
         self.add_layout_pin("bl", "metal2", offset=vector(bl_x, 0), height=bottom_connection_y)
         self.add_layout_pin("br", "metal2", offset=vector(br_x, 0), height=bottom_connection_y)
@@ -307,8 +307,8 @@ class precharge_tap(design.design):
             num_vias += 1
 
         self.add_rect(vdd_rail.layer, offset=vector(vdd_rail.lx(), 0), width=vdd_rail.width(), height=self.height)
-        via_offset = vector(vdd_rail.cx()-0.5*m1m2.second_layer_width,
-                            precharge_vdd.uy()-sample_contact.second_layer_height)
+        via_offset = vector(vdd_rail.cx() - 0.5 * m1m2.second_layer_width,
+                            precharge_vdd.uy() - sample_contact.second_layer_height)
         m1m2_cont = self.add_contact(m1m2.layer_stack, offset=via_offset, size=[1, num_vias])
         self.add_contact(m2m3.layer_stack, offset=via_offset, size=[1, num_vias])
         self.add_contact(m3m4.layer_stack, offset=via_offset, size=[1, num_vias])
@@ -316,5 +316,3 @@ class precharge_tap(design.design):
         if m2_area < self.minarea_metal1_contact:
             self.add_rect(METAL2, offset=vector(vdd_rail.lx(), via_offset.y), width=vdd_rail.width(),
                           height=m1m2_cont.height)
-
-

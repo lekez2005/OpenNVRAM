@@ -28,8 +28,13 @@ def replace_arg(parser, arg_name, arg_type=float, default=None, choices=None):
         raise AssertionError('argument {} not found'.format(arg_name))
 
 
-def search_meas(meas_name, meas_file_name):
-    pattern = r"{}.*=\s+([0-9e\-\.]+)\s*$"
+def search_meas_usim(meas_name, meas_file_name):
+    return search_meas(meas_name, meas_file_name, pattern=r"{}\s+=\s+([0-9e\-\.]+)")
+
+
+def search_meas(meas_name, meas_file_name, pattern=None):
+    if pattern is None:
+        pattern = r"{}.*=\s+([0-9e\-\.]+)\s*$"
     with open(meas_file_name, "r") as meas_file:
         meas_content = meas_file.read()
         time = re.findall(pattern.format(meas_name), meas_content, re.MULTILINE)

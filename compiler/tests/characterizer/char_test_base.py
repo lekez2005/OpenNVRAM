@@ -460,6 +460,10 @@ for teil in inspect.stack():
         continue
     trc = teil[1]
 
+# bypass pydevd during debugging
+if trc.endswith("pydevd.py"):
+    trc = sys.argv[0]
+
 test_name = os.path.basename(trc)[:-3]
 openram_temp = os.path.join(
     os.environ["SCRATCH"], "openram", "characterization", test_name)

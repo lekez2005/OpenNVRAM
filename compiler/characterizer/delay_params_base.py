@@ -19,6 +19,10 @@ class RC:
     def cap(self):
         return self.cap_scale * self.__cap
 
+    def __str__(self):
+        return "(c = {:.3g} r = {:.3g} width = {:.3g} space = {:.3g}".format(self.cap, self.res,
+                                                                             self.width, self.space)
+
 
 class DelayParamsBase(ABC):
     """
@@ -76,7 +80,9 @@ class DelayParamsBase(ABC):
             space = cls.min_space
 
         rc_def = cls.find_closest(layer, width, space)
-        return rc_def.cap, rc_def.res
+        c = rc_def.cap * width / rc_def.width
+        r = rc_def.res * rc_def.width / width
+        return c, r
 
     @classmethod
     def find_closest(cls, layer, width, space) -> RC:

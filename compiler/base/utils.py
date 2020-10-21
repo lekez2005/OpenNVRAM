@@ -132,7 +132,8 @@ def get_tap_positions(num_columns):
         tap_positions[-1] = num_columns - cells_per_group  # prevent clash with cells to the right of bitcell array
 
     # find column corresponding to
-    add_buffers_rails_space = (num_columns > OPTS.right_buffers_col_threshold and
+    add_buffers_rails_space = (hasattr(OPTS, "right_buffers_col_threshold") and
+                               num_columns > OPTS.right_buffers_col_threshold and
                                len(getattr(OPTS, "right_buffers", [])) > 0)
 
     rails_num_taps = 0
@@ -304,13 +305,26 @@ def load_class(class_name):
 def run_command(command, stdout_file, stderror_file, verbose_level=1, cwd=None):
     import debug
 
+    pre_exec_fcn = None
+    try:
+        import psutil
+        nice_value = os.getenv("OPENRAM_SUBPROCESS_NICE", None)
+        if nice_value:
+            def pre_exec_fcn():
+                pid = os.getpid()
+                ps = psutil.Process(pid)
+                ps.nice(int(nice_value))
+    except ImportError:
+        pass
+
     verbose = OPTS.debug_level >= verbose_level
     if cwd is None:
         cwd = OPTS.openram_temp
     with open(stdout_file, "w") as stdout_f, open(stderror_file, "w") as stderr_f:
         stdout = subprocess.PIPE if verbose else stdout_f
-        stderr = subprocess.PIPE if verbose else stderr_f
-        process = subprocess.Popen(command, stdout=stdout, stderr=stderr, shell=True, cwd=cwd)
+        stderr = subprocess.STDOUT if verbose else stderr_f
+        process = subprocess.Popen(command, stdout=stdout, stderr=stderr, shell=True,
+                                   cwd=cwd, preexec_fn=pre_exec_fcn)
         while verbose:
             line = process.stdout.readline().decode()
             if not line:

@@ -34,11 +34,12 @@ class pinv(pgate.pgate, metaclass=unique_meta.Unique):
         if not beta == parameter["beta"]:
             name += "_b" + str(beta)
         if not height == pgate.pgate.get_default_height():
-            name += "_h_" + "{:.5g}".format(height).replace(".", "_")
+            name += "_h_" + "{:.5g}".format(height)
         if align_bitcell:
             name += "_align"
         if same_line_inputs:
             name += "bend_x"
+        name = name.replace(".", "__")
         return name
 
     def __init__(self, size=1, beta=None, height=pgate.pgate.get_default_height(),

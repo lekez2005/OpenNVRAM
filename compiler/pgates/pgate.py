@@ -5,6 +5,7 @@ from base import contact
 from base import design
 from base import utils
 from base.contact import m1m2
+from base.hierarchy_spice import INPUT, OUTPUT
 from base.utils import round_to_grid
 from base.vector import vector
 from globals import OPTS
@@ -452,9 +453,33 @@ class pgate(design.design):
         """
         return [("height", self.height)]
 
+    def get_pin_dir(self, name):
+        if name.lower() in ["a", "b", "c"]:
+            return INPUT
+        elif name.lower() == "z":
+            return OUTPUT
+        return super().get_pin_dir(name)
+
     def get_char_data_name(self, **kwargs) -> str:
         return self.__class__.__name__
 
-    def get_input_cap(self, *args, **kwargs):
-        _, cap_per_unit = super().get_input_cap(num_elements=self.size, *args, **kwargs)
-        return cap_per_unit * self.size
+    def get_char_data_size(self):
+        return self.size
+
+    def get_input_cap(self, pin_name, num_elements: int = 1, wire_length: float = 0.0,
+                      interpolate=None, **kwargs):
+        total_cap, cap_per_unit = super().get_input_cap(pin_name=pin_name, num_elements=self.size,
+                                                        wire_length=wire_length, **kwargs)
+        return total_cap * num_elements, cap_per_unit
+
+    def get_input_cap_from_instances(self, pin_name, wire_length: float = 0.0, **kwargs):
+        total_cap, cap_per_unit = super().get_input_cap_from_instances(pin_name, wire_length, **kwargs)
+        # super class method doesn't consider size in calculating
+        cap_per_unit /= self.size
+        return total_cap, cap_per_unit
+
+    def compute_input_cap(self, pin_name, wire_length: float = 0.0):
+        total_cap, cap_per_unit = super().compute_input_cap(pin_name, wire_length)
+        # super class method doesn't consider size in calculating
+        cap_per_unit /= self.size
+        return total_cap, cap_per_unit

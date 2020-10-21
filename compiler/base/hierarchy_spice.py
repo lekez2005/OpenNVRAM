@@ -294,17 +294,22 @@ class spice(verilog.verilog):
                          size=self.get_char_data_size(), file_suffixes=file_suffixes,
                          size_suffixes=size_suffixes, interpolate_size_suffixes=interpolate)
 
-    def compute_input_cap(self, pin_name, wire_length: float = 0.0):
-        """Compute unit capacitance in F for pin_name and wire_length"""
-
-        from pgates.ptx import ptx
-
+    def compute_pin_wire_cap(self, pin_name, wire_length=0.0):
+        """Computes wire cap due to pin only"""
         pin = self.get_pin(pin_name)
         pin_width = min(pin.width(), pin.height())
 
         pin_length = max(pin.width(), pin.height(), wire_length)
 
         wire_cap = self.get_wire_cap(pin.layer, pin_width, pin_length)
+        return wire_cap
+
+    def compute_input_cap(self, pin_name, wire_length: float = 0.0):
+        """Compute unit capacitance in F for pin_name and wire_length"""
+
+        from pgates.ptx import ptx
+
+        wire_cap = self.compute_pin_wire_cap(pin_name, wire_length)
 
         transistor_connections = self.get_spice_parser().extract_caps_for_pin(pin_name, self.name)
         total_caps = wire_cap
@@ -319,6 +324,18 @@ class spice(verilog.verilog):
 
         return total_caps
 
+    def get_wire_res(self, wire_layer: str, wire_width: float, wire_length: float):
+        """
+        Return resistance in ohm for given
+        :param wire_layer: layer name
+        :param wire_width: in um
+        :param wire_length: in um
+        :return: res in ohm
+        """
+        from tech import delay_params_class
+        unit_cap, res = delay_params_class().get_rc(layer=wire_layer, width=wire_width)
+        return res * wire_length
+
     def get_wire_cap(self, wire_layer: str, wire_width: float, wire_length: float):
         """
         Return cap in F for given
@@ -329,47 +346,58 @@ class spice(verilog.verilog):
         """
         from tech import delay_params_class
         unit_cap, res = delay_params_class().get_rc(layer=wire_layer, width=wire_width)
-        return unit_cap * wire_length * 1e-15
+        return unit_cap * wire_length
 
-    def get_input_cap_from_instances(self, pin_name, wire_length: float = 0.0, **kwargs):
+    def group_pin_instances_by_mod(self, pin_name):
+        # Group by instance mod
         instances_groups = {}
         for i in range(len(self.conns)):
             conn = self.conns[i]
             if pin_name not in conn:
                 continue
             child_module = self.insts[i].mod
+            child_module_name = child_module.name
             child_module_pin_name = child_module.pins[conn.index(pin_name)]
-            module_index = self.mods.index(child_module)
-            if module_index not in instances_groups:
-                instances_groups[module_index] = [0, child_module_pin_name]
-            instances_groups[module_index][0] += 1
+            if child_module_name not in instances_groups:
+                instances_groups[child_module_name] = [0, child_module_pin_name, child_module]
+            instances_groups[child_module_name][0] += 1
+        return instances_groups
+
+    def get_input_cap_from_instances(self, pin_name, wire_length: float = 0.0, **kwargs):
+        instances_groups = self.group_pin_instances_by_mod(pin_name)
 
         results = []
-        for module_index in instances_groups:
-            module = self.mods[module_index]
-            num_elements = instances_groups[module_index][0]
-            pin_name = instances_groups[module_index][1]
-            _, cap_per_stage = module.get_input_cap(pin_name, 1,
-                                                 0.0, interpolate=False, **kwargs)
-            total_cap, _ = module.get_input_cap(pin_name, num_elements, wire_length,
+        for module_name in instances_groups:
+            module = instances_groups[module_name][2]
+            num_elements = instances_groups[module_name][0]
+            instance_pin_name = instances_groups[module_name][1]
+            _, cap_per_stage = module.get_input_cap(instance_pin_name, 1,
+                                                    0.0, interpolate=False, **kwargs)
+            total_cap, _ = module.get_input_cap(instance_pin_name, num_elements, wire_length,
                                                 interpolate=True, **kwargs)
             total_cap *= num_elements
             # characterized data may be more accurate so potentially override computed
             # cap_per_stage if it's less than characterized
             cap_per_stage = max(cap_per_stage, total_cap / num_elements)
             results.append((total_cap, cap_per_stage))
+
+        wire_cap = self.compute_pin_wire_cap(pin_name, wire_length)
         # cap per stage only makes sense if there is only one type of module
         if len(results) == 0:
-            return 0.0, 0.0
+            total_cap, cap_per_stage = wire_cap, 0.0
         elif len(results) == 1:
-            return results[0]
+            total_cap, cap_per_stage = results[0][0] + wire_cap, results[0][1]
         else:
-            total_cap = sum(map(lambda x: x[0], results))
-            total_instances = sum(map(lambda x: x[0], instances_groups.values()))
-            return total_cap, total_cap / total_instances
+            total_cap = sum(map(lambda x: x[0], results)) + wire_cap
+            total_cap, cap_per_stage = total_cap, total_cap
+        debug.info(2, "Wire cap for pin {} in module {} = {:.3g} fF".format(pin_name, self.name,
+                                                                            wire_cap * 1e15))
+        debug.info(2, "Instances cap for pin {} in module {} = {:.3g} fF".format(pin_name, self.name,
+                                                                                 (total_cap - wire_cap) * 1e15))
+        return total_cap, cap_per_stage
 
     def get_input_cap(self, pin_name, num_elements: int = 1, wire_length: float = 0.0,
-                      interpolate=True, **kwargs):
+                      interpolate=None, **kwargs):
         """
         Calculate input capacitance
         First check if first name was characterized
@@ -383,13 +411,15 @@ class spice(verilog.verilog):
         :return: tuple with content (total_cap_in, cap_per_stage)
         """
         from globals import OPTS
+        if interpolate is None:
+            interpolate = OPTS.interpolate_characterization_data
 
         if OPTS.use_characterization_data:
             cap_value = self.get_input_cap_from_char(pin_name, num_elements=num_elements,
                                                      wire_length=wire_length,
                                                      interpolate=interpolate, **kwargs)
             if cap_value is not None:
-                return cap_value, cap_value / num_elements
+                return cap_value * num_elements, cap_value
 
         if self.conns and next(filter(len, self.conns)):
             # contains instances i.e. probably not an imported custom cell
@@ -399,15 +429,20 @@ class spice(verilog.verilog):
         cap_value = self.compute_input_cap(pin_name, wire_length)
         return cap_value, cap_value / num_elements
 
-    def get_driver_resistance(self, pin_name, interpolate=True, corner=None):
+    def get_driver_resistance(self, pin_name, use_max_res=False, interpolate=None, corner=None):
         """
         Get driver resistance for given pin_name
         :param pin_name:
         :param interpolate: Interpolate transistor properties like width and fingers
         :param corner: (process, vdd, temperature)
-        :return: {"p": <pull_up_resistance>, "n": <pull_down_resistance>}
+        :param use_max_res: Whether to return individual resistances or just the largest
+        :return: {"p": <pull_up_resistance>, "n": <pull_down_resistance>} or max_res if use_max_res
         """
         from pgates.ptx import ptx
+        from globals import OPTS
+
+        if interpolate is None:
+            interpolate = OPTS.interpolate_characterization_data
 
         resistance_paths = self.get_spice_parser().extract_res_for_pin(pin_name, self.name)
 
@@ -424,7 +459,61 @@ class spice(verilog.verilog):
                     resistance += ptx.get_tx_res(tx_type, width*1e6, nf, m, interpolate=interpolate,
                                                  corner=corner)
                 resistances[tx_type] = max(resistance, resistances[tx_type])
-        return resistances
+        if use_max_res:
+            removed_inf = [x if not x == math.inf else 0 for x in resistances.values()]
+            return max(removed_inf)
+        else:
+            return resistances
+
+    def evaluate_driver_gm(self, pin_name, interpolate=None, corner=None):
+        from tech import spice as tech_spice
+
+        resistance_paths = self.get_spice_parser().extract_res_for_pin(pin_name, self.name)
+        gm = math.inf
+
+        dick_keys = ["p", "n"]
+        for i in range(2):
+            key = dick_keys[i]
+            if resistance_paths[key]:
+                flat_list = [x for sublist in resistance_paths[key] for x in sublist]
+                min_tx = min(flat_list, key=lambda x: x[0] * x[1] * x[2])
+                total_width = min_tx[0] * min_tx[1] * min_tx[2]
+                gm_key = "{}mos_unit_gm".format(key)
+                min_tx_gm = tech_spice[gm_key] * total_width / (tech_spice["minwidth_tx"] * 1e-6)
+                gm = min(min_tx_gm, gm)
+        return gm
+
+    @staticmethod
+    def horiwitz_delay(tau, beta, alpha, switch_threshold=0.5):
+        """
+        From http://www-vlsi.stanford.edu/people/alum/pdf/8401_Horowitz_TimingModels.pdf Pg 76
+        :param tau: time constant (RC)
+        :param beta: 1/ (gm * driver_res) (unitless)
+        :param alpha: ratio of input slew to tau
+        :param switch_threshold: Switch threshold
+        :return: delay, slew_out
+        """
+        delay = tau * math.sqrt((math.log(switch_threshold))**2 +
+                                2 * alpha * beta * (1 - switch_threshold))
+        slew_out = delay / (1 - switch_threshold)
+        return delay, slew_out
+
+    @staticmethod
+    def distributed_delay(cap_per_stage, res_per_stage, num_stages,
+                          driver_res, driver_gm, other_caps, slew_in):
+        """http://bwrcs.eecs.berkeley.edu/Classes/icdesign/ee141_f01/Notes/chapter4.pdf Pg. 125, 127"""
+        total_r = res_per_stage * num_stages
+        total_distributed_c = cap_per_stage * num_stages
+        total_c = total_distributed_c + other_caps
+
+        tau = driver_res * total_c + 0.5 * total_r * total_distributed_c
+        beta = 1 / (driver_gm * driver_res)
+        alpha = slew_in / tau
+        delay, slew_out = spice.horiwitz_delay(tau, beta, alpha)
+
+        delay = 0.69 * driver_res * total_c + 0.38 * total_r * total_distributed_c
+        slew_out = total_r * total_c
+        return delay, slew_out
 
     def analytical_delay(self, slew, load=0.0):
         """Inform users undefined delay module while building new modules"""
@@ -480,6 +569,9 @@ class delay_data:
     def __str__(self):
         """ override print function output """
         return "Delay Data: Delay "+str(self.delay)+", Slew "+str(self.slew)+""
+
+    def __repr__(self):
+        return self.__str__()
 
     def __add__(self, other):
         """

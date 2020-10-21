@@ -44,7 +44,7 @@ class ptx(design.design):
         debug.info(3, "create ptx2 structure {0}".format(name))
 
         self.tx_type = tx_type
-        self.mults = mults
+        self.mults = int(mults)
         self.tx_width = width
         self.connect_active = connect_active
         self.connect_poly = connect_poly
@@ -79,14 +79,13 @@ class ptx(design.design):
         # self.spice.append("\n.SUBCKT {0} {1}".format(self.name,
         #                                              " ".join(self.pins)))
         # Just make a guess since these will actually be decided in the layout later.
-        area_sd = 2.5*drc["minwidth_poly"]*self.tx_width
-        perimeter_sd = 2*drc["minwidth_poly"] + 2*self.tx_width
-        self.spice_device="M{{0}} {{1}} {0} nf={1} w={2}u l={3}u pd={4}u ps={4}u as={5}p ad={5}p".format(spice[self.tx_type],
-                                                                                                    self.mults,
-                                                                                                    self.tx_width,
-                                                                                                    drc["minwidth_poly"],
-                                                                                                    perimeter_sd,
-                                                                                                    area_sd)
+        area_sd = 2.5 * drc["minwidth_poly"] * self.tx_width
+        perimeter_sd = 2 * drc["minwidth_poly"] + 2 * self.tx_width
+        self.spice_device = "M{{0}} {{1}} {0} m=1 nf={1} w={2}u l={3}u pd={4}u" \
+                            " ps={4}u as={5}p ad={5}p". \
+            format(spice[self.tx_type], int(self.mults), self.tx_width*self.mults,
+                   drc["minwidth_poly"], perimeter_sd, area_sd)
+        # breakpoint()
         self.spice.append("\n* ptx " + self.spice_device)
         # self.spice.append(".ENDS {0}".format(self.name))
 
@@ -519,10 +518,11 @@ class ptx(design.design):
 
     def get_input_cap(self, pin_name, num_elements: int = 1, wire_length: float = 0.0,
                       interpolate=True, **kwargs):
-        cap_val = self.get_tx_cap(tx_type=self.tx_type, terminal=pin_name,
+        # ignore interpolate
+        cap_val = self.get_tx_cap(tx_type=self.tx_type[0], terminal=pin_name,
                                   width=self.tx_width, nf=self.mults,
-                                  m=1, interpolate=interpolate)
-        return cap_val
+                                  m=1, interpolate=True)
+        return cap_val, cap_val
 
     @staticmethod
     def get_tx_cap(tx_type, terminal="g", width=None, nf: int = 1, m: int = 1,
@@ -531,12 +531,14 @@ class ptx(design.design):
         Load transistor parasitic caps
         :param tx_type: "p" or "n"
         :param terminal: "d" or "g"
-        :param width: in um
+        :param width: in um -> This is width per finger, total width will be width*nf
         :param nf: number of fingers
         :param m: number of transistors
         :param interpolate: Interpolate between fingers if exact nf not characterized
         :return: capacitance in F
         """
+        terminal = terminal.lower()
+        terminal = "d" if terminal == "s" else terminal
         unit_cap = None
         if width is None:
             width = spice["minwidth_tx"]
@@ -554,10 +556,14 @@ class ptx(design.design):
             elif terminal == "g":
                 unit_cap = spice["min_tx_gate_c"] / spice["minwidth_tx"]
             else:
-                debug.error("Invalid tx terminal {}".format(terminal))
+                debug.error("Invalid tx terminal {}".format(terminal), -1)
         debug.info(4, "Unit cap for terminal {} width {} nf {} = {:.4g}".format(
             terminal, width, nf, unit_cap))
         return unit_cap * width * nf * m
+
+    def get_driver_resistance(self, pin_name, use_max_res=False, interpolate=None, corner=None):
+        return self.get_tx_res(tx_type=self.tx_type[0], width=self.tx_width, nf=self.mults,
+                               m=1, interpolate=interpolate)
 
     @staticmethod
     def get_tx_res(tx_type, width=None, nf: int = 1, m: int = 1, interpolate=True, corner=None):

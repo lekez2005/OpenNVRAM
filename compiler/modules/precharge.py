@@ -266,6 +266,7 @@ class precharge(design.design):
         fill_width = self.poly_pitch - self.get_parallel_space(METAL1)
         fill_height = utils.ceil(self.minarea_metal1_contact / fill_width)
         fill_height = max(fill_height, 0.5 * self.ptx_width + 0.5 * self.active_contact.height)
+        fill_width = max(self.active_contact.width, utils.ceil(self.minarea_metal1_contact / fill_height))
 
         fill_indices = [1, 2]
         for i in range(2):
@@ -273,6 +274,12 @@ class precharge(design.design):
             y_offset = self.active_top - fill_height
             self.add_rect("metal1", offset=vector(x_offset, y_offset),
                           width=fill_width, height=fill_height)
+
+    def is_delay_primitive(self):
+        return True
+
+    def get_driver_resistance(self, pin_name, use_max_res=False, interpolate=None, corner=None):
+        return self.pmos.get_driver_resistance("d", use_max_res, interpolate=True, corner=corner)
 
 
 class precharge_tap(design.design):

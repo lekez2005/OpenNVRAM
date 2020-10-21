@@ -277,7 +277,10 @@ usim_opt  rcr_fmax=20G
             else:
                 nestlvl = OPTS.nestlvl if hasattr(OPTS, 'nestlvl') else 2
 
-            self.sf.write('saveOptions options save=lvlpub nestlvl={} pwr=total \n'.format(nestlvl))
+            spectre_save = getattr(OPTS, "spectre_save", "lvlpub")
+
+            self.sf.write('saveOptions options save={} nestlvl={} pwr=total \n'.format(
+                spectre_save, nestlvl))
             # self.sf.write('saveOptions options save=all pwr=total \n')
 
             self.sf.write("simulator lang=spice\n")
@@ -315,6 +318,25 @@ usim_opt  rcr_fmax=20G
         # initial condition file
         if hasattr(OPTS, 'ic_file') and os.path.isfile(OPTS.ic_file):
             self.sf.write(".include {}\n".format(OPTS.ic_file))
+
+    def remove_subckt(self, subckt, model_file):
+        subckt_start = ".subckt {}".format(subckt)
+        subckt_end = ".ends"
+        lines = []
+        skip_next = False
+        with open(model_file, 'r') as f:
+            for line in f.readlines():
+                if line.lower().startswith(subckt_start):
+                    skip_next = True
+                elif skip_next:
+                    if line.lower().startswith(subckt_end):
+                        skip_next = False
+                else:
+                    lines.append(line)
+                    skip_next = False
+        with open(model_file, 'w') as f:
+            for line in lines:
+                f.write(line)
 
     def write_supply(self):
         """ Writes supply voltage statements """

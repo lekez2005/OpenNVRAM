@@ -191,6 +191,7 @@ class layout(lef.lef):
     
     def get_pin(self, text):
         """ Return the pin or list of pins """
+        text = text.lower()
         try:
             if len(self.pin_map[text])>1:
                 debug.warning("Should use a pin iterator since more than one pin {}".format(text))
@@ -206,7 +207,7 @@ class layout(lef.lef):
 
     def get_pins(self, text):
         """ Return a pin list (instead of a single pin) """
-        return self.pin_map[text]
+        return self.pin_map[text.lower()]
     
     def copy_layout_pin(self, instance, pin_name, new_name=""):
         """ 
@@ -257,7 +258,7 @@ class layout(lef.lef):
     
     def remove_layout_pin(self, text):
         """Delete a labeled pin (or all pins of the same name)"""
-        self.pin_map[text]=[]
+        self.pin_map[text.lower()]=[]
         
     def add_layout_pin(self, text, layer, offset, width=None, height=None):
         """Create a labeled pin """
@@ -267,6 +268,7 @@ class layout(lef.lef):
             height=drc["minwidth_{0}".format(layer)]
         
         new_pin = pin_layout(text, [offset,offset+vector(width,height)], layer)
+        text = text.lower()
 
         try:
             # Check if there's a duplicate!

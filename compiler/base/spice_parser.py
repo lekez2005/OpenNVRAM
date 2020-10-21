@@ -190,7 +190,9 @@ class SpiceParser:
 
     @staticmethod
     def extract_all_tx_properties(spice_statement):
-        """Extract tx_type, m, nf, width from spice statement"""
+        """Extract tx_type, m, nf, width from spice statement
+        TODO: Careful divides width by nf
+        """
         assert spice_statement.startswith("m"), "Line must start with m"
         line_elements = spice_statement.split()
         tx_type = line_elements[5][0]
@@ -198,7 +200,7 @@ class SpiceParser:
         nf = int(tx_extract_parameter("nf", spice_statement) or 1)
 
         width = tx_extract_parameter("w", spice_statement)
-        return tx_type, m, nf, width
+        return tx_type, m, nf, width/nf
 
     def extract_caps_for_pin(self, pin_name, module_name):
         """

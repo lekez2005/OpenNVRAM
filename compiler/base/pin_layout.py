@@ -177,6 +177,16 @@ class pin_layout:
         """ Bottom center point """
         return vector(0.5*(self.rect[0].x+self.rect[1].x),self.rect[0].y)
 
+    def distance_from(self, other):
+        def range_distance(range_1, range_2):
+            lower, higher = sorted([range_1, range_2], key=lambda x: x[0])
+            if lower[1] <= higher[0]:
+                return higher[0] - lower[1]
+            return 0.0
+        y_distance = range_distance((self.by(), self.uy()), (other.by(), other.uy()))
+        x_distance = range_distance((self.lx(), self.rx()), (other.lx(), other.rx()))
+        return x_distance, y_distance
+
 
     def gds_write_file(self, newLayout):
         """Writes the pin shape and label to GDS"""

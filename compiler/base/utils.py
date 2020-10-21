@@ -230,13 +230,13 @@ def get_libcell_pins(pin_list, name, units=None, layer=None):
 
     cell = {}
     for pin in pin_list:
-        cell[str(pin)]=[]
+        cell[str(pin).lower()]=[]
         label_list=cell_vlsi.getPinShapeByLabel(str(pin), layer_pin_map=layer_pin_map)
         for label in label_list:
             (name,layer,boundary)=label
             rect = pin_rect(boundary)
             # this is a list because other cells/designs may have must-connect pins
-            cell[str(pin)].append(pin_layout(pin, rect, layer))
+            cell[str(pin).lower()].append(pin_layout(pin, rect, layer))
     return cell
 
 

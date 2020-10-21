@@ -1,3 +1,4 @@
+import re
 from subprocess import CalledProcessError
 
 import debug
@@ -25,9 +26,12 @@ class SfCamProbe(SramProbe):
         self.decoder_probes = {}
 
     def get_bitcell_label(self, bank_index, row, col, pin_name):
-        if self.sotfet:
-            return "Xsram.Xbank{}.Xbitcell_array.mz1_c{}_r{}".format(bank_index, col, row)
+        if self.sotfet and OPTS.use_pex:
+            bitcell_name = OPTS.bitcell_name_template.format(bank=bank_index, row=row, col=col)
+            return bitcell_name + ".mz1"
         else:
+            if self.sotfet:
+                pin_name = "mz1"
             return "Xsram.Xbank{}.Xbitcell_array.Xbit_r{}_c{}.{}".format(bank_index, row, col, pin_name)
 
     def get_bitline_label(self, bank, col, label, row):
@@ -40,7 +44,7 @@ class SfCamProbe(SramProbe):
 
     def get_clk_probe(self, bank=0):
         if OPTS.use_pex:
-            return "Xsram.Xbank{bank}_gated_clk_buf_Xbank{bank}_Xlogic_buffers".format(bank=bank)
+            return "Xsram.Xbank{bank}_gated_clk_buf_Xbank{bank}_Xcontrol_buffers".format(bank=bank)
         else:
             return "Xsram.Xbank{}.gated_clk_buf".format(bank)
 
@@ -50,24 +54,22 @@ class SfCamProbe(SramProbe):
             "clk_buf": "Xmask_in_Xdff{col}",
             "wordline_en": "Xwordline_driver_Xdriver{row}",
             "precharge_en_bar": "Xml_precharge_array_Xprecharge_{row}",
-            "bitline_en": "Xbitline_logic_Xbitline_logic{col}",
+            "bitline_en": "Xbitline_logic_Xbitline_logic_{col}",
             "sense_amp_en": "Xsearch_sense_amps_Xamp[{row}]"
         }
 
         net_keys = ["clk_buf", "sense_amp_en", "wordline_en", "precharge_en_bar", "bitline_en"]
 
-        self.probe_labels.add("Xsram.Xbank{}.Xlogic_buffers.clk_search_bar".format(bank))
-
         for key in net_keys:
             if OPTS.use_pex:
                 prefix = "Xsram.Xbank{0}_{1}_Xbank{0}_".format(bank, "gated_" + key)
 
-                self.probe_labels.add(prefix + "Xlogic_buffers")
+                self.probe_labels.add(prefix + "Xcontrol_buffers")
                 if OPTS.verbose_save:
                     if "col" in nets[key]:
                         for col in range(self.sram.num_cols):
                             suffix = ""
-                            if key in ["write_bar", "search_cbar", "clk_buf"]:
+                            if key in ["clk_buf"]:
                                 if col % 2 == 1:
                                     continue
                                 if self.sotfet:
@@ -91,10 +93,15 @@ class SfCamProbe(SramProbe):
 
     def probe_address(self, address):
 
+        if not hasattr(OPTS, "saved_currents"):
+            OPTS.saved_currents = []
+
         address = self.address_to_vector(address)
         address_int = self.address_to_int(address)
 
         bank_index, bank_inst, row, col_index = self.decode_address(address)
+
+
 
         decoder_label = "Xsram.Xbank{}.dec_out[{}]".format(bank_index, row)
         self.decoder_probes[address_int] = decoder_label
@@ -111,6 +118,7 @@ class SfCamProbe(SramProbe):
 
             # save internal VG node
             if OPTS.use_pex and self.sotfet:
+                OPTS.saved_currents.append((row, col))
                 self.probe_labels.add("Xsram.Xbank0_Xbitcell_array_Xbit_r{}_c{}.XI8.VG".format(address_int, col))
                 self.probe_labels.add("Xsram.Xbank0_Xbitcell_array_Xbit_r{}_c{}.XI8.I8.vg_nfet".format(address_int, col))
                 self.probe_labels.add("Xsram.Xbank0_Xbitcell_array_Xbit_r{}_c{}.XI9.I8.vg_nfet".format(address_int, col))
@@ -166,9 +174,13 @@ class SfCamProbe(SramProbe):
         self.saved_nodes.add(self.clk_probe)
 
     def extract_from_pex(self, label, pex_file=None):
+        if label.startswith("Xbitcell_b"):
+            return label
         if self.sotfet and "bitcell_array" in label:
             if "VG" in label or "vg_nfet" in label:
-                return label.replace("Xsram_", "Xsram.")
+                bank, row, col = re.findall("Xbank([0-1]).*r([0-9]+)_c([0-9]+)", label)[0]
+                cell_name = OPTS.bitcell_name_template.format(bank=bank, row=row, col=col)
+                return cell_name + "." + label[label.index("XI")+1:]
             return label.replace(".", "_").replace("Xsram_", "Xsram.")
         if "search_out" in label:
             return label

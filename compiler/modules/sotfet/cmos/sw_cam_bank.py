@@ -33,9 +33,6 @@ class SwCamBank(SfCamBank):
     def create_wordline_driver(self):
         pass
 
-    def join_right_decoder_nwell(self):
-        BaselineBank.join_right_decoder_nwell(self)
-
     def route_wordline_in(self):
         pass
 
@@ -159,25 +156,49 @@ class SwCamBank(SfCamBank):
             driver_pin = self.wordline_driver_inst.get_pin("wl[{}]".format(row))
             bitcell_pin = self.bitcell_array_inst.get_pin("wl[{}]".format(row))
 
-            self.add_contact_center(m2m3.layer_stack, offset=driver_pin.center())
-            self.add_rect_center("metal2", offset=driver_pin.center(), height=fill_height)
-            self.add_rect("metal3", offset=driver_pin.ll(), width=via_x-driver_pin.lx())
+            if row % 2 == 0:
+                via_y = driver_pin.by() - 0.5 * m2m3.height
+            else:
+                via_y = driver_pin.uy() - 0.5 * m2m3.height
 
-            offset = vector(via_x-0.5*self.m2_width, driver_pin.cy())
-            self.add_contact_center(m2m3.layer_stack, offset=offset)
-            self.add_contact_center(m1m2.layer_stack, offset=offset)
-            self.add_rect_center("metal2", offset=offset, height=fill_height)
+            x_offset = self.mid_vdd.lx() - self.wide_m1_space - self.m2_width
+            self.add_rect("metal3", offset=vector(driver_pin.rx(),
+                                                  via_y + 0.5*(m2m3.height-self.m3_width)),
+                          width=x_offset - driver_pin.rx())
 
-            self.add_path("metal1", [offset, bitcell_pin.lc()])
+            via_offset = vector(driver_pin.lx(), via_y)
+            self.add_contact(m2m3.layer_stack, offset=via_offset)
+
+            m2_fill_width = self.line_end_space
+            m2_fill_height = utils.ceil(self.minarea_metal1_contact / m2_fill_width)
+
+            fill_y = via_y + 0.5 * m2m3.height - 0.5 * m2_fill_height
+
+            fill_x = x_offset + self.m2_width - m2_fill_width
+
+            self.add_contact(m2m3.layer_stack, offset=vector(x_offset, via_offset.y))
+            self.add_contact(m1m2.layer_stack, offset=vector(x_offset, via_offset.y))
+
+            self.add_rect("metal2", offset=vector(fill_x, fill_y),
+                          width=m2_fill_width, height=m2_fill_height)
+
+            self.add_rect("metal1", offset=vector(x_offset, via_offset.y),
+                          height=bitcell_pin.cy() - via_offset.y)
+
+            self.add_rect("metal1", offset=vector(x_offset, bitcell_pin.by()),
+                          width=bitcell_pin.lx() - x_offset)
 
             # route decoder output
             decoder_pin = self.row_decoder_inst.get_pin("decode[{}]".format(row))
             driver_in_pin = self.wordline_driver_inst.get_pin("in[{}]".format(row))
-            self.add_rect("metal1", offset=decoder_pin.ll(), width=decoder_via_x-decoder_pin.lx())
-            via_y = decoder_pin.by() + 0.5*self.m2_width
-            self.add_contact_center(m1m2.layer_stack, offset=vector(decoder_via_x+0.5*self.m2_width, via_y),
+            self.add_rect("metal1", offset=decoder_pin.ll(), width=decoder_via_x - decoder_pin.lx())
+            via_y = decoder_pin.by() + 0.5 * self.m2_width
+            self.add_contact_center(m1m2.layer_stack,
+                                    offset=vector(decoder_via_x + 0.5 * self.m2_width, via_y),
                                     rotate=90)
-            self.add_path("metal2", [vector(decoder_via_x+0.5*m1m2.second_layer_height, via_y), driver_in_pin.center()])
+            self.add_path("metal2",
+                          [vector(decoder_via_x + 0.5 * m1m2.second_layer_height, via_y),
+                           driver_in_pin.center()])
             self.add_contact_center(m1m2.layer_stack, offset=driver_in_pin.center())
 
     def add_bitline_en_rail(self, base_y, rail_x):
@@ -229,6 +250,12 @@ class SwCamBank(SfCamBank):
 
                 self.add_rect(buffer_pin.layer, offset=buffer_pin.ul(),
                               height=bitcell_pin.by()-buffer_pin.uy())
+
+    def route_wordline_gnd(self):
+        for pin in self.wordline_driver_inst.get_pins("gnd"):
+            self.add_rect("metal1", offset=pin.lr(),
+                          width=self.mid_gnd.cx() - pin.rx(), height=pin.height())
+            self.add_power_via(pin, self.mid_gnd, via_rotate=90)
 
     def route_flop_gnd(self):
         # flops: vdd and clk too close together

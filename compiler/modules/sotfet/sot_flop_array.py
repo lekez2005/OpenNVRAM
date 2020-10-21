@@ -31,7 +31,8 @@ class sot_flop_array(design):
     body_tap_insts = []
     bitcell_offsets = tap_offsets = []
 
-    def __init__(self, columns, word_size, align_bitcell=False):
+    def __init__(self, columns, word_size, align_bitcell=False, flop_mod=None,
+                 flop_tap_name=None):
         assert word_size % 2 == 0, "Word Size must be even"
         name = "sot_flop_array_c{}".format(word_size)
         design.__init__(self, name=name)

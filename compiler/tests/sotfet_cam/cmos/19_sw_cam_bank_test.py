@@ -12,7 +12,9 @@ class CamBankTest(CamTestBase):
 
         from modules.sotfet.cmos.sw_cam_bank import SwCamBank
         debug.info(1, "Test small array bank")
-        a = SwCamBank(word_size=64, num_words=64, words_per_row=1, name="bank1")
+        # a = SwCamBank(word_size=34, num_words=32, words_per_row=1, name="bank1")
+        # a = SwCamBank(word_size=64, num_words=64, words_per_row=1, name="bank1")
+        a = SwCamBank(word_size=128, num_words=128, words_per_row=1, name="bank1")
         self.local_check(a)
 
     @skipIf(True, "Skip large array test")

@@ -25,6 +25,7 @@ class SwControlBuffers(SfControlBuffers):
     def create_modules(self):
         super().create_modules()
         self.inv2 = pinv(size=2, **self.get_common_args())
+        self.add_mod(self.inv2)
 
     def create_wordline_en(self):
         assert len(OPTS.wordline_en_buffers) % 2 == 1, "Number of wordline buffers should be odd"

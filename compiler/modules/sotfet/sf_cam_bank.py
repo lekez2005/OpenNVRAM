@@ -103,7 +103,8 @@ class SfCamBank(BaselineBank):
         self.add_right_rails_vias()
         self.route_body_tap_supplies()
 
-    def copy_sense_trig_pin(self): pass
+    def copy_sense_trig_pin(self):
+        pass
 
     def connect_control_buffers(self):
         vdd_name = "vdd_buffers" if OPTS.separate_vdd else "vdd"
@@ -113,11 +114,14 @@ class SfCamBank(BaselineBank):
         connections.extend([vdd_name, "gnd"])
         self.connect_inst(connections)
 
-    def get_decoder_clk(self): return self.prefix + "clk_buf"
+    def get_decoder_clk(self):
+        return self.prefix + "clk_buf"
 
-    def get_mask_clk(self): return self.prefix + "clk_buf"
+    def get_mask_clk(self):
+        return self.prefix + "clk_buf"
 
-    def get_data_clk(self): return self.prefix + "clk_buf"
+    def get_data_clk(self):
+        return self.prefix + "clk_buf"
 
     def get_mask_flops_y_offset(self):
         return self.trigate_y
@@ -140,7 +144,7 @@ class SfCamBank(BaselineBank):
 
     def get_right_vdd_offset(self):
         return max(self.control_buffers_inst.rx(), self.search_sense_inst.rx(),
-                   self.read_buf_inst.rx()) + self.wide_m1_space
+                   self.read_buf_inst.rx() + self.m2_pitch) + self.wide_m1_space
 
     def get_collisions(self):
         bitline_en_pins = self.bitline_logic_array_inst.get_pins("en")
@@ -167,6 +171,7 @@ class SfCamBank(BaselineBank):
             if pin_name == "read":
                 pin_name = "search"
             return original(pin_name)
+
         self.control_buffers_inst.get_pin = get_pin
 
     def add_bitline_logic(self):
@@ -284,8 +289,8 @@ class SfCamBank(BaselineBank):
         chb_rail = getattr(self, 'precharge_en_bar_rail')
         self.add_contact(m2m3.layer_stack, offset=chb_rail.ll())
         y_offset = chb_pin.by()
-        self.add_rect("metal2", offset=vector(chb_pin.lx(), y_offset), width=chb_rail.lx()-chb_pin.lx())
-        self.add_rect("metal2", offset=chb_rail.ul(), height=y_offset-chb_rail.uy())
+        self.add_rect("metal2", offset=vector(chb_pin.lx(), y_offset), width=chb_rail.lx() - chb_pin.lx())
+        self.add_rect("metal2", offset=chb_rail.ul(), height=y_offset - chb_rail.uy())
 
     def connect_matchlines(self):
         for row in range(self.num_rows):
@@ -293,7 +298,7 @@ class SfCamBank(BaselineBank):
             precharge_ml = self.ml_precharge_array_inst.get_pin("ml[{}]".format(row))
             bitcell_ml = self.bitcell_array_inst.get_pin("ml[{}]".format(row))
             self.add_rect("metal1", offset=vector(precharge_ml.lx(), bitcell_ml.by()),
-                          width=bitcell_ml.lx()-precharge_ml.lx(), height=bitcell_ml.height())
+                          width=bitcell_ml.lx() - precharge_ml.lx(), height=bitcell_ml.height())
 
     def route_wordline_in(self):
         # route decoder in
@@ -301,7 +306,7 @@ class SfCamBank(BaselineBank):
             decoder_out = self.row_decoder_inst.get_pin("decode[{}]".format(row))
             wl_in = self.wordline_driver_inst.get_pin("in[{}]".format(row))
             self.add_rect("metal1", offset=vector(decoder_out.rx(), wl_in.by()),
-                          width=wl_in.lx()-decoder_out.rx(), height=wl_in.height())
+                          width=wl_in.lx() - decoder_out.rx(), height=wl_in.height())
 
     def route_wordline_driver(self):
         self.copy_layout_pin(self.wordline_driver_inst, "vbias_p")
@@ -314,11 +319,11 @@ class SfCamBank(BaselineBank):
         self.add_contact(m2m3.layer_stack, offset=en_rail.ll())
 
         y_offset = en_pin.by() - self.wide_m1_space - self.m3_width
-        self.add_rect("metal2", offset=vector(en_pin.lx(), y_offset), height=en_pin.by()-y_offset)
-        self.add_rect("metal3", offset=vector(en_pin.lx(), y_offset), width=en_rail.rx()-en_pin.lx())
-        self.add_rect("metal2", offset=en_rail.ul(), height=y_offset-en_rail.uy())
+        self.add_rect("metal2", offset=vector(en_pin.lx(), y_offset), height=en_pin.by() - y_offset)
+        self.add_rect("metal3", offset=vector(en_pin.lx(), y_offset), width=en_rail.rx() - en_pin.lx())
+        self.add_rect("metal2", offset=en_rail.ul(), height=y_offset - en_rail.uy())
         self.add_contact(m2m3.layer_stack, offset=vector(en_pin.lx(), y_offset))
-        self.add_contact(m2m3.layer_stack, offset=vector(en_rail.lx(), y_offset-m2m3.height + self.m3_width))
+        self.add_contact(m2m3.layer_stack, offset=vector(en_rail.lx(), y_offset - m2m3.height + self.m3_width))
 
         # connect wl pins to bitcells
         for row in range(self.num_rows):
@@ -326,34 +331,36 @@ class SfCamBank(BaselineBank):
             bitcell_pin = self.bitcell_array_inst.get_pin("wl[{}]".format(row))
 
             x_offset = self.mid_vdd.lx() - self.wide_m1_space - self.m2_width
-            self.add_rect("metal3", offset=driver_pin.lr(), width=x_offset-driver_pin.rx())
+            self.add_rect("metal3", offset=driver_pin.lr(), width=x_offset - driver_pin.rx())
+
+            via_offset = vector(driver_pin.lx(), driver_pin.by() - 0.5 * m2m3.height)
+            self.add_contact(m2m3.layer_stack, offset=via_offset)
 
             m2_fill_width = self.line_end_space
             m2_fill_height = utils.ceil(self.minarea_metal1_contact / m2_fill_width)
 
-            if row % 2 == 0:
-                via_y = driver_pin.by()
-                fill_y = driver_pin.by()
-            else:
-                via_y = driver_pin.uy() - m2m3.second_layer_height
-                fill_y = driver_pin.uy() - m2_fill_height
+            fill_y = driver_pin.by() - 0.5 * m2_fill_height
 
             fill_x = x_offset + self.m2_width - m2_fill_width
 
-            self.add_contact(m2m3.layer_stack, offset=vector(x_offset, via_y))
-            self.add_contact(m1m2.layer_stack, offset=vector(x_offset, via_y))
+            self.add_contact(m2m3.layer_stack, offset=vector(x_offset, via_offset.y))
+            self.add_contact(m1m2.layer_stack, offset=vector(x_offset, via_offset.y))
 
             self.add_rect("metal2", offset=vector(fill_x, fill_y),
-                                 width=m2_fill_width, height=m2_fill_height)
+                          width=m2_fill_width, height=m2_fill_height)
 
-            self.add_rect("metal1", offset=vector(x_offset, driver_pin.by()),
-                          width=bitcell_pin.lx()+self.m1_width-x_offset)
-            self.add_rect("metal1", offset=bitcell_pin.lc(), height=driver_pin.cy()-bitcell_pin.cy())
+            self.add_rect("metal1", offset=vector(x_offset, via_offset.y),
+                          height=bitcell_pin.cy() - via_offset.y())
+
+            self.add_rect("metal1", offset=vector(x_offset, bitcell_pin.by()),
+                          width=bitcell_pin.lx() - x_offset)
 
     def route_right_logic_buffer(self):
         """Route logic buffer output pins to the right of the flops"""
 
-        x_offset = max(self.mask_in_flops_inst.rx(), self.read_buf_inst.rx()) + 2*self.wide_m1_space
+        x_offset = max(self.mask_in_flops_inst.rx(), self.read_buf_inst.rx()) + 2 * self.wide_m1_space
+        # avoid clash with right_vdd
+        x_offset = min(x_offset, self.right_vdd.lx() - self.wide_m1_space - 2 * self.m2_pitch)
 
         base_y = self.control_buffers_inst.get_pin("precharge_en_bar").uy() + 0.5 * self.rail_height + self.m2_space
 
@@ -368,9 +375,13 @@ class SfCamBank(BaselineBank):
 
         self.connect_logic_buffer_to_pin("sense_amp_en", "sense_en")
         dest_pin = self.search_sense_inst.get_pin("en")
-        self.add_rect("metal2", offset=self.sense_en_rail.ul(), width=dest_pin.lx()-self.sense_en_rail.lx())
+        self.add_rect("metal2", offset=self.sense_en_rail.ul(), width=dest_pin.lx() - self.sense_en_rail.lx())
+        if self.sense_en_rail.rx() > dest_pin.lx():
+            self.add_rect("metal2", offset=self.sense_en_rail.ur(), width=dest_pin.lx() - self.sense_en_rail.rx())
+        else:
+            self.add_rect("metal2", offset=self.sense_en_rail.ul(), width=dest_pin.lx() - self.sense_en_rail.lx())
         self.add_rect("metal2", offset=vector(dest_pin.lx(), self.sense_en_rail.uy()),
-                      height=dest_pin.by()-self.sense_en_rail.uy())
+                      height=dest_pin.by() - self.sense_en_rail.uy())
 
         # create vcomp pin
         self.copy_layout_pin(self.search_sense_inst, "vcomp", "search_ref")
@@ -386,11 +397,11 @@ class SfCamBank(BaselineBank):
             self.connect_logic_buffer_to_pin("bitline_en", "bitline_en", pin)
 
     def connect_logic_buffer_to_pin(self, buffer_name, rail_name, target_pin=None):
-        rail = getattr(self, rail_name+"_rail")
+        rail = getattr(self, rail_name + "_rail")
         buffer_pin = self.control_buffers_inst.get_pin(buffer_name)
         self.add_rect("metal2", offset=buffer_pin.ul(), height=rail.by() - buffer_pin.uy())
-        self.add_rect("metal3", offset=vector(buffer_pin.lx(), rail.by()), width=rail.lx()-buffer_pin.lx())
-        self.add_contact(m2m3.layer_stack, offset=vector(buffer_pin.lx()+m2m3.second_layer_height, rail.by()),
+        self.add_rect("metal3", offset=vector(buffer_pin.lx(), rail.by()), width=rail.lx() - buffer_pin.lx())
+        self.add_contact(m2m3.layer_stack, offset=vector(buffer_pin.lx() + m2m3.second_layer_height, rail.by()),
                          rotate=90)
         self.add_contact(m2m3.layer_stack, offset=rail.ll())
         if target_pin is not None:
@@ -398,32 +409,32 @@ class SfCamBank(BaselineBank):
                 via = m1m2
             else:
                 via = m2m3
-            self.add_rect(target_pin.layer, offset=target_pin.lr(), width=rail.lx()-target_pin.rx())
-            self.add_contact_center(via.layer_stack, offset=vector(rail.lx()+0.5*self.m2_width, target_pin.cy()))
+            self.add_rect(target_pin.layer, offset=target_pin.lr(), width=rail.lx() - target_pin.rx())
+            self.add_contact_center(via.layer_stack, offset=vector(rail.lx() + 0.5 * self.m2_width, target_pin.cy()))
 
     def route_flops(self):
         # connect bitline logic out to bitline buffer in
         fill_width = self.m2_width
-        fill_height = utils.ceil(drc["minarea_metal1_contact"]/fill_width)
+        fill_height = utils.ceil(drc["minarea_metal1_contact"] / fill_width)
         for col in range(self.num_cols):
             for pin_name in ["bl", "br"]:
                 suffix = "[{}]".format(col)
                 buffer_pin = self.bitline_buffer_array_inst.get_pin(pin_name + "_in" + suffix)
                 logic_pin = self.bitline_logic_array_inst.get_pin(pin_name + suffix)
 
-                self.add_rect("metal3", offset=logic_pin.ul(), height=buffer_pin.by()-logic_pin.uy()+self.m3_width)
+                self.add_rect("metal3", offset=logic_pin.ul(), height=buffer_pin.by() - logic_pin.uy() + self.m3_width)
                 if logic_pin.lx() < buffer_pin.lx():
                     self.add_rect("metal3", offset=vector(logic_pin.lx(), buffer_pin.by()),
                                   width=buffer_pin.rx() - logic_pin.lx())
                 else:
                     self.add_rect("metal3", offset=vector(buffer_pin.lx(), buffer_pin.by()),
-                                  width=logic_pin.rx()-buffer_pin.lx())
+                                  width=logic_pin.rx() - buffer_pin.lx())
 
-                via_offset = vector(buffer_pin.lx(), buffer_pin.cy()-0.5*m1m2.height)
+                via_offset = vector(buffer_pin.lx(), buffer_pin.cy() - 0.5 * m1m2.height)
                 self.add_contact(m1m2.layer_stack, offset=via_offset)
                 self.add_contact(m2m3.layer_stack, offset=via_offset)
 
-                fill_x = buffer_pin.cx() - 0.5*fill_width
+                fill_x = buffer_pin.cx() - 0.5 * fill_width
                 fill_y = buffer_pin.uy() - fill_height
 
                 self.add_rect("metal2", offset=vector(fill_x, fill_y), height=fill_height, width=fill_width)
@@ -433,7 +444,7 @@ class SfCamBank(BaselineBank):
             for suffix in ["", "_bar"]:
                 flop_pin = self.data_in_flops_inst.get_pin("dout" + suffix + "[{}]".format(col))
                 logic_pin = self.bitline_logic_array_inst.get_pin("data" + suffix + "[{}]".format(col))
-                self.add_rect("metal3", offset=flop_pin.ul(), height=logic_pin.by()-flop_pin.uy())
+                self.add_rect("metal3", offset=flop_pin.ul(), height=logic_pin.by() - flop_pin.uy())
                 self.add_contact(m3m4.layer_stack, offset=logic_pin.ll())
 
         # connect mask flops to bitline logic input
@@ -441,10 +452,10 @@ class SfCamBank(BaselineBank):
             flop_pin = self.mask_in_flops_inst.get_pin("dout" + "[{}]".format(col))
             logic_pin = self.bitline_logic_array_inst.get_pin("mask" + "[{}]".format(col))
 
-            via_offset = vector(logic_pin.lx(), flop_pin.uy()-self.m3_width)
-            self.add_rect("metal3", offset=via_offset,  width=flop_pin.rx()-logic_pin.lx())
+            via_offset = vector(logic_pin.lx(), flop_pin.uy() - self.m3_width)
+            self.add_rect("metal3", offset=via_offset, width=flop_pin.rx() - logic_pin.lx())
             self.add_contact(m3m4.layer_stack, offset=via_offset)
-            self.add_rect("metal4", offset=via_offset, height=logic_pin.by()-flop_pin.uy()+self.m3_width)
+            self.add_rect("metal4", offset=via_offset, height=logic_pin.by() - flop_pin.uy() + self.m3_width)
 
     def route_vdd_supply(self):
         for instance in [self.bitline_buffer_array_inst, self.bitline_logic_array_inst]:
@@ -456,7 +467,7 @@ class SfCamBank(BaselineBank):
             for pin in instance.get_pins("vdd"):
                 self.add_rect("metal1", offset=vector(self.mid_vdd.lx(), pin.by()),
                               width=self.right_vdd.rx() - self.mid_vdd.lx(), height=pin.height())
-                via_y = pin.uy() - sample_via.width + 0.5*sample_via.width
+                via_y = pin.uy() - sample_via.width + 0.5 * sample_via.width
 
                 self.add_contact_center(m1m2.layer_stack, offset=vector(self.mid_vdd.cx(), via_y),
                                         size=[2, 1], rotate=90)
@@ -475,7 +486,7 @@ class SfCamBank(BaselineBank):
                               width=pin.lx() - self.left_vdd.lx(), height=pin.height())
                 self.add_power_via(pin, self.left_vdd, via_rotate=90)
             if pin.uy() >= self.bitcell_array_inst.by():
-                self.add_rect("metal1", offset=pin.ll(), width=self.mid_vdd.rx()-pin.lx(), height=pin.height())
+                self.add_rect("metal1", offset=pin.ll(), width=self.mid_vdd.rx() - pin.lx(), height=pin.height())
                 self.add_power_via(pin, self.mid_vdd, via_rotate=90)
 
     def route_gnd_supply(self):
@@ -484,6 +495,8 @@ class SfCamBank(BaselineBank):
         for pin in self.search_sense_inst.get_pins("gnd"):
             self.add_rect("metal1", offset=pin.lr(),
                           width=self.right_gnd.lx() - pin.rx(), height=pin.height())
+
+        self.route_wordline_gnd()
 
         self.route_flop_gnd()
 
@@ -498,6 +511,12 @@ class SfCamBank(BaselineBank):
             if pin.by() >= self.bitcell_array_inst.by() or pin.rx() <= self.row_decoder_inst.rx():
                 self.add_rect("metal1", offset=vector(self.left_gnd.lx(), pin.by()),
                               width=pin.lx() - self.left_gnd.lx(), height=pin.height())
+
+    def route_wordline_gnd(self):
+        for pin in self.wordline_driver_inst.get_pins("gnd"):
+            self.add_rect("metal1", offset=pin.lr(),
+                          width=self.mid_gnd.lx() - pin.rx(), height=pin.height())
+            self.add_power_via(pin, self.mid_gnd, via_rotate=90)
 
     def route_flop_gnd(self):
         # flops: vdd and gnd too close together
@@ -515,37 +534,6 @@ class SfCamBank(BaselineBank):
         for instance in [self.bitline_buffer_array_inst, self.bitline_logic_array_inst]:
             for pin in instance.get_pins("gnd"):
                 self.route_gnd_pin(pin, via_rotate=90)
-
-
-    def join_right_decoder_nwell(self):
-
-        layers = ["nwell", "pimplant"]
-        purposes = ["drawing", "drawing"]
-
-        decoder_inverter = self.decoder.inv_inst[-1].mod
-        driver_mod = self.wordline_driver.wl_driver
-
-        row_decoder_right = self.row_decoder_inst.lx() + self.decoder.row_decoder_width
-
-        for i in range(2):
-            decoder_rect = max(decoder_inverter.get_layer_shapes(layers[i], purposes[i]),
-                               key=lambda x: x.height)
-            logic_rect = max(driver_mod.get_gds_layer_rects(layers[i], purposes[i]),
-                             key=lambda x: x.height)
-            top_most = max([decoder_rect, logic_rect], key=lambda x: x.by())
-            fill_height = driver_mod.height - top_most.by()
-            # extension of rect past top of cell
-            rect_y_extension = top_most.uy() - driver_mod.height
-            fill_width = self.wordline_driver_inst.lx() - row_decoder_right
-
-            for vdd_pin in self.row_decoder_inst.get_pins("vdd"):
-                if utils.round_to_grid(vdd_pin.cy()) == utils.round_to_grid(
-                        self.wordline_driver_inst.by()):  # first row
-                    self.add_rect(layers[i], offset=vector(row_decoder_right, vdd_pin.cy() - rect_y_extension),
-                                  width=fill_width, height=top_most.height)
-                elif vdd_pin.cy() > self.wordline_driver_inst.by():  # row decoder
-                    self.add_rect(layers[i], offset=vector(row_decoder_right, vdd_pin.cy() - fill_height),
-                                  width=fill_width, height=2 * fill_height)
 
     def add_pins(self):
         if hasattr(OPTS, 'separate_vdd'):
@@ -616,4 +604,3 @@ class SfCamBank(BaselineBank):
         for i in range(self.num_address_bits):
             pin = self.address_flops[i].get_pin("dout")
             self.add_label("A[{0}]".format(i), layer=pin.layer, offset=pin.ll())
-

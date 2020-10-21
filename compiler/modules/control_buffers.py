@@ -140,7 +140,8 @@ class ControlBuffers(design.design):
         for i in range(len(self.rail_pos)):
             self.rail_pos[i] = i * (self.m3_width + self.parallel_line_space)
 
-        self.height = self.rail_pos[-1] + self.m3_width + 0.5*self.rail_height + self.logic_heights
+        self.height = (self.rail_pos[-1] + self.m3_width + self.parallel_line_space +
+                       0.5*self.rail_height + self.logic_heights)
 
     def add_input_pins(self):
 
@@ -160,9 +161,9 @@ class ControlBuffers(design.design):
                          rotate=90)
         self.add_contact(m1m2.layer_stack, offset=vector(pin.lx(), pin.cy() - 0.5 * m1m2.height))
 
-    def connect_a_pin(self, inst, rail, via_dir="right"):
-        pin = inst.get_pin("A")
-        x_offset = pin.rx() - m1m2.height
+    def connect_a_pin(self, inst, rail, via_dir="right", pin_name="A"):
+        pin = inst.get_pin(pin_name)
+        x_offset = pin.lx() + self.m1_width - m1m2.height
         if via_dir == "right":
             via_x = x_offset + m2m3.height
         else:
@@ -200,14 +201,18 @@ class ControlBuffers(design.design):
                       width=c_pin.lx()-x_offset)
         self.add_contact(m1m2.layer_stack, offset=vector(c_pin.lx(), a_pin.uy() - 0.5 * m1m2.height))
 
-    def create_output_rail(self, output_pin, existing_rail, destination_pin):
+    def create_output_rail(self, output_pin, existing_rail, destination_pin, via_dir="right"):
         if not isinstance(existing_rail, float):
             existing_rail = existing_rail.by()
         rail = self.add_rect("metal3", offset=vector(output_pin.lx(), existing_rail),
                              width=destination_pin.lx() - output_pin.lx())
         self.add_rect("metal2", offset=vector(output_pin.lx(), rail.by()),
                       height=output_pin.by() - rail.by())
-        self.add_contact(m2m3.layer_stack, offset=vector(output_pin.lx() + m2m3.height, rail.by()), rotate=90)
+        if via_dir == "right":
+            via_x = output_pin.lx() + m2m3.height
+        else:
+            via_x = output_pin.rx()
+        self.add_contact(m2m3.layer_stack, offset=vector(via_x, rail.by()), rotate=90)
         return rail
 
     def connect_z_to_b(self, z_pin, b_pin):
@@ -216,9 +221,9 @@ class ControlBuffers(design.design):
         self.add_rect("metal2", offset=vector(z_pin.lx(), y_offset), width=b_pin.lx() - z_pin.lx())
         self.add_contact_center(m1m2.layer_stack, b_pin.center())
 
-    def connect_z_to_a(self, z_inst, a_inst, a_name="A"):
+    def connect_z_to_a(self, z_inst, a_inst, a_name="A", z_name="Z"):
         a_pin = a_inst.get_pin(a_name)
-        z_pin = z_inst.get_pin("Z")
+        z_pin = z_inst.get_pin(z_name)
         self.add_rect("metal1", offset=vector(z_pin.rx(), a_pin.cy() - 0.5*self.m1_width),
                       width=a_pin.lx()-z_pin.rx())
 

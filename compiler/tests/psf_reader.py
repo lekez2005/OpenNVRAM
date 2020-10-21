@@ -26,7 +26,10 @@ class PsfReader:
         self.data = libpsf.PSFDataSet(self.simulation_file)
         self.time = self.data.get_sweep_values()
         if self.vdd_name:
-            self.vdd = self.data.get_signal(self.vdd_name)[0]
+            try:
+                self.vdd = self.data.get_signal(self.vdd_name)[0]
+            except:
+                pass
         self.is_open = True
 
         self.cache = {}
@@ -162,3 +165,60 @@ class PsfReader:
         bus_data = bus_data.flatten()
         return 1*np.flipud(bus_data > 0.5*self.vdd)
 
+
+# matplotlib move plots
+px = py = dpi_x = dpi_y = None
+
+
+def get_dpi():
+    from PyQt5 import QtWidgets
+    global px, py, dpi_x, dpi_y
+
+    if px is not None:
+        return
+
+    # a little hack to get screen size; from here [1]
+    # useful for moving plots to monitor
+    my_app = QtWidgets.QApplication([])
+    v = my_app.desktop().screenGeometry()
+
+    py = v.height()
+    px = v.width()
+
+    dpi_x = my_app.desktop().logicalDpiX()
+    dpi_y = my_app.desktop().logicalDpiY()
+
+    return px, py, dpi_x, dpi_y
+
+
+def move_plot(monitor=0, x_size=0.7, y_size=0.7, maximized=False, num_monitors=3):
+    import matplotlib.pyplot as plt
+
+    # monitor is -1, 0, 1?
+    fig_manager = plt.get_current_fig_manager()
+    # if px=0, plot will display on 1st screen
+    if maximized:
+        x_start = int(monitor * px / num_monitors)
+        fig_manager.window.showMaximized()
+        fig_manager.window.move(x_start, 0)
+    else:
+        # plt.gcf().set_size_inches(x_size * px / dpi_x,
+        #                           y_size * py / dpi_y)
+        monitor_width = int(px / num_monitors)
+        width_in_pixel = x_size * monitor_width
+        monitor_x_start = int(0.5 * (monitor_width - width_in_pixel))
+
+        monitor_heights = [1080, 1200, 1080]
+        monitor_height = monitor_heights[monitor]
+        height_in_pixel = y_size * monitor_height
+        monitor_y = int(0.5 * (monitor_height - height_in_pixel))
+
+        x_start = monitor_x_start + int(monitor * monitor_width)
+
+        max_monitor_height = max(monitor_heights)
+        y_start = (max_monitor_height - monitor_height) + monitor_y
+        # y_start = monitor_y
+        fig_manager.window.resize(width_in_pixel,  height_in_pixel)
+        fig_manager.window.move(x_start,  y_start)
+        plt.autoscale()
+        plt.tight_layout()

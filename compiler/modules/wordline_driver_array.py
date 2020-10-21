@@ -103,18 +103,15 @@ class wordline_driver_array(design.design):
                                     start=clk_offset,
                                     end=a_pos)
             self.add_via(layers=m1m2.layer_stack,
-                         offset=vector(en_pin.lx()+m1m2.second_layer_height, a_pin.cy()-0.5*self.m2_width),
+                         offset=vector(en_pin.lx() + m1m2.second_layer_height,
+                                       a_pin.cy() - 0.5 * self.m2_width),
                          rotate=90)
 
             # route in pin
             self.copy_layout_pin(buffer_inst, "B", "in[{}]".format(row))
 
             # output each WL on the right
-            wl_offset = buffer_inst.get_pin("out_inv").rc()
-            self.add_layout_pin_center_segment(text="wl[{0}]".format(row),
-                                               layer="metal1",
-                                               start=wl_offset,
-                                               end=wl_offset - vector(self.m1_width, 0))
+            self.copy_layout_pin(buffer_inst, "out_inv", "wl[{0}]".format(row))
 
             # Extend vdd and gnd of wordline_driver
             y_offset = (row + 1) * self.logic_buffer.height - 0.5 * self.rail_height

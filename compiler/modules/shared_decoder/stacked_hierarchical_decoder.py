@@ -1,5 +1,5 @@
 from base import utils, contact
-from base.contact import cross_contact, m2m3, m1m2
+from base.contact import cross_contact, m2m3, m1m2, cross_m2m3
 from base.design import METAL2, PIMP, NIMP, NWELL, METAL3, METAL1
 from base.vector import vector
 from modules.hierarchical_decoder import hierarchical_decoder
@@ -14,6 +14,10 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
     def create_layout(self):
         super().create_layout()
         self.width = self.width - self.power_rail_x
+        self.predecoder_width -= self.power_rail_x
+        self.row_decoder_width = max(self.inv_inst[0].rx() - self.inv_inst[1].lx(),
+                                     self.inv_inst[1].rx() - self.inv_inst[0].lx())
+        self.translate_all(vector(self.power_rail_x, 0))
 
     def setup_layout_constants(self):
         super().setup_layout_constants()
@@ -174,7 +178,6 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
                       height=implant_height, width=pre_module_width)
 
     def connect_rails_to_decoder(self):
-        cross_m2m3 = cross_contact(layer_stack=m2m3.layer_stack)
         self.add_mod(cross_m2m3)
 
         for row in range(0, self.rows, 2):
@@ -186,11 +189,6 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
                 right_index = row
             left_inst = self.nand_inst[left_index]
             right_inst = self.nand_inst[right_index]
-
-            reference_pin = right_inst.get_pin("A")
-
-            via_pitch = self.get_parallel_space(METAL3) + self.m3_width
-            origin_y = reference_pin.cy()
 
             # right inst
             pins = ["A", "B", "C"]
@@ -250,8 +248,9 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
                         self.add_contact_center(m2m3.layer_stack, offset=offset)
                         self.add_rect_center(METAL2, offset=offset, height=left_inst.mod.gate_fill_height,
                                              width=left_inst.mod.gate_fill_width)
-                        self.add_rect(METAL3, offset=vector(x_offset-0.5*self.m3_width, pin.cy()),
-                                      height=via_y+0.5*self.m3_width-pin.cy())
+                        self.add_rect(METAL3, offset=vector(x_offset - 0.5 * self.m3_width,
+                                                            pin.cy()),
+                                      height=via_y + 0.5 * self.m3_width - pin.cy())
 
     def route_vdd_gnd(self):
         left_inst = min(self.inv_inst[:2], key=lambda x: x.lx())
@@ -266,4 +265,3 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
             x_offset = self.power_rail_x
         self.add_layout_pin(pin.name, pin.layer, offset=vector(x_offset, pin.by()),
                             width=self.width - x_offset, height=pin.height())
-

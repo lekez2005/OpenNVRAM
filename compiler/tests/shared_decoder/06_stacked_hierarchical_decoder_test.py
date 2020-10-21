@@ -9,7 +9,7 @@ from test_base import TestBase
 class StackedHierarchicalDecoderTest(TestBase):
     def test_all_row_decoders(self):
         from globals import OPTS
-        from modules.shared_decoder.sotfet.stacked_hierarchical_decoder \
+        from modules.shared_decoder.stacked_hierarchical_decoder \
             import stacked_hierarchical_decoder
         OPTS.decoder_flops = True
         for row in [32, 64, 128, 256, 512]:

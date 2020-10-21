@@ -13,7 +13,7 @@ class LatchedControlBuffers(ControlBuffers):
     Generate and buffer control signals using bank_sel, clk and read
     Assumes write if read_bar, bitline computation vs read difference is handled at decoder level
     Inputs:
-        bank_sel, read, clk
+        bank_sel, read, clk, sense_trig
     Define internal signal
         bank_sel_cbar = NAND(clk_bar, bank_sel)
     Outputs
@@ -41,7 +41,7 @@ class LatchedControlBuffers(ControlBuffers):
 
     bank_sel_pin = clk_pin = read_pin = sel_cbar_rail = sense_trig_pin = None
 
-    rail_pos = [0.0]*4
+    rail_pos = [0.0] * 4
 
     def create_modules(self):
         common_args = self.get_common_args()
@@ -115,7 +115,8 @@ class LatchedControlBuffers(ControlBuffers):
         self.sel_clk_sense_inst = self.add_inst("sel_clk_sense", mod=self.nor, offset=self.write_buf_inst.lr())
         self.connect_inst(["sense_trig", "bank_sel_cbar", "sel_clk_sense", "vdd", "gnd"])
 
-        self.sample_bar_int_inst = self.add_inst("sample_bar_int", mod=self.nand_x2, offset=self.sel_clk_sense_inst.lr())
+        self.sample_bar_int_inst = self.add_inst("sample_bar_int", mod=self.nand_x2,
+                                                 offset=self.sel_clk_sense_inst.lr())
         self.connect_inst(["read", "sel_clk_sense", "sample_bar_int", "vdd", "gnd"])
 
         self.sample_bar_inst = self.add_inst("sample_bar", mod=self.sample_bar, offset=self.sample_bar_int_inst.lr())
@@ -123,28 +124,31 @@ class LatchedControlBuffers(ControlBuffers):
 
         self.sense_amp_buf_inst = self.add_inst("sense_amp_buf", mod=self.sense_amp_buf,
                                                 offset=self.sample_bar_inst.lr())
-        self.connect_inst(["sense_trig", "bank_sel", "read", "sense_en", "sense_en_bar", "vdd", "gnd"])
+        self.connect_inst(["sample_bar_int", "sense_trig", "bank_sel", "sense_en", "sense_en_bar", "vdd", "gnd"])
 
         self.tri_en_buf_inst = self.add_inst("tri_en_buf", mod=self.tri_en_buf,
                                              offset=self.sense_amp_buf_inst.lr())
-        self.connect_inst(["sense_trig", "bank_sel", "read", "tri_en", "tri_en_bar", "vdd", "gnd"])
+        self.connect_inst(["sample_bar_int", "sense_trig", "bank_sel", "tri_en", "tri_en_bar", "vdd", "gnd"])
 
-    def add_input_pins(self):
-
+    def create_clk_pin(self):
         self.clk_pin = self.add_layout_pin("clk", "metal3", offset=vector(0, self.rail_pos[3]),
                                            width=self.clk_bar_inst.get_pin("A").cx())
 
+    def create_read_pin(self):
         self.read_pin = self.add_layout_pin("read", "metal3", offset=vector(0, self.rail_pos[0]),
-                                            width=self.tri_en_buf_inst.get_pin("C").cx())
+                                            width=self.sample_bar_int_inst.get_pin("A").cx())
+
+    def add_input_pins(self):
+        self.create_clk_pin()
+        self.create_read_pin()
 
         self.sense_trig_pin = self.add_layout_pin("sense_trig", "metal3", offset=vector(0, self.rail_pos[1]),
                                                   width=self.tri_en_buf_inst.get_pin("A").cx())
 
         self.bank_sel_pin = self.add_layout_pin("bank_sel", "metal3", offset=vector(0, self.rail_pos[2]),
-                                                width=self.tri_en_buf_inst.get_pin("A").lx())
+                                                width=self.tri_en_buf_inst.get_pin("C").lx())
 
     def route_internal_signals(self):
-
         self.route_precharge_buf()
 
         # clk_buf
@@ -180,20 +184,28 @@ class LatchedControlBuffers(ControlBuffers):
         # sample_bar
         self.connect_z_to_a(self.sample_bar_int_inst, self.sample_bar_inst, a_name="in")
 
-        # sense amp
-        self.connect_a_pin(self.sense_amp_buf_inst, self.sense_trig_pin)
-        self.connect_b_pin(self.sense_amp_buf_inst, self.bank_sel_pin, via_dir="left")
-        self.connect_c_pin(self.sense_amp_buf_inst, self.read_pin, via_dir="right")
-
-        self.connect_a_pin(self.tri_en_buf_inst, self.sense_trig_pin)
-        self.connect_b_pin(self.tri_en_buf_inst, self.bank_sel_pin, via_dir="left")
-        self.connect_c_pin(self.tri_en_buf_inst, self.read_pin, via_dir="right")
+        self.sample_bar_int_rail = self.create_output_rail(self.sample_bar_int_inst.get_pin("Z"),
+                                                           self.read_pin,
+                                                           self.tri_en_buf_inst.get_pin("A"), via_dir="left")
+        self.route_sense_amp()
+        self.route_tri_en()
 
     def route_precharge_buf(self):
         # route precharge_buf_inst
         self.connect_a_pin(self.precharge_buf_inst, self.read_pin, via_dir="right")
         self.connect_b_pin(self.precharge_buf_inst, self.bank_sel_pin, via_dir="left")
         self.connect_c_pin(self.precharge_buf_inst, self.clk_pin, via_dir="right")
+
+    def route_sense_amp(self):
+        # sense_en
+        self.connect_a_pin(self.sense_amp_buf_inst, self.sample_bar_int_rail, via_dir="right")
+        self.connect_b_pin(self.sense_amp_buf_inst, self.sense_trig_pin, via_dir="left")
+        self.connect_c_pin(self.sense_amp_buf_inst, self.bank_sel_pin, via_dir="left")
+
+    def route_tri_en(self):
+        self.connect_a_pin(self.tri_en_buf_inst, self.sample_bar_int_rail, via_dir="right")
+        self.connect_b_pin(self.tri_en_buf_inst, self.sense_trig_pin, via_dir="left")
+        self.connect_c_pin(self.tri_en_buf_inst, self.bank_sel_pin, via_dir="left")
 
     def add_output_pins(self):
         pin_names = ["precharge_en_bar", "clk_buf", "clk_bar", "wordline_en", "write_en", "write_en_bar",
@@ -204,7 +216,7 @@ class LatchedControlBuffers(ControlBuffers):
                      self.tri_en_buf_inst, self.sample_bar_inst]
         for i in range(len(pin_names)):
             out_pin = instances[i].get_pin(mod_names[i])
-            self.add_layout_pin(pin_names[i], "metal2", offset=out_pin.ul(), height=self.height-out_pin.uy())
+            self.add_layout_pin(pin_names[i], "metal2", offset=out_pin.ul(), height=self.height - out_pin.uy())
 
     def add_power_pins(self):
         sense_amp_gnd = self.sense_amp_buf_inst.get_pin("gnd")

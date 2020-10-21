@@ -1,6 +1,9 @@
 import json
 import os
 from importlib import reload
+from random import randint
+
+import numpy as np
 
 import characterizer
 import verify
@@ -46,7 +49,7 @@ class SimStepsGenerator(SequentialDelay):
         if key in ["clk"]:
             setup_time = 0
         elif key in ["acc_en", "acc_en_inv"]:  # to prevent contention with tri-state buffer
-            setup_time = -0.5 * self.duty_cycle * self.period
+            setup_time = -0.75 * self.duty_cycle * self.period
         elif key == "sense_trig":
             trigger_delay = OPTS.sense_trigger_delay
             if prev_val == 0:
@@ -54,7 +57,7 @@ class SimStepsGenerator(SequentialDelay):
             else:
                 # This adds some delay to enable tri-state driver
                 # For differential sense amp, give some window so data can be read
-                setup_time = -(self.slew + 0.2)
+                setup_time = -(self.slew + OPTS.sense_trigger_setup)
         else:
             setup_time = self.setup_time
 
@@ -89,9 +92,6 @@ class SimStepsGenerator(SequentialDelay):
 
         self.write_generic_stimulus()
 
-        if not OPTS.baseline:
-            self.stim.gen_constant("sense_amp_ref", OPTS.sense_amp_ref, gnd_node="gnd")
-
         self.initialize_output()
 
         self.probe = SharedProbe(self.sram, OPTS.pex_spice)
@@ -116,6 +116,7 @@ class SimStepsGenerator(SequentialDelay):
         self.finalize_output()
 
         self.stim.write_include(self.trim_sp_file)
+        self.stim.replace_bitcell(self.sram)
 
         # run until the end of the cycle time
         # Note run till at least one half cycle, this is because operations blend into each other
@@ -156,6 +157,38 @@ class SimStepsGenerator(SequentialDelay):
         self.bitline_probes = self.probe.bitline_probes
         self.br_probes = self.probe.br_probes
 
+    def generate_energy_stimulus(self):
+        num_sims = OPTS.energy
+        num_sims = 1
+        mask = [1] * self.sram.word_size
+
+        ops = ["read", "write"]
+        for i in range(num_sims):
+            address = randint(0, self.sram.num_words - 1)
+
+            op = ops[randint(0, 1)]
+            if op == "read":
+                self.read_address(address)
+            else:
+                data = [randint(0, 1) for x in range(self.sram.word_size)]
+                self.write_address(address, data, mask)
+            self.sf.write("* -- {}: t = {:.5g} period = {}\n".format(op.upper(), self.current_time - self.period,
+                                                                     self.period))
+        self.current_time += 2*self.period  # to cool off from previous event
+        self.period = max(self.read_period, self.write_period)
+        self.chip_enable = 0
+        self.update_output()
+
+        # clock gating
+        leakage_cycles = 10
+        start_time = self.current_time
+        end_time = leakage_cycles * self.read_period + start_time
+        self.current_time = end_time
+
+        self.sf.write("* -- LEAKAGE start = {:.5g} end = {:.5g}\n".format(start_time, self.current_time))
+
+        self.sf.write("* --clk_buf_probe={}--\n".format(self.probe.clk_buf_probe))
+
     def test_address(self, address, bank, dummy_address=None, data=None, mask=None):
         address = self.offset_address_by_bank(address, bank)
         if dummy_address is None:
@@ -181,6 +214,10 @@ class SimStepsGenerator(SequentialDelay):
         self.setup_write_measurements(address)
         self.write_address(address, data_bar, mask)
 
+        if not OPTS.baseline:
+            # give enough time to settle before timed read
+            self.write_address(dummy_address, data, mask)
+            self.write_address(dummy_address, data, mask)
         self.setup_read_measurements(address)
         self.read_address(address)
 
@@ -190,6 +227,9 @@ class SimStepsGenerator(SequentialDelay):
         # write data_bar to force transition on the data bus
         self.write_address(dummy_address, data_bar, mask)
 
+        if not OPTS.baseline:
+            # give enough time to settle before timed read
+            self.write_address(dummy_address, data_bar, mask)
         self.setup_read_measurements(address)
         self.read_address(address)
 
@@ -265,10 +305,18 @@ class SimStepsGenerator(SequentialDelay):
         self.acc_en = 0
         self.acc_en_inv = 1
 
+        self.period = self.write_period
+        self.duty_cycle = self.write_duty_cycle
+
         self.update_output()
 
     def setup_write_measurements(self, address_int):
         """new_val is MSB first"""
+        bank_index, _, row, col_index = self.probe.decode_address(address_int)
+        self.sf.write("* -- Write : [{0}, {1}, {2}, {3}, {4}, {5}, {6}]\n".format(
+            address_int, row, col_index, bank_index, self.current_time, self.write_period,
+            self.write_duty_cycle))
+
         time = self.current_time
         # power measurement
         time_suffix = "{:.2g}".format(time).replace('.', '_')
@@ -324,6 +372,11 @@ class SimStepsGenerator(SequentialDelay):
     def setup_read_measurements(self, address_int):
         """new_val is MSB first"""
 
+        bank_index, _, row, col_index = self.probe.decode_address(address_int)
+        self.sf.write("* -- Read : [{0}, {1}, {2}, {3}, {4}, {5}, {6}]\n".format(
+            address_int, row, col_index, bank_index, self.current_time, self.read_period,
+            self.read_duty_cycle))
+
         self.setup_precharge_measurement()
 
         time = self.current_time
@@ -363,29 +416,15 @@ class SimStepsGenerator(SequentialDelay):
 
         self.stim.inst_accesstx(self.word_size)
 
-    def run_drc_lvs_pex(self):
-        OPTS.check_lvsdrc = True
-        reload(verify)
-
-        self.sram.sp_write(OPTS.spice_file)
-        self.sram.gds_write(OPTS.gds_file)
-
-        if getattr(OPTS, 'run_drc', True):
-            drc_result = verify.run_drc(self.sram.name, OPTS.gds_file, exception_group="sram")
-            if drc_result:
-                raise AssertionError("DRC Failed")
+    def write_ic(self, ic, col_node, col_voltage):
+        if OPTS.baseline:
+            ic.write("ic {}={} \n".format(col_node, col_voltage))
         else:
+            phi = 0.1 * OPTS.llg_prescale
+            theta = np.arccos(col_voltage) * OPTS.llg_prescale
 
-            from base import utils
-            utils.to_cadence(OPTS.gds_file)
+            phi_node = col_node.replace(".state", ".I0.phi")
+            theta_node = col_node.replace(".state", ".I0.theta")
 
-        if getattr(OPTS, 'run_lvs', True):
-            lvs_result = verify.run_lvs(self.sram.name, OPTS.gds_file, OPTS.spice_file,
-                                        final_verification=True)
-            if lvs_result:
-                raise AssertionError("LVS Failed")
-        force_pex = not os.path.exists(OPTS.pex_spice)
-        if OPTS.use_pex and (force_pex or OPTS.run_pex):
-            errors = verify.run_pex(self.sram.name, OPTS.gds_file, OPTS.spice_file, OPTS.pex_spice)
-            if errors:
-                raise AssertionError("PEX failed")
+            ic.write("ic {}={} \n".format(phi_node, phi))
+            ic.write("ic {}={} \n".format(theta_node, theta))

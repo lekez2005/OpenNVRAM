@@ -181,8 +181,8 @@ class CmosSram(sram):
             if rail.uy() > decoder_y_offset:
                 max_x_offset = min(max_x_offset, rail.offset.x)
 
-        rails_x_offset = max_x_offset - self.words_per_row * self.m2_pitch
-        decoder_x_offset = rails_x_offset - self.get_parallel_space(METAL2) - self.column_decoder.width
+        rails_x_offset = (max_x_offset - (self.words_per_row - 1) * self.m2_pitch)
+        decoder_x_offset = rails_x_offset - self.get_wide_space(METAL2) - self.column_decoder.width
 
         mirror = "MX" if self.words_per_row > 2 else "R0"
         self.column_decoder_inst = self.add_inst("col_decoder", mod=self.column_decoder,
@@ -270,8 +270,8 @@ class CmosSram(sram):
     def get_bank_connections(self, bank_num):
         connections = []
         for i in range(self.word_size):
-            connections.append("DATA_{0}[{1}]".format(bank_num+1, i))
-            connections.append("MASK_{0}[{1}]".format(bank_num+1, i))
+            connections.append("DATA_{0}[{1}]".format(bank_num + 1, i))
+            connections.append("MASK_{0}[{1}]".format(bank_num + 1, i))
 
         if self.words_per_row > 1:
             for i in range(self.words_per_row):
@@ -281,7 +281,7 @@ class CmosSram(sram):
 
         bank_sel = "bank_sel" if bank_num == 0 else "bank_sel_2"
         connections.extend([bank_sel, "read", "clk", "sense_trig",
-                            "clk_buf_{}".format(bank_num+1), "clk_bar_{}".format(bank_num+1),
+                            "clk_buf_{}".format(bank_num + 1), "clk_bar_{}".format(bank_num + 1),
                             "vdd", "gnd"])
         return connections
 
@@ -314,7 +314,6 @@ class CmosSram(sram):
             self.route_predecoder_column_decoder()
 
     def route_flop_column_decoder(self):
-        bank_inst = self.bank_insts[0]
         # route vdd to wordline driver vdd
 
         for pin_name in ["vdd", "gnd"]:
@@ -767,6 +766,8 @@ class CmosSram(sram):
             y_offset += self.m3_pitch
 
     def join_bank_power_grid(self):
+        if not hasattr(self.bank, "gnd_grid_rects"):
+            return
         pairs = [(self.mid_gnd, self.bank.gnd_grid_rects), (self.mid_vdd, self.bank.vdd_grid_rects)]
         if self.single_bank:
             cross_rail_x = self.row_decoder_inst.lx()

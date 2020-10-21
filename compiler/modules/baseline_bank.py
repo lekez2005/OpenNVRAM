@@ -162,9 +162,10 @@ class BaselineBank(design, ControlBuffersMixin):
         # run optimizations
 
         run_optimizations = hasattr(OPTS, 'run_optimizations') and OPTS.run_optimizations
+        if hasattr(OPTS, 'configure_sizes'):
+            getattr(OPTS, 'configure_sizes')(self, OPTS)
         if run_optimizations:
-            if hasattr(OPTS, 'configure_sizes'):
-                getattr(OPTS, 'configure_sizes')(self, OPTS)
+
             delay_strategy = delay_strategy_class()(self)
 
             OPTS.clk_buffers = delay_strategy.get_clk_buffer_sizes()
@@ -173,8 +174,8 @@ class BaselineBank(design, ControlBuffersMixin):
 
             self.wordline_driver = self.create_module('wordline_driver', rows=self.num_rows,
                                                       buffer_stages=OPTS.wordline_buffers)
-
-            OPTS.wordline_en_buffers = delay_strategy.get_wordline_en_sizes()
+            if self.wordline_driver:
+                OPTS.wordline_en_buffers = delay_strategy.get_wordline_en_sizes()
 
             OPTS.write_buffers = delay_strategy.get_write_en_sizes()
 
@@ -968,7 +969,8 @@ class BaselineBank(design, ControlBuffersMixin):
         clk_pins = self.row_decoder_inst.get_pins("clk")
         # find closest
         target_y = clk_rail.by()+m2m3.second_layer_height
-        clk_pin = min(clk_pins, key=lambda x: min(abs(target_y - x.by()), abs(target_y - x.uy())))
+        clk_pin = min(clk_pins, key=lambda x: min(abs(target_y - x.by() + m2m3.height),
+                                                  abs(target_y - x.uy() - m2m3.height)))
 
         self.add_rect("metal3", offset=vector(clk_pin.lx(), target_y), width=clk_rail.rx() - clk_pin.lx())
 

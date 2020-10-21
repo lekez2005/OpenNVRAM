@@ -83,10 +83,8 @@ class precharge_array(design.design):
         self.width = inst.rx()
         layers = ["nwell"]
         purposes = ["drawing"]
-        # TODO fix x_offset
-        x_offset = self.bitcell_offsets[0]
         for i in range(1):
             rect = self.pc_cell.get_layer_shapes(layers[i], purposes[i])[0]
-            self.add_rect(layers[i], offset=vector(x_offset, rect.by()),
-                          width=self.width-x_offset, height=rect.height)
+            self.add_rect(layers[i], offset=vector(0, rect.by()),
+                          width=self.width+self.well_enclose_implant, height=rect.height)
 

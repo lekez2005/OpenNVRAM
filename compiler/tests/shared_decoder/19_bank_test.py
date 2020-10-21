@@ -7,14 +7,18 @@ import debug
 
 class BankTest(TestBase):
 
-    def test_bitline_compute_array(self):
+    def test_sotfet_mram_array(self):
         from globals import OPTS
+        import tech
 
-        if OPTS.baseline:
+        if not OPTS.mram == "sotfet":
             return
 
+        tech.drc_exceptions["SotfetMramBank"] = (tech.drc_exceptions["min_nwell"] +
+                                                 tech.drc_exceptions["latchup"])
+
         # self.sweep_all()
-        self.sweep_all(cols=[64], rows=[64])
+        self.sweep_all(cols=[64], rows=[64], words_per_row=2)
 
     def test_baseline_array(self):
         import tech
@@ -32,11 +36,11 @@ class BankTest(TestBase):
         from base import design
         from globals import OPTS
         from modules.shared_decoder.cmos_bank import CmosBank
-        from modules.baseline_bank import BaselineBank
+        from modules.shared_decoder.sotfet.sotfet_mram_bank import SotfetMramBank
         if OPTS.baseline:
             bank_class = CmosBank
         else:
-            bank_class = BaselineBank
+            bank_class = SotfetMramBank
 
         OPTS.run_optimizations = True
 

@@ -3,6 +3,7 @@ import os
 python_path = ["modules/shared_decoder"]
 
 baseline = True
+mram = ""
 
 # modules
 decoder_flops = True
@@ -58,13 +59,13 @@ num_predecoder_stages = 1
 max_predecoder_inv_size = 20
 max_predecoder_nand = 1.2
 
-wordline_buffers = [1, 4, 16]
+wordline_buffers = [1, 5, 20]
 predecode_sizes = [1.2, 4]
 
 sense_amp_type = "latched_sense_amp"
 
 write_buffers = [1, 5, 25, 50, 65]
-wordline_en_buffers = [1, 3.9, 15, 45]
+wordline_en_buffers = [1, 3.7, 13.6, 50]
 
 clk_buffers = [1, 5, 20, 65, 30]  # clk only used by decoders (no latches)
 sampleb_buffers = [1, 3.7, 13.6, 50]

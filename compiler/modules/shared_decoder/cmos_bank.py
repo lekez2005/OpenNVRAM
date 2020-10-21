@@ -1,5 +1,5 @@
 from base import utils
-from base.contact import m2m3, m3m4, m1m2
+from base.contact import m2m3, m3m4, m1m2, contact
 from base.design import PIMP, NIMP, METAL1, METAL2, METAL3, METAL4
 from base.vector import vector
 from globals import OPTS
@@ -340,8 +340,42 @@ class CmosBank(BaselineBank):
         for pin in self.col_mux_array_inst.get_pins("gnd"):
             self.route_gnd_pin(pin)
 
-    def route_sense_amp_common(self):
-        pass
+    def route_sense_amp(self):
+        dummy_contact = contact(m1m2.layer_stack, dimensions=[2, 1])
+
+        pin_list = self.sense_amp_array.pin_map.values()
+        all_pins = [item for sublist in pin_list for item in sublist]
+
+        for pin in (self.sense_amp_array_inst.get_pins("gnd") +
+                    self.sense_amp_array_inst.get_pins("vdd")):
+            clash_top = False
+            clash_bot = False
+            collision_top = pin.cy() + 0.5 * dummy_contact.width + self.get_parallel_space(METAL1)
+            collision_bot = pin.cy() - 0.5 * dummy_contact.width - self.get_parallel_space(METAL1)
+            for candidate_pin in all_pins:
+                if candidate_pin.name == pin.name or not candidate_pin.layer == METAL1:
+                    continue
+                if collision_top > candidate_pin.by() + self.sense_amp_array_inst.by() > pin.uy():
+                    clash_top = True
+                if collision_bot < candidate_pin.uy() + self.sense_amp_array_inst.by() < pin.by():
+                    clash_bot = True
+            if clash_top:
+                via_y = pin.uy() - dummy_contact.width
+            elif clash_bot:
+                via_y = pin.by()
+            else:
+                via_y = pin.cy() - 0.5 * dummy_contact.width
+            if pin.name == "gnd":
+                self.route_gnd_pin(pin, add_via=False)
+                via_rails = [self.mid_gnd]
+            else:
+                self.route_vdd_pin(pin, add_via=False)
+                via_rails = [self.right_vdd, self.mid_vdd]
+
+            for via_rail in via_rails:
+                via_offset = vector(via_rail.cx() + 0.5 * dummy_contact.height, via_y)
+                self.add_contact(m1m2.layer_stack, size=[2, 1], offset=via_offset,
+                                 rotate=90)
 
     def route_flops(self):
         # add din and mask in pins
@@ -636,22 +670,25 @@ class CmosBank(BaselineBank):
                     via_y = dest_pin.by() - 0.5 * m2m3.height
 
                 via_offset = vector(x_offset + 0.5 * self.m4_width, via_y)
-                if dest_pin.layer == METAL2:
+                if dest_pin.layer == METAL3:
                     self.add_contact_center(m3m4.layer_stack, offset=via_offset)
-                    self.add_contact_center(m2m3.layer_stack, offset=via_offset, rotate=90)
-                    fill_layers = [METAL3]
-                    if clash is not None:
-                        fill_layers.append(METAL2)
                 else:
-                    self.add_contact_center(m1m2.layer_stack, offset=via_offset, rotate=90)
-                    self.add_contact_center(m2m3.layer_stack, offset=via_offset)
-                    self.add_contact_center(m3m4.layer_stack, offset=via_offset)
-                    fill_layers = [METAL2, METAL3]
-                    if clash is not None:
-                        fill_layers.append(METAL1)
+                    if dest_pin.layer == METAL2:
+                        self.add_contact_center(m3m4.layer_stack, offset=via_offset)
+                        self.add_contact_center(m2m3.layer_stack, offset=via_offset, rotate=90)
+                        fill_layers = [METAL3]
+                        if clash is not None:
+                            fill_layers.append(METAL2)
+                    else:
+                        self.add_contact_center(m1m2.layer_stack, offset=via_offset, rotate=90)
+                        self.add_contact_center(m2m3.layer_stack, offset=via_offset)
+                        self.add_contact_center(m3m4.layer_stack, offset=via_offset)
+                        fill_layers = [METAL2, METAL3]
+                        if clash is not None:
+                            fill_layers.append(METAL1)
 
-                for layer in fill_layers:
-                    self.add_rect(layer, offset=vector(fill_x, via_y - 0.5 * fill_height),
-                                  width=fill_width, height=fill_height)
+                    for layer in fill_layers:
+                        self.add_rect(layer, offset=vector(fill_x, via_y - 0.5 * fill_height),
+                                      width=fill_width, height=fill_height)
 
             x_offset += parallel_space + self.m4_width

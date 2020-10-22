@@ -1,8 +1,9 @@
 import copy
 import math
+from typing import List
+
 import os
 from collections import Iterable
-from typing import List
 
 import debug
 import verify
@@ -15,7 +16,6 @@ from globals import OPTS
 from tech import drc
 from tech import layer as tech_layers
 from tech import purpose as tech_purpose
-
 
 POLY = "poly"
 NWELL = "nwell"
@@ -478,7 +478,8 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                                 left_most = min([top_rect, bottom_rect], key=lambda x: x.lx())
                                 run_length = min(right_most.rx(), left_most.rx()) - right_most.lx()
 
-                            target_space = self.get_space_by_width_and_length(layer, max_width=max(widths),
+                            target_space = self.get_space_by_width_and_length(layer,
+                                                                              max_width=max(widths),
                                                                               min_width=min(widths),
                                                                               run_length=run_length,
                                                                               heights=heights)

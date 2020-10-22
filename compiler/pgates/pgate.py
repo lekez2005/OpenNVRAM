@@ -5,6 +5,7 @@ from base import contact
 from base import design
 from base import utils
 from base.contact import m1m2
+from base.design import METAL1
 from base.hierarchy_spice import INPUT, OUTPUT
 from base.utils import round_to_grid
 from base.vector import vector
@@ -53,10 +54,23 @@ class pgate(design.design):
         _nmos_scale = self.nmos_scale
         _pmos_scale = self.pmos_scale
         shrink_factors = [1, 0.9, 0.8, 0.7, 0.6]
-        for shrink_factor in shrink_factors:
-            self.pmos_scale = _pmos_scale * shrink_factor
-            self.nmos_scale = _nmos_scale * shrink_factor
-            if self.determine_tx_mults():
+        if "nand" in self.__class__.__name__:
+            # higher beta can help nand's since pmos wouldn't reach min_width as quickly
+            beta_factors = [1, 1.2, 1.4]
+        else:
+            beta_factors = [1]
+        original_beta = self.beta
+
+        exit_beta_loop = False
+        for beta_factor in beta_factors:
+            self.beta = original_beta * beta_factor
+            for shrink_factor in shrink_factors:
+                self.pmos_scale = _pmos_scale * shrink_factor
+                self.nmos_scale = _nmos_scale * shrink_factor
+                if self.determine_tx_mults():
+                    exit_beta_loop = True
+                    break
+            if exit_beta_loop:
                 break
 
     def get_total_vertical_space(self):
@@ -67,12 +81,26 @@ class pgate(design.design):
 
         min_tx_width = drc["minwidth_tx"]
 
-        min_n_width = self.nmos_scale * min_tx_width
-        min_p_width = self.pmos_scale * self.beta * min_tx_width
+        min_n_width = utils.ceil(self.nmos_scale * min_tx_width)
+        min_p_width = utils.ceil(self.pmos_scale * self.beta * min_tx_width)
 
-        rail_extent = 0.5 * self.rail_height + self.line_end_space
-        self.top_space = max(contact.m1m2.first_layer_height - min_p_width, 0) + rail_extent
-        self.bottom_space = max(contact.m1m2.first_layer_height - min_n_width, 0) + rail_extent
+        self.calculate_active_fill_constants(max(self.nmos_size * min_tx_width,
+                                                 self.pmos_size * min_tx_width))
+        min_active_contact_height = max(self.metal1_fill_height, contact.m1m2.first_layer_height)
+        if contact.m1m2.first_layer_height > min_active_contact_height:
+            # then we may need line end space
+            run_length = contact.m1m2.first_layer_width
+        else:
+            run_length = self.metal1_fill_width
+
+        rail_m1_space = self.get_space_by_width_and_length(METAL1, max_width=self.rail_height,
+                                                           min_width=contact.m1m2.first_layer_height,
+                                                           run_length=run_length,
+                                                           heights=[run_length, run_length])
+
+        rail_extent = 0.5 * self.rail_height + rail_m1_space
+        self.top_space = max(min_active_contact_height - min_p_width, 0) + rail_extent
+        self.bottom_space = max(min_active_contact_height - min_n_width, 0) + rail_extent
 
         self.well_contact_active_height = contact.active.first_layer_width
         self.well_contact_implant_height = drc["minwidth_implant"]
@@ -81,16 +109,46 @@ class pgate(design.design):
         implant_active_space = drc["ptx_implant_enclosure_active"] + 0.5 * self.well_contact_implant_height
         poly_poly_allowance = self.poly_extend_active + 0.5 * drc["poly_end_to_end"]
 
-        self.top_space = max(self.top_space, active_contact_space, implant_active_space, poly_poly_allowance)
-        self.bottom_space = max(self.bottom_space, active_contact_space, implant_active_space, poly_poly_allowance)
-
         if self.align_bitcell and OPTS.use_body_taps:
-            self.top_space = self.bottom_space = self.poly_extend_active + 0.5 * self.poly_to_field_poly
+            self.top_space = max(self.top_space, self.poly_extend_active + 0.5 * self.poly_to_field_poly)
+            self.bottom_space = max(self.bottom_space,
+                                    self.poly_extend_active + 0.5 * self.poly_to_field_poly)
             if self.same_line_inputs:
                 self.middle_space = max(contact.poly.second_layer_height, contact.m1m2.second_layer_height,
                                         contact.m2m3.second_layer_height,
                                         drc["pgate_contact_height"]) + 2 * self.line_end_space
+        else:
+            self.top_space = max(self.top_space, active_contact_space, implant_active_space, poly_poly_allowance)
+            self.bottom_space = max(self.bottom_space, active_contact_space,
+                                    implant_active_space, poly_poly_allowance)
         return self.top_space + self.middle_space + self.bottom_space
+
+    def calculate_active_fill_constants(self, tx_width):
+        """M1 area constraints may need to be satisfied by adding m1 fills to the active contacts
+        Estimate the required fill heights and widths here
+        """
+        # first assume the height will be small enough such that parallel lines spacing rules don't kick in
+        # TODO bit of chicken and egg problem for inverters.
+        #  The inverter width may actually be bigger than the supplied tx_width since multiple fingers are allowed
+        # Just use parallel space for inverters
+        if "pinv" in self.name:
+            fill_space = self.get_parallel_space(METAL1)
+        else:
+            fill_space = self.get_space(METAL1)
+
+        metal_fill_width = round_to_grid(2 * (self.poly_pitch - 0.5 * self.m1_width - fill_space))
+        metal_fill_height = utils.ceil(self.minarea_metal1_contact / metal_fill_width)
+
+        # now get space given the specified height
+        new_fill_space = self.get_space_by_width_and_length(METAL1, max_width=metal_fill_width,
+                                                            min_width=self.m1_width,
+                                                            run_length=max(metal_fill_height, tx_width))
+        if new_fill_space > fill_space:
+            fill_space = new_fill_space
+            metal_fill_width = round_to_grid(2 * (self.poly_pitch - 0.5 * self.m1_width - fill_space))
+            metal_fill_height = utils.ceil(self.minarea_metal1_contact / metal_fill_width)
+        self.metal1_fill_width = metal_fill_width
+        self.metal1_fill_height = metal_fill_height
 
     def determine_tx_mults(self):
         """
@@ -101,13 +159,13 @@ class pgate(design.design):
         self.nmos_size = self.nmos_scale * self.size
         self.pmos_size = self.beta * self.pmos_scale * self.size
 
-
-
         self.tx_height_available = tx_height_available = self.height - self.get_total_vertical_space()
 
         min_tx_width = drc["minwidth_tx"]
         min_n_width = self.nmos_scale * min_tx_width
         min_p_width = self.pmos_scale * self.beta * min_tx_width
+        if min_n_width < min_tx_width or min_p_width < min_tx_width:
+            return False
 
         if tx_height_available < min_n_width + min_p_width:
             debug.info(2, "Warning: Cell height {0} too small for simple pmos height {1}, nmos height {2}.".format(
@@ -151,7 +209,11 @@ class pgate(design.design):
         self.contact_space = self.contact_pitch - self.contact_width
 
         non_active_height = self.height - (self.nmos_width + self.pmos_width)
-        self.mid_y = round_to_grid(self.nmos_width + 0.5 * non_active_height)
+        # unaccounted for space
+        extra_space = non_active_height - (self.top_space + self.bottom_space + self.middle_space)
+
+        actual_bottom_space = self.bottom_space + utils.floor(0.5 * extra_space)
+        self.mid_y = actual_bottom_space + self.nmos_width + 0.5 * self.middle_space
 
         active_enclose_contact = drc["active_enclosure_contact"]
         self.poly_pitch = self.poly_width + self.poly_space
@@ -288,13 +350,9 @@ class pgate(design.design):
                                     size=(1, max(1, no_contacts-1)))
             if active_cont.mod.first_layer_height < drc["minarea_metal1_minwidth"]/active_cont.mod.first_layer_width:
 
-                if tx_width > drc["parallel_length_threshold"]:
-                    m1_space = drc["parallel_line_space"]
-                else:
-                    m1_space = self.m1_space
-                metal_fill_width = round_to_grid(2*(self.poly_pitch - 0.5*self.m1_width - m1_space))
-                height = utils.ceil(max(self.minarea_metal1_contact/metal_fill_width,
-                                           active_cont.mod.first_layer_height))
+                metal_fill_width = self.metal1_fill_width
+                height = utils.ceil(max(self.minarea_metal1_contact / metal_fill_width,
+                                        active_cont.mod.first_layer_height))
                 if height > tx_width:
                     if OPTS.use_body_taps and self.align_bitcell and self.same_line_inputs:
                         if mid_y > self.mid_y:

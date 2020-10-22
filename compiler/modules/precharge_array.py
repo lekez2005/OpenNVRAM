@@ -48,7 +48,7 @@ class precharge_array(design.design):
                             height=vdd_pin.height())
         en_pin = self.pc_cell.get_pin("en")
         self.add_layout_pin(text="en",
-                            layer="metal1",
+                            layer=en_pin.layer,
                             offset=en_pin.ll(),
                             width=self.width,
                             height=en_pin.height())

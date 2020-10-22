@@ -749,7 +749,8 @@ class CmosSram(sram):
                 self.add_contact_center(m2m3.layer_stack, wl_in.center())
                 self.add_contact_center(m1m2.layer_stack, wl_in.center())
 
-                self.add_rect_center("metal2", offset=wl_in.center(), width=self.fill_width, height=self.fill_height)
+                self.add_rect_center("metal2", offset=wl_in.center(), width=self.fill_height,
+                                     height=self.fill_width)
 
     def join_bank_controls(self):
         if self.single_bank:

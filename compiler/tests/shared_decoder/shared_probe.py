@@ -75,7 +75,7 @@ class SharedProbe(SramProbe):
                 if fing == 0:
                     results.append("{}_Xinv{}_Mpinv_pmos:d".format(prefix, inverter_index))
                 else:
-                    results.append("{}_Xinv{}_Mpinv_pmos__{}:d".format(prefix, inverter_index, fing + 1))
+                    results.append("{}_Xinv{}_Mpinv_pmos@{}:d".format(prefix, inverter_index, fing + 1))
         return results
 
     def probe_bank_currents(self, bank):
@@ -85,21 +85,21 @@ class SharedProbe(SramProbe):
         if OPTS.use_pex:
             for col in range(self.sram.word_size):
                 # write drivers
-                self.current_probes.add("Xsram.XXbank{}_Xwrite_driver_array_Xdriver_{}_MM4:d".
+                self.current_probes.add("Xsram.XXbank{}_Xwrite_driver_array_Xdriver_{}_mm4:d".
                                         format(bank, col))
-                self.current_probes.add("Xsram.XXbank{}_Xwrite_driver_array_Xdriver_{}_MM12:d".
+                self.current_probes.add("Xsram.XXbank{}_Xwrite_driver_array_Xdriver_{}_mm12:d".
                                         format(bank, col))
 
                 # sense amps
                 if OPTS.baseline:
-                    self.current_probes.add("Xsram.XXbank{}_Xsense_amp_array_Xsa_d{}_XI0_MM1:d".
+                    self.current_probes.add("Xsram.XXbank{}_Xsense_amp_array_Xsa_d{}_XI0_mm1:d".
                                             format(bank, col))
-                    self.current_probes.add("Xsram.XXbank{}_Xsense_amp_array_Xsa_d{}_XI2_MM1:d".
+                    self.current_probes.add("Xsram.XXbank{}_Xsense_amp_array_Xsa_d{}_XI2_mm1:d".
                                             format(bank, col))
                 else:
-                    self.current_probes.add("Xsram.XXbank{}_Xsense_amp_array_Xsa_d{}_XI0_MM1:d".
+                    self.current_probes.add("Xsram.XXbank{}_Xsense_amp_array_Xsa_d{}_XI0_mm1:d".
                                             format(bank, col))
-                    self.current_probes.add("Xsram.XXbank{}_Xsense_amp_array_Xsa_d{}_XI2_MM1:d".
+                    self.current_probes.add("Xsram.XXbank{}_Xsense_amp_array_Xsa_d{}_XI2_mm1:d".
                                             format(bank, col))
 
                 # precharge
@@ -132,16 +132,16 @@ class SharedProbe(SramProbe):
             col = bit * self.sram.words_per_row + col_index
             if OPTS.use_pex and OPTS.baseline:
                 # bitcells
-                self.current_probes.add("Xsram.Xbank{}_Xbitcell_array_Xbit_r{}_c{}_M4:d".
+                self.current_probes.add("Xsram.Xbank{}_Xbitcell_array_Xbit_r{}_c{}_m4:d".
                                         format(bank, row, col))
-                self.current_probes.add("Xsram.Xbank{}_Xbitcell_array_Xbit_r{}_c{}_M5:d".
+                self.current_probes.add("Xsram.Xbank{}_Xbitcell_array_Xbit_r{}_c{}_m5:d".
                                         format(bank, row, col))
             elif OPTS.use_pex:
                 bitcell_name = OPTS.bitcell_name_template.format(bank=bank, row=row, col=col)
-                self.current_probes.add(bitcell_name + ".M1:d")
+                self.current_probes.add(bitcell_name + ".m1:d")
             else:
                 self.current_probes.add("Xsram.Xbank{}.Xbitcell_array.Xbit_r{}_c{}.{}".format(
-                    bank, row, col, "M1:d"
+                    bank, row, col, "m1:d"
                 ))
             # wordlines
             if OPTS.verbose_save and OPTS.use_pex:
@@ -349,7 +349,7 @@ class SharedProbe(SramProbe):
                 else:
                     self.probe_labels.add("Xsram.sel[{}]".format(bank, i))
 
-    def probe_address(self, address, pin_name="Q"):
+    def probe_address(self, address, pin_name="q"):
 
         address = self.address_to_vector(address)
         address_int = self.address_to_int(address)
@@ -418,7 +418,7 @@ class SharedProbe(SramProbe):
         try:
             label_sub = label.replace(prefix, "").replace(".", "_") \
                 .replace("[", "\[").replace("]", "\]")
-            pattern = "\sN_{}_[MX]\S+_[gsd]".format(label_sub)
+            pattern = "\sN_{}_[MXmx]\S+_[gsd]".format(label_sub)
             match = check_output(["grep", "-m1", "-o", "-E", pattern, pex_file])
 
         except CalledProcessError as ex:
@@ -428,6 +428,7 @@ class SharedProbe(SramProbe):
                     match = check_output(["grep", "-m1", "-Fo", label, pex_file])
                 except CalledProcessError as ex:
                     if ex.returncode == 1:
+                        # breakpoint()
                         debug.error("Match not found in pex file for label {} {}".format(label, pattern))
                         raise ex
                     else:

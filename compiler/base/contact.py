@@ -162,7 +162,7 @@ class contact(design.design, metaclass=unique_meta.Unique):
                       width=implant_width,
                       height=implant_height)
         well_position = self.first_layer_position - [drc["well_enclosure_active"]]*2
-        well_width =  self.first_layer_width  + 2*drc["well_enclosure_active"]
+        well_width = self.first_layer_width + 2*drc["well_enclosure_active"]
         well_height = self.first_layer_height + 2*drc["well_enclosure_active"]
 
         well_layer = "{}well".format(self.well_type)
@@ -173,7 +173,7 @@ class contact(design.design, metaclass=unique_meta.Unique):
                       offset=well_position,
                       width=well_width,
                       height=well_height)
-        
+
 
 class cross_contact(contact):
     def get_name(*args, **kwargs):

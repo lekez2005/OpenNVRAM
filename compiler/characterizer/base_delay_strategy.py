@@ -1,4 +1,7 @@
+import json
+import os
 from abc import ABC
+from collections import namedtuple
 
 import numpy as np
 
@@ -14,19 +17,27 @@ from pgates.pinv import pinv
 class BaseDelayStrategy(ABC):
 
     buffer_rail_length = 1
-    MIN_SIZE = 'min_size'
-    MIN_DELAY = 'min_delay'
+    MIN_SIZE = 'min_size'  # minimize the delay given a maximum size
+    MIN_DELAY = 'min_delay'  # minimize the size given a maximum delay
     FIXED = 'fixed'
 
     def __init__(self, bank: bank_class):
         self.bank = bank
-        self.bitcell_width = bank.bitcell.width
-        self.bitcell_height = bank.bitcell.height
 
         self.num_cols = bank.num_cols
         self.num_rows = bank.num_rows
 
-        self.estimate_rail_length()
+        if not isinstance(bank, tuple):  # in case entire bank isn't built, just properties
+            self.estimate_rail_length()
+            self.bitcell_width = bank.bitcell.width
+            self.bitcell_height = bank.bitcell.height
+
+        # wrap methods for caching
+        if OPTS.cache_optimization:
+            for method in ["get_clk_buffer_sizes", "get_wordline_driver_sizes",
+                           "get_wordline_en_sizes", "get_write_en_sizes", "get_sense_en_sizes",
+                           "get_precharge_sizes", "get_predecoder_sizes"]:
+                setattr(self, method, wrap_method_for_cache(self, method, getattr(self, method)))
 
     def execute_delay_strategy(self, strategy_, optimization_spec):
         initial_guess, opt_func, total_delay, stage_delays = optimization_spec
@@ -291,3 +302,30 @@ class BaseDelayStrategy(ABC):
         load = DistributedLoad(driver, cap_per_stage=cap_per_stage, stage_width=self.bitcell_height,
                                num_stages=self.num_rows)
         return load
+
+
+def wrap_method_for_cache(obj, method_name, original_func):
+
+    cache_file = os.path.join(OPTS.openram_temp,
+                              "{}optimization_results_{}.json".
+                              format(OPTS.cache_optimization_prefix, OPTS.tech_name))
+
+    def wrapped():
+        existing_data = {}
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file) as f:
+                    existing_data = json.load(f)
+            except:
+                pass
+        num_cols = obj.bank.num_cols
+        num_rows = obj.bank.num_rows
+        key = "{}_{}_{}".format(method_name, num_rows, num_cols)
+        if key in existing_data:
+            return existing_data[key]
+        with open(cache_file, "w") as f:
+            computed_data = original_func()
+            existing_data[key] = computed_data
+            json.dump(existing_data, f, indent=4, sort_keys=True)
+            return computed_data
+    return wrapped

@@ -113,7 +113,7 @@ class SfCamProbe(SramProbe):
         pin_labels = [""] * self.sram.word_size
         for i in range(self.sram.num_cols):
             col = i * self.sram.words_per_row + self.address_to_int(col_index)
-            pin_label = self.get_bitcell_label(bank_index, row, col, "Q")
+            pin_label = self.get_bitcell_label(bank_index, row, col, "q")
             pin_labels[i] = pin_label
 
             # save internal VG node

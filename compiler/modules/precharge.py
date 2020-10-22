@@ -321,5 +321,8 @@ class precharge_tap(design.design):
         self.add_contact(m3m4.layer_stack, offset=via_offset, size=[1, num_vias])
         m2_area = m1m2_cont.width * m1m2.height
         if m2_area < self.minarea_metal1_contact:
-            self.add_rect(METAL2, offset=vector(vdd_rail.lx(), via_offset.y), width=vdd_rail.width(),
-                          height=m1m2_cont.height)
+            fill_height = m1m2_cont.height
+            fill_width = self.minarea_metal1_contact / fill_height
+            self.add_rect_center(METAL2, offset=vector(vdd_rail.cx(),
+                                                       via_offset.y + 0.5 * fill_height),
+                                 width=fill_width, height=fill_height)

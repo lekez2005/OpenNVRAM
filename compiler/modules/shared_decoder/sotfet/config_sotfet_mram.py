@@ -1,0 +1,79 @@
+from modules.shared_decoder.config_shared import *
+
+python_path = ["modules/shared_decoder", "modules/shared_decoder/sotfet"]
+baseline = False
+mram = "sotfet"
+
+cache_optimization_prefix = "mram_"
+
+bitcell_name_template = "Xbitcell_b{bank}_r{row}_c{col}"
+
+bitcell = "sotfet_mram_bitcell"
+mram_bitcell = "sotfet_mram_small"
+body_tap = "sotfet_mram_tap_small"
+bitcell_array = "sotfet_mram_bitcell_array"
+
+precharge = "sotfet_mram_precharge"
+precharge_array = "sotfet_mram_precharge_array"
+br_precharge_array = "sotfet_mram_br_precharge_array"
+precharge_num_fingers = 3
+
+sense_amp_array = "sotfet_mram_sense_amp_array"
+sense_amp = "sotfet_mram_sense_amp"
+sense_amp_tap = "sotfet_mram_sense_amp_tap"
+
+decoder = "stacked_hierarchical_decoder"
+rwl_driver = "stacked_wordline_driver_array"
+wwl_driver = "stacked_wordline_driver_array"
+
+num_write_en_stages = 3
+write_buffers = [3.56, 12.6, 45]
+
+br_reset_buffers = [3.1, 9.65, 30]
+
+num_wordline_en_stages = 3
+wordline_en_buffers = [3.56, 12.6, 45]
+
+
+def configure_sense_amp(mirror: bool, OPTS):
+    OPTS.mirror_sense_amp = mirror
+    if mirror:
+        OPTS.sense_amp_type = OPTS.MIRROR_SENSE_AMP
+        OPTS.sense_amp = "sense_amp_br_reset"
+        OPTS.sense_amp_tap = "sense_amp_br_reset_tap"
+        OPTS.sense_amp_array = "sense_amp_br_reset_array"
+        OPTS.sense_amp_buffers = [3.68, 13.6, 50, 45]
+    else:
+        OPTS.sense_amp_type = OPTS.LATCHED_SENSE_AMP
+        OPTS.sense_amp = "latched_sense_amp"
+        OPTS.sense_amp_tap = "latched_sense_amp_tap"
+        OPTS.sense_amp_array = "latched_sense_amp_array"
+        OPTS.sense_amp_buffers = [3.56, 12.6, 45]
+
+
+def configure_sizes(bank, OPTS):
+    num_rows = bank.num_rows
+    num_cols = bank.num_cols
+
+    if num_rows >= 256:
+        OPTS.precharge_size = 8
+    else:
+        OPTS.precharge_size = 5
+
+    if num_rows > 127:
+        OPTS.max_wordline_en_size = 60
+    else:
+        OPTS.max_wordline_en_size = 30
+
+    if num_cols < 100:
+        OPTS.num_clk_buf_stages = 4
+        OPTS.num_write_en_stages = 3
+        OPTS.max_clk_buf_size = 40
+        OPTS.max_write_en_size = 40
+        # OPTS.tri_en_buffers = [, 11.7, 40, 40]
+    else:
+        OPTS.num_clk_buf_stages = 5
+        OPTS.num_write_en_stages = 5
+        OPTS.max_clk_buf_size = 60
+        OPTS.max_write_en_size = 60
+        OPTS.tri_en_buffers = [3.42, 11.7, 40, 40]

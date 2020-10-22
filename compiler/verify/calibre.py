@@ -186,6 +186,8 @@ def get_lvs_box_cells():
     if hasattr(tech, 'lvs_box_cells'):
         box_str_list = ['{{1 {}}}'.format(cell_name) for cell_name in tech.lvs_box_cells]
         return {
+            #'lvsIncludeCmdsType': 'SVRF',
+            #'lvsSVRFCmds': '{LVS PRESERVE BOX CELLS YES}',
             'cmnConfigureLVSBox': '1',
             'cmnLVSBoxes':        ' '.join(box_str_list),
         }

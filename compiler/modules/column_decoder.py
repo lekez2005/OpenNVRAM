@@ -10,7 +10,6 @@ from globals import OPTS
 from pgates.pinv import pinv
 from pgates.pnand2 import pnand2
 from pgates.pnand3 import pnand3
-from tech import drc
 
 
 class ColumnDecoder(design.design):
@@ -218,7 +217,7 @@ class ColumnDecoder(design.design):
     def add_instances(self):
         """Add nand and inverters"""
         y_offset = self.lower_gnd.by() + 0.5*self.rail_height
-        x_offset = self.gnd_connection_rx + drc["same_nwell_to_nwell"]
+        x_offset = self.gnd_connection_rx + self.get_parallel_space("nwell")
 
         if self.num_sel_outputs == 4:
             nand_mod = pnand2(size=1.5)

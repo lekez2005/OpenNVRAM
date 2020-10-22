@@ -29,7 +29,7 @@ def check(check,str):
         (frame, filename, line_number, function_name, lines,
          index) = inspect.getouterframes(inspect.currentframe())[1]
         logger.debug("ERROR: file {0}: line {1}: {2}".format(os.path.basename(filename),line_number,str))
-        assert 0
+        assert 0, str
 
 def error(str,return_value=0):
     (frame, filename, line_number, function_name, lines,

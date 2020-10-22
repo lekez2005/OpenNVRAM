@@ -17,7 +17,7 @@ class hierarchical_predecode(design.design):
     """
     Pre 2x4 and 3x8 decoder shared code.
     """
-    def __init__(self, input_number, route_top_rail=True, use_flops=False):
+    def __init__(self, input_number, route_top_rail=True, use_flops=False, buffer_sizes=None):
         self.number_of_inputs = input_number
         self.number_of_outputs = int(math.pow(2, self.number_of_inputs))
         name = "pre{0}x{1}".format(self.number_of_inputs,self.number_of_outputs)
@@ -25,6 +25,11 @@ class hierarchical_predecode(design.design):
             name += "_no_top"
         if use_flops:
             name += "_flops"
+        if buffer_sizes is not None:
+            self.buffer_sizes = buffer_sizes
+            name += "_" + ("__".join(['{:.3g}'.format(x) for x in buffer_sizes])).replace(".", "_")
+        else:
+            self.buffer_sizes = OPTS.predecode_sizes
         design.design.__init__(self, name=name)
         self.route_top_rail = route_top_rail
         self.use_flops = use_flops
@@ -62,7 +67,7 @@ class hierarchical_predecode(design.design):
     def create_modules(self):
         """ Create the INV and NAND gate """
 
-        inverter_size = OPTS.predecode_sizes[1]
+        inverter_size = self.buffer_sizes[1]
 
         self.inv = pinv(size=inverter_size, height=self.module_height)
         self.add_mod(self.inv)
@@ -82,7 +87,7 @@ class hierarchical_predecode(design.design):
 
     def create_nand(self, inputs, contact_nwell=True):
         """ Create the NAND for the predecode input stage """
-        nand_size = OPTS.predecode_sizes[0]
+        nand_size = self.buffer_sizes[0]
         if inputs == 2:
             nand = pnand2(size=nand_size, contact_nwell=contact_nwell, height=self.module_height)
         elif inputs == 3:
@@ -100,7 +105,9 @@ class hierarchical_predecode(design.design):
         if not self.vertical_flops:
             x_offset += self.m2_pitch + 0.5 * self.m2_width
             for rail_index in range(self.number_of_inputs):
-                self.rails["flop_in[{}]".format(rail_index)] = x_offset
+                rail_name = "flop_in[{}]".format(rail_index)
+                self.rails[rail_name] = x_offset
+                self.rail_heights[rail_name] = (rail_index + 1) * self.flop.height
                 x_offset += self.m2_pitch
         if self.vertical_flops:
             module_space = self.m2_width + self.parallel_line_space - 0.5*self.m2_width
@@ -137,6 +144,7 @@ class hierarchical_predecode(design.design):
 
         # The rail offsets are indexed by the label
         self.rails = {}
+        self.rail_heights = {}
 
         if self.use_flops:
             self.setup_flop_offsets()
@@ -177,11 +185,12 @@ class hierarchical_predecode(design.design):
             # these are not primary inputs, so they shouldn't have a
             # label or LVS complains about different names on one net
             if label.startswith("in") or label.startswith("flop_in") or label == "clk":
+                default_height = self.height - 2*self.m2_space
                 self.add_layout_pin(text=label,
                                     layer="metal2",
                                     offset=vector(self.rails[label] - 0.5*self.m2_width, 0), 
                                     width=self.m2_width,
-                                    height=self.height - 2*self.m2_space)
+                                    height=self.rail_heights.get(label, default_height))
             else:
                 self.add_rect(layer="metal2",
                               offset=vector(self.rails[label] - 0.5*self.m2_width, 0), 

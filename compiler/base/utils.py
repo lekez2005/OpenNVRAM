@@ -5,9 +5,11 @@ import random
 import subprocess
 import time
 from importlib import reload
+from typing import List
 
 import globals
 import tech
+from base.geometry import rectangle
 from base.pin_layout import pin_layout
 from base.vector import vector
 from gdsMill import gdsMill
@@ -25,6 +27,15 @@ def ceil(decimal):
     """
     grid = tech.drc["grid"]
     return math.ceil(decimal * 1 / grid) / (1 / grid)
+
+
+def floor(decimal):
+    """
+    Performs a flooring function on the decimal place specified by the DRC grid.
+    """
+    grid = tech.drc["grid"]
+    return math.floor(decimal * 1 / grid) / (1 / grid)
+
 
 def round_to_grid(number):
     """
@@ -120,11 +131,28 @@ def get_tap_positions(num_columns):
     if tap_positions[-1] == num_columns:
         tap_positions[-1] = num_columns - cells_per_group  # prevent clash with cells to the right of bitcell array
 
+    # find column corresponding to
+    add_buffers_rails_space = (hasattr(OPTS, "right_buffers_col_threshold") and
+                               num_columns > OPTS.right_buffers_col_threshold and
+                               len(getattr(OPTS, "right_buffers", [])) > 0)
+
+    rails_num_taps = 0
+    if add_buffers_rails_space:
+        from base.design import design
+        output_nets = [x[1] for x in OPTS.right_buffers]
+        flattened_nets = [x for y in output_nets for x in y]
+        num_rails = len(flattened_nets)
+        m4_space = design.get_parallel_space("metal4")
+        m4_pitch = design.get_min_layer_width("metal4") + m4_space
+        rails_num_taps = math.ceil((num_rails * m4_pitch + m4_space) / tap_width)
+        OPTS.right_buffers_num_taps = rails_num_taps
+
     tap_positions = list(sorted(set(tap_positions)))
     x_offset = 0.0
     positions_index = 0
     bitcell_offsets = [None]*num_columns
     tap_offsets = []
+    OPTS.right_buffers_offsets = []
     for i in range(num_columns):
         if positions_index < len(tap_positions) and i == tap_positions[positions_index]:
             tap_offsets.append(x_offset)
@@ -132,6 +160,12 @@ def get_tap_positions(num_columns):
             positions_index += 1
         bitcell_offsets[i] = x_offset
         x_offset += bitcell.width
+        if add_buffers_rails_space:
+            if x_offset > OPTS.right_buffers_x and (i + 1) % cells_per_group == 0:
+                OPTS.right_buffers_x_actual = x_offset
+                OPTS.right_buffers_offsets = [x_offset + i * tap_width for i in range(rails_num_taps)]
+                x_offset += rails_num_taps * tap_width
+                add_buffers_rails_space = False
     return bitcell_offsets, tap_offsets
 
 
@@ -197,14 +231,69 @@ def get_libcell_pins(pin_list, name, units=None, layer=None):
 
     cell = {}
     for pin in pin_list:
-        cell[str(pin)]=[]
+        cell[str(pin).lower()]=[]
         label_list=cell_vlsi.getPinShapeByLabel(str(pin), layer_pin_map=layer_pin_map)
         for label in label_list:
             (name,layer,boundary)=label
             rect = pin_rect(boundary)
             # this is a list because other cells/designs may have must-connect pins
-            cell[str(pin)].append(pin_layout(pin, rect, layer))
+            cell[str(pin).lower()].append(pin_layout(pin, rect, layer))
     return cell
+
+
+def get_clearances(cell, layer, purpose="drawing"):
+    all_rects = list(sorted(cell.get_gds_layer_rects(layer, purpose),
+                            key=lambda x: x.height))  # type: List[rectangle]
+
+    def remove_empty(rects):
+        return list(filter(lambda rect: rect[1] > rect[0], rects))
+
+    height = cell.height
+    if len(all_rects) == 0:
+        return [(0, height)]
+    elif len(all_rects) == 1:
+        top_rect = all_rects[0]
+        return remove_empty([(0, top_rect.by()), (top_rect.uy(), height)])
+
+
+
+    def overlaps(rect1, rect2):
+        return rect1.by() <= rect2.by() <= rect1.uy() or rect2.by() <= rect1.by() <= rect2.uy()
+
+    def combine_rects(original, rect2):
+        original.boundary = [vector(original.lx(), min(original.by(), rect2.by())),
+                             vector(original.rx(), max(original.uy(), rect2.uy()))]
+
+    def find_overlaps(rects):
+        original_length = len(rects)
+        obstructions = [rects[0]]
+        for rect in rects[1:]:
+            found = False
+            for obstruction in obstructions:
+                if overlaps(rect, obstruction):
+                    combine_rects(obstruction, rect)
+                    found = True
+                    break
+            if not found:
+                obstructions.append(rect)
+        final_length = len(obstructions)
+        return original_length == final_length, obstructions
+
+    obstructions = all_rects
+    while True:
+        stabilized, obstructions = find_overlaps(obstructions)
+        if stabilized:
+            break
+    obstructions = list(sorted(obstructions, key=lambda x: x.by()))
+
+    results = []
+    prev_top = 0
+    for obstruction in obstructions:
+        results.append((prev_top, obstruction.by()))
+        prev_top = obstruction.uy()
+    results.append((prev_top, height))
+
+    return remove_empty(results)
 
 
 def load_class(class_name):
@@ -216,20 +305,33 @@ def load_class(class_name):
 def run_command(command, stdout_file, stderror_file, verbose_level=1, cwd=None):
     import debug
 
+    pre_exec_fcn = None
+    try:
+        import psutil
+        nice_value = os.getenv("OPENRAM_SUBPROCESS_NICE", None)
+        if nice_value:
+            def pre_exec_fcn():
+                pid = os.getpid()
+                ps = psutil.Process(pid)
+                ps.nice(int(nice_value))
+    except ImportError:
+        pass
+
     verbose = OPTS.debug_level >= verbose_level
     if cwd is None:
         cwd = OPTS.openram_temp
     with open(stdout_file, "w") as stdout_f, open(stderror_file, "w") as stderr_f:
         stdout = subprocess.PIPE if verbose else stdout_f
-        stderr = subprocess.PIPE if verbose else stderr_f
-        process = subprocess.Popen(command, stdout=stdout, stderr=stderr, shell=True, cwd=cwd)
+        stderr = subprocess.STDOUT if verbose else stderr_f
+        process = subprocess.Popen(command, stdout=stdout, stderr=stderr, shell=True,
+                                   cwd=cwd, preexec_fn=pre_exec_fcn)
         while verbose:
             line = process.stdout.readline().decode()
             if not line:
                 process.stdout.close()
                 break
             else:
-                debug.print_str(line)
+                debug.print_str(line.rstrip())
                 stdout_f.write(line)
 
     if process is not None:

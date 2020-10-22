@@ -28,8 +28,9 @@ class options(optparse.Values):
     lvs_exe = None
     pex_exe = None
 
+    simulator_threads = 8
+
     use_ultrasim = False
-    ultrasim_threads = 8
     ultrasim_speed = 3  # 1 (most accurate) -> 8 (least accurate)
     ultrasim_mode = "a"  # a for analog, s for spice
 
@@ -60,16 +61,31 @@ class options(optparse.Values):
     use_body_taps = True  # bitcell does not include body taps so insert body taps between bitcells
 
     spectre_format = "psfbin"
+    spectre_ic_mode = "node"
     decoder_flops = False
 
     verbose_save = False  # whether to save all lots of internal nodes e.g. cols for control signals, currents
 
     separate_vdd = False
 
+    # cache delay optimization buffer sizes and suffix
+    cache_optimization = True
+    cache_optimization_prefix = ""
+
+    # use data from characterizations or dynamically compute
+    use_characterization_data = True  # Require exact match in loading characterization data
+    interpolate_characterization_data = True
+
+    # for delay graph evaluation, if number of driven loads is greater than N,
+    # the load is considered distributed if the load is also on the main path i.e. not is_branch
+    distributed_load_threshold = 8
+
     # These are the default modules that can be over-riden
     decoder = "hierarchical_decoder"
     col_decoder = "column_decoder"
     ms_flop = "ms_flop"
+    mask_in_flop = ms_flop
+    mask_in_flop_tap = "ms_flop_tap"
     predecoder_flop = "ms_flop_horz_pitch"
     predecoder_flop_layout = "h"  # v for side by side, h for one above the other
     ms_flop_array = "ms_flop_array"

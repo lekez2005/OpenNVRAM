@@ -5,8 +5,11 @@ import debug
 from base import design
 from base import utils
 from base.contact import contact, m1m2, poly as poly_contact
+from base.hierarchy_spice import INOUT, INPUT
 from base.vector import vector
-from tech import drc, info, spice
+from characterizer.characterization_data import load_data
+from globals import OPTS
+from tech import drc, info, spice, parameter
 from tech import layer as tech_layers
 
 
@@ -41,7 +44,7 @@ class ptx(design.design):
         debug.info(3, "create ptx2 structure {0}".format(name))
 
         self.tx_type = tx_type
-        self.mults = mults
+        self.mults = int(mults)
         self.tx_width = width
         self.connect_active = connect_active
         self.connect_poly = connect_poly
@@ -71,19 +74,18 @@ class ptx(design.design):
         self.add_active_contacts()
 
     def create_spice(self):
-        self.add_pin_list(["D", "G", "S", "B"])
+        self.add_pin_list(["D", "G", "S", "B"], [INOUT, INPUT, INOUT, INPUT])
         
         # self.spice.append("\n.SUBCKT {0} {1}".format(self.name,
         #                                              " ".join(self.pins)))
         # Just make a guess since these will actually be decided in the layout later.
-        area_sd = 2.5*drc["minwidth_poly"]*self.tx_width
-        perimeter_sd = 2*drc["minwidth_poly"] + 2*self.tx_width
-        self.spice_device="M{{0}} {{1}} {0} m={1} w={2}u l={3}u pd={4}u ps={4}u as={5}p ad={5}p".format(spice[self.tx_type],
-                                                                                                    self.mults,
-                                                                                                    self.tx_width,
-                                                                                                    drc["minwidth_poly"],
-                                                                                                    perimeter_sd,
-                                                                                                    area_sd)
+        area_sd = 2.5 * drc["minwidth_poly"] * self.tx_width
+        perimeter_sd = 2 * drc["minwidth_poly"] + 2 * self.tx_width
+        self.spice_device = "M{{0}} {{1}} {0} m=1 nf={1} w={2}u l={3}u pd={4}u" \
+                            " ps={4}u as={5}p ad={5}p". \
+            format(spice[self.tx_type], int(self.mults), self.tx_width*self.mults,
+                   drc["minwidth_poly"], perimeter_sd, area_sd)
+        # breakpoint()
         self.spice.append("\n* ptx " + self.spice_device)
         # self.spice.append(".ENDS {0}".format(self.name))
 
@@ -163,10 +165,18 @@ class ptx(design.design):
         # poly dummys
         if "po_dummy" in tech_layers:
             self.dummy_height = drc["po_dummy_min_height"]
-            if self.active_height > drc["po_dummy_thresh"]:
-                self.dummy_height = self.active_height + 2 * drc["po_dummy_enc"]
-            # center around active
-            self.dummy_y_offset = self.well_enclose_active + 0.5 * self.active_height
+            # top aligns with actual poly so poly_extend_active
+            # bottom is po_dummy_enc
+            alternative_dummy_height = (self.poly_height - self.poly_extend_active +
+                                        drc["po_dummy_enc"])
+
+            self.dummy_height = max(
+                alternative_dummy_height, self.dummy_height)
+            # align top with real poly top
+            if self.tx_type == "nmos":
+                self.dummy_y_offset = self.poly_top - 0.5 * self.dummy_height
+            else:
+                self.dummy_y_offset = self.poly_offset_y
             self.dummy_top = self.dummy_y_offset + 0.5*self.dummy_height
             self.dummy_bottom = self.dummy_y_offset - 0.5*self.dummy_height
 
@@ -502,4 +512,79 @@ class ptx(design.design):
         if self.connect_active:
             self.connect_fingered_active(drain_positions, source_positions)
 
-        
+    def is_delay_primitive(self):
+        """Whether to descend into this module to evaluate sub-modules for delay"""
+        return True
+
+    def get_input_cap(self, pin_name, num_elements: int = 1, wire_length: float = 0.0,
+                      interpolate=True, **kwargs):
+        # ignore interpolate
+        cap_val = self.get_tx_cap(tx_type=self.tx_type[0], terminal=pin_name,
+                                  width=self.tx_width, nf=self.mults,
+                                  m=1, interpolate=True)
+        return cap_val, cap_val
+
+    @staticmethod
+    def get_tx_cap(tx_type, terminal="g", width=None, nf: int = 1, m: int = 1,
+                   interpolate=True):
+        """
+        Load transistor parasitic caps
+        :param tx_type: "p" or "n"
+        :param terminal: "d" or "g"
+        :param width: in um -> This is width per finger, total width will be width*nf
+        :param nf: number of fingers
+        :param m: number of transistors
+        :param interpolate: Interpolate between fingers if exact nf not characterized
+        :return: capacitance in F
+        """
+        terminal = terminal.lower()
+        terminal = "d" if terminal == "s" else terminal
+        unit_cap = None
+        if width is None:
+            width = spice["minwidth_tx"]
+        if OPTS.use_characterization_data:
+            cell_name = tx_type + "mos"
+            file_suffixes = [("beta", parameter["beta"])]
+            size = width / spice["minwidth_tx"]
+            size_suffixes = [("nf", nf)]
+            unit_cap = load_data(cell_name=cell_name, pin_name=terminal, size=size,
+                                 file_suffixes=file_suffixes, size_suffixes=size_suffixes,
+                                 interpolate_size_suffixes=interpolate)
+        if unit_cap is None:
+            if terminal == "d":
+                unit_cap = spice["min_tx_drain_c"] / spice["minwidth_tx"]
+            elif terminal == "g":
+                unit_cap = spice["min_tx_gate_c"] / spice["minwidth_tx"]
+            else:
+                debug.error("Invalid tx terminal {}".format(terminal), -1)
+        debug.info(4, "Unit cap for terminal {} width {} nf {} = {:.4g}".format(
+            terminal, width, nf, unit_cap))
+        return unit_cap * width * nf * m
+
+    def get_driver_resistance(self, pin_name, use_max_res=False, interpolate=None, corner=None):
+        return self.get_tx_res(tx_type=self.tx_type[0], width=self.tx_width, nf=self.mults,
+                               m=1, interpolate=interpolate)
+
+    @staticmethod
+    def get_tx_res(tx_type, width=None, nf: int = 1, m: int = 1, interpolate=True, corner=None):
+        """Load resistance for tx. Same parameters as get_tx_cap, Corner is (process, vdd, temperature)"""
+        res_per_micron = None
+        if width is None:
+            width = spice["minwidth_tx"]
+        if OPTS.use_characterization_data:
+            cell_name = tx_type + "mos"
+            if corner is not None:
+                file_suffixes = [("process", corner[0]), ("vdd", corner[1]), ("temp", corner[2])]
+            else:
+                file_suffixes = []
+            size_suffixes = [("nf", nf)]
+            size = width / spice["minwidth_tx"]
+            res_per_micron = load_data(cell_name=cell_name, pin_name="resistance", size=size,
+                                       file_suffixes=file_suffixes, size_suffixes=size_suffixes,
+                                       interpolate_size_suffixes=interpolate)
+
+        if res_per_micron is None:
+            key = "min_tx_r_" + tx_type
+            res_per_micron = spice[key] * spice["minwidth_tx"]
+        return res_per_micron / width / nf / m
+

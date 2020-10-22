@@ -47,8 +47,9 @@ class hierarchical_decoder(design.design):
         self.setup_layout_constants()
         self.add_pins()
         self.create_pre_decoder()
-        self.create_row_decoder()
         self.create_vertical_rail()
+        self.create_row_decoder()
+        self.route_vertical_rail()
         self.route_vdd_gnd()
 
     def add_modules(self):
@@ -59,6 +60,9 @@ class hierarchical_decoder(design.design):
         self.nand3 = pnand3(align_bitcell=True)
         self.add_mod(self.nand3)
 
+        self.create_predecoders()
+
+    def create_predecoders(self):
         # CREATION OF PRE-DECODER
         self.pre2_4 = pre2x4(route_top_rail=False, use_flops=self.use_flops)
         self.add_mod(self.pre2_4)
@@ -490,6 +494,8 @@ class hierarchical_decoder(design.design):
                               width=drc["minwidth_metal2"],
                               height=self.height)
 
+    def route_vertical_rail(self):
+        if (self.num_inputs >= 4):
             self.connect_rails_to_predecodes()
             self.connect_rails_to_decoder()
 

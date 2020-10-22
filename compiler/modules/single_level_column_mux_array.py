@@ -43,7 +43,8 @@ class single_level_column_mux_array(design.design):
         self.add_routing()
         # Find the highest shapes to determine height before adding well
         highest = self.find_highest_coords()
-        self.height = highest.y 
+        self.height = highest.y
+        self.width = self.mux_inst[-1].rx()
         self.add_layout_pins()
 
     def add_modules(self):
@@ -52,8 +53,8 @@ class single_level_column_mux_array(design.design):
 
     def setup_layout_constants(self):
         self.column_addr_size = int(self.words_per_row / 2)
-        self.width = self.columns * self.mux.width
-        self.m1_pitch = contact.m1m2.width + max(drc["metal1_to_metal1"],drc["metal2_to_metal2"])
+        self.m1_pitch = contact.m1m2.width + max(self.get_parallel_space("metal1"),
+                                                 self.get_parallel_space("metal2"))
         # one set of metal1 routes for select signals and a pair to interconnect the mux outputs bl/br
         # two extra route pitch is to space from the sense amp
         self.route_height = (self.words_per_row + 4)*self.m1_pitch
@@ -61,11 +62,11 @@ class single_level_column_mux_array(design.design):
     def create_array(self):
         self.mux_inst = []
 
-        (self.bitcell_offsets, tap_offsets) = utils.get_tap_positions(self.columns)
+        (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
 
         # For every column, add a pass gate
         for col_num in range(self.columns):
-            name = "XMUX{0}".format(col_num)
+            name = "MUX{0}".format(col_num)
             x_off = vector(self.bitcell_offsets[col_num], self.route_height)
             self.mux_inst.append(self.add_inst(name=name,
                                                mod=self.mux,
@@ -83,17 +84,8 @@ class single_level_column_mux_array(design.design):
         # For every column, add a pass gate
         for col_num in range(self.columns):
             mux_inst = self.mux_inst[col_num]
-            offset = mux_inst.get_pin("bl").ll()
-            self.add_layout_pin(text="bl[{}]".format(col_num),
-                                layer="metal2",
-                                offset=offset,
-                                height=self.height-offset.y)
-
-            offset = mux_inst.get_pin("br").ll()
-            self.add_layout_pin(text="br[{}]".format(col_num),
-                                layer="metal2",
-                                offset=offset,
-                                height=self.height-offset.y)
+            self.copy_layout_pin(mux_inst, "bl", "bl[{}]".format(col_num))
+            self.copy_layout_pin(mux_inst, "br", "br[{}]".format(col_num))
 
     def add_body_contacts(self):
 

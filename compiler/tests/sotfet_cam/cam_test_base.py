@@ -14,12 +14,14 @@ class CamTestBase(testutils.OpenRamTest):
 
     @staticmethod
     def run_tests(name):
+        script_dir = os.path.dirname(__file__)
         if name == "__main__":
             if "cmos" in sys.argv:
-                script_dir = os.path.dirname(__file__)
                 sys.path.append(os.path.join(script_dir, "cmos"))
                 CamTestBase.config_template = "config_sw_cam_{}"
                 sys.argv.remove("cmos")
+            else:
+                sys.path.append(os.path.join(script_dir, "fast_ramp"))
             parse_args()
             unittest.main()
 

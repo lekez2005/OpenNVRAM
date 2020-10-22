@@ -1,6 +1,9 @@
 import copy
 import math
+from typing import List
+
 import os
+from collections import Iterable
 
 import debug
 import verify
@@ -13,6 +16,16 @@ from globals import OPTS
 from tech import drc
 from tech import layer as tech_layers
 from tech import purpose as tech_purpose
+
+POLY = "poly"
+NWELL = "nwell"
+NIMP = "nimplant"
+PIMP = "pimplant"
+METAL1 = "metal1"
+METAL2 = "metal2"
+METAL3 = "metal3"
+METAL4 = "metal4"
+METAL5 = "metal5"
 
 
 class design(hierarchy_spice.spice, hierarchy_layout.layout):
@@ -97,14 +110,124 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
         self.minarea_metal1_contact = drc["minarea_metal1_contact"]
 
-        self.wide_m1_space = drc["metal1_to_metal1_wide"]
-        self.line_end_space = drc["metal1_to_metal1_line_end"]
-        self.parallel_line_space = drc["parallel_metal1_to_metal1"]
+        self.wide_m1_space = self.get_wide_space("metal1")
+        self.line_end_space = self.get_line_end_space("metal1")
+        self.parallel_line_space = self.get_parallel_space("metal1")
         self.metal1_minwidth_fill = utils.ceil(drc["minarea_metal1_minwidth"]/self.m1_width)
         self.minarea_metal1_minwidth = drc["minarea_metal1_minwidth"]
         self.poly_vert_space = drc["poly_end_to_end"]
         self.parallel_via_space = drc["parallel_via_space"]
         self.metal1_min_enclosed_area = drc["metal1_min_enclosed_area"]
+
+    @classmethod
+    def get_min_layer_width(cls, layer):
+        return drc["minwidth_{}".format(layer)]
+
+    @classmethod
+    def get_space_by_width_and_length(cls, layer, max_width=None, min_width=None,
+                                      run_length=None, heights=None):
+        if cls.is_thin_implant(layer, min_width):
+            return cls.get_space(layer, prefix="thin")
+        elif cls.is_line_end(layer, heights):
+            return cls.get_line_end_space(layer)
+        elif cls.is_above_layer_threshold(layer, "wide", max_width, run_length):
+            return cls.get_space(layer, prefix="wide")
+        elif cls.is_above_layer_threshold(layer, "parallel", max_width, run_length):
+            return cls.get_space(layer, prefix="parallel")
+        else:
+            return cls.get_space(layer, prefix=None)
+
+    @classmethod
+    def get_drc_by_layer(cls, layer, prefix):
+        if "metal" in layer:
+            # check for example [metal3, metal2, metal1, ""] for metal3 input
+            layer_num = int(layer[5:])
+            suffixes = ["_metal{}".format(x) for x in range(layer_num, 0, -1)] + [""]
+        else:
+            suffixes = ["_"+layer, ""]
+        keys = ["{}{}".format(prefix, suffix) for suffix in suffixes]
+        for key in keys:
+            if key in drc:
+                return drc[key]
+        return None
+
+    @classmethod
+    def is_line_end(cls, layer, heights=None):
+        if heights is None or "metal" not in layer:
+            return False
+        if not isinstance(heights, Iterable) or not len(heights) == 2:
+            raise ValueError("heights must be iterable of length 2")
+        min_height = min(heights)
+        line_end_threshold = cls.get_drc_by_layer(layer, "line_end_threshold")
+        return min_height < line_end_threshold
+
+    @classmethod
+    def is_thin_implant(cls, layer, min_width):
+        if min_width is not None and "implant" in layer:
+            threshold = cls.get_drc_by_layer(layer, "thin_threshold")
+            return threshold and min_width < threshold
+
+    @classmethod
+    def get_line_end_space(cls, layer):
+        return cls.get_drc_by_layer(layer, "line_end_space")
+
+    @classmethod
+    def get_wide_space(cls, layer):
+        return cls.get_space(layer, "wide")
+
+    @classmethod
+    def get_parallel_space(cls, layer):
+        return cls.get_space(layer, "parallel")
+
+    @classmethod
+    def is_above_layer_threshold(cls, layer, prefix, max_width, run_length):
+        """
+        :param layer:
+        :param prefix: parallel, wide, ""
+        :param max_width: if None returns False, else checks if
+            max_width > threshold and run_length > threshold
+        :param run_length: if None and max_width > threshold
+            (we don't know length yet, just be conservative) -> return True
+        :return:
+        """
+        if max_width is None:
+            return False
+
+        width_threshold = cls.get_drc_by_layer(layer, prefix+"_width_threshold")
+        if width_threshold is None or max_width < width_threshold:
+            return False
+
+        if run_length is None:
+            return True
+
+        length_threshold = cls.get_drc_by_layer(layer, prefix + "_length_threshold")
+        if length_threshold is None or run_length < length_threshold:
+            return False
+        return True
+
+    @classmethod
+    def get_space(cls, layer, prefix=None):
+        """
+        finds space min space between parallel lines on layer
+        for metals, counts down from layer to metal1 until match it found
+        first checks for wide, then checks for regular space and returns the max of the two
+        Assumes spaces increase with layer
+        :param prefix: e.g. parallel, wide
+        :param layer:
+        :return: parallel space
+        """
+
+        if "implant" in layer:
+            layer_to_layer_space = drc["implant_to_implant"]
+        else:
+            layer_to_layer_space = drc["{0}_to_{0}".format(layer)]
+        space_for_prefix = None
+        if prefix:
+            space_for_prefix = cls.get_drc_by_layer(layer, prefix + "_line_space")
+
+        if space_for_prefix is not None:
+            return max(space_for_prefix, layer_to_layer_space)
+        return layer_to_layer_space
 
     def get_layout_pins(self,inst):
         """ Return a map of pin locations of the instance offset """
@@ -143,36 +266,45 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             width = utils.ceil(drc["minarea_metal1_contact"]/height)
         return width, height
 
-    def get_layer_shapes(self, layer, purpose="drawing"):
+    def get_layer_shapes(self, layer, purpose="drawing", recursive=False):
+        if self.gds.from_file:
+            return self.get_gds_layer_rects(layer, purpose, recursive=recursive)
         filter_match = lambda x: (
                     x.__class__.__name__ == "rectangle" and x.layerNumber == tech_layers[layer] and
                     x.layerPurpose == tech_purpose[purpose])
         return list(filter(filter_match, self.objs))
 
-    def get_gds_layer_shapes(self, cell, layer, purpose="drawing"):
-        # TODO get from sub-cells
-        return cell.gds.getShapesInLayer(tech_layers[layer], tech_purpose[purpose])
+    def get_gds_layer_shapes(self, cell, layer, purpose="drawing", recursive=False):
+        if recursive:
+            return cell.gds.getShapesInLayerRecursive(tech_layers[layer],
+                                                      tech_purpose[purpose])
+        else:
+            return cell.gds.getShapesInLayer(tech_layers[layer], tech_purpose[purpose])
 
-    def get_gds_layer_rects(self, layer, purpose="drawing"):
+    def get_gds_layer_rects(self, layer, purpose="drawing", recursive=False):
         def rect(shape):
             return rectangle(0, shape[0], width=shape[1][0]-shape[0][0],
                              height=shape[1][1]-shape[0][1])
-        return [rect(x) for x in self.gds.getShapesInLayer(tech_layers[layer], tech_purpose[purpose])]
+        if recursive:
+            boundaries = self.gds.getShapesInLayerRecursive(tech_layers[layer], tech_purpose[purpose])
+        else:
+            boundaries = self.gds.getShapesInLayer(tech_layers[layer], tech_purpose[purpose])
+        return [rect(x) for x in boundaries]
 
 
     def get_poly_fills(self, cell):
-        poly_dummies = self.get_gds_layer_shapes(cell, "po_dummy", "po_dummy")
-        poly_rects = self.get_gds_layer_shapes(cell, "poly")
+        poly_dummies = self.get_gds_layer_shapes(cell, "po_dummy", "po_dummy", recursive=True)
+        poly_rects = self.get_gds_layer_shapes(cell, "poly", recursive=True)
 
         # only polys with active layer interaction need to be filled
         polys = []
-        actives = self.get_gds_layer_shapes(cell, "active")
+        actives = self.get_gds_layer_shapes(cell, "active", recursive=True)
         for poly_rect in poly_rects:
             for active in actives:
                 if (poly_rect[0][0] > active[0][0] and poly_rect[1][0] < active[1][0]  # contained in x_direction
                         and poly_rect[0][1] < active[0][1] and poly_rect[1][1] > active[1][1]):
                     polys.append(poly_rect)
-        if len(polys) == 0 and len(poly_dummies) == 2: # this may be a composite cell. In which case dummy polys should be added to guide
+        if len(polys) == 0 and len(poly_dummies) == 2:
             result = {}
             left = copy.deepcopy(min(poly_dummies, key=lambda rect: rect[0][0]))
             left[0][0] -= self.poly_pitch
@@ -209,6 +341,9 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         merged_fills = {"left": [], "right": []}
 
         def add_to_merged(fill):
+            # discard ceils that appear within cell
+            if fill[0][0] > 0 and fill[1][0] < cell.width:
+                return
             if fill[0][0] < 0.5*cell.width:
                 merged_fills["left"].append(fill)
             else:
@@ -263,6 +398,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             else:
                 add_fill(instances[0].lx(), "left")
                 add_fill(instances[-1].lx(), "right")
+
             if hasattr(self, "tap_offsets") and len(self.tap_offsets) > 0:
                 tap_width = utils.get_body_tap_width()
                 tap_offsets = self.tap_offsets
@@ -271,33 +407,84 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                         add_fill(offset - instances[-1].width, "right")
                         add_fill(offset + tap_width, "left")
 
-    def fill_array_layer(self, layer, cell, module_insts=[]):
+                if hasattr(OPTS, "right_buffers_offsets") and len(OPTS.right_buffers_offsets) > 0:
+                    add_fill(OPTS.right_buffers_offsets[-1] + tap_width, "left")
+                    add_fill(OPTS.right_buffers_offsets[0] - instances[0].width, "right")
+
+    def fill_array_layer(self, layer, cell, purpose="drawing"):
         if not (hasattr(self, "tap_offsets") and len(self.tap_offsets) > 0):
             return
 
-        if layer in tech_purpose:
-            purpose = tech_purpose[layer]
-        else:
-            purpose = tech_purpose["drawing"]
-        rects = cell.gds.getShapesInLayer(tech_layers[layer], purpose=purpose)
-        tap_offsets = self.tap_offsets[1:] # first tap offset doesn't have to be filled
+        rects = cell.get_layer_shapes(layer, purpose=purpose, recursive=False)
+        if not rects:
+            rects = cell.get_layer_shapes(layer, purpose=purpose, recursive=True)
+
         tap_width = utils.get_body_tap_width()
 
+        right_buffer_x_offsets = getattr(OPTS, "right_buffers_offsets", [])
+
+        tap_offsets = []
+        if layer == NWELL:
+            tap_offsets = self.tap_offsets[1:]  # first tap offset doesn't have to be filled
+            if len(right_buffer_x_offsets) > 0:
+                tap_offsets += right_buffer_x_offsets
+
         for rect in rects:
-            (ll, ur) = rect
             # only right hand side  needs to be extended
-            if ur[0] >= cell.width:
-                right_extension = ur[0] - cell.width
+            if rect.rx() >= cell.width:
+                right_extension = rect.rx() - cell.width
                 for tap_offset in tap_offsets:
-                    self.add_rect(layer, offset=vector(tap_offset, ll[1]), height=ur[1] - ll[1],
+                    self.add_rect(layer, offset=vector(tap_offset, rect.by()), height=rect.height,
                                   width=tap_width + right_extension)
-                for i in range(1, len(module_insts)):
-                    current_inst = module_insts[i]
-                    prev_inst = module_insts[i-1]
-                    if current_inst.lx() == prev_inst.rx():
-                        continue
-                    self.add_rect(layer, offset=vector(prev_inst.rx() + right_extension, ll[1]), height=ur[1] - ll[1],
-                                  width=current_inst.lx() - prev_inst.rx())
+                for x_offset in self.bitcell_offsets:
+                    self.add_rect(layer, offset=vector(x_offset+rect.lx(), rect.by()),
+                                  height=rect.height, width=rect.width)
+
+    def evaluate_vertical_module_spacing(self, top_modules: List["design"],
+                                         bottom_modules: List["design"], reference_bottom=None,
+                                         layers=None):
+        if layers is None:
+            layers = [METAL1, METAL2, POLY, NIMP, PIMP]
+
+        if reference_bottom is None:
+            reference_bottom = bottom_modules[0]
+
+        min_space = - top_modules[0].height  # start with overlap
+        for top_module in top_modules:
+            for bottom_module in bottom_modules:
+                for layer in layers:
+                    top_rects = top_module.get_gds_layer_rects(layer, recursive=True)
+                    top_rects = list(sorted(top_rects, key=lambda x: x.by()))
+                    bottom_rects = bottom_module.get_gds_layer_rects(layer, recursive=True)
+                    bottom_rects = list(sorted(bottom_rects, key=lambda x: x.uy(), reverse=True))
+                    wide_space = self.get_wide_space(layer)
+                    for bottom_rect in bottom_rects:
+                        bottom_clearance = reference_bottom.height - bottom_rect.uy()
+                        for top_rect in top_rects:
+                            # don't bother if spacing is greater than wide spacing
+                            top_clearance = top_rect.by()
+                            total_clearance = top_clearance + bottom_clearance + min_space
+                            if total_clearance > wide_space:
+                                continue
+                            # else calculate desired space
+                            widths = [bottom_rect.height, top_rect.height]
+                            heights = [bottom_rect.width, top_rect.width]
+
+                            if bottom_rect.width >= bottom_module.width and top_rect.width >= top_module.width:
+                                num_cols = getattr(self, "num_cols", 1)
+                                run_length = num_cols * bottom_module.width
+                            else:
+                                right_most = max([top_rect, bottom_rect], key=lambda x: x.lx())
+                                left_most = min([top_rect, bottom_rect], key=lambda x: x.lx())
+                                run_length = min(right_most.rx(), left_most.rx()) - right_most.lx()
+
+                            target_space = self.get_space_by_width_and_length(layer,
+                                                                              max_width=max(widths),
+                                                                              min_width=min(widths),
+                                                                              run_length=run_length,
+                                                                              heights=heights)
+                            min_space = max(min_space, -top_clearance + -bottom_clearance + target_space)
+        return min_space
 
     def DRC_LVS(self, final_verification=False):
         """Checks both DRC and LVS for a module"""

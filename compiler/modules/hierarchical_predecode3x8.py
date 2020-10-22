@@ -1,11 +1,13 @@
 from modules.hierarchical_predecode import hierarchical_predecode
 
+
 class hierarchical_predecode3x8(hierarchical_predecode):
     """
     Pre 3x8 decoder used in hierarchical_decoder.
     """
-    def __init__(self, route_top_rail=True, use_flops=False):
-        hierarchical_predecode.__init__(self, 3, route_top_rail, use_flops=use_flops)
+    def __init__(self, route_top_rail=True, use_flops=False, buffer_sizes=None):
+        hierarchical_predecode.__init__(self, 3, route_top_rail, use_flops=use_flops,
+                                        buffer_sizes=buffer_sizes)
 
         self.add_pins()
         self.create_modules()

@@ -14,7 +14,7 @@ class CamTest(CamTestBase):
         from modules.sotfet.cmos.sw_cam import SwCam
 
         debug.info(1, "Single-bank CAM")
-        a = SwCam(word_size=128, num_words=128, num_banks=1, words_per_row=1, name="sram3")
+        a = SwCam(word_size=34, num_words=32, num_banks=1, words_per_row=1, name="sram1")
         self.local_check(a, final_verification=True)
 
     # def test_two_banks(self):

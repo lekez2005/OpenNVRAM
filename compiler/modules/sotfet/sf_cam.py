@@ -40,11 +40,7 @@ class SfCam(sram):
             connections.append("search_out[{0}]".format(i))
         for i in range(self.bank_addr_size):
             connections.append("ADDR[{0}]".format(i))
-        if self.num_banks > 1:
-            connections.append("bank_sel[{0}]".format(bank_num))
-        else:
-            bank_sel = "vdd_logic_buffers" if self.separate_vdd else "vdd"
-            connections.append(bank_sel)
+        connections.append("bank_sel".format(bank_num))
         if self.separate_vdd:
             vdd_pins = ["vdd_wordline", "vdd_decoder", "vdd_logic_buffers", "vdd_data_flops",
                         "vdd_bitline_buffer", "vdd_bitline_logic", "vdd_sense_amp"]
@@ -86,17 +82,23 @@ class SfCam(sram):
 
     def route_single_bank(self):
         """ Route a single bank SRAM """
+        # connect to bank_sel for now
+        self.copy_layout_pin(self.bank_inst, "bank_sel", "bank_sel")
+        dummy = 5
+        if dummy == 5:
+            return
         # route bank_sel to vdd
         bank_sel_pin = self.bank_inst.get_pin("bank_sel")
         (ll, ur) = utils.get_pin_rect(self.bank.control_buffers_inst.get_pin("vdd"), [self.bank_inst])
-        self.add_rect("metal3", offset=vector(bank_sel_pin.rx()-0.5*self.m3_width, ll[1]),
-                      height=bank_sel_pin.uy()-ll[1])
+
         m2_fill_height = drc["minside_metal1_contact"]
         m2_fill_width = utils.ceil(self.minarea_metal1_contact / m2_fill_height)
         cy = 0.5*(ll[1] + ur[1])
+        self.add_rect("metal3", offset=vector(bank_sel_pin.rx() - 0.5 * self.m3_width, cy),
+                      height=bank_sel_pin.uy() - cy)
         self.add_rect_center("metal2", offset=vector(bank_sel_pin.rx(), cy), width=m2_fill_width,
                              height=m2_fill_height)
-        self.add_contact_center(m2m3.layer_stack, offset=vector(bank_sel_pin.rx(), cy))
+        self.add_contact(m2m3.layer_stack, offset=vector(bank_sel_pin.rx()-0.5*self.m3_width, cy))
         self.add_contact_center(m1m2.layer_stack, offset=vector(bank_sel_pin.rx(), cy), size=[1, 2])
 
     def add_pins(self):
@@ -110,6 +112,7 @@ class SfCam(sram):
             self.add_pin("search_out[{0}]".format(row), "OUTPUT")
 
         self.add_pin_list(["search", "search_ref", "clk"], "INPUT")
+        self.add_pin("bank_sel")
 
         self.add_wordline_pins()
 

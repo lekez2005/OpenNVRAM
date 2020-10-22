@@ -9,6 +9,7 @@ simulator lang=spice
 *----------------------------------------------------------------------
 .PARAM PERIOD={PERIOD}
 Vdd vdd gnd {vdd_value}
+Vgnd gnd 0 0
 Vin a gnd pulse 0 {vdd_value} 0ps 20ps 20ps '0.5*PERIOD' 'PERIOD'
 X1 a b c vdd gnd        {in_buffer_name}    * set appropriate slope
 X3 c d d_bar vdd gnd    {driver_name}       * drive real load

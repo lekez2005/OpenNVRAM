@@ -2,9 +2,10 @@ import debug
 from base import design
 from base import utils
 from base.vector import vector
+from base.well_implant_fills import create_wells_and_implants_fills
 from globals import OPTS
-from tech import drc, spice
 from modules import body_tap
+from tech import drc, spice
 
 
 class bitcell_array(design.design):
@@ -60,7 +61,6 @@ class bitcell_array(design.design):
                 self.add_right_dummy = False
                 self.width = self.tap_offsets[-1] + self.body_tap.width
 
-
         self.cell_inst = {}
         yoffset = 0.0
         for row in range(self.row_size):
@@ -83,12 +83,30 @@ class bitcell_array(design.design):
                                    "wl[{0}]".format(row),
                                    "vdd",
                                    "gnd"])
-            for x_offset in self.tap_offsets:
+            for x_offset in self.tap_offsets + OPTS.right_buffers_offsets:
                 self.body_tap_insts.append(self.add_inst(name=self.body_tap.name, mod=self.body_tap,
                                                          offset=vector(x_offset, tempy), mirror=dir_key))
                 self.connect_inst([])
 
             yoffset += self.cell.height
+
+        self.fill_right_buffers_implant()
+
+    def fill_right_buffers_implant(self):
+        fill_rects = create_wells_and_implants_fills(self.body_tap, self.body_tap)
+        for row in range(self.row_size):
+            for x_offset in OPTS.right_buffers_offsets[1:]:
+                for fill_rect in fill_rects:
+                    if row % 2 == 0:
+                        fill_rect = (fill_rect[0], self.body_tap.height - fill_rect[2],
+                                     self.body_tap.height - fill_rect[1], fill_rect[3])
+                    rect_instance = fill_rect[3]
+                    rect_left = x_offset + (rect_instance.rx() - self.body_tap.width)
+                    rect_right = x_offset + rect_instance.lx()
+                    rect_y = row * self.cell.height + fill_rect[1]
+                    self.add_rect(fill_rect[0], offset=vector(rect_left, rect_y),
+                                  width=rect_right - rect_left,
+                                  height=fill_rect[2] - fill_rect[1])
 
     def add_dummies(self):
 

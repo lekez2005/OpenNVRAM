@@ -18,13 +18,18 @@ class PsfReader:
     def __init__(self, simulation_file, vdd_name="vdd"):
         self.simulation_file = simulation_file
         self.vdd_name = vdd_name
+        self.thresh = 0.5
 
         self.initialize()
 
     def initialize(self):
         self.data = libpsf.PSFDataSet(self.simulation_file)
         self.time = self.data.get_sweep_values()
-        self.vdd = self.data.get_signal(self.vdd_name)[0]
+        if self.vdd_name:
+            try:
+                self.vdd = self.data.get_signal(self.vdd_name)[0]
+            except:
+                pass
         self.is_open = True
 
         self.cache = {}
@@ -72,20 +77,24 @@ class PsfReader:
     def get_signal_time(self, signal_name, from_t=0.0, to_t=None):
         return self.slice_array(self.time, from_t, to_t), self.get_signal(signal_name, from_t, to_t)
 
-    def get_binary(self, signal_name, from_t, to_t=None, thresh=0.5):
+    def get_binary(self, signal_name, from_t, to_t=None, thresh=None):
         if to_t is None:
             to_t = from_t
+        if thresh is None:
+            thresh = self.thresh
         signal = self.get_signal(signal_name, from_t=from_t, to_t=to_t)
         return 1 * (signal.flatten() > thresh*self.vdd)
 
     def get_transition_time_thresh(self, signal_name, start_time, stop_time=None,
-                                   edgetype=None, edge=None, thresh=0.5):
+                                   edgetype=None, edge=None, thresh=None):
         if edge is None:
             edge = self.FIRST_EDGE
         if edgetype is None:
             edgetype = self.EITHER_EDGE
         if stop_time is None:
             stop_time = self.time[-1]
+        if thresh is None:
+            thresh = self.thresh
         signal_binary = self.get_binary(signal_name, start_time, to_t=stop_time, thresh=thresh)
         sig_prev = signal_binary[0]
         start_time_index = self.find_nearest(start_time)
@@ -105,7 +114,7 @@ class PsfReader:
         return time
 
     def get_delay(self, signal_name1, signal_name2, t1=0, t2=None, stop_time=None, edgetype1=None,
-                  edgetype2=None, edge1=None, edge2=None, thresh1=0.5, thresh2=0.5, num_bits=1):
+                  edgetype2=None, edge1=None, edge2=None, thresh1=None, thresh2=None, num_bits=1, bit=0):
 
         if t2 is None:
             t2 = t1
@@ -119,6 +128,10 @@ class PsfReader:
             edgetype1 = self.EITHER_EDGE
         if edgetype2 is None:
             edgetype2 = edgetype1
+        if thresh1 is None:
+            thresh1 = self.thresh
+        if thresh2 is None:
+            thresh2 = self.thresh
 
         trans1 = self.get_transition_time_thresh(signal_name1, t1, stop_time, edgetype1, edge=edge1, thresh=thresh1)
 
@@ -131,7 +144,7 @@ class PsfReader:
                 return trans2 - trans1
 
         if num_bits == 1:
-            return internal_delay(signal_name2.format(0))
+            return internal_delay(signal_name2.format(bit))
         else:
             return list(reversed([internal_delay(signal_name2.format(i)) for i in range(num_bits)]))
 
@@ -152,3 +165,60 @@ class PsfReader:
         bus_data = bus_data.flatten()
         return 1*np.flipud(bus_data > 0.5*self.vdd)
 
+
+# matplotlib move plots
+px = py = dpi_x = dpi_y = None
+
+
+def get_dpi():
+    from PyQt5 import QtWidgets
+    global px, py, dpi_x, dpi_y
+
+    if px is not None:
+        return
+
+    # a little hack to get screen size; from here [1]
+    # useful for moving plots to monitor
+    my_app = QtWidgets.QApplication([])
+    v = my_app.desktop().screenGeometry()
+
+    py = v.height()
+    px = v.width()
+
+    dpi_x = my_app.desktop().logicalDpiX()
+    dpi_y = my_app.desktop().logicalDpiY()
+
+    return px, py, dpi_x, dpi_y
+
+
+def move_plot(monitor=0, x_size=0.7, y_size=0.7, maximized=False, num_monitors=3):
+    import matplotlib.pyplot as plt
+
+    # monitor is -1, 0, 1?
+    fig_manager = plt.get_current_fig_manager()
+    # if px=0, plot will display on 1st screen
+    if maximized:
+        x_start = int(monitor * px / num_monitors)
+        fig_manager.window.showMaximized()
+        fig_manager.window.move(x_start, 0)
+    else:
+        # plt.gcf().set_size_inches(x_size * px / dpi_x,
+        #                           y_size * py / dpi_y)
+        monitor_width = int(px / num_monitors)
+        width_in_pixel = x_size * monitor_width
+        monitor_x_start = int(0.5 * (monitor_width - width_in_pixel))
+
+        monitor_heights = [1080, 1200, 1080]
+        monitor_height = monitor_heights[monitor]
+        height_in_pixel = y_size * monitor_height
+        monitor_y = int(0.5 * (monitor_height - height_in_pixel))
+
+        x_start = monitor_x_start + int(monitor * monitor_width)
+
+        max_monitor_height = max(monitor_heights)
+        y_start = (max_monitor_height - monitor_height) + monitor_y
+        # y_start = monitor_y
+        fig_manager.window.resize(width_in_pixel,  height_in_pixel)
+        fig_manager.window.move(x_start,  y_start)
+        plt.autoscale()
+        plt.tight_layout()

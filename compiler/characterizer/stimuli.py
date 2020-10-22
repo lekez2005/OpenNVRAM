@@ -28,7 +28,10 @@ class stimuli():
         self.sf = stim_file
 
         (self.process, self.voltage, self.temperature) = corner
-        self.device_models = tech.spice["fet_models"][self.process]
+        # try simulation specific model, otherwise, use 'fet_models'
+        self.device_models = tech.spice.get("fet_models_" + OPTS.spice_name,
+                                            tech.spice["fet_models"])[self.process]
+        stim_file.write("* OpenRAM Simulation \n")
 
     def inst_sram(self, abits, dbits, sram_name):
         """ Function to instatiate an SRAM subckt. """
@@ -220,11 +223,13 @@ class stimuli():
             # unless you figure out what these are.
             self.sf.write(".OPTIONS POST=1 RUNLVL=4 PROBE method=gear TEMP={}\n".format(self.temperature))
         else:
-            self.sf.write(".OPTIONS POST=1 RUNLVL=4 PROBE TEMP={}\n".format(self.temperature))
+            self.sf.write(".OPTIONS POST=1 RUNLVL=4 PROBE MEASFAIL=1 MEASFORM=2\n".format(self.temperature))
+            self.sf.write(".TEMP={}\n".format(self.temperature))
+            self.sf.write(".OPTION GMIN={0} GMINDC={0}\n".format(tech.spice["gmin"]))
 
         # create plots for all signals
         self.sf.write("* probe is used for hspice/xa, while plot is used in ngspice\n")
-        if OPTS.debug_level > 0:
+        if OPTS.debug_level > 1:
             if OPTS.spice_name in ["hspice", "xa"]:
                 self.sf.write(".probe V(*)\n")
             else:
@@ -250,25 +255,32 @@ usim_opt  mt={}
 usim_opt  wf_format=psf
 usim_opt  postl=1
 usim_opt  rcr_fmax=20G
-                        """.format(OPTS.ultrasim_mode, OPTS.ultrasim_speed, OPTS.ultrasim_threads))
-            self.sf.write("tran tran step={} stop={}n ic=node write=spectre.dc \n".format("5p", end_time))
+                        """.format(OPTS.ultrasim_mode, OPTS.ultrasim_speed, OPTS.simulator_threads))
+            self.sf.write("\ntran tran step={} stop={}n ic={} write=spectre.dc \n".format("5p", end_time,
+                                                                                          OPTS.spectre_ic_mode))
             self.sf.write("simulator lang=spice\n")
             self.sf.write(".probe v(*) depth=1 \n")  # save top level signals
         else:
             self.sf.write("simulatorOptions options reltol=1e-3 vabstol=1e-6 iabstol=1e-12 temp={0} try_fast_op=no "
-                          "scalem=1.0 scale=1.0 gmin={1} rforce=10m maxnotes=10 maxwarns=10 "
+                          "gmin={1} rforce=10m maxnotes=10 maxwarns=10 "
                           " preservenode=all topcheck=fixall "
                           "digits=5 cols=80 dc_pivot_check=yes pivrel=1e-3\n".format(self.temperature,
                                                                                      tech.spice["gmin"]))
             self.sf.write('dcOp dc write="spectre.dc" readns="spectre.dc" maxiters=150 maxsteps=10000 annotate=status\n')
             tran_options = OPTS.tran_options if hasattr(OPTS, "tran_options") else ""
-            self.sf.write('tran tran step={} stop={}n ic=node write=spectre.dc annotate=status maxiters=5 {}\n'.format("5p", end_time, tran_options))
+            self.sf.write('tran tran step={} stop={}n ic={} write=spectre.dc'
+                          ' annotate=status maxiters=5 {}\n'.format("5p", end_time,
+                                                                    OPTS.spectre_ic_mode,
+                                                                    tran_options))
             if OPTS.use_pex:
                 nestlvl = 1
             else:
                 nestlvl = OPTS.nestlvl if hasattr(OPTS, 'nestlvl') else 2
 
-            self.sf.write('saveOptions options save=lvlpub nestlvl={} pwr=total \n'.format(nestlvl))
+            spectre_save = getattr(OPTS, "spectre_save", "lvlpub")
+
+            self.sf.write('saveOptions options save={} nestlvl={} pwr=total \n'.format(
+                spectre_save, nestlvl))
             # self.sf.write('saveOptions options save=all pwr=total \n')
 
             self.sf.write("simulator lang=spice\n")
@@ -295,7 +307,10 @@ usim_opt  rcr_fmax=20G
         else:
             self.sf.write("* {} process corner\n".format(self.process))
             for item in list(includes):
-                if os.path.isfile(item):
+                if len(item) == 2:
+                    (item, corner) = item
+                    self.sf.write(".lib {0} {1} \n".format(item, corner))
+                elif os.path.isfile(item):
                     self.sf.write(".include \"{0}\"\n".format(item))
                 else:
                     debug.error(
@@ -303,6 +318,25 @@ usim_opt  rcr_fmax=20G
         # initial condition file
         if hasattr(OPTS, 'ic_file') and os.path.isfile(OPTS.ic_file):
             self.sf.write(".include {}\n".format(OPTS.ic_file))
+
+    def remove_subckt(self, subckt, model_file):
+        subckt_start = ".subckt {}".format(subckt)
+        subckt_end = ".ends"
+        lines = []
+        skip_next = False
+        with open(model_file, 'r') as f:
+            for line in f.readlines():
+                if line.lower().startswith(subckt_start):
+                    skip_next = True
+                elif skip_next:
+                    if line.lower().startswith(subckt_end):
+                        skip_next = False
+                else:
+                    lines.append(line)
+                    skip_next = False
+        with open(model_file, 'w') as f:
+            for line in lines:
+                f.write(line)
 
     def write_supply(self):
         """ Writes supply voltage statements """
@@ -325,22 +359,26 @@ usim_opt  rcr_fmax=20G
             xa_cfg.write("set_sim_level -level 7\n")
             xa_cfg.write("set_powernet_level 7 -node vdd\n")
             xa_cfg.close()
-            cmd = "{0} {1} -c {2}xa.cfg -o {2} -mt 2".format(OPTS.spice_exe,
+            cmd = "{0} {1} -c {2}xa.cfg -o {2} -mt {3}".format(OPTS.spice_exe,
                                                                temp_stim,
-                                                               os.path.join(OPTS.openram_temp, "xa"))
+                                                               os.path.join(OPTS.openram_temp, "xa"),
+                                                               OPTS.simulator_threads)
             valid_retcode = 0
         elif OPTS.spice_name == "hspice":
-            # TODO: Should make multithreading parameter a configuration option
-            cmd = "{0} -mt 2 -i {1} -o {2}".format(OPTS.spice_exe,
-                                                         temp_stim,
-                                                         os.path.join(OPTS.openram_temp, "timing"))
+            display_out = "-d" * (OPTS.debug_level > 0)
+            cmd = "{0} -mt {1} -hpp -i {2} {3} -o {4}".format(OPTS.spice_exe, OPTS.simulator_threads,
+                                                              temp_stim, display_out,
+                                                              os.path.join(OPTS.openram_temp, "timing"))
             valid_retcode = 0
         elif OPTS.spice_name == "spectre":
             use_ultrasim = OPTS.use_ultrasim
             if use_ultrasim:
                 cmd = "{0} -64 {1} -raw {2}".format(OPTS.spice_exe, temp_stim, OPTS.openram_temp)
             else:
-                extra_options = OPTS.spectre_options if hasattr(OPTS, "spectre_options") else " +aps +mt=32 "
+                if hasattr(OPTS, "spectre_options"):
+                    extra_options = OPTS.spectre_options
+                else:
+                    extra_options = " +aps +mt={} ".format(OPTS.simulator_threads)
                 if OPTS.use_pex:
                     # postlayout is more aggressive than +parasitics
                     extra_options += " +dcopt +postlayout "
@@ -353,7 +391,7 @@ usim_opt  rcr_fmax=20G
                                                                            extra_options)
             valid_retcode = 0
         else:
-            # ngspice 27+ supports threading with "set num_threads=4" in the stimulus file or a .spiceinit 
+            # ngspice 27+ supports threading with "set num_threads=4" in the stimulus file or a .spiceinit
             cmd = "{0} -b -o {2} {1}".format(OPTS.spice_exe,
                                                        temp_stim,
                                                        os.path.join(OPTS.openram_temp, "timing.lis"))

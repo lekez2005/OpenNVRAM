@@ -8,9 +8,10 @@ class CamProbe(SramProbe):
 
     def __init__(self, sram, pex_file=None):
         super(CamProbe, self).__init__(sram, pex_file)
-        self.q_pin = utils.get_libcell_pins(["Q"], "cam_cell_6t", tech.GDS["unit"], tech.layer["boundary"]).get("Q")[0]
+        self.q_pin = utils.get_libcell_pins(["Q"], "cam_cell_6t", tech.GDS["unit"],
+                                            tech.layer["boundary"]).get("q")[0]
         self.qbar_pin = utils.get_libcell_pins(["QBAR"], "cam_cell_6t",
-                                               tech.GDS["unit"], tech.layer["boundary"]).get("QBAR")[0]
+                                               tech.GDS["unit"], tech.layer["boundary"]).get("qbar")[0]
         self.matchline_probes = {}
         self.write_wordline_probes = {}
 

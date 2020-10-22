@@ -3,8 +3,7 @@ from base import contact
 from base import unique_meta
 from base import utils
 from base.vector import vector
-from globals import OPTS
-from tech import parameter, spice, drc
+from tech import parameter, spice
 from . import pgate
 from .ptx_spice import ptx_spice
 
@@ -26,7 +25,7 @@ class pinv(pgate.pgate, metaclass=unique_meta.Unique):
         name = "pinv_{:.3g}".format(size)
         if beta is None:
             beta = parameter["beta"]
-        if align_bitcell:
+        if align_bitcell and height == pgate.pgate.get_default_height():
             height = pinv.bitcell.height
         if not contact_pwell:
             name += "_no_p"
@@ -35,11 +34,12 @@ class pinv(pgate.pgate, metaclass=unique_meta.Unique):
         if not beta == parameter["beta"]:
             name += "_b" + str(beta)
         if not height == pgate.pgate.get_default_height():
-            name += "_h_" + "{:.5g}".format(height).replace(".", "_")
+            name += "_h_" + "{:.5g}".format(height)
         if align_bitcell:
             name += "_align"
         if same_line_inputs:
             name += "bend_x"
+        name = name.replace(".", "__")
         return name
 
     def __init__(self, size=1, beta=None, height=pgate.pgate.get_default_height(),
@@ -51,7 +51,8 @@ class pinv(pgate.pgate, metaclass=unique_meta.Unique):
         if beta is None:
             beta = parameter["beta"]
 
-        pgate.pgate.__init__(self, self.name, height, size=size, beta=beta, contact_pwell=contact_pwell,
+        pgate.pgate.__init__(self, self.name, height, size=size, beta=beta,
+                             contact_pwell=contact_pwell,
                              contact_nwell=contact_nwell, align_bitcell=align_bitcell, same_line_inputs=same_line_inputs)
         debug.info(2, "create pinv structure {0} with size of {1}".format(self.name, size))
 

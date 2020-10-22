@@ -76,7 +76,7 @@ class replica_bitline(design.design):
 
         self.nwell_extension = self.inv.mid_y + self.inv.nwell_height - self.inv.height
 
-        self.inverter_delay_chain_space = 2*self.nwell_extension + drc["same_nwell_to_nwell"]
+        self.inverter_delay_chain_space = 2*self.nwell_extension + self.get_parallel_space("nwell")
 
         self.rbl_inv_offset = vector(self.left_vdd_offset.x + self.rail_height + self.parallel_line_space,
                                      self.bottom_y_offset)

@@ -54,10 +54,10 @@ class sram(design.design, sram_power_grid.Mixin):
         self.m2m3_offset_fix = vector(0, 0.5*(self.m3_width-self.m2_width))
         
         # M1/M2 routing pitch is based on contacted pitch of the biggest layer
-        self.m1_pitch = self.m1_width + self.parallel_line_space
-        self.m2_pitch = self.m2_width + self.parallel_line_space
-        self.m3_pitch = self.m3_width + self.parallel_line_space
-        self.m4_pitch = self.m4_width + self.parallel_line_space
+        self.m1_pitch = self.m1_width + self.get_parallel_space("metal1")
+        self.m2_pitch = self.m2_width + self.get_parallel_space("metal2")
+        self.m3_pitch = self.m3_width + self.get_parallel_space("metal3")
+        self.m4_pitch = self.m4_width + self.get_parallel_space("metal4")
 
 
         self.control_size = 4

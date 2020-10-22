@@ -1,4 +1,5 @@
 import os
+from importlib import reload
 
 import numpy as np
 
@@ -7,6 +8,7 @@ import tech
 from base import utils
 from characterizer.sram_probe import SramProbe
 from globals import OPTS
+import verify
 from . import delay
 from . import stimuli
 
@@ -28,7 +30,7 @@ class SequentialDelay(delay):
         else:
             feasible_period = float(tech.spice["feasible_period"])
         self.read_period = self.write_period = self.period = feasible_period
-        self.duty_cycle = 0.5
+        self.duty_cycle = self.read_duty_cycle = self.write_duty_cycle = 0.5
         self.setup_time = float(2 * tech.spice["msflop_setup"]) * 1e-3
         self.slew = float(2 * tech.spice["rise_time"])
 
@@ -137,7 +139,7 @@ class SequentialDelay(delay):
         ic.write("ic {}={} \n".format(col_node, col_voltage))
 
     def binary_to_voltage(self, x):
-        return x*self.vdd_voltage
+        return x * self.vdd_voltage
 
     def generate_steps(self):
         for addr_dict in self.addresses:
@@ -212,7 +214,10 @@ class SequentialDelay(delay):
             self.v_comments[key] = "* (time, data): [ "
         self.current_time = self.setup_time + 0.5 * self.slew
         self.update_output(increment_time=False)
-        self.current_time += 2*self.slew
+        self.current_time += 2 * self.slew
+        # to prevent clashes when initialization period is different from first operation period
+        self.current_time += abs(self.read_period * self.read_duty_cycle -
+                                 self.write_period * self.write_duty_cycle)
 
     def finalize_output(self):
         """Complete pwl statements"""
@@ -232,8 +237,8 @@ class SequentialDelay(delay):
         """Append current time's data to pwl. Transitions from the previous value to the new value using the slew"""
         if key in ["clk"]:
             setup_time = 0
-        elif key in ["acc_en", "acc_en_inv"]: # to prevent contention with tri-state buffer
-            setup_time = -0.5*self.duty_cycle*self.period
+        elif key in ["acc_en", "acc_en_inv"]:  # to prevent contention with tri-state buffer
+            setup_time = -0.75 * self.duty_cycle * self.period
         else:
             setup_time = self.setup_time
         t1 = max(0.0, self.current_time - 0.5 * self.slew - setup_time)
@@ -463,3 +468,27 @@ class SequentialDelay(delay):
                                      trig_td=self.current_time + self.duty_cycle * self.period,
                                      targ_name=label, targ_val=targ_val, targ_dir=targ_dir,
                                      targ_td=self.current_time + self.duty_cycle * self.period)
+
+    def run_drc_lvs_pex(self):
+        OPTS.check_lvsdrc = True
+        reload(verify)
+
+        self.sram.sp_write(OPTS.spice_file)
+        self.sram.gds_write(OPTS.gds_file)
+
+        if OPTS.run_drc:
+            drc_result = verify.run_drc(self.sram.name, OPTS.gds_file, exception_group="sram")
+            if drc_result:
+                raise AssertionError("DRC Failed")
+
+        if OPTS.run_lvs:
+            lvs_result = verify.run_lvs(self.sram.name, OPTS.gds_file, OPTS.spice_file,
+                                        final_verification=True)
+            if lvs_result:
+                raise AssertionError("LVS Failed")
+
+        force_pex = not os.path.exists(OPTS.pex_spice)
+        if OPTS.use_pex and (force_pex or OPTS.run_pex):
+            errors = verify.run_pex(self.sram.name, OPTS.gds_file, OPTS.spice_file, OPTS.pex_spice)
+            if errors:
+                raise AssertionError("PEX failed")

@@ -1,7 +1,9 @@
 import itertools
+import json
 import os
 import re
 from importlib import reload
+from random import randint
 
 import numpy as np
 
@@ -14,11 +16,11 @@ from sf_cam_probe import SfCamProbe
 
 
 class SfCamDelay(SequentialDelay):
-
     ramp_time = period = 0
     write_period = search_period = 0
     search_duty_cycle = write_duty_cycle = 0
     saved_nodes = []
+    saved_currents = []
     ml_precharge_addresses = None  # for search delays
 
     clk_probe = "clk"
@@ -35,12 +37,13 @@ class SfCamDelay(SequentialDelay):
         # set up for search
         self.search = self.prev_search = 1
         self.mask = self.prev_mask = [1] * OPTS.word_size
+        self.bank_sel = self.prev_bank_sel = 1
         for i in range(self.word_size):
             self.bus_sigs.append("mask[{}]".format(i))
 
-        self.control_sigs = ["search"]
+        self.control_sigs = ["search", "bank_sel"]
 
-    def write_delay_stimulus(self):
+    def initialize_sim_file(self):
         """ Override super class method to use internal logic for pwl voltages and measurement setup
         Assumes set_stimulus_params has been called to define the addresses and nodes
          Creates a stimulus file for simulations to probe a bitcell at a given clock period.
@@ -60,7 +63,7 @@ class SfCamDelay(SequentialDelay):
             self.search_period, self.write_period, self.load, self.slew))
 
         self.sf.write("* search_duty = {0}n, write_duty = {1}n".format(self.search_duty_cycle, self.write_duty_cycle))
-        self.sf.write("* Area = {0:.0f}um2".format(self.sram.width*self.sram.height))
+        self.sf.write("* Area = {0:.0f}um2".format(self.sram.width * self.sram.height))
 
         self.stim = SfCamDut(self.sf, self.corner)
 
@@ -68,23 +71,35 @@ class SfCamDelay(SequentialDelay):
 
         self.initialize_output()
 
-        self.generate_steps()
+    def finalize_sim_file(self):
 
         self.saved_nodes.append(self.clk_probe)
+
         for node in set(self.saved_nodes):
             self.sf.write(".probe V({0}) \n".format(node))
+
+        self.sf.write("simulator lang=spectre \n")
+        for node in self.saved_currents:
+            self.sf.write("save {0} \n".format(node))
+        self.sf.write("simulator lang=spice \n")
 
         self.finalize_output()
 
         self.stim.write_include(self.trim_sp_file)
+        self.stim.replace_sotfet_cells(self.sram)
 
         # run until the end of the cycle time
-        self.stim.write_control(self.current_time + self.period)
+        self.stim.write_control(self.current_time + 2 * self.period)
 
         self.sf.close()
 
+        # save state probes
+        state_probe_file = os.path.join(OPTS.openram_temp, "state_probes.json")
+        with open(state_probe_file, "w") as f:
+            json.dump(self.probe.state_probes, f, indent=4, sort_keys=True)
+
     def probe_addresses(self, addresses):
-        probe = SfCamProbe(self.sram, OPTS.pex_spice)
+        self.probe = probe = SfCamProbe(self.sram, OPTS.pex_spice)
         self.probe_matchlines(probe, self.sram)
 
         probe.probe_bitlines(0)
@@ -95,7 +110,8 @@ class SfCamDelay(SequentialDelay):
 
         self.sf.write("* saved addresses = {} \n".format(", ".join(map(str, addresses))))
 
-        self.run_drc_lvs_pex()
+        if not OPTS.energy:
+            self.run_drc_lvs_pex()
 
         probe.extract_probes()
 
@@ -105,38 +121,80 @@ class SfCamDelay(SequentialDelay):
 
         return probe
 
+    def generate_energy_steps(self):
+        num_sims = OPTS.energy
+        mask = [1] * self.sram.word_size
+
+        if self.word_size == 36:  # CAPE architecture
+            search_mask = [0] * (self.word_size - 4) + [1, 1, 1, 1]
+        else:
+            search_mask = [1] * self.word_size
+
+        ops = ["search", "write"]
+        for i in range(num_sims):
+
+            data = [randint(0, 1) for x in range(self.sram.word_size)]
+
+            op = ops[randint(0, 1)]
+
+            if op == "search":
+                self.search_data(data, search_mask)
+            else:
+                address = randint(0, self.sram.num_words - 1)
+                self.write_masked_data(self.convert_address(address), data, mask)
+            self.sf.write("* -- {}: t = {:.5g} period = {}\n".
+                          format(op.upper(), self.current_time - self.period,
+                                 self.period))
+        self.current_time += 2 * self.period  # to cool off from previous event
+        self.period = max(self.search_period, self.write_period)
+        self.bank_sel = 0
+
+        self.update_output()
+
+        leakage_cycles = 10
+        start_time = self.current_time
+        end_time = start_time + leakage_cycles * self.search_period
+        self.current_time = end_time
+
+        self.sf.write("* -- LEAKAGE start = {:.5g} end = {:.5g}\n".format(start_time,
+                                                                          self.current_time))
+
+        self.sf.write("* --clk_buf_probe={}--\n".format(self.probe.clk_probe))
+
     def generate_steps(self):
 
         zero_address = 0
         max_address = self.sram.num_words - 1
-        probe = self.probe_addresses([zero_address, max_address])
+        dummy_address = 1
+        probe = self.probe_addresses([zero_address, max_address, dummy_address])
 
-        data = [1]*self.word_size
-        data_mismatch = [1]*(self.word_size-1) + [0]
+        data = [1] * self.word_size
+        data_mismatch = [1] * (self.word_size - 1) + [0]
 
         self.initialize_sram(probe, {
             zero_address: data,
             max_address: data_mismatch
         })
 
-        zero_one_mix = list(itertools.chain.from_iterable(zip([1]*self.word_size, [0]*self.word_size)))
+        zero_one_mix = list(itertools.chain.from_iterable(zip([1] * self.word_size, [0] * self.word_size)))
         one_zero_data = zero_one_mix[:self.word_size]
 
         one_mismatch = list(one_zero_data)
-        one_mismatch[0] = 0
+        one_mismatch[-1] = 1
 
         # one_zero_data = [1] * self.word_size
         # one_mismatch = [1] * self.word_size
 
         mask = [1] * self.word_size
+        zero_mask = [0] * self.word_size
 
-        # search for inverse if sotfet
-        if not self.cmos and not OPTS.series:
-            data = self.invert_vec(data)
-            data_mismatch = self.invert_vec(data_mismatch)
+        if self.word_size == 36:  # CAPE architecture
+            search_mask = [0] * (self.word_size - 4) + [1, 1, 1, 1]
+        else:
+            search_mask = [1] * self.word_size
 
-        self.search_data(data, mask, "".format(data))
-        self.search_data(data_mismatch, mask, "".format(data_mismatch))
+        self.search_data(data, search_mask, "".format(data))
+        self.search_data(data_mismatch, search_mask, "".format(data_mismatch))
 
         self.write_masked_data(self.convert_address(zero_address), self.invert_vec(one_zero_data), mask,
                                "reset address".format(zero_address))
@@ -153,10 +211,13 @@ class SfCamDelay(SequentialDelay):
         self.setup_write_measurements(max_address, one_mismatch,
                                       probe.decoder_probes[max_address], probe.state_probes[max_address])
 
-        self.search_data(one_zero_data, mask, "".format(one_zero_data))
-        self.search_data(one_mismatch, mask, "".format(one_mismatch))
+        # let two periods pass for sotfets before searching
+        if not self.cmos:
+            self.write_masked_data(self.convert_address(dummy_address), one_mismatch, zero_mask)
+            self.write_masked_data(self.convert_address(dummy_address), one_mismatch, zero_mask)
 
-        self.measure_leakage()
+        self.search_data(one_zero_data, search_mask, "".format(one_zero_data))
+        self.search_data(one_mismatch, search_mask, "".format(one_mismatch))
 
         self.saved_nodes = sorted(probe.saved_nodes)
 
@@ -173,30 +234,25 @@ class SfCamDelay(SequentialDelay):
         if self.cmos:
             ic.write("ic {}={} \n".format(col_node, col_voltage))
         else:
-            phi = 0.1
-            bank, col, row = re.findall("Xbank([0-9]+).*mz1_c([0-9]+)_r([0-9]+)", col_node)[0]
+            phi = 0.1 * OPTS.llg_prescale
 
-            phi1_node = "Xsram.Xbank{bank}_Xbitcell_array_Xbit_r{row}_c{col}.XI8.phi".format(bank=bank,
-                                                                                             row=row, col=col)
-            phi2_node = "Xsram.Xbank{bank}_Xbitcell_array_Xbit_r{row}_c{col}.XI9.phi".format(bank=bank,
-                                                                                             row=row, col=col)
-            theta1_node = "Xsram.Xbank{bank}_Xbitcell_array_Xbit_r{row}_c{col}.XI8.theta".format(bank=bank,
-                                                                                                 row=row, col=col)
-            theta2_node = "Xsram.Xbank{bank}_Xbitcell_array_Xbit_r{row}_c{col}.XI9.theta".format(bank=bank,
-                                                                                                 row=row, col=col)
+            phi1_node = col_node.replace(".mz1", ".I8.phi")
+            phi2_node = col_node.replace(".mz1", ".I9.phi")
+
+            theta1_node = col_node.replace(".mz1", ".I8.theta")
+            theta2_node = col_node.replace(".mz1", ".I9.theta")
+
             nodes = [phi1_node, phi2_node, theta1_node, theta2_node]
             values = [phi, phi, np.arccos(col_voltage), np.arccos(-col_voltage)]
-            if not OPTS.use_pex:
-                nodes = [x.replace("_Xbitcell_array_", ".Xbitcell_array.") for x in nodes]
+
             for i in range(4):
-                # ic.write("ic {}={} \n".format(nodes[i], values[i]))
-                ic.write("ic {}={} \n".format(nodes[i], values[i]))
+                ic.write("ic {}={} \n".format(nodes[i], values[i] * OPTS.llg_prescale))
 
     def binary_to_voltage(self, x):
         if self.cmos:
-            return x*self.vdd_voltage
+            return x * self.vdd_voltage
         else:
-            return 0.995 * ((x*2) - 1)  # close to +-1 but not exactly equal for convergence reasons
+            return 0.995 * ((x * 2) - 1)  # close to +-1 but not exactly equal for convergence reasons
 
     def update_output(self, increment_time=True):
         # write mask
@@ -210,6 +266,9 @@ class SfCamDelay(SequentialDelay):
         """data and mask are MSB first"""
         self.command_comments.append("* t = {} Search {}, Mask: {} {} \n".format(self.current_time, data,
                                                                                  mask, comment))
+        # search for inverse if PCAM
+        if not self.cmos and not OPTS.series:
+            data = self.invert_vec(data)
         self.data = list(reversed(self.convert_data(data)))
         self.mask = list(reversed(mask))
         self.search = 1
@@ -217,7 +276,8 @@ class SfCamDelay(SequentialDelay):
         self.duty_cycle = self.search_duty_cycle
         self.period = self.search_period
 
-        self.setup_search_measurements()
+        if not OPTS.energy:
+            self.setup_search_measurements()
         self.update_output()
 
     def write_masked_data(self, address_vec, data_vec, mask_vec, comment=""):
@@ -262,9 +322,9 @@ class SfCamDelay(SequentialDelay):
                                      targ_td=time)
             self.stim.gen_meas_delay(meas_name="dout_fall_a{}_{}".format(addr["addr_int"], time_suffix),
                                      trig_name=self.clk_probe, trig_val=0.1 * self.vdd_voltage, trig_dir="FALL",
-                                     trig_td=time + self.duty_cycle*self.period,
+                                     trig_td=time + self.duty_cycle * self.period,
                                      targ_name=addr["dout_label"], targ_val=0.1 * self.vdd_voltage, targ_dir="FALL",
-                                     targ_td=time + self.duty_cycle*self.period)
+                                     targ_td=time + self.duty_cycle * self.period)
 
     def setup_write_measurements(self, address_int, new_val, decoder_label, state_labels):
         """new_val is MSB first"""
@@ -285,7 +345,7 @@ class SfCamDelay(SequentialDelay):
         for i in range(self.word_size):
             transition = "HL" if new_val_reversed[i] == 0 else "LH"
             if self.cmos:
-                targ_val = 0.9*self.vdd_voltage if transition == "LH" else 0.1*self.vdd_voltage
+                targ_val = 0.9 * self.vdd_voltage if transition == "LH" else 0.1 * self.vdd_voltage
                 targ_dir = "RISE" if transition == "LH" else "FALL"
             else:
                 # There are two rise times, time to rise cross threshold and time to relax
@@ -301,9 +361,9 @@ class SfCamDelay(SequentialDelay):
             meas_name = "STATE_DELAY_a{}_c{}_t{}".format(address_int, i, time_suffix)
             self.stim.gen_meas_delay(meas_name=meas_name,
                                      trig_name=self.clk_probe, trig_val=0.1 * self.vdd_voltage, trig_dir="FALL",
-                                     trig_td=time + self.duty_cycle*self.period,
+                                     trig_td=time + self.duty_cycle * self.period,
                                      targ_name=state_labels[i], targ_val=targ_val, targ_dir=targ_dir,
-                                     targ_td=time + self.duty_cycle*self.period)
+                                     targ_td=time + self.duty_cycle * self.period)
 
     def write_generic_stimulus(self):
         """ Overrides super class method to use internal logic for measurement setup

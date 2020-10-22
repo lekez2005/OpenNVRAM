@@ -644,6 +644,17 @@ class VlsiLayout(metaclass=UniqueMeta):
                 boundaries.append((scale_units(left_bottom), scale_units(right_top)))
         return boundaries
 
+    def getShapesInLayerRecursive(self, layer, purpose=0):
+        boundaries = []
+
+        for TreeUnit in self.xyTree:
+            boundaries += self.getBoundariesInStructure(layer, TreeUnit, purpose=purpose)
+
+        boundaries = [list(map(lambda x: x * self.units[0], xx)) for xx in boundaries]
+        boundaries = [([x[0], x[1]], [x[2], x[3]]) for x in boundaries]
+
+        return boundaries
+
 
 
     def measureSize(self,startStructure):
@@ -835,11 +846,11 @@ class VlsiLayout(metaclass=UniqueMeta):
 
         return boundaries
 
-
-    def getPinInStructure(self,coordinates,layer,structure):
+    def getBoundariesInStructure(self, layer, structure, purpose=None):
         """ 
         Go through all the shapes in a structure and return the list of shapes
-        that the label coordinates are inside.
+        on the given layer.
+        If purpose is None, then only layer is checked for match
         """
 
         # check if this is a rectangle
@@ -855,7 +866,7 @@ class VlsiLayout(metaclass=UniqueMeta):
             # This may report not finding pins, but the user should fix this by adding a rectangle.
             if len(boundary.coordinates)!=5:
                 continue
-            if layer==boundary.drawingLayer:
+            if layer == boundary.drawingLayer and (purpose is None or purpose == boundary.dataType):
                 left_bottom=boundary.coordinates[0]
                 right_top=boundary.coordinates[2]
                 # Rectangle is [leftx, bottomy, rightx, topy].
@@ -864,10 +875,23 @@ class VlsiLayout(metaclass=UniqueMeta):
                 boundaryRect=[boundaryRect[0]+structureOrigin[0].item(),boundaryRect[1]+structureOrigin[1].item(),
                               boundaryRect[2]+structureOrigin[0].item(),boundaryRect[3]+structureOrigin[1].item()]
                 
-                if self.labelInRectangle(coordinates,boundaryRect):
-                    boundaries.append(boundaryRect)
+                boundaries.append(boundaryRect)
                     
         return boundaries
+
+    def getPinInStructure(self,coordinates,layer,structure):
+        """
+        Go through all the shapes in a structure and return the list of shapes
+        that the label coordinates are inside.
+        """
+        all_boundaries = self.getBoundariesInStructure(layer, structure)
+        boundaries = []
+        for boundary in all_boundaries:
+            if self.labelInRectangle(coordinates, boundary):
+                boundaries.append(boundary)
+
+        return boundaries
+
 
     def transformRectangle(self,originalRectangle,uVector,vVector):
         """

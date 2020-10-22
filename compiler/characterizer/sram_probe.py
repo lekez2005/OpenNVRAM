@@ -22,9 +22,9 @@ class SramProbe(object):
         else:
             self.pex_file = pex_file
 
-        self.q_pin = utils.get_libcell_pins(["Q"], "cell_6t", tech.GDS["unit"], tech.layer["boundary"]).get("Q")[0]
+        self.q_pin = utils.get_libcell_pins(["Q"], "cell_6t", tech.GDS["unit"], tech.layer["boundary"]).get("q")[0]
         self.qbar_pin = \
-        utils.get_libcell_pins(["QBAR"], "cell_6t", tech.GDS["unit"], tech.layer["boundary"]).get("QBAR")[0]
+        utils.get_libcell_pins(["QBAR"], "cell_6t", tech.GDS["unit"], tech.layer["boundary"]).get("qbar")[0]
 
         self.bitcell_probes = {}
         self.br_probes = {}
@@ -36,7 +36,7 @@ class SramProbe(object):
         self.clk_probe = self.get_clk_probe()
         self.probe_labels = set()
 
-    def probe_bit_cells(self, address, pin_name="Q"):
+    def probe_bit_cells(self, address, pin_name="q"):
         """Probe Q, QBAR of bitcell"""
         address = self.address_to_vector(address)
         address_int = self.address_to_int(address)
@@ -84,7 +84,7 @@ class SramProbe(object):
             pin_label = "Xsram.Xbank{}.{}[{}]".format(bank, label, col)
         return pin_label
 
-    def get_bitcell_probes(self, address, pin_name="Q", pex_file=None):
+    def get_bitcell_probes(self, address, pin_name="q", pex_file=None):
         """Retrieve simulation probe name based on extracted file"""
         address = self.address_to_vector(address)
         address_int = self.address_to_int(address)
@@ -400,12 +400,16 @@ class SramProbe(object):
             bank_index = 0
             bank_inst = self.sram.bank_inst
 
+        address_int = self.address_to_int(address)
+
         words_per_row = self.sram.words_per_row
         no_col_bits = int(np.log2(words_per_row))
-        col_address = address[:no_col_bits] or [0]
-        row_address = address[no_col_bits:]
+        if no_col_bits > 0:
+            row_address = address[:-no_col_bits]
+        else:
+            row_address = address
         row = self.address_to_int(row_address)
-        col_index = self.address_to_int(col_address)
+        col_index = address_int % self.sram.words_per_row
 
         return bank_index, bank_inst, row, col_index
 

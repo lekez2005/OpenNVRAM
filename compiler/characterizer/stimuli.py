@@ -214,18 +214,24 @@ class stimuli():
         if OPTS.spice_name == "spectre":
             self.write_control_spectre(end_time)
             return
-        # UIC is needed for ngspice to converge
-        self.sf.write(".TRAN 5p {0}n UIC\n".format(end_time))
+
         if OPTS.spice_name == "ngspice":
+            # UIC is needed for ngspice to converge
+            self.sf.write(".TRAN 5p {0}n UIC\n".format(end_time))
             # ngspice sometimes has convergence problems if not using gear method
             # which is more accurate, but slower than the default trapezoid method
             # Do not remove this or it may not converge due to some "pa_00" nodes
             # unless you figure out what these are.
             self.sf.write(".OPTIONS POST=1 RUNLVL=4 PROBE method=gear TEMP={}\n".format(self.temperature))
         else:
-            self.sf.write(".OPTIONS POST=1 RUNLVL=4 PROBE MEASFAIL=1 MEASFORM=2\n".format(self.temperature))
+            self.sf.write(".TRAN 5p {0}n \n".format(end_time))
+            self.sf.write(".OPTIONS RUNLVL=6 PROBE MEASFAIL=1 MEASFORM=2\n".format(self.temperature))
             self.sf.write(".TEMP={}\n".format(self.temperature))
             self.sf.write(".OPTION GMIN={0} GMINDC={0}\n".format(tech.spice["gmin"]))
+            # only one of POST or PSF should be specified
+            # self.sf.write(".OPTION POST=1\n".format(tech.spice["gmin"]))
+            self.sf.write(".OPTIONS PSF=1 \n")
+            self.sf.write(".OPTIONS HIER_DELIM=1 \n")
 
         # create plots for all signals
         self.sf.write("* probe is used for hspice/xa, while plot is used in ngspice\n")

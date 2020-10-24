@@ -32,7 +32,7 @@ class options(optparse.Values):
 
     use_ultrasim = False
     ultrasim_speed = 3  # 1 (most accurate) -> 8 (least accurate)
-    ultrasim_mode = "a"  # a for analog, s for spice
+    ultrasim_mode = "s"  # a for analog, s for spice. spice is more accurate
 
     # The spice executable being used which is derived from the user PATH.
     spice_exe = ""

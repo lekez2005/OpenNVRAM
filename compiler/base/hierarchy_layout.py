@@ -17,6 +17,11 @@ except ImportError:
     techpurpose = {}
 
 
+GDS_ROT_0 = 0
+GDS_ROT_90 = 90
+GDS_ROT_180 = 180
+GDS_ROT_270 = 270
+
 class layout(lef.lef):
     """
     Class consisting of a set of objs and instances for a module
@@ -27,16 +32,23 @@ class layout(lef.lef):
     layout/netlist and perform LVS/DRC.
     """
 
+    # technology may require a layer to run in vertical or horizontal
+    # in the event rotation_for_drc is non-zero,
+    # this module will be placed and rotated into a parent module
+    # that parent module is what gets exported to gds
+    rotation_for_drc = GDS_ROT_0
+
     def __init__(self, name):
         lef.lef.__init__(self, ["metal1", "metal2", "metal3"])
         self.name = name
+        self.drc_gds_name = name
         self.width = None
         self.height = None
         self.insts = []      # Holds module/cell layout instances
         self.objs = []       # Holds all other objects (labels, geometries, etc)
         self.pin_map = {}    # Holds name->pin_layout map for all pins
         self.visited = False # Flag for traversing the hierarchy 
-        self.is_library_cell = False # Flag for library cells 
+        self.is_library_cell = False # Flag for library cells
         self.gds_read()
 
     ############################################################
@@ -488,6 +500,13 @@ class layout(lef.lef):
     def gds_write(self, gds_name):
         """Write the entire gds of the object to the file."""
         debug.info(3, "Writing to {0}".format(gds_name))
+
+        if not self.rotation_for_drc == GDS_ROT_0:
+            from base.drc_rotation_wrapper import DrcRotationWrapper
+            wrapped_cell = DrcRotationWrapper(self, rotation_angle=self.rotation_for_drc)
+            self.drc_gds_name = wrapped_cell.name
+            wrapped_cell.gds_write(gds_name)
+            return
 
         writer = gdsMill.Gds2writer(self.gds)
         # MRG: 3/2/18 We don't want to clear the visited flag since

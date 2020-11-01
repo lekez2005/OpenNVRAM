@@ -78,7 +78,8 @@ class OpenRamTest(unittest.TestCase):
 
         import verify
         try:
-            self.assertTrue(verify.run_drc(a.name, tempgds, exception_group=a.__class__.__name__)==0)
+            self.assertTrue(verify.run_drc(a.drc_gds_name, tempgds,
+                                           exception_group=a.__class__.__name__) == 0)
         except:
             self.reset()
             self.fail("DRC failed: {}".format(a.name))

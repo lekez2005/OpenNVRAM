@@ -1,6 +1,36 @@
 from base import utils
-from base.design import design, NWELL, NIMP, PIMP
+from base.design import design, NWELL, NIMP, PIMP, METAL1
 import tech
+from base import contact
+
+
+def calculate_tx_metal_fill(tx_width, design_mod: design):
+    """Calculate metal fill properties
+    if tx is wide enough to not need to be filled, just return None
+    design_mod acts as gateway to design class parameters
+    """
+    num_contacts = design_mod.calculate_num_contacts(tx_width)
+    test_contact = contact.contact(contact.well.layer_stack,
+                                   dimensions=[1, num_contacts])
+    if test_contact.second_layer_height > design_mod.metal1_minwidth_fill:
+        return None
+    fill_width = utils.round_to_grid(2 * (design_mod.poly_pitch - 0.5 * design_mod.m1_width
+                                          - design_mod.m1_space))
+
+    m1_space = design_mod.get_space_by_width_and_length(METAL1, max_width=fill_width,
+                                                        min_width=design_mod.m1_width,
+                                                        run_length=tx_width)
+    # actual fill width estimate based on space
+    fill_width = utils.round_to_grid(2 * (design_mod.poly_pitch
+                                          - 0.5 * design_mod.m1_width - m1_space))
+
+    fill_height = utils.ceil(max(design_mod.minarea_metal1_contact / fill_width,
+                                 test_contact.first_layer_height))
+    fill_width = max(design_mod.m1_width,
+                     utils.ceil(design_mod.minarea_metal1_contact / fill_height))
+    y_offset = 0.5 * tx_width - 0.5 * test_contact.first_layer_height
+    fill_top = y_offset + fill_height
+    return y_offset, fill_top, fill_width, fill_height
 
 
 def get_default_fill_layers():

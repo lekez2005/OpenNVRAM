@@ -18,7 +18,10 @@ from tech import layer as tech_layers
 from tech import purpose as tech_purpose
 
 POLY = "poly"
+PO_DUMMY = "po_dummy"
 NWELL = "nwell"
+ACTIVE = "active"
+CONTACT = "contact"
 NIMP = "nimplant"
 PIMP = "pimplant"
 METAL1 = "metal1"
@@ -91,6 +94,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.m4_space = drc["metal4_to_metal4"]
         self.m10_space = drc["metal10_to_metal10"]
         self.active_width = drc["minwidth_active"]
+        self.min_tx_width = drc["minwidth_tx"]
         self.contact_width = drc["minwidth_contact"]
         self.contact_spacing = drc["contact_to_contact"]
         self.rail_height = drc["rail_height"]
@@ -269,9 +273,11 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
     def get_layer_shapes(self, layer, purpose="drawing", recursive=False):
         if self.gds.from_file:
             return self.get_gds_layer_rects(layer, purpose, recursive=recursive)
-        filter_match = lambda x: (
-                    x.__class__.__name__ == "rectangle" and x.layerNumber == tech_layers[layer] and
+
+        def filter_match(x):
+            return (x.__class__.__name__ == "rectangle" and x.layerNumber == tech_layers[layer] and
                     x.layerPurpose == tech_purpose[purpose])
+
         return list(filter(filter_match, self.objs))
 
     def get_gds_layer_shapes(self, cell, layer, purpose="drawing", recursive=False):

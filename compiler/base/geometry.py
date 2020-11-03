@@ -111,6 +111,15 @@ class geometry:
         """ Return the right edge """
         return self.boundary[1].x
 
+    def cx(self):
+        """ Return the middle x"""
+        return 0.5 * (self.lx() + self.rx())
+
+    def cy(self):
+        """ Return the middle y """
+        return 0.5 * (self.by() + self.uy())
+
+
         
 class instance(geometry):
     """
@@ -338,6 +347,18 @@ class rectangle(geometry):
                          width=self.width,
                          height=self.height,
                          center=False)
+
+    def overlaps(self, other: 'rectangle'):
+        if self.by() < other.by():
+            lower, upper = self, other
+        else:
+            lower, upper = other, self
+        if upper.by() <= lower.uy():
+            if upper.lx() <= lower.lx() <= upper.rx():
+                return True
+            if lower.lx() <= upper.lx() <= lower.rx():
+                return True
+        return False
 
     def __str__(self):
         """ override print function output """

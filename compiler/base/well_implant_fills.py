@@ -26,8 +26,8 @@ def calculate_tx_metal_fill(tx_width, design_mod: design):
 
     fill_height = utils.ceil(max(design_mod.minarea_metal1_contact / fill_width,
                                  test_contact.first_layer_height))
-    fill_width = max(design_mod.m1_width,
-                     utils.ceil(design_mod.minarea_metal1_contact / fill_height))
+    fill_width = utils.ceil(max(design_mod.m1_width,
+                                design_mod.minarea_metal1_contact / fill_height))
     y_offset = 0.5 * tx_width - 0.5 * test_contact.first_layer_height
     fill_top = y_offset + fill_height
     return y_offset, fill_top, fill_width, fill_height

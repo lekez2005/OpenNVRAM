@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Run regression tests on a parameterized inverter for push rule inverters
+Run regression tests on a parameterized horizontal inverter
 """
 from test_base import TestBase
 

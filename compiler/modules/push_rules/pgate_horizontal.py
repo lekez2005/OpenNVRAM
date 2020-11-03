@@ -262,7 +262,7 @@ class pgate_horizontal(design):
             output_x = (max(self.pmos_active.lx() + fill_right, self.pmos_active.rx())
                         + self.get_line_end_space(METAL1))
         if self.nmos_fill:
-            x_offset, fill_right, fill_height, fill_width = self.pmos_fill
+            x_offset, fill_right, fill_height, fill_width = self.nmos_fill
             output_x = max(output_x, max(self.nmos_active.lx() + fill_right, self.nmos_active.rx())
                            + self.get_line_end_space(METAL1))
         if not self.pmos_fill and not self.nmos_fill:

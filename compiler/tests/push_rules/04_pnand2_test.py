@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Run regression tests on a parameterized inverter for push rule inverters
+Run regression tests on a parameterized horizontal nand2
 """
 from test_base import TestBase
 
@@ -20,8 +20,8 @@ class Pnand2Test(TestBase):
         from modules.push_rules.pnand2_horizontal import pnand2_horizontal
 
         debug.info(2, "Checking two-finger horizontal nand2")
-        inv = pnand2_horizontal(size=2)
-        self.add_body_tap_and_test(inv)
+        dut = pnand2_horizontal(size=2)
+        self.add_body_tap_and_test(dut)
 
 
 Pnand2Test.run_tests(__name__)

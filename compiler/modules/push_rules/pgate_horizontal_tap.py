@@ -1,17 +1,17 @@
 from base import unique_meta, contact, utils
 from base.design import design, PIMP, NIMP, NWELL, ACTIVE, METAL1
 from base.vector import vector
-from modules.push_rules.pgate_push import pgate_push
+from modules.push_rules.pgate_horizontal import pgate_horizontal
 from tech import drc
 
 
-class pgate_tap(design, metaclass=unique_meta.Unique):
+class pgate_horizontal_tap(design, metaclass=unique_meta.Unique):
     @classmethod
-    def get_name(cls, pgate_mod: pgate_push):
+    def get_name(cls, pgate_mod: pgate_horizontal):
         name = "pgate_push_tap_{}".format(pgate_mod.max_tx_mults)
         return name
 
-    def __init__(self, pgate_mod: pgate_push):
+    def __init__(self, pgate_mod: pgate_horizontal):
         design.__init__(self, self.name)
         if pgate_mod.num_instances > 1:
             pgate_mod = pgate_mod.instances_mod

@@ -3,12 +3,12 @@ from base.contact import m1m2
 from base.design import METAL1, CONTACT, METAL2
 from base.hierarchy_layout import GDS_ROT_90
 from base.vector import vector
-from modules.push_rules.pgate_push import pgate_push
+from modules.push_rules.pgate_horizontal import pgate_horizontal
 from pgates.ptx_spice import ptx_spice
 from tech import drc
 
 
-class pinv_push(pgate_push, metaclass=unique_meta.Unique):
+class pinv_horizontal(pgate_horizontal, metaclass=unique_meta.Unique):
     """Inverters with horizontal orientation for use in
     push-rules restridted control buffers and pre-decoders"""
     rotation_for_drc = GDS_ROT_90
@@ -26,12 +26,12 @@ class pinv_push(pgate_push, metaclass=unique_meta.Unique):
         beta, beta_suffix = self.get_beta(beta, size)
         self.beta = beta
         self.size = size
-        pgate_push.__init__(self, self.name)
-        self.height = pinv_push.height
+        pgate_horizontal.__init__(self, self.name)
+        self.height = pinv_horizontal.height
         self.add_pins()
         self.calculate_constraints()
         if self.num_instances > 1:
-            self.instances_mod = pinv_push(size=self.size / self.num_instances,
+            self.instances_mod = pinv_horizontal(size=self.size / self.num_instances,
                                            beta=self.beta)
             self.add_mod(self.instances_mod)
             self.add_instances()

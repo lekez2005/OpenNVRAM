@@ -14,19 +14,19 @@ class TestBase(testutils.OpenRamTest):
         from base.design import design
         from base.hierarchy_layout import GDS_ROT_90
         from base.vector import vector
-        from modules.push_rules.pgate_push import pgate_push
-        from modules.push_rules.pgate_tap import pgate_tap
+        from modules.push_rules.pgate_horizontal import pgate_horizontal
+        from modules.push_rules.pgate_horizontal_tap import pgate_horizontal_tap
 
         class WrappedDut(design):
             rotation_for_drc = GDS_ROT_90
 
-            def __init__(self, dut: pgate_push):
+            def __init__(self, dut: pgate_horizontal):
                 name = dut.name + "_and_tap"
                 design.__init__(self, name)
                 self.dut = dut
                 self.add_mod(dut)
 
-                tap = pgate_tap(dut)
+                tap = pgate_horizontal_tap(dut)
                 self.add_mod(tap)
 
                 dut_inst = self.add_inst("dut", mod=self.dut, offset=vector(0, 0))

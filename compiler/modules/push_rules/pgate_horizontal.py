@@ -9,7 +9,7 @@ from base.well_implant_fills import calculate_tx_metal_fill
 from tech import drc, parameter, layer as tech_layers
 
 
-class pgate_push(design):
+class pgate_horizontal(design):
     contraints_initialized = False
     num_instances = 1
     instances_mod = None
@@ -20,7 +20,7 @@ class pgate_push(design):
 
     def __init__(self, name):
         design.__init__(self, name)
-        if not pgate_push.contraints_initialized:
+        if not pgate_horizontal.contraints_initialized:
             self.initialize_constraints(self)
         self.rail_height = self.__class__.rail_height
 
@@ -40,7 +40,7 @@ class pgate_push(design):
         return beta, beta_suffix
 
     @classmethod
-    def initialize_constraints(cls, design_self: 'pgate_push'):
+    def initialize_constraints(cls, design_self: 'pgate_horizontal'):
         rail_height = design_self.rail_height
 
         cls.active_enclosure_contact = active_enclose_contact = drc["active_enclosure_contact"]

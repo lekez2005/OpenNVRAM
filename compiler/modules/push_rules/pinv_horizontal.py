@@ -1,7 +1,6 @@
 from base import unique_meta, contact, utils
 from base.contact import m1m2
 from base.design import METAL1, CONTACT, METAL2
-from base.hierarchy_layout import GDS_ROT_90
 from base.vector import vector
 from modules.push_rules.pgate_horizontal import pgate_horizontal
 from pgates.ptx_spice import ptx_spice
@@ -11,54 +10,26 @@ from tech import drc
 class pinv_horizontal(pgate_horizontal, metaclass=unique_meta.Unique):
     """Inverters with horizontal orientation for use in
     push-rules restridted control buffers and pre-decoders"""
-    rotation_for_drc = GDS_ROT_90
     all_nmos = True
     all_pmos = True
 
     @classmethod
     def get_name(cls, size=1, beta=None):
-        # TODO beta based on size
         beta, beta_suffix = cls.get_beta(beta, size)
-        name = "pinv_push_{:.3g}{}".format(size, beta_suffix).replace(".", "__")
+        name = "pinv_horizontal_{:.3g}{}".format(size, beta_suffix).replace(".", "__")
         return name
 
-    def __init__(self, size=1, beta=None):
-        beta, beta_suffix = self.get_beta(beta, size)
-        self.beta = beta
-        self.size = size
-        pgate_horizontal.__init__(self, self.name)
-        self.height = pinv_horizontal.height
-        self.add_pins()
+    def create_layout(self):
         self.calculate_constraints()
         if self.num_instances > 1:
             self.instances_mod = pinv_horizontal(size=self.size / self.num_instances,
-                                           beta=self.beta)
+                                                 beta=self.beta)
             self.add_mod(self.instances_mod)
+            self.add_pins()
             self.add_instances()
-        else:
-            self.instances_mod = self
-            self.create_layout()
-            self.add_ptx_inst()
-            self.add_boundary()
+            return
 
-    def create_layout(self):
-
-        active_widths = [self.nmos_finger_width, self.pmos_finger_width]
-
-        self.calculate_fills(self.nmos_finger_width, self.pmos_finger_width)
-
-        self.add_poly_and_active(num_poly_contacts=1, active_widths=active_widths)
-        self.add_implants_and_nwell()
-
-        self.add_technology_specific_layers()
-        self.add_active_contacts()
-        self.add_contact_fills()
-
-        self.connect_inputs()
-
-        self.connect_outputs()
-        self.add_power_pins()
-        self.connect_power()
+        super().create_layout()
 
     def add_pins(self):
         """ Adds pins for spice netlist """
@@ -109,7 +80,7 @@ class pinv_horizontal(pgate_horizontal, metaclass=unique_meta.Unique):
         all_contact_mid_y = [x + 0.5 * self.poly_width for x in
                              nmos_poly_offsets + pmos_poly_offsets]
 
-        x_offset = self.gate_contacts[0] + 0.5 * contact_width
+        x_offset = self.gate_contact_x + 0.5 * contact_width
         for y_offset in all_contact_mid_y:
             self.add_rect_center(CONTACT, offset=vector(x_offset, y_offset))
 
@@ -122,7 +93,7 @@ class pinv_horizontal(pgate_horizontal, metaclass=unique_meta.Unique):
         self.add_layout_pin("A", METAL1, offset=vector(x_offset - m1_x_extension, pin_y),
                             width=2 * m1_x_extension, height=pin_height)
 
-    def add_ptx_inst(self):
+    def add_ptx_insts(self):
         self.pmos = ptx_spice(self.pmos_finger_width, mults=self.num_fingers, tx_type="pmos")
         self.add_inst(name="pinv_pmos",
                       mod=self.pmos,

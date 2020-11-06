@@ -108,6 +108,7 @@ class options(optparse.Values):
     replica_bitline = "replica_bitline"
     replica_bitcell = "replica_bitcell"
     bitcell = "bitcell"
+    bitcell_mod = "cell_6t"
     delay_chain = "delay_chain"
     body_tap = "body_tap"
     control_flop = "ms_flop_horz_pitch"

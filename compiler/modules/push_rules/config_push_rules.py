@@ -3,7 +3,11 @@ import os
 python_path = ["modules/push_rules"]
 
 baseline = True
-mram = ""
+
+bitcell_mod = "push_rules/cell_6t_hs_push"
+body_tap = "push_rules/cell_6t_hs_push_tap"
+bitcell_array = "push_bitcell_array"
+
 
 # modules
 decoder_flops = True

@@ -42,6 +42,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
     def __init__(self, name):
         self.gds_file = os.path.join(OPTS.openram_tech, "gds_lib", name + ".gds")
         self.sp_file = os.path.join(OPTS.openram_tech, "sp_lib", name + ".sp")
+        name = name.split("/")[-1]
 
         self.name = name
         hierarchy_layout.layout.__init__(self, name)

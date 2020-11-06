@@ -211,6 +211,7 @@ def get_libcell_size(name, units, layer):
 
     measure_result = cell_vlsi.getLayoutBorder(layer)
     if measure_result == None:
+        name = name.split("/")[-1]
         measure_result = cell_vlsi.measureSize(name)
     # returns width,height
     return measure_result

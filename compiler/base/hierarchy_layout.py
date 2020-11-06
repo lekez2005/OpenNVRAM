@@ -159,7 +159,7 @@ class layout(lef.lef):
                 return inst
         return None
     
-    def add_rect(self, layer, offset, width=0, height=0):
+    def add_rect(self, layer, offset, width=0, height=0, layer_purpose=None):
         """Adds a rectangle on a given layer,offset with width and height"""
         if width==0:
             width=drc["minwidth_{}".format(layer)]
@@ -168,7 +168,11 @@ class layout(lef.lef):
         # negative layers indicate "unused" layers in a given technology
         layer_num = techlayer[layer]
         if layer_num >= 0:
-            self.objs.append(geometry.rectangle(layer_num, offset, width, height, layerPurpose=get_purpose(layer)))
+            if layer_purpose is None:
+                layer_purpose = get_purpose(layer)
+            else:
+                layer_purpose = get_purpose(layer_purpose)
+            self.objs.append(geometry.rectangle(layer_num, offset, width, height, layerPurpose=layer_purpose))
             return self.objs[-1]
         return None
 

@@ -63,7 +63,8 @@ class OpenRamTest(unittest.TestCase):
         tempgds = os.path.join(OPTS.openram_temp, "temp.gds")
         w.gds_write(tempgds)
         import verify
-        self.assertFalse(verify.run_drc(w.name, tempgds, exception_group=w.__class__.__name__))
+        self.assertFalse(verify.run_drc(w.drc_gds_name, tempgds,
+                                        exception_group=w.__class__.__name__))
 
         if OPTS.purge_temp:
             self.cleanup()  

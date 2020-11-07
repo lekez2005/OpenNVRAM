@@ -514,6 +514,3 @@ class pgate_horizontal(design):
         for i in range(2):
             self.add_layout_pin(pin_names[i], METAL1, offset=vector(0, y_offsets[i]),
                                 width=self.width, height=self.rail_height)
-
-    def add_boundary(self):
-        self.add_rect("boundary", offset=vector(0, 0), width=self.width, height=self.height)

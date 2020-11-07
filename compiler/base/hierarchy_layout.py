@@ -529,6 +529,9 @@ class layout(lef.lef):
         return [vector(0,0), vector(self.width, self.height)]
         #return [self.find_lowest_coords(), self.find_highest_coords()]
 
+    def add_boundary(self):
+        self.add_rect("boundary", offset=vector(0, 0), width=self.width, height=self.height)
+
     def get_blockages(self, layer, top_level=False):
         """ 
         Write all of the obstacles in the current (and children) modules to the lef file 

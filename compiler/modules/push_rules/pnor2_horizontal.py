@@ -1,4 +1,4 @@
-from base import unique_meta
+from base import unique_meta, utils
 from base.vector import vector
 from modules.push_rules.pgate_horizontal import pgate_horizontal
 from pgates.ptx_spice import ptx_spice
@@ -32,8 +32,8 @@ class pnor2_horizontal(pgate_horizontal, metaclass=unique_meta.Unique):
 
     def calculate_constraints(self):
         self.num_fingers = 2
-        self.nmos_finger_width = self.min_tx_width * self.size
-        self.pmos_finger_width = 2 * self.beta * self.min_tx_width * self.size
+        self.nmos_finger_width = utils.ceil(self.min_tx_width * self.size)
+        self.pmos_finger_width = utils.ceil(2 * self.beta * self.min_tx_width * self.size)
 
     def add_ptx_insts(self):
         offset = vector(0, 0)

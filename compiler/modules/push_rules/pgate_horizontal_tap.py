@@ -70,11 +70,14 @@ class pgate_horizontal_tap(design, metaclass=unique_meta.Unique):
             active_right = self.width - active_left
             active_width = active_right - active_left
 
-            active_bottom = implant.by() + active_enclosure
+            active_space = self.get_space_by_width_and_length(ACTIVE, max_width=active_width)
+
             if i == 0:
                 active_top = implant.uy() - active_enclosure
+                active_bottom = implant.by() + 0.5 * active_space
             else:
-                active_top = self.height - self.well_enclose_active
+                active_top = self.height - max(0.5 * active_space, self.well_enclose_active)
+                active_bottom = implant.by() + active_enclosure
 
             active_height = active_top - active_bottom
 

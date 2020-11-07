@@ -1,5 +1,6 @@
 import copy
 import math
+from importlib import reload
 from typing import List
 
 import os
@@ -298,7 +299,6 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             boundaries = self.gds.getShapesInLayer(tech_layers[layer], tech_purpose[purpose])
         return [rect(x) for x in boundaries]
 
-
     def get_poly_fills(self, cell):
         poly_dummies = self.get_gds_layer_shapes(cell, "po_dummy", "po_dummy", recursive=True)
         poly_rects = self.get_gds_layer_shapes(cell, "poly", recursive=True)
@@ -322,9 +322,6 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             right[1][0] += self.poly_pitch
             result["right"] = [right]
             return result
-
-
-
 
         fills = []
         for poly_rect in polys:
@@ -369,19 +366,18 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             add_to_merged(current_fill)
         return merged_fills
 
-
-
     def get_dummy_poly(self, cell, from_gds=True):
-        if "po_dummy" in tech_layers:
+        if PO_DUMMY in tech_layers:
             if from_gds:
-                rects = cell.gds.getShapesInLayer(tech_layers["po_dummy"], tech_purpose["po_dummy"])
+                rects = cell.gds.getShapesInLayer(tech_layers[PO_DUMMY], tech_purpose[PO_DUMMY])
             else:
-                shapes = self.get_layer_shapes("po_dummy", "po_dummy")
+                shapes = self.get_layer_shapes(PO_DUMMY, PO_DUMMY)
                 rects = list(map(lambda x: x.boundary, shapes))
 
             leftmost = min(map(lambda x: x[0], map(lambda x: x[0], rects)))
             rightmost = max(map(lambda x: x[0], map(lambda x: x[1], rects)))
-            return (leftmost, rightmost)
+            return leftmost, rightmost
+        return []
 
     def add_dummy_poly(self, cell, instances, words_per_row, from_gds=True):
         instances = list(instances)
@@ -492,6 +488,22 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                                                                               heights=heights)
                             min_space = max(min_space, -top_clearance + -bottom_clearance + target_space)
         return min_space
+
+    def create_mod_from_str(self, module_name, *args, **kwargs):
+        """Helper method to create modules from string specification
+        *args and **kwargs are passed to the class instantiation
+        """
+        if "class_name" in kwargs and kwargs["class_name"]:
+            class_name = kwargs["class_name"]
+            del kwargs["class_name"]
+        else:
+            class_name = module_name
+
+        module = reload(__import__(module_name))
+        mod_class = getattr(module, class_name)
+        mod = mod_class(*args, **kwargs)
+        self.add_mod(mod)
+        return mod
 
     def DRC_LVS(self, final_verification=False):
         """Checks both DRC and LVS for a module"""

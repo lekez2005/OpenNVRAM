@@ -34,12 +34,11 @@ class hierarchical_predecode(design.design):
         self.route_top_rail = route_top_rail
         self.use_flops = use_flops
 
-        c = __import__(OPTS.bitcell)
-        self.mod_bitcell = getattr(c, OPTS.bitcell)()
+        self.mod_bitcell = self.create_mod_from_str(OPTS.bitcell)
         self.bitcell_height = self.mod_bitcell.height
 
+    def create_flops(self):
         self.vertical_flops = OPTS.predecoder_flop_layout == "v" and self.use_flops
-
         if self.use_flops:
             predecoder_flop = OPTS.predecoder_flop
 
@@ -52,6 +51,7 @@ class hierarchical_predecode(design.design):
             self.module_height = self.flop.height
         else:
             self.module_height = pgate.get_default_height()
+
 
     def add_pins(self):
         in_name = "flop_in[{}]" if self.use_flops else "in[{}]"
@@ -66,6 +66,7 @@ class hierarchical_predecode(design.design):
 
     def create_modules(self):
         """ Create the INV and NAND gate """
+        self.create_flops()
 
         inverter_size = self.buffer_sizes[1]
 
@@ -203,7 +204,7 @@ class hierarchical_predecode(design.design):
         self.in_inst = []
         for row in range(self.number_of_inputs):
             if not self.use_flops:
-                name = "Xpre_inv[{0}]".format(row)
+                name = "pre_inv_{0}".format(row)
                 if (row % 2 == 1):
                     y_off = row * (self.inv.height)
                     mirror = "R0"
@@ -219,7 +220,7 @@ class hierarchical_predecode(design.design):
                                    "inbar[{0}]".format(row),
                                    "vdd", "gnd"])
             else:
-                name = "Xflop[{0}]".format(row)
+                name = "flop_{0}".format(row)
                 if self.vertical_flops:
 
                     if row < 2:
@@ -255,7 +256,7 @@ class hierarchical_predecode(design.design):
         
         self.inv_inst = []
         for inv_num in range(self.number_of_outputs):
-            name = "Xpre_nand_inv[{}]".format(inv_num)
+            name = "pre_nand_inv_{}".format(inv_num)
             if (inv_num % 2 == 1):
                 y_off = inv_num * self.inv.height
                 mirror = "R0"
@@ -282,7 +283,7 @@ class hierarchical_predecode(design.design):
         self.nand_inst = []        
         for nand_input in range(self.number_of_outputs):
             inout = str(self.number_of_inputs)+"x"+str(self.number_of_outputs)
-            name = "Xpre{0}_nand[{1}]".format(inout,nand_input)
+            name = "pre{0}_nand_{1}".format(inout,nand_input)
             if (nand_input % 2 == 1):
                 y_off = nand_input * self.inv.height
                 mirror = "R0"
@@ -596,8 +597,5 @@ class hierarchical_predecode(design.design):
 
                 self.add_rect("nwell", offset=vector(left_x, bot), width=right_x-left_x, height=top-bot)
 
-
-
-        
-
-
+    def get_nand_input_line_combination(self):
+        raise NotImplementedError

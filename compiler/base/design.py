@@ -499,7 +499,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         else:
             class_name = module_name
 
-        module = reload(__import__(module_name))
+        module = __import__(module_name)
         mod_class = getattr(module, class_name)
         mod = mod_class(*args, **kwargs)
         self.add_mod(mod)

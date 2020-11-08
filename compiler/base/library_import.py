@@ -1,6 +1,7 @@
 import debug
 from base import design
 from base import utils
+from base.unique_meta import Unique
 from tech import GDS, layer
 
 
@@ -12,11 +13,16 @@ def library_import(cls):
     :param cls:
     :return:
     """
-    class GdsLibImport(cls):
+    class GdsLibImport(cls, metaclass=Unique):
 
-        def __init__(self, mod_name=None):
+        @classmethod
+        def get_name(cls, mod_name=None):
             if mod_name is None:
                 mod_name = cls.lib_name
+            return mod_name
+
+        def __init__(self, mod_name=None):
+            mod_name = self.get_name(mod_name)
             design.design.__init__(self, mod_name)
             debug.info(2, "Create {}".format(mod_name))
 

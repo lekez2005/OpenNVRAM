@@ -115,7 +115,6 @@ class CharTestBase(testutils.OpenRamTest):
         super().setUp()
 
         from globals import OPTS
-        self.corner = (OPTS.process_corners[0], OPTS.supply_voltages[0], OPTS.temperatures[0])
 
         self.logic_buffers_height = OPTS.logic_buffers_height
 

@@ -56,8 +56,12 @@ class OpenRamTest(unittest.TestCase):
         globals.end_openram()
 
     def setUp(self):
+        self.corner = (OPTS.process_corners[0], OPTS.supply_voltages[0], OPTS.temperatures[0])
         OPTS.check_lvsdrc = False
         self.reset()
+
+    def temp_file(self, file_name):
+        return os.path.join(OPTS.openram_temp, file_name)
     
     def local_drc_check(self, w):
         tempgds = os.path.join(OPTS.openram_temp, "temp.gds")

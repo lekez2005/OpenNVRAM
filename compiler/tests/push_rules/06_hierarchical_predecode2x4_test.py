@@ -9,12 +9,20 @@ import debug
 
 class Predecode2x4Test(TestBase):
 
-    def runTest(self):
+    def test_predecode(self):
         from modules.push_rules.predecode2x4_horizontal import predecode2x4_horizontal
 
         debug.info(1, "Testing sample for hierarchy horizontal predecode2x4")
 
         a = predecode2x4_horizontal(use_flops=True)
+        self.local_check(a)
+
+    def test_negative_predecode(self):
+        from modules.push_rules.predecode2x4_horizontal import predecode2x4_horizontal
+
+        debug.info(1, "Testing sample for hierarchy horizontal predecode2x4")
+
+        a = predecode2x4_horizontal(use_flops=True, negate=True)
         self.local_check(a)
 
 

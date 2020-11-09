@@ -1,3 +1,5 @@
+from abc import ABC
+
 from base import contact, utils
 from base.contact import m1m2, m2m3
 from base.design import PO_DUMMY, METAL1, METAL2, METAL3
@@ -9,15 +11,19 @@ from modules.push_rules.pgate_horizontal_tap import pgate_horizontal_tap
 from modules.push_rules.pinv_horizontal import pinv_horizontal
 from modules.push_rules.pnand2_horizontal import pnand2_horizontal
 from modules.push_rules.pnand3_horizontal import pnand3_horizontal
+from modules.push_rules.pnor2_horizontal import pnor2_horizontal
+from modules.push_rules.pnor3_horizontal import pnor3_horizontal
 
 
-class horizontal_predecode(hierarchical_predecode):
+class horizontal_predecode(hierarchical_predecode, ABC):
     rotation_for_drc = GDS_ROT_90
     num_inputs = 2
 
-    def __init__(self, route_top_rail=True, use_flops=False, buffer_sizes=None):
+    def __init__(self, route_top_rail=True, use_flops=False, buffer_sizes=None, negate=False):
         hierarchical_predecode.__init__(self, self.num_inputs, route_top_rail, use_flops=use_flops,
-                                        buffer_sizes=buffer_sizes)
+                                        buffer_sizes=buffer_sizes, negate=negate)
+
+        self.negate = negate
 
         self.add_pins()
         self.create_modules()
@@ -25,6 +31,12 @@ class horizontal_predecode(hierarchical_predecode):
         self.create_layout()
         self.add_boundary()
         self.DRC_LVS()
+
+    def connect_inst(self, args, check=True):
+        """Correct connections for negative outputs"""
+        if self.negate and args and args[0].startswith("flop_in"):
+            args[1], args[2] = args[2], args[1]
+        super().connect_inst(args, check)
 
     def create_layout(self):
         self.create_rails()
@@ -55,10 +67,16 @@ class horizontal_predecode(hierarchical_predecode):
         self.add_mod(self.inv)
 
         nand_size = self.buffer_sizes[0]
-        if self.number_of_inputs == 2:
-            nand = pnand2_horizontal(size=nand_size)
+        if self.negate:
+            if self.number_of_inputs == 2:
+                nand = pnor2_horizontal(size=1)
+            else:
+                nand = pnor3_horizontal(size=1)
         else:
-            nand = pnand3_horizontal(size=nand_size)
+            if self.number_of_inputs == 2:
+                nand = pnand2_horizontal(size=nand_size)
+            else:
+                nand = pnand3_horizontal(size=nand_size)
         self.nand = self.top_nand = nand
         self.add_mod(nand)
 
@@ -128,10 +146,17 @@ class horizontal_predecode(hierarchical_predecode):
             self.connect_pin_to_rail(self.rails["clk"],
                                      self.in_inst[row].get_pin("clk"))
 
+            if self.negate:
+                a = "dout_bar"
+                a_bar = "dout"
+            else:
+                a = "dout"
+                a_bar = "dout_bar"
+
             self.connect_pin_to_rail(self.rails["A[{}]".format(row)],
-                                     self.in_inst[row].get_pin("dout"))
+                                     self.in_inst[row].get_pin(a))
             self.connect_pin_to_rail(self.rails["Abar[{}]".format(row)],
-                                     self.in_inst[row].get_pin("dout_bar"))
+                                     self.in_inst[row].get_pin(a_bar))
 
     def route_nand_to_rails(self):
         nand_input_line_combination = self.get_nand_input_line_combination()
@@ -148,7 +173,6 @@ class horizontal_predecode(hierarchical_predecode):
             nand_inst = self.nand_inst[k]
 
             rail_pitch = m1m2.height + self.get_line_end_space(METAL1)
-            total_rail = (rail_pitch * (len(gate_lst) - 1)) + m1m2.height
 
             y_offsets = {"A": nand_inst.cy(),
                          "B": nand_inst.cy() - rail_pitch,

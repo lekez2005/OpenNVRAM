@@ -17,7 +17,8 @@ class hierarchical_predecode(design.design):
     """
     Pre 2x4 and 3x8 decoder shared code.
     """
-    def __init__(self, input_number, route_top_rail=True, use_flops=False, buffer_sizes=None):
+    def __init__(self, input_number, route_top_rail=True, use_flops=False, buffer_sizes=None,
+                 negate=False):
         self.number_of_inputs = input_number
         self.number_of_outputs = int(math.pow(2, self.number_of_inputs))
         name = "pre{0}x{1}".format(self.number_of_inputs,self.number_of_outputs)
@@ -30,6 +31,8 @@ class hierarchical_predecode(design.design):
             name += "_" + ("__".join(['{:.3g}'.format(x) for x in buffer_sizes])).replace(".", "_")
         else:
             self.buffer_sizes = OPTS.predecode_sizes
+        if negate:  # TODO implement for non-horizontal
+            name += "_neg"
         design.design.__init__(self, name=name)
         self.route_top_rail = route_top_rail
         self.use_flops = use_flops

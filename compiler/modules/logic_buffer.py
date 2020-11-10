@@ -33,6 +33,8 @@ class LogicBuffer(design.design, metaclass=Unique):
         self.align_bitcell = align_bitcell
         self.logic = logic
 
+        self.two_input = logic in ["pnand2", "pnor2"]
+
         design.design.__init__(self, self.name)
         debug.info(2, "Create logic buffers with stages: [{}] ".format(",".join(map(str, buffer_stages))))
 
@@ -63,7 +65,7 @@ class LogicBuffer(design.design, metaclass=Unique):
     def add_pins(self):
         self.add_pin("A")
         self.add_pin("B")
-        if self.logic == self.PNAND_3:
+        if not self.two_input:
             self.add_pin("C")
         self.add_pin("out_inv")
         if len(self.buffer_stages) > 1:
@@ -104,7 +106,7 @@ class LogicBuffer(design.design, metaclass=Unique):
 
     def add_modules(self):
         self.logic_inst = self.add_inst("logic", mod=self.logic_mod, offset=vector(0, 0))
-        if self.logic == self.PNAND_3:
+        if not self.two_input:
             self.connect_inst(["A", "B", "C", "logic_out", "vdd", "gnd"])
         else:
             self.connect_inst(["A", "B", "logic_out", "vdd", "gnd"])
@@ -134,7 +136,7 @@ class LogicBuffer(design.design, metaclass=Unique):
         else:
             self.copy_layout_pin(self.logic_inst, "A", "A")
             self.copy_layout_pin(self.logic_inst, "B", "B")
-        if self.logic == self.PNAND_3:
+        if not self.two_input:
             self.copy_layout_pin(self.logic_inst, "C", "C")
 
         # logic output to buffer input

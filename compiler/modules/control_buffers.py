@@ -137,10 +137,11 @@ class ControlBuffers(design.design):
         self.connect_inst(["bank_sel_cbar", "read_bar", "sense_en_bar", "sense_en", "vdd", "gnd"])
 
     def calculate_rail_positions(self):
-        for i in range(len(self.rail_pos)):
-            self.rail_pos[i] = i * (self.m3_width + self.parallel_line_space)
 
-        self.height = (self.rail_pos[-1] + self.m3_width + self.parallel_line_space +
+        for i in range(len(self.rail_pos)):
+            self.rail_pos[i] = i * self.bus_pitch
+
+        self.height = (self.rail_pos[-1] + self.bus_pitch +
                        0.5*self.rail_height + self.logic_heights)
 
     def add_input_pins(self):

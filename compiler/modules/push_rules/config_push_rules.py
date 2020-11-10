@@ -82,8 +82,8 @@ sampleb_buffers = [1, 3.7, 13.6, 50]
 sense_amp = "latched_sense_amp"
 sense_amp_tap = "latched_sense_amp_tap"
 sense_amp_array = "latched_sense_amp_array"
-sense_amp_buffers = [3.56, 12.6, 45]
-tri_en_buffers = [3.42, 11.7, 40, 40]
+sense_amp_buffers = [1, 2.6, 6.7, 17.4, 45]
+tri_en_buffers = [1, 2.6, 6.7, 17.4, 45]
 precharge_buffers = [1, 3.9, 15, 60]
 precharge_size = 1.5
 

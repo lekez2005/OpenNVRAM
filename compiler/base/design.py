@@ -87,6 +87,11 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.poly_space = drc["poly_to_poly"]
         self.poly_pitch = self.poly_width + self.poly_space
         self.m1_width = drc["minwidth_metal1"]
+
+        self.medium_m1 = self.get_medium_layer_width(METAL1)
+        self.medium_m2 = self.get_medium_layer_width(METAL2)
+        self.medium_m3 = self.get_medium_layer_width(METAL3)
+
         self.m1_space = drc["metal1_to_metal1"]
         self.m2_width = drc["minwidth_metal2"]
         self.m2_space = drc["metal2_to_metal2"]
@@ -125,9 +130,17 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.parallel_via_space = drc["parallel_via_space"]
         self.metal1_min_enclosed_area = drc["metal1_min_enclosed_area"]
 
+        self.bus_width = self.medium_m3
+        self.bus_space = self.get_parallel_space(METAL3)
+        self.bus_pitch = self.bus_width + self.bus_space
+
     @classmethod
     def get_min_layer_width(cls, layer):
         return drc["minwidth_{}".format(layer)]
+
+    @classmethod
+    def get_medium_layer_width(cls, layer):
+        return cls.get_drc_by_layer(layer, "medium_width")
 
     @classmethod
     def get_space_by_width_and_length(cls, layer, max_width=None, min_width=None,

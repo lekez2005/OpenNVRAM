@@ -440,6 +440,12 @@ class layout(lef.lef):
         # We don't model the logical connectivity of wires/paths
         self.connect_inst([])
         return inst
+
+    def add_cross_contact_center(self, cont, offset):
+        via_x = offset.x - 0.5 * cont.contact_width
+        via_y = offset.y - 0.5 * cont.height
+        self.add_inst(cont.name, cont, offset=vector(via_x, via_y))
+        self.connect_inst([])
     
     def add_ptx(self, offset, mirror="R0", rotate=0, width=1, mults=1, tx_type="nmos"):
         """Adds a ptx module to the design."""

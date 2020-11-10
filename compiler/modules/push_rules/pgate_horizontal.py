@@ -253,6 +253,12 @@ class pgate_horizontal(design):
         self.nmos_active, self.pmos_active = active_rects
 
         # width based on poly
+        if self.insert_poly_dummies:
+            dummy_min_height = drc["po_dummy_min_height"]
+            width_by_dummy = dummy_min_height + self.poly_to_field_poly
+        else:
+            dummy_min_height = 0
+            width_by_dummy = 0
         width_by_poly = poly_x_offset + max_poly_width + 0.5 * self.poly_to_field_poly
         self.poly_right_x = poly_x_offset + max_poly_width
         # width based on output pin
@@ -272,24 +278,21 @@ class pgate_horizontal(design):
 
         width_by_output = self.output_x + self.m1_width
 
-        self.width = max(width_by_poly, width_by_output)
+        self.width = max(width_by_poly, width_by_output, width_by_dummy)
         self.output_x = self.width - self.m1_width
 
         if self.insert_poly_dummies:
             # add dummies
-            dummy_min_height = drc["po_dummy_min_height"]
             if max_poly_width < dummy_min_height:
-                if poly_x_offset + dummy_min_height < self.width - 0.5 * self.poly_to_field_poly:
-                    dummy_width = dummy_min_height
-                else:
-                    # extend to the end of cell and overlap with dummy to the right
-                    dummy_width = self.width + 0.5 * self.poly_to_field_poly - poly_x_offset
+                poly_x_offset = 0.5 * self.poly_to_field_poly
+                dummy_width = dummy_min_height
             else:
                 dummy_width = max_poly_width
             if self.insert_poly_dummies:
                 for y_offset in dummy_offsets:
                     self.add_rect(PO_DUMMY, offset=vector(poly_x_offset, y_offset),
                                   height=self.poly_width, width=dummy_width)
+            self.poly_right_x = max(self.poly_right_x, poly_x_offset + dummy_width)
 
     def add_implants_and_nwell(self):
         # implants
@@ -301,7 +304,7 @@ class pgate_horizontal(design):
         implant_layers = [NIMP, PIMP]
         for i in range(2):
             self.add_rect(implant_layers[i], offset=vector(implant_x, y_offsets[i]),
-                          width=implant_right - implant_x - implant_x, height=heights[i])
+                          width=implant_right - implant_x, height=heights[i])
 
         # nwell
         nwell_x = implant_x

@@ -9,6 +9,11 @@ body_tap = "push_rules/cell_6t_hs_push_tap"
 bitcell_array = "push_bitcell_array"
 predecoder_flop = "ms_flop_horz_push_rot"
 
+decoder_and_2 = "horizontal_decoder_and.and2"
+decoder_and_2_tap = "horizontal_decoder_and.and2_tap"
+decoder_and_3 = "horizontal_decoder_and.and3"
+decoder_and_3_tap = "horizontal_decoder_and.and3_tap"
+
 # modules
 decoder_flops = True
 separate_vdd = False

@@ -50,7 +50,7 @@ class pnor3_horizontal(pgate_horizontal, metaclass=unique_meta.Unique):
 
         self.nmos = ptx_spice(self.nmos_finger_width, mults=1, tx_type="nmos")
 
-        self.nmos3_inst = self.add_inst(name="pnor3_nmos2", mod=self.nmos, offset=offset)
+        self.nmos3_inst = self.add_inst(name="pnor3_nmos3", mod=self.nmos, offset=offset)
         self.connect_inst(["Z", "C", "gnd", "gnd"])
 
         self.nmos2_inst = self.add_inst(name="pnor3_nmos2", mod=self.nmos, offset=offset)

@@ -37,13 +37,13 @@ class hierarchical_decoder(design.design):
 
         self.rows = rows
         self.num_inputs = int(math.log(self.rows, 2))
-        (self.no_of_pre2x4,self.no_of_pre3x8)=self.determine_predecodes(self.num_inputs)
+        (self.no_of_pre2x4, self.no_of_pre3x8) = self.determine_predecodes(self.num_inputs)
         
         self.create_layout()
         self.DRC_LVS()
 
     def create_layout(self):
-        self.add_modules()
+        self.create_modules()
         self.setup_layout_constants()
         self.add_pins()
         self.create_pre_decoder()
@@ -52,7 +52,7 @@ class hierarchical_decoder(design.design):
         self.route_vertical_rail()
         self.route_vdd_gnd()
 
-    def add_modules(self):
+    def create_modules(self):
         self.inv = pinv(align_bitcell=True)
         self.add_mod(self.inv)
         self.nand2 = pnand2(align_bitcell=True)
@@ -222,15 +222,16 @@ class hierarchical_decoder(design.design):
             pins.append("clk")
         pins.extend(["vdd", "gnd"])
 
-        self.pre2x4_inst.append(self.add_inst(name="pre[{0}]".format(num),
-                                                 mod=self.pre2_4,
+        self.pre2x4_inst.append(self.add_inst(name="pre2x4_{0}".format(num),
+                                                 mod=self.get_pre2x4_mod(num),
                                                  offset=base,
                                                  mirror=mirror))
         self.connect_inst(pins)
 
         self.add_pre2x4_pins(num)
 
-                            
+    def get_pre2x4_mod(self, num):
+        return self.pre2_4
 
     def add_pre2x4_pins(self,num):
         """ Add the input pins to the 2x4 predecoder """
@@ -271,14 +272,17 @@ class hierarchical_decoder(design.design):
             pins.append("clk")
         pins.extend(["vdd", "gnd"])
 
-        self.pre3x8_inst.append(self.add_inst(name="pre3x8[{0}]".format(num), 
-                                              mod=self.pre3_8,
+        self.pre3x8_inst.append(self.add_inst(name="pre3x8_{0}".format(num),
+                                              mod=self.get_pre3x8_mod(num),
                                               offset=offset,
                                               mirror=mirror))
         self.connect_inst(pins)
 
         # The 3x8 predecoders will be stacked, so use yoffset
         self.add_pre3x8_pins(num,offset)
+
+    def get_pre3x8_mod(self, num):
+        return self.pre3_8
 
     def add_pre3x8_pins(self,num,offset):
         """ Add the input pins to the 3x8 predecoder at the given offset """

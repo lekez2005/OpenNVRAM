@@ -1,7 +1,14 @@
 from base import utils
-from base.design import design, NWELL, NIMP, PIMP, METAL1
+from base.design import design, NWELL, NIMP, PIMP, METAL1, PO_DUMMY, POLY
 import tech
 from base import contact
+from base.geometry import instance
+from base.hierarchy_layout import GDS_ROT_270, GDS_ROT_90
+from base.rotation_wrapper import RotationWrapper
+from base.vector import vector
+
+TOP = "top"
+BOTTOM = "bottom"
 
 
 def calculate_tx_metal_fill(tx_width, design_mod: design):
@@ -97,3 +104,55 @@ def create_wells_and_implants_fills(left_mod: design, right_mod: design,
             fill_rect = (layer, rect_bottom, rect_top, left_mod_rect, overlap_rect)
             all_fills.append(fill_rect)
     return all_fills
+
+
+def fill_horizontal_poly(self: design, reference_inst: instance, direction=TOP):
+    """
+    Fill dummy poly for instances which have been rotated by 90 or 270
+    :param self: The parent module where the fills are inserted
+    :param reference_inst: The instance around which the fills will be inserted
+    :param direction: Whether to insert above or below. Options: top, bottom
+    :return:
+    """
+    if isinstance(reference_inst.mod, RotationWrapper):
+        original_vertical_mod = reference_inst.mod.child_mod
+        rotation = reference_inst.mod.child_inst.rotate
+    else:
+        original_vertical_mod = reference_inst.mod
+        rotation = reference_inst.rotate
+
+    dummy_fills = self.get_poly_fills(original_vertical_mod)
+
+    if not dummy_fills:
+        return
+
+    if ((direction == TOP and rotation == GDS_ROT_90)
+            or direction == BOTTOM and rotation == GDS_ROT_270):
+        key = "right"
+    else:
+        key = "left"
+
+    real_poly = original_vertical_mod.get_layer_shapes(POLY)
+    max_width = max(real_poly, key=lambda x: x.width).width
+
+    for rect in dummy_fills[key]:
+        fill_x = 0.5 * self.poly_to_field_poly
+        fill_width = reference_inst.width - 2 * fill_x
+        ll, ur = map(vector, rect)
+        if direction == TOP:
+            if key == "left":
+                y_shift = original_vertical_mod.width - ur[0]
+            else:
+                y_shift = ll[0]
+            y_shift += 2 * (max_width - self.poly_width)
+        else:
+            if key == "left":
+                y_shift = ll[0]
+            else:
+                y_shift = original_vertical_mod.width - ur[0]
+            y_shift -= (max_width - self.poly_width)
+
+        y_offset = reference_inst.by() + y_shift
+        x_offset = reference_inst.lx() + fill_x
+        self.add_rect(PO_DUMMY, offset=vector(x_offset, y_offset),
+                      width=fill_width, height=self.poly_width)

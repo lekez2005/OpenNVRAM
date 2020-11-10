@@ -1,6 +1,7 @@
 from base.design import design
 from base.hierarchy_layout import GDS_ROT_270
 from base.library_import import library_import
+from base.unique_meta import Unique
 from base.vector import vector
 
 
@@ -10,9 +11,13 @@ class ms_flop_horz_push(design):
     lib_name = "push_rules/ms_flop_horz_push"
 
 
-class ms_flop_horz_push_rot(design):
+class ms_flop_horz_push_rot(design, metaclass=Unique):
+    @classmethod
+    def get_name(cls):
+        return "ms_flop_horz_push_rot"
+
     def __init__(self):
-        super().__init__("ms_flop_horz_push_rot")
+        super().__init__(self.get_name())
         mod = ms_flop_horz_push()
         self.flop_mod = mod
         self.add_mod(mod)

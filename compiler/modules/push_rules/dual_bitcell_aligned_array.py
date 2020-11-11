@@ -1,3 +1,4 @@
+import re
 from abc import ABC
 from typing import List
 
@@ -105,15 +106,16 @@ class dual_bitcell_aligned_array(design, ABC):
         prefixes = []
         for pin_name in self.child_mod.pins:
             for prefix in self.bus_pins:
-                if pin_name.startswith(prefix):
+                regex_pattern = r"{}[\[\<].*".format(prefix)
+                if re.match(regex_pattern, pin_name):
                     bus_pins.append(pin_name)
                     prefixes.append(prefix)
 
         for pin_name in self.child_mod.pins:
             if pin_name in self.horizontal_pins:
-                pin = self.child_insts[0].get_pin(pin_name)
-                self.add_layout_pin(pin_name, pin.layer, offset=vector(0, pin.by()),
-                                    height=pin.height(), width=self.width)
+                for pin in self.child_insts[0].get_pins(pin_name):
+                    self.add_layout_pin(pin_name, pin.layer, offset=vector(0, pin.by()),
+                                        height=pin.height(), width=self.width)
             elif pin_name in bus_pins:
                 for i in range(len(self.child_insts)):
                     word_index = i * 2

@@ -48,10 +48,10 @@ class RowDecoderBase:
         num_rows = dut.rows
         vec_file_name = self.temp_file("expect.vec")
         with open(vec_file_name, "w") as vec_file:
+            vec_file.write("RADIX {}\n".format(' '.join(["1"] * num_rows)))
             vec_file.write("TUNIT ns\n")
             vec_file.write("VOH {}\n".format(0.5 * vdd_value))
             vec_file.write("VOL {}\n".format(0.5 * vdd_value))
-            vec_file.write("RADIX {}\n".format(' '.join(["1"] * num_rows)))
             vec_file.write("IO {}\n".format(' '.join(["O"] * num_rows)))
             vec_file.write("VNAME {}\n".format(' '.join(["decode[{}]".format(x) for x in range(num_rows)])))
             # Expected output

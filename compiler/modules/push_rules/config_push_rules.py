@@ -15,7 +15,10 @@ decoder_and_3 = "horizontal_decoder_and.and3"
 decoder_and_3_tap = "horizontal_decoder_and.and3_tap"
 
 tri_gate_mod = "push_rules/tri_gate_hs_push"
-tri_gate = "tri_gate_array_horizontal.tri_gate"
+tri_gate_class = "tri_gate_array_horizontal.tri_gate"
+
+flop_mod = "push_rules/dual_ms_flop_hs_push"
+flop_class = "flop_array_horizontal.flop"
 
 # modules
 decoder_flops = True

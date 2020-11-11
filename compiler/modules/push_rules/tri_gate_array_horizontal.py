@@ -8,7 +8,7 @@ from modules.push_rules.dual_bitcell_aligned_array import dual_bitcell_aligned_a
 @library_import
 class tri_gate(design):
     """
-    Contains two bitline logic cells stacked vertically
+    Contains tri-state driver imported from technology library
     """
     pin_names = "en gnd in<0> in<1> out<0> out<1> vdd".split()
     lib_name = OPTS.tri_gate_mod

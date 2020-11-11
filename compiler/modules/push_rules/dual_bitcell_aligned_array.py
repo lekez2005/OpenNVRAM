@@ -81,9 +81,9 @@ class dual_bitcell_aligned_array(design, ABC):
     def create_layout(self):
 
         self.child_insts = []
-        x_offset = self.child_mod.width * self.num_dummies * 0.5
 
         for i in range(int(self.word_size / 2)):
+            x_offset = self.get_x_offset(i)
             name = self.child_mod.child_mod.name + "_{}".format(i)
             if self.mirror and i % 2 == 1:
                 placement_x = x_offset + self.child_mod.width
@@ -96,10 +96,12 @@ class dual_bitcell_aligned_array(design, ABC):
             self.child_insts.append(child_inst)
             self.connect_mod(i)
 
-            x_offset += self.child_mod.width * self.words_per_row
-
         self.width = (self.columns + 2 * self.num_dummies) * (self.child_mod.width / 2)
         self.height = self.child_mod.height
+
+    def get_x_offset(self, mod_index):
+        return (self.child_mod.width * self.num_dummies * 0.5
+                + (self.child_mod.width * self.words_per_row) * mod_index)
 
     def add_layout_pins(self):
         bus_pins = []

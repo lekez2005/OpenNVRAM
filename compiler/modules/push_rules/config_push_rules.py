@@ -20,12 +20,14 @@ tri_gate_class = "tri_gate_array_horizontal.tri_gate"
 flop_mod = "push_rules/dual_ms_flop_hs_push"
 flop_class = "flop_array_horizontal.flop"
 
+write_driver_mod = "push_rules/write_driver_push_3x_hs"
+write_driver_class = "write_driver_array_horizontal.driver"
+
 # modules
 decoder_flops = True
 separate_vdd = False
 
 write_driver = "write_driver_mask"
-write_driver_mod = "write_driver_mask_3x"
 write_driver_tap = "write_driver_mask_3x_tap"
 write_driver_array = "write_driver_mask_array"
 wordline_driver = "wordline_driver_array"

@@ -8,7 +8,7 @@ from modules.push_rules.dual_bitcell_aligned_array import dual_bitcell_aligned_a
 @library_import
 class flop(design):
     """
-    Contains two bitline logic cells stacked vertically
+    Contains flop imported from technology library
     """
     pin_names = "clk din<1> din<0> dout<1> dout<0> dout_bar<1> dout_bar<0> gnd vdd".split()
     lib_name = OPTS.flop_mod
@@ -16,7 +16,7 @@ class flop(design):
 
 class FlopArray(dual_bitcell_aligned_array):
     """
-    Dynamically generated tri gate array of all bitlines.  words_per_row
+    Dynamically generated flop array of all bitlines.  words_per_row
     """
 
     mod_rotation = GDS_ROT_90

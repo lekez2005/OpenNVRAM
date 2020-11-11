@@ -23,6 +23,9 @@ flop_class = "flop_array_horizontal.flop"
 write_driver_mod = "push_rules/write_driver_push_3x_hs"
 write_driver_class = "write_driver_array_horizontal.driver"
 
+sense_amp_mod = "push_rules/latched_sense_amp_hs"
+sense_amp_class = "sense_amp_array_horizontal.amp"
+
 # modules
 decoder_flops = True
 separate_vdd = False
@@ -87,9 +90,6 @@ wordline_en_buffers = [1, 3.7, 13.6, 50]
 clk_buffers = [1, 5, 20, 65, 30]  # clk only used by decoders (no latches)
 sampleb_buffers = [1, 3.7, 13.6, 50]
 
-sense_amp = "latched_sense_amp"
-sense_amp_tap = "latched_sense_amp_tap"
-sense_amp_array = "latched_sense_amp_array"
 sense_amp_buffers = [1, 2.6, 6.7, 17.4, 45]
 tri_en_buffers = [1, 2.6, 6.7, 17.4, 45]
 precharge_buffers = [1, 3.9, 15, 60]

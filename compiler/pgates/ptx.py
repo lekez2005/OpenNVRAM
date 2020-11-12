@@ -46,6 +46,7 @@ class ptx(design.design):
         self.tx_type = tx_type
         self.mults = int(mults)
         self.tx_width = width
+        self.tx_length = drc["minwidth_poly"]
         self.connect_active = connect_active
         self.connect_poly = connect_poly
         self.num_contacts = num_contacts
@@ -84,7 +85,7 @@ class ptx(design.design):
         self.spice_device = "M{{0}} {{1}} {0} m=1 nf={1} w={2}u l={3}u pd={4}u" \
                             " ps={4}u as={5}p ad={5}p". \
             format(spice[self.tx_type], int(self.mults), self.tx_width*self.mults,
-                   drc["minwidth_poly"], perimeter_sd, area_sd)
+                   self.tx_length, perimeter_sd, area_sd)
         # breakpoint()
         self.spice.append("\n* ptx " + self.spice_device)
         # self.spice.append(".ENDS {0}".format(self.name))

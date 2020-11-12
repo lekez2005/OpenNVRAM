@@ -79,7 +79,9 @@ num_predecoder_stages = 1
 max_predecoder_inv_size = 20
 max_predecoder_nand = 1.2
 
-wordline_buffers = [1, 5, 20]
+wordline_buffers = [5, 15]
+wordline_beta = [0.9, 2.2]  # critical path is for Low to High
+
 predecode_sizes = [1.2, 4]
 
 sense_amp_type = "latched_sense_amp"

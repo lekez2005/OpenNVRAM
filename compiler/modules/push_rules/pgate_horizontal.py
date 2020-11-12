@@ -511,9 +511,9 @@ class pgate_horizontal(design):
         if hasattr(tech, "add_tech_layers"):
             tech.add_tech_layers(self)
 
-    def add_power_pins(self):
+    def add_power_pins(self, layer=METAL1):
         pin_names = ["gnd", "vdd"]
         y_offsets = [-0.5 * self.rail_height, self.height - 0.5 * self.rail_height]
         for i in range(2):
-            self.add_layout_pin(pin_names[i], METAL1, offset=vector(0, y_offsets[i]),
+            self.add_layout_pin(pin_names[i], layer, offset=vector(0, y_offsets[i]),
                                 width=self.width, height=self.rail_height)

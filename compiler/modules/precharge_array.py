@@ -17,18 +17,21 @@ class precharge_array(design.design):
         debug.info(1, "Creating {0}".format(self.name))
 
         self.columns = columns
-
-        self.pc_cell = precharge(name="precharge", size=size)
-        self.add_mod(self.pc_cell)
-
-        self.body_tap = precharge_tap(self.pc_cell)
-        self.add_mod(self.body_tap)
+        self.size = size
+        self.create_modules()
 
         self.height = self.pc_cell.height
 
         self.add_pins()
         self.create_layout()
         self.DRC_LVS()
+
+    def create_modules(self):
+        self.pc_cell = precharge(name="precharge", size=self.size)
+        self.add_mod(self.pc_cell)
+
+        self.body_tap = precharge_tap(self.pc_cell)
+        self.add_mod(self.body_tap)
 
     def add_pins(self):
         """Adds pins for spice file"""
@@ -42,7 +45,7 @@ class precharge_array(design.design):
         self.add_insts()
         vdd_pin = self.pc_cell.get_pin("vdd")
         self.add_layout_pin(text="vdd",
-                            layer="metal1",
+                            layer=vdd_pin.layer,
                             offset=vdd_pin.ll(),
                             width=self.width,
                             height=vdd_pin.height())

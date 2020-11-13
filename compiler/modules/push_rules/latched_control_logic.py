@@ -59,6 +59,7 @@ class LatchedControlLogic(ControlBuffers):
 
         self.height = self.mod_y_offsets[1] + self.inv.height
         self.mid_y = 0.5 * self.height
+        self.forbidden_m2 = []
 
     @staticmethod
     def get_all_mods():
@@ -260,16 +261,17 @@ class LatchedControlLogic(ControlBuffers):
                 via_y = pin.by()
             else:
                 via_y = pin.uy() - m1m2.height
-            self.add_contact(m1m2.layer_stack, offset=vector(pin.cx() - 0.5 * self.m2_width,
-                                                             via_y))
+            x_offset = pin.cx() - 0.5 * self.m2_width
+            self.add_contact(m1m2.layer_stack, offset=vector(x_offset, via_y))
             self.add_cross_contact_center(cross_m1m2, vector(pin.cx(), rail.cy()), True)
-            self.add_rect(METAL2, offset=vector(pin.cx() - 0.5 * self.m2_width, rail.cy()),
+
+            self.add_rect(METAL2, offset=vector(x_offset, rail.cy()),
                           height=via_y - rail.cy(), width=self.m2_width)
+            self.forbidden_m2.append((x_offset, rail.cy()))
 
         self.sel_trig_rail, self.bank_sel_cbar_rail = rails
 
     def route_internal_signals(self):
-        self.forbidden_m2 = []
         self.connect_pin_to_rail(self.clk_buf_inst, "A", self.bank_sel_pin)
         self.connect_pin_to_rail(self.clk_buf_inst, "B", self.clk_pin)
 
@@ -299,14 +301,23 @@ class LatchedControlLogic(ControlBuffers):
         self.connect_pin_to_rail(self.sense_amp_buf_inst, "in", self.sel_trig_rail)
         self.connect_pin_to_rail(self.tri_en_buf_inst, "in", self.sel_trig_rail)
 
-    def find_m2_clearance(self, pin):
-        all_m2 = list(sorted(self.forbidden_m2, reverse=True))
-        pitch = self.get_parallel_space(METAL2) + self.m2_width
+    def find_m2_clearance(self, pin, desired_rail_y):
+        """Find un-obstructed M2 x offset"""
+        all_m2 = list(sorted(self.forbidden_m2, key=lambda x: x[0], reverse=True))
+        via_space = self.parallel_via_space  # space for side by side via
+        parallel_space = self.get_parallel_space(METAL2)  # space for parallel lines
+
+        pitch = via_space + self.m2_width
         desired_x = pin.cx() - 0.5 * self.m2_width
-        if desired_x > max(all_m2) + pitch:
+        if desired_x > max(all_m2, key=lambda x: x[0])[0] + pitch:
             return desired_x
-        for x_offset in all_m2:
-            if x_offset - desired_x >= pitch:  # too far away on the right
+        for (x_offset, rail_y) in all_m2:
+            if rail_y == desired_rail_y:
+                pitch = via_space + self.m2_width
+            else:
+                pitch = parallel_space + self.m2_width
+            if x_offset - desired_x >= pitch or rail_y > desired_rail_y + self.bus_pitch:
+                # too far away on the right or above
                 continue
             elif x_offset >= desired_x and x_offset - desired_x < pitch:  # to the right but too close
                 desired_x = x_offset - pitch
@@ -338,21 +349,21 @@ class LatchedControlLogic(ControlBuffers):
         if pin.cy() > self.mid_y:  # direct connection
             x_offset = pin.cx() - 0.5 * self.m2_width
             make_connection(x_offset, pin.by())
-            self.forbidden_m2.append(x_offset)
+            self.forbidden_m2.append((x_offset, rail.cy()))
         else:
             via_y = pin.uy() - m1m2.height
-            x_offset = self.find_m2_clearance(pin)
+            x_offset = self.find_m2_clearance(pin, rail.cy())
+            self.forbidden_m2.append((x_offset, rail.cy()))
             if x_offset == pin.cx() - 0.5 * self.m2_width:  # direct connection
                 make_connection(x_offset, via_y)
-                self.forbidden_m2.append(x_offset)
             else:
                 # extend rail to new x offset
                 extension = 0.5 * max(cross_m2m3.width, cross_m2m3.height)
-                if rail.lx() < x_offset - extension:
+                if rail.lx() > x_offset - extension:
                     layer = METAL1 if via_rotate else METAL3
                     height = rail.height if via_rotate else rail.height()
                     self.add_rect(layer, offset=vector(x_offset - extension, rail.by()),
-                                  width=rail.lx() - x_offset - extension, height=height)
+                                  width=rail.lx() - x_offset + extension, height=height)
                 # find pin index and use to calculate y offset for m3 rail
                 pin_index = inst.mod.pins.index(pin_name)
                 rail_pitch = self.get_parallel_space(METAL3) + self.m3_width

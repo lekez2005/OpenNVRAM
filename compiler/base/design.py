@@ -276,11 +276,15 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         return num_contacts
 
     @staticmethod
-    def calculate_min_m1_area(width, min_height, layer=METAL1):
+    def calculate_min_m1_area(width=None, min_height=None, layer=METAL1):
         """Given width calculate the height, if height is less than min_height,
-         set height to min_height and readjust width"""
+         set height to min_height and re-adjust width"""
         min_area = design.get_drc_by_layer(layer, "minarea_contact")
         min_side = design.get_drc_by_layer(layer, "minside_contact")
+        if width is None:
+            width = design.get_min_layer_width(layer)
+        if min_height is None:
+            min_height = min_side
         height = max(utils.ceil(min_area/width), min_side)
         if height < min_height:
             height = min_height

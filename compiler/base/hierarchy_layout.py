@@ -441,10 +441,16 @@ class layout(lef.lef):
         self.connect_inst([])
         return inst
 
-    def add_cross_contact_center(self, cont, offset):
+    def add_cross_contact_center(self, cont, offset, rotate=False):
         via_x = offset.x - 0.5 * cont.contact_width
-        via_y = offset.y - 0.5 * cont.height
-        self.add_inst(cont.name, cont, offset=vector(via_x, via_y))
+        if rotate:
+            via_x += cont.width
+            via_y = offset.y - 0.5 * cont.contact_width
+            rotate = 90
+        else:
+            rotate = 0
+            via_y = offset.y - 0.5 * cont.height
+        self.add_inst(cont.name, cont, offset=vector(via_x, via_y), rotate=rotate)
         self.connect_inst([])
     
     def add_ptx(self, offset, mirror="R0", rotate=0, width=1, mults=1, tx_type="nmos"):

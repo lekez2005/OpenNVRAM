@@ -10,6 +10,7 @@ class BufferStagesHorizontal(BufferStage):
         return name.replace(".", "__")
 
     def create_buffer_inv(self, size):
+        self.route_outputs = False
         inv = pinv_horizontal(size=size)
         self.height = inv.height
         return inv

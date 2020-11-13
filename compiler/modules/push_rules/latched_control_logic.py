@@ -1,6 +1,7 @@
-from base.contact import cross_m2m3, m1m2
+from base.contact import cross_m2m3, m1m2, cross_m1m2
 from base.design import METAL2, METAL3, METAL1
 from base.hierarchy_layout import GDS_ROT_270
+from base.pin_layout import pin_layout
 from base.vector import vector
 from globals import OPTS
 from modules.control_buffers import ControlBuffers
@@ -45,6 +46,72 @@ class LatchedControlLogic(ControlBuffers):
     def get_num_rails(self):
         return 5
 
+    def calculate_rail_positions(self):
+
+        y_base = (self.inv.height + 0.5 * self.inv.get_pin("vdd").height()
+                  + self.get_parallel_space(METAL3))
+
+        for i in range(len(self.rail_pos)):
+            self.rail_pos[i] = y_base + i * self.bus_pitch
+
+        self.mod_y_offsets = [self.inv.height,
+                              self.rail_pos[-1] + self.bus_pitch + 0.5 * self.rail_height]
+
+        self.height = self.mod_y_offsets[1] + self.inv.height
+        self.mid_y = 0.5 * self.height
+
+    @staticmethod
+    def get_all_mods():
+        return ["clk_buf", "precharge_buf", "nand2", "body_tap", "inv", "nand2",
+                "wordline_buf", "write_buf", "nor2", "sample_bar", "body_tap",
+                "sense_amp_buf", "tri_en_buf"]
+
+    def calculate_split_index(self):
+        all_mods = self.get_all_mods()
+        widths = [getattr(self, x).width for x in all_mods]
+        # get split index
+        split_widths = []
+        for i in range(1, len(all_mods) - 1):
+            width = max(sum(widths[:i]), sum(widths[i:]))
+            split_widths.append(width)
+        self.split_index = split_widths.index(min(split_widths)) + 1
+        self.width = min(split_widths)
+
+        x_offset = 0.0
+        all_offsets = []
+        for i in range(len(all_mods)):
+            if i < self.split_index:
+                all_offsets.append(x_offset)
+                x_offset += widths[i]
+            else:
+                if i == self.split_index:
+                    x_offset = self.width
+                all_offsets.append(x_offset)
+                if i < len(all_mods) - 1:
+                    x_offset -= widths[i]
+        self.mod_x_offsets = all_offsets
+
+    def get_module_offset(self):
+        """Keeps track of how many times is has been called and uses the module order specified
+        to decide the offset and mirror of a module"""
+        x_offset = self.mod_x_offsets[self.mod_index]
+
+        if self.mod_index < self.split_index:
+            y_offset = self.mod_y_offsets[1]
+            mirror = ""
+        else:
+            y_offset = self.mod_y_offsets[0]
+            mirror = "XY"
+
+        self.mod_index += 1
+        return x_offset, y_offset, mirror
+
+    def add_module(self, name, mod):
+        x_offset, y_offset, mirror = self.get_module_offset()
+        inst = self.add_inst(name, mod=mod, offset=vector(x_offset, y_offset),
+                             mirror=mirror)
+        return inst
+
     def create_modules(self):
         self.inv = pinv_horizontal(size=1)
         self.add_mod(self.inv)
@@ -87,89 +154,122 @@ class LatchedControlLogic(ControlBuffers):
         self.add_mod(self.tri_en_buf)
 
     def add_modules(self):
-        y_offset = self.rail_pos[-1] + self.bus_pitch + 0.5 * self.rail_height
 
-        self.clk_buf_inst = self.add_inst("clk_buf", mod=self.clk_buf,
-                                          offset=vector(0, y_offset))
+        self.mod_index = 0
+        self.calculate_split_index()
+
+        self.clk_buf_inst = self.add_module("clk_buf", mod=self.clk_buf)
         self.connect_inst(["bank_sel", "clk", "clk_buf", "clk_bar", "vdd", "gnd"])
 
-        self.precharge_buf_inst = self.add_inst("precharge_buf", mod=self.precharge_buf,
-                                                offset=self.clk_buf_inst.lr())
+        self.precharge_buf_inst = self.add_module("precharge_buf", mod=self.precharge_buf)
         self.connect_inst(["bank_sel", "precharge_trig", "precharge_en",
                            "precharge_en_bar", "vdd", "gnd"])
 
-        self.sel_trig_inst = self.add_inst("sel_trig", mod=self.nand2,
-                                           offset=self.precharge_buf_inst.lr())
+        self.sel_trig_inst = self.add_module("sel_trig", mod=self.nand2)
         self.connect_inst(["bank_sel", "sense_trig", "sel_trig_bar", "vdd", "gnd"])
 
-        self.body_tap_inst = self.add_inst(self.body_tap.name, mod=self.body_tap,
-                                           offset=self.sel_trig_inst.lr())
+        self.body_tap_inst = self.add_module(self.body_tap.name, mod=self.body_tap)
         self.connect_inst([])
 
-        self.clk_bar_inst = self.add_inst("clk_bar", mod=self.inv, offset=self.body_tap_inst.lr())
+        self.clk_bar_inst = self.add_module("clk_bar", mod=self.inv)
         self.connect_inst(["clk", "clk_bar_int", "vdd", "gnd"])
 
-        self.bank_sel_cbar_inst = self.add_inst("bank_sel_cbar", mod=self.nand2,
-                                                offset=self.clk_bar_inst.lr())
+        self.bank_sel_cbar_inst = self.add_module("bank_sel_cbar", mod=self.nand2)
         self.connect_inst(["bank_sel", "clk_bar_int", "bank_sel_cbar", "vdd", "gnd"])
 
-        self.wordline_buf_inst = self.add_inst("wordline_buf", mod=self.wordline_buf,
-                                               offset=self.bank_sel_cbar_inst.lr())
+        self.wordline_buf_inst = self.add_module("wordline_buf", mod=self.wordline_buf)
         self.connect_inst(["sense_trig", "bank_sel_cbar",
                            "wordline_en_bar", "wordline_en", "vdd", "gnd"])
 
-        self.write_buf_inst = self.add_inst("write_buf", mod=self.write_buf,
-                                            offset=self.wordline_buf_inst.lr())
+        self.write_buf_inst = self.add_module("write_buf", mod=self.write_buf)
         self.connect_inst(["read", "bank_sel_cbar", "write_en", "write_en_bar", "vdd", "gnd"])
 
-        self.sel_cbar_trig_inst = self.add_inst("sel_cbar_trig", mod=self.nor2,
-                                                offset=self.write_buf_inst.lr())
+        self.sel_cbar_trig_inst = self.add_module("sel_cbar_trig", mod=self.nor2)
         self.connect_inst(["sense_trig", "bank_sel_cbar", "sel_cbar_trig", "vdd", "gnd"])
 
-        self.sample_bar_inst = self.add_inst("sample_bar", mod=self.sample_bar,
-                                             offset=self.sel_cbar_trig_inst.lr())
+        self.sample_bar_inst = self.add_module("sample_bar", mod=self.sample_bar)
         self.connect_inst(["read", "sel_cbar_trig", "sample_en_buf", "sample_bar", "vdd", "gnd"])
 
-        self.body_tap_inst2 = self.add_inst(self.body_tap.name, mod=self.body_tap,
-                                            offset=self.sample_bar_inst.lr())
+        self.body_tap_inst2 = self.add_module(self.body_tap.name, mod=self.body_tap)
         self.connect_inst([])
 
-        self.sense_amp_buf_inst = self.add_inst("sense_amp_buf", mod=self.sense_amp_buf,
-                                                offset=self.body_tap_inst2.lr())
+        self.sense_amp_buf_inst = self.add_module("sense_amp_buf", mod=self.sense_amp_buf)
         self.connect_inst(["sel_trig_bar", "sense_en", "sense_en_bar", "vdd", "gnd"])
 
-        self.tri_en_buf_inst = self.add_inst("tri_en_buf", mod=self.tri_en_buf,
-                                             offset=self.sense_amp_buf_inst.lr())
+        self.tri_en_buf_inst = self.add_module("tri_en_buf", mod=self.tri_en_buf)
         self.connect_inst(["sel_trig_bar", "tri_en", "tri_en_bar", "vdd", "gnd"])
 
-    def add_input_pins(self):
+    def get_net_x_range(self, net_name):
+        """Returns the x offset range for which a module is connected to the net"""
+
         def get_pin_x(inst, pin_name="A"):
             pin = inst.get_pin(pin_name)
-            return pin.cx() + 0.5 * max(cross_m2m3.width, cross_m2m3.height)
+            if pin.cy() > self.rail_pos[0]:
+                return pin.cx()
+            else:
+                return pin.cx()
 
-        self.bank_sel_pin = self.add_layout_pin("bank_sel", "metal3", height=self.bus_width,
-                                                offset=vector(0, self.rail_pos[4]),
-                                                width=get_pin_x(self.bank_sel_cbar_inst))
+        max_x = 0
+        min_x = self.width
+        for i in range(len(self.conns)):
+            if net_name in self.conns[i]:
+                pin_index = self.conns[i].index(net_name)
+                mod_pin = self.insts[i].mod.pins[pin_index]
+                x_offset = get_pin_x(self.insts[i], mod_pin)
+                max_x = max(max_x, x_offset)
+                min_x = min(min_x, x_offset)
+        return min_x, max_x
 
-        self.clk_pin = self.add_layout_pin("clk", "metal3", offset=vector(0, self.rail_pos[3]),
-                                           height=self.bus_width,
-                                           width=get_pin_x(self.clk_bar_inst))
+    def get_input_pins(self):
+        return ["bank_sel", "clk", "read", "sense_trig", "precharge_trig"]
 
-        self.read_pin = self.add_layout_pin("read", "metal3", offset=vector(0, self.rail_pos[2]),
-                                            height=self.bus_width,
-                                            width=get_pin_x(self.sample_bar_inst))
+    def add_input_pin(self, pin_name):
+        all_pins = self.get_input_pins()
+        sorted_pins = list(sorted(all_pins, key=lambda x: self.get_net_x_range(x)[1]))
+        rail_start_index = self.get_num_rails() - len(all_pins)
 
-        self.sense_trig_pin = self.add_layout_pin("sense_trig", "metal3",
-                                                  offset=vector(0, self.rail_pos[1]),
-                                                  height=self.bus_width,
-                                                  width=get_pin_x(self.sel_cbar_trig_inst))
+        rail_index = sorted_pins.index(pin_name)
+        _, max_x = self.get_net_x_range(pin_name)
+        pin = self.add_layout_pin(pin_name, METAL3, height=self.bus_width,
+                                  offset=vector(0, self.rail_pos[rail_start_index + rail_index]),
+                                  width=max_x + 0.5 * max(cross_m2m3.width, cross_m2m3.height))
+        return pin
 
-        self.precharge_trig_pin = self.add_layout_pin("precharge_trig", "metal3",
-                                                      offset=vector(0, self.rail_pos[0]),
-                                                      height=self.bus_width,
-                                                      width=get_pin_x(self.precharge_buf_inst, "B"))
+    def add_input_pins(self):
+        self.bank_sel_pin = self.add_input_pin("bank_sel")
+        self.clk_pin = self.add_input_pin("clk")
+        self.read_pin = self.add_input_pin("read")
+        self.sense_trig_pin = self.add_input_pin("sense_trig")
+        self.precharge_trig_pin = self.add_input_pin("precharge_trig")
+        self.add_intermediate_rails()
+
+    def add_intermediate_rails(self):
+        rails = []
+        rail_names = ["sel_trig_bar", "bank_sel_cbar"]
+        output_pins = [self.sel_trig_inst.get_pin("Z"),
+                       self.bank_sel_cbar_inst.get_pin("Z")]
+        # start from lowest to minimize the risk of overlap
+        for i in range(2):
+            min_x, max_x = self.get_net_x_range(rail_names[i])
+            extension = 0.5 * max(cross_m2m3.width, cross_m2m3.height)
+            rail = self.add_rect(METAL1, offset=vector(min_x - extension, self.rail_pos[i]),
+                                 width=max_x - min_x + 2 * extension, height=self.bus_width)
+            rails.append(rail)
+            pin = output_pins[i]
+            if pin.cy() > self.rail_pos[0]:
+                via_y = pin.by()
+            else:
+                via_y = pin.uy() - m1m2.height
+            self.add_contact(m1m2.layer_stack, offset=vector(pin.cx() - 0.5 * self.m2_width,
+                                                             via_y))
+            self.add_cross_contact_center(cross_m1m2, vector(pin.cx(), rail.cy()), True)
+            self.add_rect(METAL2, offset=vector(pin.cx() - 0.5 * self.m2_width, rail.cy()),
+                          height=via_y - rail.cy(), width=self.m2_width)
+
+        self.sel_trig_rail, self.bank_sel_cbar_rail = rails
 
     def route_internal_signals(self):
+        self.forbidden_m2 = []
         self.connect_pin_to_rail(self.clk_buf_inst, "A", self.bank_sel_pin)
         self.connect_pin_to_rail(self.clk_buf_inst, "B", self.clk_pin)
 
@@ -179,25 +279,10 @@ class LatchedControlLogic(ControlBuffers):
         self.connect_pin_to_rail(self.sel_trig_inst, "A", self.bank_sel_pin)
         self.connect_pin_to_rail(self.sel_trig_inst, "B", self.sense_trig_pin)
 
-        via_extension = 0.5 * max(cross_m2m3.width, cross_m2m3.height)
-        rail_x = self.sel_trig_inst.get_pin("Z").cx() - via_extension
-        self.sel_trig_rail = \
-            self.add_rect(METAL3, offset=vector(rail_x, self.precharge_trig_pin.by()),
-                          width=self.tri_en_buf_inst.get_pin("in").cx() - rail_x + via_extension,
-                          height=self.bus_width)
-        self.connect_pin_to_rail(self.sel_trig_inst, "Z", self.sel_trig_rail)
-
         self.connect_pin_to_rail(self.clk_bar_inst, "A", self.clk_pin)
 
         self.connect_z_to_b(z_inst=self.clk_bar_inst, b_inst=self.bank_sel_cbar_inst)
         self.connect_pin_to_rail(self.bank_sel_cbar_inst, "A", self.bank_sel_pin)
-
-        rail_x = self.bank_sel_cbar_inst.get_pin("Z").cx() - via_extension
-        self.bank_sel_cbar_rail = \
-            self.add_rect(METAL3, offset=vector(rail_x, self.bank_sel_pin.by()),
-                          width=self.sel_cbar_trig_inst.get_pin("B").cx() - rail_x + via_extension,
-                          height=self.bus_width)
-        self.connect_pin_to_rail(self.bank_sel_cbar_inst, "Z", self.bank_sel_cbar_rail)
 
         self.connect_z_to_b(z_inst=self.bank_sel_cbar_inst, b_inst=self.wordline_buf_inst)
         self.connect_pin_to_rail(self.wordline_buf_inst, "A", self.sense_trig_pin)
@@ -214,13 +299,89 @@ class LatchedControlLogic(ControlBuffers):
         self.connect_pin_to_rail(self.sense_amp_buf_inst, "in", self.sel_trig_rail)
         self.connect_pin_to_rail(self.tri_en_buf_inst, "in", self.sel_trig_rail)
 
+    def find_m2_clearance(self, pin):
+        all_m2 = list(sorted(self.forbidden_m2, reverse=True))
+        pitch = self.get_parallel_space(METAL2) + self.m2_width
+        desired_x = pin.cx() - 0.5 * self.m2_width
+        if desired_x > max(all_m2) + pitch:
+            return desired_x
+        for x_offset in all_m2:
+            if x_offset - desired_x >= pitch:  # too far away on the right
+                continue
+            elif x_offset >= desired_x and x_offset - desired_x < pitch:  # to the right but too close
+                desired_x = x_offset - pitch
+                continue
+            elif desired_x >= x_offset and desired_x - x_offset < pitch:  # to the left but too close
+                desired_x = x_offset - pitch
+                continue
+            else:  # nothing close enough
+                break
+        return desired_x
+
     def connect_pin_to_rail(self, inst, pin_name, rail):
+        if isinstance(rail, pin_layout):
+            via = cross_m2m3
+            via_rotate = False
+        else:
+            via = cross_m1m2
+            via_rotate = True
+
+        def make_connection(x_offset_, via_y_):
+            self.add_cross_contact_center(via, vector(x_offset_ + 0.5 * self.m2_width, rail.cy()),
+                                          rotate=via_rotate)
+            self.add_rect(METAL2, offset=vector(x_offset_, rail.cy()),
+                          height=via_y_ - rail.cy(), width=self.m2_width)
+            self.add_contact(m1m2.layer_stack, offset=vector(x_offset_, via_y_))
+
         pin = inst.get_pin(pin_name)
-        self.add_cross_contact_center(cross_m2m3, vector(pin.cx(), rail.cy()))
-        self.add_rect(METAL2, offset=vector(pin.cx() - 0.5 * self.m2_width, rail.cy()),
-                      height=pin.by() - rail.cy(), width=self.m2_width)
-        self.add_contact(m1m2.layer_stack, offset=vector(pin.cx() - 0.5 * self.m2_width,
-                                                         pin.by()))
+
+        if pin.cy() > self.mid_y:  # direct connection
+            x_offset = pin.cx() - 0.5 * self.m2_width
+            make_connection(x_offset, pin.by())
+            self.forbidden_m2.append(x_offset)
+        else:
+            via_y = pin.uy() - m1m2.height
+            x_offset = self.find_m2_clearance(pin)
+            if x_offset == pin.cx() - 0.5 * self.m2_width:  # direct connection
+                make_connection(x_offset, via_y)
+                self.forbidden_m2.append(x_offset)
+            else:
+                # extend rail to new x offset
+                extension = 0.5 * max(cross_m2m3.width, cross_m2m3.height)
+                if rail.lx() < x_offset - extension:
+                    layer = METAL1 if via_rotate else METAL3
+                    height = rail.height if via_rotate else rail.height()
+                    self.add_rect(layer, offset=vector(x_offset - extension, rail.by()),
+                                  width=rail.lx() - x_offset - extension, height=height)
+                # find pin index and use to calculate y offset for m3 rail
+                pin_index = inst.mod.pins.index(pin_name)
+                rail_pitch = self.get_parallel_space(METAL3) + self.m3_width
+                y_base = self.rail_pos[0] - rail_pitch
+                y_offset = y_base - pin_index * rail_pitch
+                # add vertical m2 rail to new y_offset
+                self.add_cross_contact_center(via, vector(x_offset + 0.5 * self.m2_width, rail.cy()),
+                                              rotate=via_rotate)
+
+                _, m2_fill = self.calculate_min_m1_area(layer=METAL2)
+                _, m3_fill = self.calculate_min_m1_area(layer=METAL3)
+
+                m2_height = max(m2_fill, rail.cy() - y_offset)
+                self.add_rect(METAL2, offset=vector(x_offset, y_offset), height=m2_height)
+                # add horizontal m3 rail to pin x offset
+                self.add_cross_contact_center(cross_m2m3,
+                                              vector(x_offset + 0.5 * self.m2_width,
+                                                     y_offset + 0.5 * self.m2_width),
+                                              rotate=False)
+                m3_width = max(m3_fill, pin.cx() - x_offset)
+                self.add_rect(METAL3, offset=vector(x_offset, y_offset), width=m3_width)
+                # add m2 to pin
+                self.add_cross_contact_center(cross_m2m3,
+                                              vector(pin.cx(), y_offset + 0.5 * self.m2_width),
+                                              rotate=False)
+                x_offset = pin.cx() - 0.5 * self.m2_width
+                self.add_rect(METAL2, offset=vector(x_offset, y_offset),
+                              height=via_y - y_offset, width=self.m2_width)
+                self.add_contact(m1m2.layer_stack, offset=vector(x_offset, via_y))
 
     def connect_z_to_a(self, z_inst, a_inst, a_name="A", z_name="Z"):
         a_pin = a_inst.get_pin(a_name)
@@ -244,12 +405,19 @@ class LatchedControlLogic(ControlBuffers):
                      self.tri_en_buf_inst, self.sample_bar_inst]
         for i in range(len(pin_names)):
             out_pin = instances[i].get_pin(mod_names[i])
-            self.add_layout_pin(pin_names[i], "metal2", offset=out_pin.ul(),
-                                height=self.height - out_pin.uy())
-            self.add_contact(m1m2.layer_stack, offset=out_pin.ul() - vector(0, m1m2.height))
+            if out_pin.cy() > self.mid_y:
+                via_offset = out_pin.ul() - vector(0, m1m2.height)
+                self.add_layout_pin(pin_names[i], "metal2", offset=out_pin.ul(),
+                                    height=self.height - out_pin.uy())
+            else:
+                self.add_layout_pin(pin_names[i], "metal2", offset=vector(out_pin.lx(), 0),
+                                    height=out_pin.by())
+                via_offset = out_pin.ll()
+            self.add_contact(m1m2.layer_stack, offset=via_offset)
 
     def add_power_pins(self):
         for pin_name in ["vdd", "gnd"]:
-            pin = self.clk_buf_inst.get_pin(pin_name)
-            self.add_layout_pin(pin_name, pin.layer, offset=vector(0, pin.by()),
-                                height=pin.height(), width=self.width)
+            for inst in [self.clk_buf_inst, self.tri_en_buf_inst]:
+                pin = inst.get_pin(pin_name)
+                self.add_layout_pin(pin_name, pin.layer, offset=vector(0, pin.by()),
+                                    height=pin.height(), width=self.width)

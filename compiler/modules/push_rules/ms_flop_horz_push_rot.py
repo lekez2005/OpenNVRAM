@@ -7,7 +7,7 @@ from base.vector import vector
 
 @library_import
 class ms_flop_horz_push(design):
-    pin_names = "clk din dout dout_bar gnd vdd".split()
+    pin_names = "din dout dout_bar clk vdd gnd".split()
     lib_name = "push_rules/ms_flop_horz_push"
 
 

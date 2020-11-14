@@ -27,3 +27,9 @@ class RotationWrapper(design):
 
         self.child_mod = child_mod
         self.child_inst = child_inst
+
+    def get_gds_layer_rects(self, layer, purpose="drawing", recursive=False):
+        return self.child_mod.get_gds_layer_rects(layer, purpose, recursive)
+
+    def get_layer_shapes(self, layer, purpose="drawing", recursive=False):
+        return self.child_mod.get_layer_shapes(layer, purpose, recursive)

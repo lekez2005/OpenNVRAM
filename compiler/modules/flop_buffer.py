@@ -41,11 +41,7 @@ class FlopBuffer(design):
 
     def create_modules(self):
 
-        c = reload(__import__(self.flop_module_name))
-        self.mod_flop = getattr(c, self.flop_module_name)
-        self.flop = self.mod_flop()
-
-        self.add_mod(self.flop)
+        self.flop = self.create_mod_from_str(self.flop_module_name)
 
         self.height = self.flop.height
 

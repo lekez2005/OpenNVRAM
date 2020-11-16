@@ -38,7 +38,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
     Class consisting of a set of modules and instances of these modules
     """
     name_map = []
-    
+    has_dummy = PO_DUMMY in tech_layers
 
     def __init__(self, name):
         self.gds_file = os.path.join(OPTS.openram_tech, "gds_lib", name + ".gds")
@@ -136,6 +136,10 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
     @classmethod
     def get_min_layer_width(cls, layer):
+        if layer in [PIMP, NIMP]:
+            layer = "implant"
+        elif layer == NWELL:
+            layer = "well"
         return drc["minwidth_{}".format(layer)]
 
     @classmethod
@@ -475,9 +479,9 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         for top_module in top_modules:
             for bottom_module in bottom_modules:
                 for layer in layers:
-                    top_rects = top_module.get_gds_layer_rects(layer, recursive=True)
+                    top_rects = top_module.get_layer_shapes(layer, recursive=True)
                     top_rects = list(sorted(top_rects, key=lambda x: x.by()))
-                    bottom_rects = bottom_module.get_gds_layer_rects(layer, recursive=True)
+                    bottom_rects = bottom_module.get_layer_shapes(layer, recursive=True)
                     bottom_rects = list(sorted(bottom_rects, key=lambda x: x.uy(), reverse=True))
                     wide_space = self.get_wide_space(layer)
                     for bottom_rect in bottom_rects:

@@ -1,6 +1,7 @@
 """
 This provides a set of useful generic types for the gdsMill interface. 
 """
+import copy
 import math
 
 import debug
@@ -143,25 +144,29 @@ class instance(geometry):
         
         debug.info(4, "creating instance: " + self.name)
 
+    def get_angle_mirror(self):
+        angle = math.radians(float(self.rotate))
+        mirr = 1
+        if self.mirror == "R90":
+            angle += math.radians(90.0)
+        elif self.mirror == "R180":
+            angle += math.radians(180.0)
+        elif self.mirror == "R270":
+            angle += math.radians(270.0)
+        elif self.mirror == "MX":
+            mirr = -1
+        elif self.mirror == "MY":
+            mirr = -1
+            angle += math.radians(180.0)
+        elif self.mirror == "XY":
+            mirr = 1
+            angle += math.radians(180.0)
+        return angle, mirr
+
     def get_blockages(self, layer, top=False):
         """ Retrieve rectangular blockages of all modules in this instance.
         Apply the transform of the instance placement to give absolute blockages."""
-        angle = math.radians(float(self.rotate))
-        mirr = 1
-        if self.mirror=="R90":
-            angle += math.radians(90.0)
-        elif self.mirror=="R180":
-            angle += math.radians(180.0)
-        elif self.mirror=="R270":
-            angle += math.radians(270.0)
-        elif self.mirror=="MX":
-            mirr = -1
-        elif self.mirror=="MY":
-            mirr = -1
-            angle += math.radians(180.0)
-        elif self.mirror=="XY":
-            mirr = 1
-            angle += math.radians(180.0)
+        angle, mirr = self.get_angle_mirror()
             
         if self.mod.is_library_cell:
             # For lib cells, block the whole thing except on metal3
@@ -195,7 +200,6 @@ class instance(geometry):
         """ Return an absolute pin that is offset and transformed based on
         this instance location. Index will return one of several pins."""
 
-        import copy
         if index == -1:
             pin = copy.deepcopy(self.mod.get_pin(name))
             pin.transform(self.offset, self.mirror, self.rotate)
@@ -213,7 +217,6 @@ class instance(geometry):
         """ Return an absolute pin that is offset and transformed based on
         this instance location. """
         
-        import copy
         pin = copy.deepcopy(self.mod.get_pins(name))
         
         new_pins = []
@@ -221,6 +224,18 @@ class instance(geometry):
             p.transform(self.offset,self.mirror,self.rotate)                
             new_pins.append(p)
         return new_pins
+
+    def get_layer_shapes(self, layer, purpose="drawing", recursive=False):
+        angle, mirr = self.get_angle_mirror()
+        rects = self.mod.get_layer_shapes(layer, purpose, recursive)
+        results = []
+        for rect in rects:
+            rect = copy.deepcopy(rect)
+            ll, ur = self.transform_coords([rect.ll(), rect.ur()], self.offset, mirr, angle)
+            rect.boundary = [ll, ur]
+            rect.normalize()
+            results.append(rect)
+        return results
         
     def __str__(self):
         """ override print function output """

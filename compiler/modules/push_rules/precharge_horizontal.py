@@ -10,7 +10,7 @@ from modules.push_rules.push_bitcell_array import push_bitcell_array
 from tech import drc, layer as tech_layers
 
 
-class horizontal_precharge(precharge):
+class precharge_horizontal(precharge):
     rotation_for_drc = GDS_ROT_270
 
     def set_layout_constants(self):

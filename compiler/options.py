@@ -112,6 +112,7 @@ class options(optparse.Values):
     delay_chain = "delay_chain"
     body_tap = "body_tap"
     control_flop = "ms_flop_horz_pitch"
+    flop_buffer = "flop_buffer.FlopBuffer"
 
     # buffer stages
     control_logic_clk_buffer_stages = [2, 6, 16, 24]  # buffer stages for control logic clk_bar and clk_buf

@@ -20,9 +20,9 @@ class RowDecoderTest(row_decoder_base_test.RowDecoderBase, TestBase):
 
     @staticmethod
     def instantiate_dut(num_rows):
-        from modules.push_rules.horizontal_row_decoder import horizontal_row_decoder
+        from modules.push_rules.row_decoder_horizontal import row_decoder_horizontal
 
-        dut = horizontal_row_decoder(rows=num_rows)
+        dut = row_decoder_horizontal(rows=num_rows)
         a_pins = ' '.join(["A[{}]".format(x) for x in range(dut.num_inputs)])
         decode_pins = ' '.join(["decode[{}]".format(x) for x in range(dut.rows)])
         en_pin = ""

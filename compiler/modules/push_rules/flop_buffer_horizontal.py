@@ -10,6 +10,18 @@ from modules.push_rules.pgate_horizontal_tap import pgate_horizontal_tap
 class FlopBufferHorizontal(FlopBuffer):
     rotation_for_drc = GDS_ROT_270
 
+    @classmethod
+    def get_name(cls, flop_module_name, buffer_stages, dummy_indices=None):
+        name = "flop_buffer_{}".format("_".join(
+            ["{:.3g}".format(x).replace(".", "_") for x in buffer_stages]))
+        if cls.has_dummy and dummy_indices is not None:
+            name += "_d" + "".join(map(str, dummy_indices))
+        return name
+
+    def __init__(self, flop_module_name, buffer_stages, dummy_indices=None):
+        self.dummy_indices = dummy_indices
+        super().__init__(flop_module_name, buffer_stages)
+
     def create_modules(self):
         self.flop = self.create_mod_from_str(self.flop_module_name, rotation=GDS_ROT_270)
 
@@ -23,11 +35,11 @@ class FlopBufferHorizontal(FlopBuffer):
         self.flop_inst = self.add_inst("flop", mod=self.flop, offset=vector(0, 0))
         self.connect_inst(["din", "flop_out", "flop_out_bar", "clk", "vdd", "gnd"])
         # add tap
-        flop_implant = max(self.flop.get_layer_shapes(NIMP), key=lambda x: x.uy())
-        buffer_implant = max(self.body_tap.get_layer_shapes(NIMP), key=lambda x: x.rx())
+        flop_implant = max(self.flop.get_layer_shapes(NIMP), key=lambda x: x.rx())
+        buffer_implant = min(self.body_tap.get_layer_shapes(NIMP), key=lambda x: x.lx())
 
         implant_space = self.get_wide_space(NIMP)
-        x_offset = (self.flop_inst.rx() + (flop_implant.uy() - self.flop_inst.width) -
+        x_offset = (self.flop_inst.rx() + (flop_implant.rx() - self.flop_inst.width) -
                     buffer_implant.lx() + implant_space)
         self.tap_inst = self.add_inst(self.body_tap.name, self.body_tap, offset=vector(x_offset, 0))
         self.connect_inst([])
@@ -57,10 +69,18 @@ class FlopBufferHorizontal(FlopBuffer):
         self.height = self.buffer_inst.height
 
     def fill_layers(self):
-        dummy_polys = self.flop.get_poly_fills(self.flop.child_mod)
-        if not dummy_polys:
+        if not self.has_dummy:
             return
-        for rect in dummy_polys["left"] + dummy_polys["right"]:
+        if self.dummy_indices is None:
+            self.dummy_indices = list(range(4))
+        dummy_polys = self.flop.get_poly_fills(self.flop.child_mod)
+        all_rects = [None] * 4
+        all_rects[:len(dummy_polys["left"])] = dummy_polys["left"]
+        all_rects[2:2 + len(dummy_polys["right"])] = dummy_polys["right"]
+        for i in range(4):
+            rect = all_rects[i]
+            if i not in self.dummy_indices or not rect:
+                continue
             y_offset = rect[0][0]
             x_offset = 0.5 * self.poly_to_field_poly
             width = self.flop_inst.width - x_offset

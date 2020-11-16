@@ -30,7 +30,6 @@ class CmosBank(BaselineBank):
         self.add_precharge_array()
         self.add_bitcell_array()
         self.add_wordline_driver()
-
         self.add_control_rails()
 
         self.min_point = min(self.control_buffers_inst.by(),
@@ -197,6 +196,9 @@ class CmosBank(BaselineBank):
     def get_right_vdd_offset(self):
         return max(self.bitcell_array_inst.rx(),
                    self.control_buffers_inst.rx()) + self.wide_m1_space
+
+    def get_mid_gnd_offset(self):
+        return - 2*self.wide_m1_space - self.vdd_rail_width
 
     def route_control_buffer(self):
         # copy vdd, gnd and clk outputs

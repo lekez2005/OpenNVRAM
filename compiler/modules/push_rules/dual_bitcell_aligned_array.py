@@ -35,10 +35,18 @@ class dual_bitcell_aligned_array(design, ABC):
     def add_pins(self):
         raise NotImplementedError
 
-    def __init__(self, columns, words_per_row):
+    def __init__(self, columns=None, words_per_row=None, word_size=None, cols=None,
+                 *args, **kwargs):
         name = self.__class__.name
         design.__init__(self, name)
         debug.info(1, "Creating {0}".format(self.name))
+        if cols is not None:
+            columns = cols
+        if words_per_row is not None and word_size is not None:
+            columns = word_size * words_per_row
+        if word_size is not None:
+            words_per_row = int(columns / word_size)
+
         self.word_size = int(columns / words_per_row)
         self.words_per_row = words_per_row
         self.columns = columns

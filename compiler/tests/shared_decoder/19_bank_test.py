@@ -29,11 +29,11 @@ class BankTest(TestBase):
 
         tech.drc_exceptions["CmosBank"] = tech.drc_exceptions["min_nwell"] + tech.drc_exceptions["latchup"]
 
-        self.sweep_all(cols=None, rows=None, words_per_row=None, default_col=64)
+        self.sweep_all(cols=[64], rows=[64], words_per_row=1)
         # self.sweep_all()
 
-    def sweep_all(self, rows=None, cols=None, words_per_row=None, default_row=64, default_col=64):
-        from base import design
+    @staticmethod
+    def get_bank_class():
         from globals import OPTS
         from modules.shared_decoder.cmos_bank import CmosBank
         from modules.shared_decoder.sotfet.sotfet_mram_bank import SotfetMramBank
@@ -41,8 +41,15 @@ class BankTest(TestBase):
             bank_class = CmosBank
         else:
             bank_class = SotfetMramBank
+        return bank_class
 
-        OPTS.run_optimizations = True
+    def sweep_all(self, rows=None, cols=None, words_per_row=None, default_row=64, default_col=64):
+        from base import design
+        from globals import OPTS
+
+        bank_class = self.get_bank_class()
+
+        OPTS.run_optimizations = False
 
         if rows is None:
             rows = [16, 32, 64, 128, 256]

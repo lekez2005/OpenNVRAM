@@ -32,6 +32,7 @@ class push_bitcell_array(bitcell_array):
         self.row_size = rows
 
         self.add_mod(self.bitcell)
+        self.cell = self.bitcell
 
         self.add_pins()
 

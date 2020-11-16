@@ -3,9 +3,9 @@ from math import log
 
 import debug
 from base import utils
-from base.contact import m2m3, m1m2, m3m4, contact
+from base.contact import m2m3, m1m2, m3m4, contact, cross_m2m3, cross_m1m2
 from base.contact_full_stack import ContactFullStack
-from base.design import design
+from base.design import design, METAL2, METAL3
 from base.vector import vector
 from globals import OPTS
 from modules.bitline_compute.bl_control_buffers_sense_trig import ControlBuffersSenseTrig
@@ -16,6 +16,7 @@ from modules.control_buffers_bank_mixin import ControlBuffersMixin
 from pgates.pgate import pgate
 from tech import delay_strategy_class
 from tech import drc, power_grid_layers
+import tech
 
 
 class BaselineBank(design, ControlBuffersMixin):
@@ -48,16 +49,21 @@ class BaselineBank(design, ControlBuffersMixin):
         self.create_modules()
         self.calculate_rail_offsets()
         self.add_modules()
-        self.route_layout()
+        # self.route_layout()
         self.calculate_dimensions()
+        return
 
         self.offset_all_coordinates()
 
     def set_modules(self, mod_list):
         for mod_name in mod_list:
             config_mod_name = getattr(OPTS, mod_name)
+            if "." in config_mod_name:
+                config_mod_name, class_name = config_mod_name.split(".")
+            else:
+                class_name = config_mod_name
             class_file = reload(__import__(config_mod_name))
-            mod_class = getattr(class_file, config_mod_name)
+            mod_class = getattr(class_file, class_name)
             setattr(self, "mod_"+mod_name, mod_class)
 
     @staticmethod
@@ -198,8 +204,7 @@ class BaselineBank(design, ControlBuffersMixin):
 
         self.decoder = self.create_module('decoder', rows=self.num_rows)
 
-        self.control_flop = FlopBuffer(OPTS.control_flop, OPTS.control_flop_buffers)
-        self.add_mod(self.control_flop)
+        self.create_control_flop()
 
         self.m9m10 = ContactFullStack(start_layer=8, stop_layer=-1, centralize=False)
 
@@ -279,6 +284,10 @@ class BaselineBank(design, ControlBuffersMixin):
             self.control_buffers = LatchedControlBuffers()
         self.add_mod(self.control_buffers)
 
+    def create_control_flop(self):
+        self.control_flop = self.create_module("flop_buffer", OPTS.control_flop,
+                                               OPTS.control_flop_buffers)
+
     def get_control_names(self):
         if self.mirror_sense_amp:
             return ["precharge_en_bar", "write_en_bar", "write_en", "clk_bar", "clk_buf", "wordline_en",
@@ -299,7 +308,7 @@ class BaselineBank(design, ControlBuffersMixin):
                                                  (1+num_horizontal_rails)*self.control_rail_pitch +
                                                  self.control_buffers.height)
 
-        self.mid_gnd_offset = - 2*self.wide_m1_space - self.vdd_rail_width
+        self.mid_gnd_offset = self.get_mid_gnd_offset()
         self.mid_vdd_offset = self.mid_gnd_offset - self.wide_m1_space - self.vdd_rail_width
 
         fill_height = m2m3.second_layer_height + self.m2_width
@@ -459,8 +468,12 @@ class BaselineBank(design, ControlBuffersMixin):
         temp.extend(["write_en", "write_en_bar", "vdd", "gnd"])
         self.connect_inst(temp)
 
+    def get_sense_amp_array_y(self):
+        return self.write_driver_array_inst.uy()
+
     def add_sense_amp_array(self):
-        self.sense_amp_array_offset = self.write_driver_array_inst.ul()
+        self.sense_amp_array_offset = vector(self.write_driver_array_inst.lx(),
+                                             self.get_sense_amp_array_y())
         self.sense_amp_array_inst = self.add_inst(name="sense_amp_array", mod=self.sense_amp_array,
                                                   offset=self.sense_amp_array_offset)
         temp = []
@@ -483,12 +496,15 @@ class BaselineBank(design, ControlBuffersMixin):
     def get_precharge_y(self):
         return self.sense_amp_array_inst.uy() + self.precharge_array.height
 
+    def get_precharge_mirror(self):
+        return "MX"
+
     def add_precharge_array(self):
         """ Adding Precharge """
         y_offset = self.get_precharge_y()
         self.precharge_array_inst=self.add_inst(name="precharge_array",
                                                 mod=self.precharge_array,
-                                                mirror="MX",
+                                                mirror=self.get_precharge_mirror(),
                                                 offset=vector(0, y_offset))
         temp = []
         for i in range(self.num_cols):
@@ -499,9 +515,12 @@ class BaselineBank(design, ControlBuffersMixin):
 
     def add_bitcell_array(self):
         """ Adding Bitcell Array """
+        if hasattr(tech, "bitcell_precharge_space"):
+            y_space = tech.bitcell_precharge_space(self.bitcell_array, self.precharge_array)
+        else:
+            y_space = 0
 
-        # TODO fix space hack
-        y_offset = self.precharge_array_inst.uy() + self.wide_m1_space + 0.105
+        y_offset = self.precharge_array_inst.uy() + y_space
         self.bitcell_array_inst=self.add_inst(name="bitcell_array",
                                               mod=self.bitcell_array,
                                               offset=vector(0, y_offset))
@@ -593,6 +612,64 @@ class BaselineBank(design, ControlBuffersMixin):
                     self.sense_amp_array_inst.get_pins("preb")
         return destination_pins
 
+    def add_control_rail(self, rail_name, dest_pins, x_offset, y_offset):
+        control_pin = self.control_buffers_inst.get_pin(rail_name)
+        self.add_rect("metal2", offset=control_pin.ul(), height=y_offset - control_pin.uy())
+
+        via_extension = 0.5 * (m2m3.height - self.m3_width)
+        m3_y = y_offset + 0.5 * (self.m3_width - self.bus_width)
+        m3_x = x_offset - via_extension
+        self.add_rect("metal3", offset=vector(m3_x, m3_y),
+                      width=control_pin.rx() - m3_x + via_extension,
+                      height=self.bus_width)
+
+        self.add_cross_contact_center(cross_m2m3, offset=vector(control_pin.cx(), y_offset + 0.5 * self.m3_width))
+
+        rail_x = x_offset + 0.5 * (self.m2_width - self.bus_width)
+        if not dest_pins:
+            rail = self.add_rect("metal3", offset=vector(rail_x, y_offset), height=m2m3.height,
+                                 width=self.bus_width)
+        else:
+            via_offset = vector(x_offset + 0.5 * self.m2_width, y_offset + 0.5 * self.m3_width)
+
+            self.add_cross_contact_center(cross_m2m3, offset=via_offset)
+            top_pin = max(dest_pins, key=lambda x: x.uy())
+            rail_y = y_offset - via_extension
+            rail = self.add_rect("metal2", offset=vector(rail_x, rail_y),
+                                 height=top_pin.cy() + 0.5 * cross_m2m3.contact_width + via_extension - rail_y,
+                                 width=self.bus_width)
+        setattr(self, rail_name + "_rail", rail)
+
+        if not rail_name == "wordline_en":
+            for dest_pin in dest_pins:
+                via_x = x_offset + 0.5 * self.m2_width
+                via_y = dest_pin.cy()
+
+                rail_x = x_offset - via_extension
+                rail_height = min(self.bus_width, dest_pin.height())
+                rail_y = dest_pin.cy() - 0.5 * rail_height
+
+                if dest_pin.layer in [METAL2, METAL3]:
+                    via = cross_m2m3
+                    via_rotate = False
+                elif dest_pin.layer == "metal1":
+                    via = cross_m1m2
+                    via_rotate = True
+                else:
+                    debug.error("Invalid layer", 1)
+                    break
+
+                rail_layer = METAL3 if dest_pin.layer == METAL2 else dest_pin.layer
+                self.add_rect(rail_layer, offset=vector(rail_x, rail_y),
+                              width=dest_pin.lx() - rail_x, height=rail_height)
+                self.add_cross_contact_center(via, offset=vector(via_x, via_y), rotate=via_rotate)
+                if dest_pin.layer == METAL2:
+                    self.add_contact_center(m2m3.layer_stack,
+                                            offset=vector(dest_pin.lx() + 0.5 * m2m3.height, dest_pin.cy()),
+                                            rotate=90)
+                    self.add_rect(METAL3, offset=vector(dest_pin.lx(), rail_y),
+                                  width=m2m3.height, height=rail_height)
+
     def add_control_rails(self):
 
         destination_pins = self.get_control_rails_destinations()
@@ -607,46 +684,8 @@ class BaselineBank(design, ControlBuffersMixin):
 
         for i in range(len(rail_names)):
             rail_name = rail_names[i]
-            control_pin = self.control_buffers_inst.get_pin(rail_name)
-            self.add_rect("metal2", offset=control_pin.ul(), height=y_offset-control_pin.uy())
-            self.add_rect("metal3", offset=vector(x_offset, y_offset), width=control_pin.rx()-x_offset)
-
-            self.add_contact_center(m2m3.layer_stack, offset=vector(control_pin.cx(),
-                                                                    y_offset+0.5*self.m2_width), rotate=90)
-
             dest_pins = destination_pins[rail_name]
-
-            if not dest_pins:
-                rail = self.add_rect("metal3", offset=vector(x_offset, y_offset), height=m2m3.height)
-            else:
-                self.add_contact(m2m3.layer_stack, offset=vector(x_offset, y_offset))
-                top_pin = max(dest_pins, key=lambda x: x.uy())
-                rail = self.add_rect("metal2", offset=vector(x_offset, y_offset), height=top_pin.uy()-y_offset)
-            setattr(self, rail_name+"_rail", rail)
-
-            if not rail_name == "wordline_en":
-                for dest_pin in dest_pins:
-                    if dest_pin.layer == "metal2":
-                        self.add_contact(m2m3.layer_stack, offset=dest_pin.ll(), rotate=90)
-                        self.add_rect("metal3", offset=vector(rail.lx(), dest_pin.by()),
-                                      width=dest_pin.lx()-rail.lx())
-                        self.add_contact(m2m3.layer_stack,
-                                         offset=vector(rail.lx(), dest_pin.cy()-0.5*m2m3.second_layer_height))
-                    else:
-                        if dest_pin.layer == "metal3":
-                            via = m2m3
-                        elif dest_pin.layer == "metal1":
-                            via = m1m2
-                        else:
-                            debug.error("Invalid layer", 1)
-                        self.add_rect(dest_pin.layer, offset=vector(rail.lx(), dest_pin.by()),
-                                      width=dest_pin.lx() - rail.lx())
-                        if rail_name == "write_en" and (self.control_buffers_inst.get_pin("write_en").lx() >
-                            self.control_buffers_inst.get_pin("write_en_bar").lx()):
-                            self.add_contact(via.layer_stack, offset=vector(rail.lx(), dest_pin.by()))
-                        else:
-                            self.add_contact(via.layer_stack,
-                                             offset=vector(rail.lx(), dest_pin.uy()-via.second_layer_height))
+            self.add_control_rail(rail_name, dest_pins, x_offset, y_offset)
 
             y_offset += self.control_rail_pitch
             x_offset += self.control_rail_pitch

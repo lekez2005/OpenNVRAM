@@ -3,10 +3,10 @@ import os
 python_path = ["modules/push_rules"]
 
 baseline = True
+mram = False
 
 bitcell_mod = "push_rules/cell_6t_hs_push"
 body_tap = "push_rules/cell_6t_hs_push_tap"
-bitcell_array = "push_bitcell_array"
 predecoder_flop = "ms_flop_horz_push_rot"
 
 decoder_and_2 = "horizontal_decoder_and.and2"
@@ -26,30 +26,28 @@ write_driver_class = "write_driver_array_horizontal.driver"
 sense_amp_mod = "push_rules/latched_sense_amp_hs"
 sense_amp_class = "sense_amp_array_horizontal.amp"
 
+write_driver = "write_driver_mask"
+write_driver_tap = "write_driver_mask_3x_tap"
+
 # modules
 decoder_flops = True
 separate_vdd = False
 
-write_driver = "write_driver_mask"
-write_driver_tap = "write_driver_mask_3x_tap"
-write_driver_array = "write_driver_mask_array"
-wordline_driver = "wordline_driver_array"
+bitcell_array = "push_bitcell_array"
+wordline_buffer = "wordline_buffer_array"
+decoder = "row_decoder_horizontal"
+ms_flop_array = "flop_array_horizontal.FlopArray"
+sense_amp_array = "sense_amp_array_horizontal.SenseAmpArray"
+write_driver_array = "write_driver_array_horizontal.WriteDriverArray"
+precharge_array = "precharge_array_horizontal.PrechargeArray"
+tri_gate_array = "tri_gate_array_horizontal.TriGateArray"
 
-mask_in_flop = "ms_flop_clk_buf"
-mask_in_flop_tap = "ms_flop_clk_buf_tap"
+control_flop = "ms_flop_horz_push_rot.ms_flop_horz_push"
+flop_buffer = "flop_buffer_horizontal.FlopBufferHorizontal"
 
-data_in_flop = "ms_flop_clk_buf"
-data_in_flop_tap = "ms_flop_clk_buf_tap"
-
-# data_in_flop = "ms_flop"
-# data_in_flop_tap = "ms_flop_tap"
-
-control_flop = "ms_flop_horz_pitch"
-
-column_mux_array = "tgate_column_mux_array"
 control_flop_buffers = [6]
 
-run_optimizations = True
+run_optimizations = False
 
 logic_buffers_height = 1.4
 

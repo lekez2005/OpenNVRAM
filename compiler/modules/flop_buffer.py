@@ -3,14 +3,20 @@ from importlib import reload
 import debug
 from base.contact import m1m2
 from base.design import design
+from base.unique_meta import Unique
 from base.vector import vector
 from modules.buffer_stage import BufferStage
 
 
-class FlopBuffer(design):
+class FlopBuffer(design, metaclass=Unique):
     """
     Flop a signal and buffer given input buffer sizes
     """
+    @classmethod
+    def get_name(cls, _, buffer_stages):
+        name = "flop_buffer_{}".format("_".join(
+            ["{:.3g}".format(x).replace(".", "_") for x in buffer_stages]))
+        return name
 
     def __init__(self, flop_module_name, buffer_stages):
 
@@ -21,10 +27,7 @@ class FlopBuffer(design):
 
         self.flop_module_name = flop_module_name
 
-        name = "flop_buffer_{}".format("_".join(
-            ["{:.3g}".format(x).replace(".", "_") for x in buffer_stages]))
-
-        super().__init__(name=name)
+        super().__init__(name=self.name)
 
         self.create_layout()
 

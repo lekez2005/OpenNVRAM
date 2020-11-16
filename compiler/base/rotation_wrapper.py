@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from base.design import design
 from base.hierarchy_layout import GDS_ROT_90, GDS_ROT_270
 from base.vector import vector
@@ -29,7 +31,21 @@ class RotationWrapper(design):
         self.child_inst = child_inst
 
     def get_gds_layer_rects(self, layer, purpose="drawing", recursive=False):
-        return self.child_mod.get_gds_layer_rects(layer, purpose, recursive)
+        return self.get_layer_shapes(layer, purpose, recursive)
 
     def get_layer_shapes(self, layer, purpose="drawing", recursive=False):
-        return self.child_mod.get_layer_shapes(layer, purpose, recursive)
+        rects = self.child_mod.get_layer_shapes(layer, purpose, recursive)
+        results = []
+        if self.child_inst.rotate == GDS_ROT_90:
+            scale = [-1, 1]
+        else:
+            scale = [1, -1]
+        # rotate in place
+        for rect in rects:
+            rect = deepcopy(rect)
+            ll = rect.ll().rotate_scale(*scale) + self.child_inst.offset
+            ur = rect.ur().rotate_scale(*scale) + self.child_inst.offset
+            rect.boundary = [ll, ur]
+            rect.normalize()
+            results.append(rect)
+        return results

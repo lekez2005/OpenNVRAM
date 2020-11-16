@@ -9,6 +9,8 @@ from base.vector import vector
 
 TOP = "top"
 BOTTOM = "bottom"
+VERTICAL = "vertical"
+HORIZONTAL = "horizontal"
 
 
 def calculate_tx_metal_fill(tx_width, design_mod: design):
@@ -104,6 +106,76 @@ def create_wells_and_implants_fills(left_mod: design, right_mod: design,
             fill_rect = (layer, rect_bottom, rect_top, left_mod_rect, overlap_rect)
             all_fills.append(fill_rect)
     return all_fills
+
+
+def well_implant_instance_fills(source_inst: instance, target_inst: instance,
+                                direction=VERTICAL,
+                                layers=None, purposes=None):
+    default_layers, default_purposes = get_default_fill_layers()
+    is_vertical = direction == VERTICAL
+
+    if layers is None:
+        layers = default_layers
+    if purposes is None:
+        purposes = default_purposes
+
+    def source_func(x):
+        return x.uy() if is_vertical else x.rx()
+
+    def target_func(x):
+        return x.by() if is_vertical else x.lx()
+
+    def is_edge_rect(rect, inst, prop_scale):
+        """Considered edge rect if it's extremity is within the layer space"""
+        layer_space = source_inst.mod.get_space(layer)
+
+        if prop_scale == 1:
+            if is_vertical:
+                return rect.uy() + layer_space > inst.height
+            else:
+                return rect.rx() + layer_space > inst.width
+        else:
+            if is_vertical:
+                return rect.by() - layer_space < 0
+            else:
+                return rect.lx() - layer_space < 0
+
+    def get_extremity_rects(inst, property_func, prop_scale):
+        """prop_scale = 1 for max comparison and -1 for min comparison"""
+        rects = inst.get_layer_shapes(layer, purpose=purpose, recursive=True)
+        if not rects:
+            return []
+        max_val = max([prop_scale * x for x in map(utils.floor, map(property_func, rects))])
+        extremity_rects = [x for x in rects if prop_scale * utils.floor(property_func(x)) >= max_val]
+        return [x for x in extremity_rects if is_edge_rect(x, inst, prop_scale)]
+
+    results = []
+
+    for i in range(len(layers)):
+        layer = layers[i]
+        purpose = purposes[i]
+        min_width = source_inst.mod.get_min_layer_width(layer)
+        source_rects = get_extremity_rects(source_inst, source_func, 1)
+        target_rects = get_extremity_rects(target_inst, target_func, -1)
+        for source_rect in source_rects:
+            for target_rect in target_rects:
+                if is_vertical:
+                    start = max(source_rect.lx(), target_rect.lx())
+                    end = min(source_rect.rx(), target_rect.rx())
+                    width = end - start
+                    x_offset = start
+                    y_offset = source_rect.uy()
+                    height = (source_inst.height - y_offset) + target_rect.by()
+                else:
+                    start = max(source_rect.by(), target_rect.by())
+                    end = min(source_rect.uy(), target_rect.uy())
+                    x_offset = source_rect.rx()
+                    y_offset = start
+                    width = (source_inst.width - x_offset) + target_rect.lx()
+                    height = end - start
+                if end - start > min_width:
+                    results.append((layer, x_offset, y_offset, width, height))
+    return results
 
 
 def fill_horizontal_poly(self: design, reference_inst: instance, direction=TOP):

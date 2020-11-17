@@ -29,9 +29,9 @@ class WriteDriverArray(bitcell_aligned_array):
 
     def connect_mod(self, mod_index):
         if self.mirror and mod_index % 2 == 1:
-            template = "br[{0}] bl[{0}] data_bar[{0}] data[{0}] en gnd mask vdd"
+            template = "br[{0}] bl[{0}] data_bar[{0}] data[{0}] en gnd mask[{0}] vdd"
         else:
-            template = "bl[{0}] br[{0}] data[{0}] data_bar[{0}] en gnd mask vdd"
+            template = "bl[{0}] br[{0}] data[{0}] data_bar[{0}] en gnd mask[{0}] vdd"
         self.connect_inst(template.format(mod_index).split())
 
     def add_pins(self):

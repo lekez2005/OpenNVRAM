@@ -1,4 +1,4 @@
-from copy import deepcopy
+import copy
 
 from base.design import design
 from base.hierarchy_layout import GDS_ROT_90, GDS_ROT_270
@@ -42,7 +42,7 @@ class RotationWrapper(design):
             scale = [1, -1]
         # rotate in place
         for rect in rects:
-            rect = deepcopy(rect)
+            rect = copy.copy(rect)
             ll = rect.ll().rotate_scale(*scale) + self.child_inst.offset
             ur = rect.ur().rotate_scale(*scale) + self.child_inst.offset
             rect.boundary = [ll, ur]

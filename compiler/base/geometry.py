@@ -230,7 +230,7 @@ class instance(geometry):
         rects = self.mod.get_layer_shapes(layer, purpose, recursive)
         results = []
         for rect in rects:
-            rect = copy.deepcopy(rect)
+            rect = copy.copy(rect)
             ll, ur = self.transform_coords([rect.ll(), rect.ur()], self.offset, mirr, angle)
             rect.boundary = [ll, ur]
             rect.normalize()

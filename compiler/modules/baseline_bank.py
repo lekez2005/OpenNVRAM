@@ -5,7 +5,7 @@ import debug
 from base import utils
 from base.contact import m2m3, m1m2, m3m4, contact, cross_m2m3, cross_m1m2
 from base.contact_full_stack import ContactFullStack
-from base.design import design, METAL2, METAL3
+from base.design import design, METAL2, METAL3, METAL1
 from base.vector import vector
 from globals import OPTS
 from modules.bitline_compute.bl_control_buffers_sense_trig import ControlBuffersSenseTrig
@@ -49,7 +49,7 @@ class BaselineBank(design, ControlBuffersMixin):
         self.create_modules()
         self.calculate_rail_offsets()
         self.add_modules()
-        # self.route_layout()
+        self.route_layout()
         self.calculate_dimensions()
         return
 
@@ -612,47 +612,50 @@ class BaselineBank(design, ControlBuffersMixin):
                     self.sense_amp_array_inst.get_pins("preb")
         return destination_pins
 
+    def add_cross_contact_center(self, cont, offset, rotate=False,
+                                 rail_width=None):
+        if rail_width is None:
+            rail_width = self.bus_width
+        super().add_cross_contact_center(cont, offset, rotate)
+        if rotate:
+            layers = cont.layer_stack[0], cont.layer_stack[2]
+        else:
+            layers = cont.layer_stack[2], cont.layer_stack[0]
+        self.add_rect_center(layers[1], offset=offset, width=rail_width, height=cont.height)
+        self.add_rect_center(layers[0], offset=offset, width=cont.height, height=rail_width)
+
     def add_control_rail(self, rail_name, dest_pins, x_offset, y_offset):
         control_pin = self.control_buffers_inst.get_pin(rail_name)
         self.add_rect("metal2", offset=control_pin.ul(), height=y_offset - control_pin.uy())
 
-        via_extension = 0.5 * (m2m3.height - self.m3_width)
-        m3_y = y_offset + 0.5 * (self.m3_width - self.bus_width)
-        m3_x = x_offset - via_extension
-        self.add_rect("metal3", offset=vector(m3_x, m3_y),
-                      width=control_pin.rx() - m3_x + via_extension,
-                      height=self.bus_width)
+        self.add_rect(METAL3, offset=vector(x_offset, y_offset),
+                      width=control_pin.rx() - x_offset, height=self.bus_width)
 
-        self.add_cross_contact_center(cross_m2m3, offset=vector(control_pin.cx(), y_offset + 0.5 * self.m3_width))
+        self.add_cross_contact_center(cross_m2m3, offset=vector(control_pin.cx(),
+                                                                y_offset + 0.5 * self.bus_width))
 
-        rail_x = x_offset + 0.5 * (self.m2_width - self.bus_width)
         if not dest_pins:
-            rail = self.add_rect("metal3", offset=vector(rail_x, y_offset), height=m2m3.height,
+            rail = self.add_rect("metal3", offset=vector(x_offset, y_offset), height=m2m3.height,
                                  width=self.bus_width)
         else:
-            via_offset = vector(x_offset + 0.5 * self.m2_width, y_offset + 0.5 * self.m3_width)
+            via_offset = vector(x_offset + 0.5 * self.bus_width, y_offset + 0.5 * self.bus_width)
 
             self.add_cross_contact_center(cross_m2m3, offset=via_offset)
             top_pin = max(dest_pins, key=lambda x: x.uy())
-            rail_y = y_offset - via_extension
-            rail = self.add_rect("metal2", offset=vector(rail_x, rail_y),
-                                 height=top_pin.cy() + 0.5 * cross_m2m3.contact_width + via_extension - rail_y,
+            rail = self.add_rect("metal2", offset=vector(x_offset, y_offset),
+                                 height=top_pin.cy() - y_offset,
                                  width=self.bus_width)
         setattr(self, rail_name + "_rail", rail)
 
         if not rail_name == "wordline_en":
             for dest_pin in dest_pins:
-                via_x = x_offset + 0.5 * self.m2_width
-                via_y = dest_pin.cy()
-
-                rail_x = x_offset - via_extension
                 rail_height = min(self.bus_width, dest_pin.height())
                 rail_y = dest_pin.cy() - 0.5 * rail_height
 
                 if dest_pin.layer in [METAL2, METAL3]:
                     via = cross_m2m3
                     via_rotate = False
-                elif dest_pin.layer == "metal1":
+                elif dest_pin.layer == METAL1:
                     via = cross_m1m2
                     via_rotate = True
                 else:
@@ -660,8 +663,10 @@ class BaselineBank(design, ControlBuffersMixin):
                     break
 
                 rail_layer = METAL3 if dest_pin.layer == METAL2 else dest_pin.layer
-                self.add_rect(rail_layer, offset=vector(rail_x, rail_y),
-                              width=dest_pin.lx() - rail_x, height=rail_height)
+                via_x = x_offset + 0.5 * self.bus_width
+                via_y = dest_pin.cy()
+                self.add_rect(rail_layer, offset=vector(x_offset, rail_y),
+                              width=dest_pin.lx() - x_offset, height=rail_height)
                 self.add_cross_contact_center(via, offset=vector(via_x, via_y), rotate=via_rotate)
                 if dest_pin.layer == METAL2:
                     self.add_contact_center(m2m3.layer_stack,
@@ -695,6 +700,9 @@ class BaselineBank(design, ControlBuffersMixin):
     def get_right_vdd_offset(self):
         return max(self.control_buffers_inst.rx(), self.bitcell_array_inst.rx(),
                    self.read_buf_inst.rx()) + self.wide_m1_space
+
+    def get_mid_gnd_offset(self):
+        return - 2*self.wide_m1_space - self.vdd_rail_width
 
     def add_vdd_gnd_rails(self):
         self.height = self.top - self.min_point

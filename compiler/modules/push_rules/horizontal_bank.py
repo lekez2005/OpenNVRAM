@@ -121,19 +121,52 @@ class HorizontalBank(CmosBank):
             self.control_rail_offsets[bottom_pins[i]] = y_offset
             y_offset += self.bus_pitch
 
+        self.top_control_rails, self.bottom_control_rails = top_pins, bottom_pins
+
     def add_control_rails(self):
         destination_pins = self.get_control_rails_destinations()
         num_rails = len(destination_pins.keys())
         x_offset = (self.mid_vdd_offset - (num_rails * self.control_rail_pitch)
                     - (self.wide_m1_space - self.line_end_space))
         rail_names = list(sorted(destination_pins.keys(),
-                                 key=lambda x: self.control_buffers_inst.get_pin(x).lx()))
+                                 key=lambda x: (-self.control_buffers_inst.get_pin(x).by(),
+                                                self.control_rail_offsets[x]),
+                                 reverse=False))
         for rail_name in rail_names:
             self.add_control_rail(rail_name, destination_pins[rail_name],
                                   x_offset, self.control_rail_offsets[rail_name])
             x_offset += self.control_rail_pitch
 
         self.leftmost_rail = getattr(self, rail_names[0] + "_rail")
+
+    def get_control_flops_offset(self):
+        wide_space = self.get_wide_space(METAL2)
+        # place to the left of bottom rail
+        leftmost_bottom_rail_x = min(map(lambda x: getattr(self, x + "_rail").lx(),
+                                         self.bottom_control_rails))
+
+        num_control_inputs = len(self.get_non_flop_control_inputs())
+        num_flop_inputs = 2
+        num_inputs = num_control_inputs + num_flop_inputs
+        self.bank_sel_rail_x = (leftmost_bottom_rail_x - num_inputs * self.bus_pitch
+                                - self.bus_space + wide_space)
+        x_offset = (self.bank_sel_rail_x - wide_space
+                    - self.control_flop.width)
+        # place below predecoder
+        y_offset = (self.bitcell_array_inst.by() - self.decoder.predecoder_height
+                    - 2 * self.control_flop.height)
+        # place close to control_buffers
+        y_offset = min(y_offset, self.control_buffers_inst.cy() - self.control_flop.height)
+        # ensure no clash with rails above control_buffer
+        top_rails = [getattr(self, x + "_rail") for x in self.top_control_rails]
+        leftmost_top_rail = min(top_rails, key=lambda x: x.lx())
+        if y_offset + 2 * self.control_flop.height > leftmost_top_rail.by() - wide_space:
+            x_offset = leftmost_top_rail.by() - wide_space - 2 * self.control_flop.height
+
+        return x_offset, y_offset
+
+    def get_non_flop_control_inputs(self):
+        return ["clk", "sense_trig", "precharge_trig"]
 
     def get_module_y_space(self, bottom_instance, top_mod):
         top_modules = [top_mod.child_mod, top_mod.child_mod]

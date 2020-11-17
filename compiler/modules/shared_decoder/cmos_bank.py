@@ -1,5 +1,5 @@
 from base import utils
-from base.contact import m2m3, m3m4, m1m2, contact
+from base.contact import m2m3, m3m4, m1m2, contact, cross_m2m3, cross_m1m2
 from base.design import PIMP, NIMP, METAL1, METAL2, METAL3, METAL4
 from base.vector import vector
 from globals import OPTS
@@ -32,8 +32,9 @@ class CmosBank(BaselineBank):
         self.add_wordline_driver()
         self.add_control_rails()
 
-        self.min_point = min(self.control_buffers_inst.by(),
-                             self.bitcell_array_inst.by() - self.decoder.predecoder_height)
+        self.min_point = min(map(lambda x: x.by(), self.objs))
+        self.min_point = min(self.min_point, min(map(lambda x: x.by(), self.insts)))
+
         if self.num_banks > 1:
             # space for joining read, clk, sense_trig
             space = self.get_wide_space(METAL3)
@@ -47,6 +48,7 @@ class CmosBank(BaselineBank):
     def route_layout(self):
 
         self.route_control_buffer()
+        return
         self.route_control_flops()
         self.route_precharge()
         self.route_column_mux()
@@ -157,11 +159,7 @@ class CmosBank(BaselineBank):
         return y_offset
 
     def add_control_flops(self):
-        # add to the left of the leftmost control rail
-        wide_space = self.get_wide_space(METAL1)
-        y_offset = self.control_buffers_inst.by()
-        x_offset = (self.leftmost_rail.offset.x - 2 * self.m2_pitch -
-                    wide_space - self.control_flop.width)
+        x_offset, y_offset = self.get_control_flops_offset()
 
         self.bank_sel_buf_inst = self.add_inst("bank_sel_buf", mod=self.control_flop,
                                                offset=vector(x_offset, y_offset))
@@ -170,6 +168,14 @@ class CmosBank(BaselineBank):
         offset = self.bank_sel_buf_inst.ul() + vector(0, self.control_flop.height)
         self.read_buf_inst = self.add_inst("read_buf", mod=self.control_flop, offset=offset, mirror="MX")
         self.connect_inst(["read", "clk", "read_buf", "vdd", "gnd"])
+
+    def get_control_flops_offset(self):
+        # add to the left of the leftmost control rail
+        wide_space = self.get_wide_space(METAL1)
+        y_offset = self.control_buffers_inst.by()
+        x_offset = (self.leftmost_rail.offset.x - 2 * self.m2_pitch -
+                    wide_space - self.control_flop.width)
+        return x_offset, y_offset
 
     def add_column_mux_array(self):
         if self.col_addr_size == 0:
@@ -197,50 +203,71 @@ class CmosBank(BaselineBank):
         return max(self.bitcell_array_inst.rx(),
                    self.control_buffers_inst.rx()) + self.wide_m1_space
 
-    def get_mid_gnd_offset(self):
-        return - 2*self.wide_m1_space - self.vdd_rail_width
-
     def route_control_buffer(self):
         # copy vdd, gnd and clk outputs
         self.copy_layout_pin(self.control_buffers_inst, "clk_buf")
         self.copy_layout_pin(self.control_buffers_inst, "clk_bar")
 
-        self.route_vdd_pin(self.control_buffers_inst.get_pin("vdd"))
-        self.route_gnd_pin(self.control_buffers_inst.get_pin("gnd"))
+        for vdd_pin in self.control_buffers_inst.get_pins("vdd"):
+            self.route_vdd_pin(vdd_pin)
+        for gnd_pin in self.control_buffers_inst.get_pins("gnd"):
+            self.route_gnd_pin(gnd_pin)
 
         wide_space = self.get_wide_space(METAL1)
 
         # outputs of control flops for read and bank_sel to control buffers inputs
+        rail_height = self.bus_width
+        instances = [self.bank_sel_buf_inst, self.read_buf_inst]
+        control_pins = ["bank_sel", "read"]
+
         x_offset = self.read_buf_inst.rx() + wide_space
-        bank_sel_out = self.bank_sel_buf_inst.get_pin("dout")
-        bank_sel_in = self.control_buffers_inst.get_pin("bank_sel")
+        _, fill_height = self.calculate_min_m1_area(rail_height, layer=METAL2)
+        for i in range(2):
+            mid_x = x_offset + 0.5 * rail_height
+            control_pin = self.control_buffers_inst.get_pin(control_pins[i])
+            flop_pin = instances[i].get_pin("dout")
 
-        read_out = self.read_buf_inst.get_pin("dout")
-        read_in = self.control_buffers_inst.get_pin("read")
+            if flop_pin.by() + 0.5 * rail_height <= control_pin.cy() <= \
+                    flop_pin.uy() - 0.5 * rail_height:
+                y_offset = control_pin.cy()
+            elif flop_pin.uy() <= control_pin.cy():
+                y_offset = flop_pin.uy() - 0.5 * rail_height
+            else:
+                y_offset = flop_pin.by() + 0.5 * rail_height
 
-        for source_pin, dest_pin in [(bank_sel_out, bank_sel_in), (read_out, read_in)]:
-            y_offset = source_pin.by() - 0.5 * self.m2_width
-            self.add_rect(METAL2, offset=vector(source_pin.rx(), y_offset),
-                          width=x_offset - source_pin.rx() + self.m2_width)
-            self.add_rect(METAL2, offset=vector(x_offset, y_offset), height=dest_pin.cy() - y_offset)
-            self.add_contact_center(m2m3.layer_stack, offset=vector(x_offset + 0.5 * m2m3.width, dest_pin.cy()))
-            self.add_rect(METAL3, offset=vector(x_offset, dest_pin.by()), width=dest_pin.lx() - x_offset)
+            self.add_rect(METAL1, offset=vector(flop_pin.lx(), y_offset - 0.5 * rail_height),
+                          width=mid_x - flop_pin.lx(), height=rail_height)
+            self.add_cross_contact_center(cross_m1m2, offset=vector(mid_x, y_offset),
+                                          rotate=True)
 
-            x_offset += self.m2_pitch
+            self.add_rect(METAL2, offset=vector(mid_x - 0.5 * rail_height, y_offset),
+                          width=rail_height,
+                          height=max(fill_height, control_pin.cy() - y_offset, key=abs))
+            self.add_cross_contact_center(cross_m2m3, offset=vector(mid_x, control_pin.cy()),
+                                          rotate=False)
+            m3_height = min(rail_height, control_pin.height())
+            self.add_rect(METAL3, offset=vector(x_offset, control_pin.cy() - 0.5 * m3_height),
+                          height=m3_height, width=control_pin.lx() - x_offset)
 
-        # make space for horizontal contacts
-        contact_pitch = m2m3.height + self.get_line_end_space(METAL2)
-        x_offset += contact_pitch
-        min_height = self.metal1_minwidth_fill
-        for pin_name in ["clk", "sense_trig"]:
-            bank_pin = self.control_buffers_inst.get_pin(pin_name)
-            self.add_rect(METAL3, offset=vector(x_offset, bank_pin.by()),
-                          width=bank_pin.lx() - x_offset)
-            self.add_contact_center(m2m3.layer_stack, offset=vector(x_offset, bank_pin.cy()),
-                                    rotate=90)
-            self.add_layout_pin(pin_name, METAL2, offset=vector(x_offset - 0.5 * self.m2_width, self.min_point),
-                                height=max(min_height, bank_pin.cy() - self.min_point))
-            x_offset += contact_pitch
+            x_offset += self.bus_pitch
+
+        control_pins = [self.control_buffers_inst.get_pin(x) for x in
+                        self.get_non_flop_control_inputs()]
+        control_pins = list(sorted(control_pins, key=lambda x: x.by()))
+        for pin in control_pins:
+            self.add_layout_pin(pin.name, METAL2, offset=vector(x_offset, self.min_point),
+                                width=rail_height, height=pin.cy() - self.min_point)
+            self.add_cross_contact_center(cross_m2m3,
+                                          offset=vector(x_offset + 0.5 * rail_height,
+                                                        pin.cy()))
+            m3_height = min(rail_height, pin.height())
+            self.add_rect(METAL3, offset=vector(x_offset, pin.cy() - 0.5 * m3_height),
+                          width=pin.lx() - x_offset, height=m3_height)
+            x_offset += self.bus_pitch
+
+    def get_non_flop_control_inputs(self):
+        """Get control buffers inputs that don't go through flops"""
+        return ["clk", "sense_trig"]
 
     def route_control_flops(self):
         # vdd gnd

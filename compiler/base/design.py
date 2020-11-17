@@ -1,10 +1,8 @@
 import copy
 import math
-from importlib import reload
-from typing import List
-
 import os
 from collections import Iterable
+from typing import List
 
 import debug
 import verify
@@ -56,28 +54,29 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         # These modules ensure unique names or have no changes if they
         # aren't unique
         ok_list = [
-                   'GdsLibImport',
-                   'ms_flop',
-                   'ms_flop_horz_pitch',
-                   'bitcell',
-                   'body_tap',
-                   'cam_bitcell',
-                   'cam_bitcell_12t',
-                   'contact',
-                   'ptx',
-                   'pinv',
-                   'ptx_spice',
-                   'SignalGate',
-                   'sram',
-                   'hierarchical_predecode2x4',
-                   'hierarchical_predecode3x8'
+            'GdsLibImport',
+            'ms_flop',
+            'ms_flop_horz_pitch',
+            'bitcell',
+            'body_tap',
+            'cam_bitcell',
+            'cam_bitcell_12t',
+            'contact',
+            'ptx',
+            'pinv',
+            'ptx_spice',
+            'SignalGate',
+            'sram',
+            'hierarchical_predecode2x4',
+            'hierarchical_predecode3x8'
         ]
         if name not in design.name_map:
             design.name_map.append(name)
         elif self.__class__.__name__ in ok_list:
             pass
         else:
-            debug.error("Duplicate layout reference name {0} of class {1}. GDS2 requires names be unique.".format(name,self.__class__),-1)
+            debug.error("Duplicate layout reference name {0} of class {1}."
+                        " GDS2 requires names be unique.".format(name, self.__class__), -1)
 
     def setup_drc_constants(self):
         """ These are some DRC constants used in many places in the compiler."""
@@ -105,7 +104,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.contact_width = drc["minwidth_contact"]
         self.contact_spacing = drc["contact_to_contact"]
         self.rail_height = drc["rail_height"]
-        
+
         self.poly_to_active = drc["poly_to_active"]
         self.body_contact_active_height = drc["body_contact_active_height"]
         self.poly_extend_active = drc["poly_extend_active"]
@@ -124,7 +123,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.wide_m1_space = self.get_wide_space("metal1")
         self.line_end_space = self.get_line_end_space("metal1")
         self.parallel_line_space = self.get_parallel_space("metal1")
-        self.metal1_minwidth_fill = utils.ceil(drc["minarea_metal1_minwidth"]/self.m1_width)
+        self.metal1_minwidth_fill = utils.ceil(drc["minarea_metal1_minwidth"] / self.m1_width)
         self.minarea_metal1_minwidth = drc["minarea_metal1_minwidth"]
         self.poly_vert_space = drc["poly_end_to_end"]
         self.parallel_via_space = drc["parallel_via_space"]
@@ -167,7 +166,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             layer_num = int(layer[5:])
             suffixes = ["_metal{}".format(x) for x in range(layer_num, 0, -1)] + [""]
         else:
-            suffixes = ["_"+layer, ""]
+            suffixes = ["_" + layer, ""]
         keys = ["{}{}".format(prefix, suffix) for suffix in suffixes]
         for key in keys:
             if key in drc:
@@ -216,7 +215,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         if max_width is None:
             return False
 
-        width_threshold = cls.get_drc_by_layer(layer, prefix+"_width_threshold")
+        width_threshold = cls.get_drc_by_layer(layer, prefix + "_width_threshold")
         if width_threshold is None or max_width < width_threshold:
             return False
 
@@ -252,14 +251,14 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             return max(space_for_prefix, layer_to_layer_space)
         return layer_to_layer_space
 
-    def get_layout_pins(self,inst):
+    def get_layout_pins(self, inst):
         """ Return a map of pin locations of the instance offset """
         # find the instance
         for i in self.insts:
             if i.name == inst.name:
                 break
         else:
-            debug.error("Couldn't find instance {0}".format(inst.name),-1)
+            debug.error("Couldn't find instance {0}".format(inst.name), -1)
         inst_map = inst.mod.pin_map
         return inst_map
 
@@ -268,12 +267,12 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         Calculates the possible number of source/drain contacts in a finger.
         """
         from base import contact
-        num_contacts = int(math.ceil(tx_width/(self.contact_width + self.contact_spacing)))
+        num_contacts = int(math.ceil(tx_width / (self.contact_width + self.contact_spacing)))
         while num_contacts > 1:
             contact_array = contact.contact(layer_stack=("active", "contact", "metal1"),
-                              dimensions=[1, num_contacts],
-                              implant_type=None,
-                              well_type=None)
+                                            dimensions=[1, num_contacts],
+                                            implant_type=None,
+                                            well_type=None)
             if contact_array.first_layer_height < tx_width and contact_array.second_layer_height < tx_width:
                 break
             num_contacts -= 1
@@ -289,10 +288,10 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             width = design.get_min_layer_width(layer)
         if min_height is None:
             min_height = min_side
-        height = max(utils.ceil(min_area/width), min_side)
+        height = max(utils.ceil(min_area / width), min_side)
         if height < min_height:
             height = min_height
-            width = utils.ceil(min_area/height)
+            width = utils.ceil(min_area / height)
         return width, height
 
     def get_layer_shapes(self, layer, purpose="drawing", recursive=False):
@@ -314,8 +313,9 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
     def get_gds_layer_rects(self, layer, purpose="drawing", recursive=False):
         def rect(shape):
-            return rectangle(0, shape[0], width=shape[1][0]-shape[0][0],
-                             height=shape[1][1]-shape[0][1])
+            return rectangle(0, shape[0], width=shape[1][0] - shape[0][0],
+                             height=shape[1][1] - shape[0][1])
+
         if recursive:
             boundaries = self.gds.getShapesInLayerRecursive(tech_layers[layer], tech_purpose[purpose])
         else:
@@ -350,11 +350,12 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         for poly_rect in polys:
             x_offset = poly_rect[0][0]
             potential_fills = [-2, 2]  # need -2 and +2 poly pitches from current x offset filled
-            mid_point = 0.5 * (poly_rect[0][1] + poly_rect[1][1]) # y midpoint
+            mid_point = 0.5 * (poly_rect[0][1] + poly_rect[1][1])  # y midpoint
             for candidate in polys + poly_dummies:
                 if not candidate[0][1] < mid_point < candidate[1][1]:  # not on the same row
                     continue
-                integer_space = int(round((candidate[0][0] - x_offset)/self.poly_pitch)) # space away from current poly
+                integer_space = int(
+                    round((candidate[0][0] - x_offset) / self.poly_pitch))  # space away from current poly
                 if integer_space in potential_fills:
                     potential_fills.remove(integer_space)
             for potential_fill in potential_fills:  # fill unfilled spaces
@@ -371,10 +372,11 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             # discard ceils that appear within cell
             if fill[0][0] > 0 and fill[1][0] < cell.width:
                 return
-            if fill[0][0] < 0.5*cell.width:
+            if fill[0][0] < 0.5 * cell.width:
                 merged_fills["left"].append(fill)
             else:
                 merged_fills["right"].append(fill)
+
         if len(fills) > 0:
             current_fill = copy.deepcopy(fills[0])
             x_offset = utils.ceil(current_fill[0][0])
@@ -463,7 +465,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                     self.add_rect(layer, offset=vector(tap_offset, rect.by()), height=rect.height,
                                   width=tap_width + right_extension)
                 for x_offset in self.bitcell_offsets:
-                    self.add_rect(layer, offset=vector(x_offset+rect.lx(), rect.by()),
+                    self.add_rect(layer, offset=vector(x_offset + rect.lx(), rect.by()),
                                   height=rect.height, width=rect.width)
 
     def evaluate_vertical_module_spacing(self, top_modules: List["design"],
@@ -551,8 +553,10 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             tempgds = OPTS.openram_temp + "/temp.gds"
             self.sp_write(tempspice)
             self.gds_write(tempgds)
-            debug.check(verify.run_drc(self.name, tempgds, exception_group=self.__class__.__name__) == 0,"DRC failed for {0}".format(self.name))
-            debug.check(verify.run_lvs(self.name, tempgds, tempspice, final_verification) == 0,"LVS failed for {0}".format(self.name))
+            debug.check(verify.run_drc(self.name, tempgds, exception_group=self.__class__.__name__) == 0,
+                        "DRC failed for {0}".format(self.name))
+            debug.check(verify.run_lvs(self.name, tempgds, tempspice, final_verification) == 0,
+                        "LVS failed for {0}".format(self.name))
             os.remove(tempspice)
             os.remove(tempgds)
 
@@ -561,7 +565,8 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         if OPTS.check_lvsdrc:
             tempgds = OPTS.openram_temp + "/temp.gds"
             self.gds_write(tempgds)
-            debug.check(verify.run_drc(self.name, tempgds, exception_group=self.__class__.__name__) == 0,"DRC failed for {0}".format(self.name))
+            debug.check(verify.run_drc(self.name, tempgds, exception_group=self.__class__.__name__) == 0,
+                        "DRC failed for {0}".format(self.name))
             os.remove(tempgds)
 
     def LVS(self, final_verification=False):
@@ -571,7 +576,8 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             tempgds = OPTS.openram_temp + "/temp.gds"
             self.sp_write(tempspice)
             self.gds_write(tempgds)
-            debug.check(verify.run_lvs(self.name, tempgds, tempspice, final_verification) == 0,"LVS failed for {0}".format(self.name))
+            debug.check(verify.run_lvs(self.name, tempgds, tempspice, final_verification) == 0,
+                        "LVS failed for {0}".format(self.name))
             os.remove(tempspice)
             os.remove(tempgds)
 
@@ -581,13 +587,14 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
     def __repr__(self):
         """ override print function output """
-        text="( design: " + self.name + " pins=" + str(self.pins) + " " + str(self.width) + "x" + str(self.height) + " )\n"
+        text = "( design: " + self.name + " pins=" + str(self.pins) + " " + str(self.width) + "x" + str(
+            self.height) + " )\n"
         for i in self.objs:
-            text+=str(i)+",\n"
+            text += str(i) + ",\n"
         for i in self.insts:
-            text+=str(i)+",\n"
+            text += str(i) + ",\n"
         return text
-     
+
     def analytical_power(self, proc, vdd, temp, load):
         """ Get total power of a module  """
         total_module_power = self.return_power()

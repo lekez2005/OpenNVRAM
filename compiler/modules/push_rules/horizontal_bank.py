@@ -1,6 +1,7 @@
 from typing import List
 
-from base.design import METAL2
+from base.contact import cross_m2m3
+from base.design import METAL2, METAL1, METAL3
 from base.geometry import instance
 from base.hierarchy_layout import GDS_ROT_270
 from base.vector import vector
@@ -147,7 +148,7 @@ class HorizontalBank(CmosBank):
 
         num_control_inputs = len(self.get_non_flop_control_inputs())
         num_flop_inputs = 2
-        num_inputs = num_control_inputs + num_flop_inputs
+        num_inputs = num_control_inputs + num_flop_inputs + 1
         self.bank_sel_rail_x = (leftmost_bottom_rail_x - num_inputs * self.bus_pitch
                                 - self.bus_space + wide_space)
         x_offset = (self.bank_sel_rail_x - wide_space
@@ -166,7 +167,7 @@ class HorizontalBank(CmosBank):
         return x_offset, y_offset
 
     def get_non_flop_control_inputs(self):
-        return ["clk", "sense_trig", "precharge_trig"]
+        return ["sense_trig", "precharge_trig"]
 
     def get_module_y_space(self, bottom_instance, top_mod):
         top_modules = [top_mod.child_mod, top_mod.child_mod]
@@ -270,3 +271,79 @@ class HorizontalBank(CmosBank):
             fill_single_mirror(self.sense_amp_array_inst, self.precharge_array_inst, 0, 1)
             fill_single_mirror(self.sense_amp_array_inst, self.precharge_array_inst, 1, 2)
             fill_single_mirror(self.sense_amp_array_inst, self.precharge_array_inst, 1, 3)
+
+    def route_control_flops(self):
+        # vdd and gnd
+        bottom_gnd, top_gnd = sorted(self.control_buffers_inst.get_pins("gnd"),
+                                     key=lambda x: x.cy())
+        y_offsets = [bottom_gnd.cy(), 0.5 * (bottom_gnd.cy() + top_gnd.cy()), top_gnd.cy()]
+        destination_pins = [self.mid_gnd, self.mid_vdd, self.mid_gnd]
+        pins = [self.bank_sel_buf_inst.get_pin("gnd"),
+                self.bank_sel_buf_inst.get_pin("vdd"),
+                self.read_buf_inst.get_pin("gnd")]
+        x_start = self.get_pin("precharge_trig").lx()
+        pitch = bottom_gnd.height() + self.get_wide_space(METAL1)
+        for i in range(3):
+            start_pin = pins[i]
+            destination_y = y_offsets[i]
+            x_offset = x_start + i * pitch
+            self.add_rect(METAL1, offset=start_pin.lr(),
+                          width=x_offset - start_pin.rx() + start_pin.height(),
+                          height=start_pin.height())
+            self.add_rect(METAL1, offset=vector(x_offset, start_pin.cy()),
+                          width=start_pin.height(), height=destination_y - start_pin.cy())
+            destination_pin = destination_pins[i]
+            rect = self.add_rect(METAL1, offset=vector(x_offset,
+                                                       destination_y - 0.5 * start_pin.height()),
+                                 width=destination_pin.rx() - x_offset,
+                                 height=start_pin.height())
+            if i == 1:
+                self.add_power_via(rect, self.mid_vdd)
+        # clk, read, bank_sel
+        instances = ([self.bank_sel_buf_inst], [self.read_buf_inst],
+                     [self.bank_sel_buf_inst, self.read_buf_inst])
+        pin_names = ["bank_sel", "read", "clk"]
+        input_pin_names = ["din", "din", "clk"]
+        x_base = (self.bank_sel_buf_inst.lx() - self.get_wide_space(METAL2)
+                  - 3 * self.bus_pitch + self.bus_space)
+        for i in range(3):
+            x_offset = x_base + i * self.bus_pitch
+            in_pin_name = input_pin_names[i]
+            input_pins = [x.get_pin(in_pin_name) for x in instances[i]]
+            top_pin = max(input_pins, key=lambda x: x.cy())
+            self.add_layout_pin(pin_names[i], METAL2, offset=vector(x_offset, self.min_point),
+                                width=self.bus_width,
+                                height=top_pin.cy() - self.min_point)
+            for input_pin in input_pins:
+                if i > 0:
+                    layer = METAL2
+                else:
+                    layer = METAL3
+                    self.add_cross_contact_center(cross_m2m3,
+                                                  offset=vector(x_offset + 0.5 * self.bus_width,
+                                                                input_pin.cy()))
+                    self.add_cross_contact_center(cross_m2m3,
+                                                  offset=vector(input_pin.lx() + 0.5 * self.bus_width,
+                                                                input_pin.cy()))
+                self.add_rect(layer, offset=vector(x_offset, input_pin.by()),
+                              width=input_pin.lx() - x_offset, height=input_pin.height())
+        # clk to control_buffer
+        clk_pin = self.get_pin("clk")
+        rail_x = self.get_pin("sense_trig").lx() + self.bus_pitch
+        y_offset = (self.bank_sel_buf_inst.by() - self.get_wide_space(METAL2)
+                    - self.bus_pitch)
+        self.cross_clk_rail_y = y_offset
+        self.add_cross_contact_center(cross_m2m3, offset=vector(clk_pin.cx(),
+                                                                y_offset + 0.5 * self.bus_width))
+        self.add_rect(METAL3, offset=vector(clk_pin.cx(), y_offset),
+                      width=rail_x - clk_pin.cx(), height=self.bus_width)
+        self.add_cross_contact_center(cross_m2m3, offset=vector(rail_x + 0.5 * self.bus_width,
+                                                                y_offset + 0.5 * self.bus_width))
+        control_pin = self.control_buffers_inst.get_pin("clk")
+        self.add_rect(METAL2, offset=vector(rail_x, y_offset), width=self.bus_width,
+                      height=control_pin.cy() - y_offset)
+        self.add_cross_contact_center(cross_m2m3, offset=vector(rail_x + 0.5 * self.bus_width,
+                                                                control_pin.cy()))
+        m3_height = min(self.bus_width, control_pin.height())
+        self.add_rect(METAL3, offset=vector(rail_x, control_pin.cy() - 0.5 * m3_height),
+                      width=control_pin.lx() - rail_x, height=m3_height)

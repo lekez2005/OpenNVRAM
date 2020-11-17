@@ -2,6 +2,7 @@ from importlib import reload
 from math import log
 
 import debug
+import tech
 from base import utils
 from base.contact import m2m3, m1m2, m3m4, contact, cross_m2m3, cross_m1m2
 from base.contact_full_stack import ContactFullStack
@@ -9,14 +10,12 @@ from base.design import design, METAL2, METAL3, METAL1
 from base.vector import vector
 from globals import OPTS
 from modules.bitline_compute.bl_control_buffers_sense_trig import ControlBuffersSenseTrig
-from modules.flop_buffer import FlopBuffer
 from modules.buffer_stage import BufferStage
 from modules.control_buffers import ControlBuffers
 from modules.control_buffers_bank_mixin import ControlBuffersMixin
 from pgates.pgate import pgate
 from tech import delay_strategy_class
 from tech import drc, power_grid_layers
-import tech
 
 
 class BaselineBank(design, ControlBuffersMixin):

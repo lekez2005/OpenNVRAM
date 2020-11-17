@@ -48,8 +48,8 @@ class CmosBank(BaselineBank):
     def route_layout(self):
 
         self.route_control_buffer()
-        return
         self.route_control_flops()
+        return
         self.route_precharge()
         self.route_column_mux()
         self.route_sense_amp()
@@ -267,7 +267,7 @@ class CmosBank(BaselineBank):
 
     def get_non_flop_control_inputs(self):
         """Get control buffers inputs that don't go through flops"""
-        return ["clk", "sense_trig"]
+        return ["sense_trig"]
 
     def route_control_flops(self):
         # vdd gnd

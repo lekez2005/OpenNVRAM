@@ -383,9 +383,9 @@ class HorizontalBank(CmosBank):
 
     def route_write_driver(self):
 
-        fill_width = self.medium_m3
-        fill_width, fill_height = self.calculate_min_m1_area(fill_width, layer=METAL3)
         for col in range(0, self.word_size):
+            fill_width = self.medium_m3
+            fill_width, fill_height = self.calculate_min_m1_area(fill_width, layer=METAL3)
             # connect bitline to sense amp
             for pin_name in ["bl", "br"]:
                 sense_pin = self.sense_amp_array_inst.get_pin(pin_name + "[{}]".format(col))
@@ -454,6 +454,21 @@ class HorizontalBank(CmosBank):
                                         via_offset.y), width=fill_width, height=fill_height)
             self.add_rect(METAL4, offset=via_offset, height=driver_pin.by() - via_offset.y)
 
+            # driver mask input m4 to m2
+            if col % 2 == 0:
+                via_x = driver_pin.lx() + m2m3.height
+                fill_x = via_x - fill_width
+            else:
+                via_x = driver_pin.rx()
+                fill_x = via_x - m2m3.height
+            self.add_contact(m2m3.layer_stack,
+                             offset=vector(via_x, driver_pin.by() - 0.5 * m2m3.width),
+                             rotate=90)
+            via_y = driver_pin.by() + m2m3.width - m3m4.height
+            self.add_contact(m3m4.layer_stack, offset=vector(driver_pin.lx(), via_y))
+            self.add_rect(METAL3, offset=vector(fill_x, via_y), width=fill_width,
+                          height=fill_height)
+
             # route power, gnd
             self.route_all_power(self.write_driver_array_inst)
 
@@ -483,7 +498,7 @@ class HorizontalBank(CmosBank):
                                 height=y_offset - self.min_point)
             # mask in
             mask_in = self.mask_in_flops_inst.get_pin("din[{}]".format(word))
-            y_offset = mask_in.by() - self.get_wide_space(METAL4) - fill_height
+            y_offset = mask_in.by() - self.get_wide_space(METAL4) - fill_height - 0.5 * m3m4.height
             via_offset = vector(mask_in.lx(), y_offset)
             self.add_rect(METAL2, offset=via_offset, height=mask_in.by() - via_offset.y)
             self.add_rect(METAL3, offset=vector(mask_in.cx() - 0.5 * fill_width, y_offset),
@@ -494,3 +509,48 @@ class HorizontalBank(CmosBank):
                                 offset=vector(via_offset.x, self.min_point),
                                 height=via_offset.y - self.min_point)
 
+    def route_tri_gate(self):
+        self.route_all_power(self.tri_gate_array_inst)
+        fill_height = m3m4.height
+        fill_height, fill_width = self.calculate_min_m1_area(fill_height, layer=METAL3)
+
+        write_driver_m3 = self.write_driver_array.child_mod.get_layer_shapes(METAL3, recursive=True)
+        top_m3 = max(write_driver_m3, key=lambda x: x.uy()).uy()
+        sense_out_y = self.write_driver_array_inst.by() + top_m3 + self.get_wide_space(METAL3)
+
+        for word in range(self.word_size):
+            mask_in = self.mask_in_flops_inst.get_pin("din[{}]".format(word))
+            tri_in = self.tri_gate_array_inst.get_pin("in[{}]".format(word))
+            # tri input to sense_out_y
+            y_offset = mask_in.by() - 0.5 * m3m4.height
+            self.add_contact(m3m4.layer_stack, offset=vector(mask_in.lx(), y_offset))
+            self.add_contact(m2m3.layer_stack, offset=vector(tri_in.lx(), y_offset))
+            self.add_rect(METAL3, offset=vector(mask_in.lx(), y_offset),
+                          height=m3m4.height, width=tri_in.lx() - mask_in.lx())
+            self.add_rect(METAL2, offset=tri_in.ul(), height=y_offset - tri_in.uy())
+
+            self.add_rect(METAL4, offset=vector(mask_in.lx(), y_offset),
+                          height=sense_out_y - y_offset)
+            # sense_out_y to sense amp out
+            sense_out = self.sense_amp_array_inst.get_pin("dout[{}]".format(word))
+            self.add_contact(m3m4.layer_stack, offset=vector(mask_in.lx(), sense_out_y))
+            if word % 2 == 0:
+                self.add_rect(METAL3, offset=vector(mask_in.lx(), sense_out_y),
+                              width=sense_out.rx() - mask_in.lx(), height=m3m4.height)
+            else:
+                self.add_rect(METAL3, offset=vector(mask_in.lx(), sense_out_y),
+                              width=sense_out.lx() - mask_in.lx(), height=m3m4.height)
+            y_offset = sense_out_y + m3m4.height
+            self.add_contact(m2m3.layer_stack, offset=vector(sense_out.lx(), y_offset))
+            self.add_rect(METAL2, offset=vector(sense_out.lx(), y_offset),
+                          width=sense_out.width(), height=sense_out.by() - y_offset)
+
+            # tri output to data pin
+            tri_out = self.tri_gate_array_inst.get_pin("out[{}]".format(word))
+            data_pin = self.get_pin("DATA[{}]".format(word))
+            self.add_rect(METAL2, offset=vector(data_pin.lx(), tri_out.by()),
+                          width=tri_out.cx() - data_pin.lx(), height=m2m3.height)
+            offset = vector(data_pin.cx(), tri_out.by() + 0.5 * m2m3.height)
+            self.add_contact_center(m2m3.layer_stack, offset=offset)
+            self.add_contact_center(m3m4.layer_stack, offset=offset)
+            self.add_rect_center(METAL3, offset=offset, width=fill_width, height=fill_height)

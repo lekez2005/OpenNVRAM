@@ -130,6 +130,9 @@ def run_drc(cell_name, gds_name, exception_group=""):
     errfile = get_temp_file("{0}.drc.err".format(cell_name))
     outfile = get_temp_file("{0}.drc.out".format(cell_name))
 
+    if os.path.exists(drc_runset['drcSummaryFile']):
+        os.remove(drc_runset['drcSummaryFile'])
+
     cmd = "{0} -gui -drc {1} -batch".format(OPTS.drc_exe[1], get_temp_file("drc_runset"))
     debug.info(2, cmd)
     utils.run_command(cmd, outfile, errfile, verbose_level=3, cwd=OPTS.openram_temp)

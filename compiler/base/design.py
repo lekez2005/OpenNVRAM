@@ -130,7 +130,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.metal1_min_enclosed_area = drc["metal1_min_enclosed_area"]
 
         self.bus_width = self.medium_m3
-        self.bus_space = self.get_parallel_space(METAL3)
+        self.bus_space = drc.get("bus_space", self.get_parallel_space(METAL3))
         self.bus_pitch = self.bus_width + self.bus_space
 
     @classmethod

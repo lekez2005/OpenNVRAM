@@ -1141,20 +1141,32 @@ class BaselineBank(design, ControlBuffersMixin):
                                                          width=self.right_gnd.rx() - self.left_gnd.lx()))
 
     def route_gnd_pin(self, pin, add_via=True, via_rotate=90):
-        self.add_rect("metal1", offset=vector(self.mid_gnd.lx(), pin.by()),
+        self.add_rect(pin.layer, offset=vector(self.mid_gnd.lx(), pin.by()),
                       width=self.right_gnd.rx()-self.mid_gnd.lx(), height=pin.height())
         if add_via:
             self.add_power_via(pin, self.mid_gnd, via_rotate)
 
     def route_vdd_pin(self, pin, add_via=True, via_rotate=90):
-        self.add_rect("metal1", offset=vector(self.mid_vdd.lx(), pin.by()),
+        self.add_rect(pin.layer, offset=vector(self.mid_vdd.lx(), pin.by()),
                       width=self.right_vdd.rx() - self.mid_vdd.lx(), height=pin.height())
         if add_via:
             self.add_power_via(pin, self.mid_vdd, via_rotate=via_rotate)
             self.add_power_via(pin, self.right_vdd, via_rotate=via_rotate)
 
     def add_power_via(self, pin, power_pin, via_rotate=90):
-        self.add_contact_center(m1m2.layer_stack, offset=vector(power_pin.cx(), pin.cy()),
+        if hasattr(pin, "layer") and pin.layer == METAL1 and power_pin.layer == METAL1:
+            return
+        if hasattr(pin, "layer") and pin.layer == METAL3:
+            via = m2m3
+            if power_pin.layer == METAL1:
+                fill_width = power_pin.width()
+                _, fill_height = self.calculate_min_m1_area(fill_width, layer=METAL2)
+                self.add_rect_center(METAL2, offset=vector(power_pin.cx(), pin.cy()),
+                                     width=fill_width, height=fill_height)
+
+        else:
+            via = m1m2
+        self.add_contact_center(via.layer_stack, offset=vector(power_pin.cx(), pin.cy()),
                                 size=[2, 1], rotate=via_rotate)
 
     def add_decoder_power_vias(self):

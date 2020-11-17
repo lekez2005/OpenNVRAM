@@ -1,7 +1,7 @@
 from typing import List
 
-from base.contact import cross_m2m3
-from base.design import METAL2, METAL1, METAL3
+from base.contact import cross_m2m3, m2m3, m3m4
+from base.design import METAL2, METAL1, METAL3, METAL4
 from base.geometry import instance
 from base.hierarchy_layout import GDS_ROT_270
 from base.vector import vector
@@ -54,7 +54,8 @@ class HorizontalBank(CmosBank):
             "sense_en": self.sense_amp_array_inst.get_pins("en"),
             "tri_en": self.tri_gate_array_inst.get_pins("en"),
             "sample_bar": self.sense_amp_array_inst.get_pins("sampleb"),
-            "precharge_en_bar": self.precharge_array_inst.get_pins("en"),
+            "precharge_en_bar": (self.precharge_array_inst.get_pins("en")
+                                 + self.sense_amp_array_inst.get_pins("preb")),
             "clk_buf": self.mask_in_flops_inst.get_pins("clk"),
             "clk_bar": self.data_in_flops_inst.get_pins("clk"),
             "write_en": self.write_driver_array_inst.get_pins("en"),
@@ -290,8 +291,9 @@ class HorizontalBank(CmosBank):
             self.add_rect(METAL1, offset=start_pin.lr(),
                           width=x_offset - start_pin.rx() + start_pin.height(),
                           height=start_pin.height())
-            self.add_rect(METAL1, offset=vector(x_offset, start_pin.cy()),
-                          width=start_pin.height(), height=destination_y - start_pin.cy())
+            if abs(destination_y == start_pin.cy()) > self.m1_width:
+                self.add_rect(METAL1, offset=vector(x_offset, start_pin.cy()),
+                              width=start_pin.height(), height=destination_y - start_pin.cy())
             destination_pin = destination_pins[i]
             rect = self.add_rect(METAL1, offset=vector(x_offset,
                                                        destination_y - 0.5 * start_pin.height()),
@@ -347,3 +349,111 @@ class HorizontalBank(CmosBank):
         m3_height = min(self.bus_width, control_pin.height())
         self.add_rect(METAL3, offset=vector(rail_x, control_pin.cy() - 0.5 * m3_height),
                       width=control_pin.lx() - rail_x, height=m3_height)
+
+    def route_all_power(self, inst, via_rotate=0):
+        for pin in inst.get_pins("vdd"):
+            self.route_vdd_pin(pin, via_rotate=via_rotate)
+
+        for pin in inst.get_pins("gnd"):
+            self.route_gnd_pin(pin, via_rotate=via_rotate)
+            self.add_power_via(pin, self.right_gnd, via_rotate)
+
+    def route_sense_amp(self):
+        self.route_all_power(self.sense_amp_array_inst)
+
+    def route_bitcell(self):
+        for row in range(self.num_rows):
+            wl_in = self.bitcell_array_inst.get_pin("wl[{}]".format(row))
+            driver_out = self.wordline_driver_inst.get_pin("wl[{0}]".format(row))
+            self.add_rect(METAL3, offset=vector(driver_out.rx(), wl_in.by()),
+                          width=wl_in.lx() - driver_out.rx(), height=wl_in.height())
+
+        fill_width = self.mid_gnd.width()
+        fill_width, fill_height = self.calculate_min_m1_area(fill_width, min_height=self.m2_width,
+                                                             layer=METAL2)
+        for pin in self.bitcell_array_inst.get_pins("gnd"):
+            self.add_rect(METAL3, offset=vector(self.mid_gnd.lx(), pin.by()),
+                          width=self.right_gnd.rx() - self.mid_gnd.lx(),
+                          height=pin.height())
+            for rail in [self.mid_gnd, self.right_gnd]:
+                self.add_contact_center(m2m3.layer_stack, offset=vector(rail.cx(), pin.cy()),
+                                        size=[1, 2], rotate=90)
+                self.add_rect_center(METAL2, offset=vector(rail.cx(), pin.cy()),
+                                     width=fill_width, height=fill_height)
+
+    def route_write_driver(self):
+
+        fill_width = self.medium_m3
+        fill_width, fill_height = self.calculate_min_m1_area(fill_width, layer=METAL3)
+        for col in range(0, int(self.num_cols / self.words_per_row)):
+            # connect bitline to sense amp
+            for pin_name in ["bl", "br"]:
+                sense_pin = self.sense_amp_array_inst.get_pin(pin_name + "[{}]".format(col))
+                driver_pin = self.write_driver_array_inst.get_pin(pin_name + "[{}]".format(col))
+                x_offset = sense_pin.cx() - 0.5 * self.m2_width
+                self.add_rect(METAL2, offset=vector(driver_pin.lx(), driver_pin.uy() - self.m2_width),
+                              width=x_offset - driver_pin.lx())
+                self.add_rect(METAL2, offset=vector(x_offset, driver_pin.uy() - self.m2_width),
+                              height=sense_pin.by() - driver_pin.uy() + self.m2_width)
+                self.add_rect(METAL3, offset=vector(sense_pin.cx() - 0.5 * fill_width,
+                                                    sense_pin.by()),
+                              width=fill_width, height=fill_height)
+                via_offset = vector(x_offset, sense_pin.by())
+                self.add_contact(m2m3.layer_stack, offset=via_offset)
+                self.add_contact(m3m4.layer_stack, offset=via_offset)
+
+            # route data_bar
+            flop_pin = self.data_in_flops_inst.get_pin("dout_bar[{}]".format(col))
+            driver_pin = self.write_driver_array_inst.get_pin("data_bar[{}]".format(col))
+            y_offset = flop_pin.uy() + self.get_line_end_space(METAL2)
+            self.add_rect(METAL2, offset=flop_pin.ul(),
+                          height=y_offset + self.m2_width - flop_pin.uy())
+            self.add_rect(METAL2, offset=vector(flop_pin.lx(), y_offset),
+                          width=driver_pin.lx() - flop_pin.lx())
+            self.add_rect(METAL2, offset=vector(driver_pin.lx(), y_offset),
+                          height=driver_pin.by() - y_offset)
+
+            # route data
+            flop_pin = self.data_in_flops_inst.get_pin("dout[{}]".format(col))
+            driver_pin = self.write_driver_array_inst.get_pin("data[{}]".format(col))
+            self.add_contact(m2m3.layer_stack, offset=flop_pin.ul() - vector(0, m2m3.height))
+            y_offset = flop_pin.uy() - 0.5 * m2m3.height - 0.5 * self.m3_width
+            self.add_rect(METAL3, offset=vector(flop_pin.lx(), y_offset),
+                          width=max(self.m3_width, driver_pin.lx() - flop_pin.lx(), key=abs))
+            self.add_rect(METAL3, offset=vector(driver_pin.lx(), y_offset),
+                          height=driver_pin.by() - y_offset)
+            self.add_contact(m2m3.layer_stack,
+                             offset=vector(driver_pin.rx(), driver_pin.by()),
+                             rotate=90)
+
+            # route mask_bar
+            flop_pin = self.mask_in_flops_inst.get_pin("dout[{}]".format(col))
+            driver_pin = self.write_driver_array_inst.get_pin("mask[{}]".format(col))
+            via_offset = vector(flop_pin.cx(), flop_pin.uy() + 0.5 * m2m3.height)
+            self.add_contact_center(m2m3.layer_stack, offset=via_offset)
+            via_offset = vector(driver_pin.cx(), flop_pin.uy() + 0.5 * m2m3.height)
+            self.add_contact_center(m3m4.layer_stack, offset=via_offset)
+            fill_height = m3m4.height
+            fill_height, fill_width = self.calculate_min_m1_area(fill_height, layer=METAL3)
+            self.add_rect_center(METAL3, offset=via_offset, width=fill_width, height=fill_height)
+            self.add_rect(METAL3, offset=vector(driver_pin.cx(), flop_pin.uy()),
+                          width=flop_pin.cx() - driver_pin.cx(), height=m2m3.height)
+            self.add_rect(METAL4, offset=vector(driver_pin.lx(), flop_pin.uy()),
+                          height=driver_pin.by() - flop_pin.uy())
+
+            if col % 2 == 0:
+                via_x = driver_pin.lx() + m2m3.height
+                fill_x = driver_pin.lx()
+            else:
+                via_x = driver_pin.rx()
+                fill_x = via_x - fill_width
+            via_y = driver_pin.by() - 0.5 * m2m3.width
+            self.add_contact(m2m3.layer_stack, rotate=90, offset=vector(via_x, via_y))
+
+            via_y = driver_pin.by() + m2m3.width - m3m4.height
+            self.add_rect(METAL3, offset=vector(fill_x, via_y),
+                          width=fill_width, height=fill_height)
+            self.add_contact(m3m4.layer_stack, offset=vector(driver_pin.lx(), via_y))
+
+            # route power, gnd
+            self.route_all_power(self.write_driver_array_inst)

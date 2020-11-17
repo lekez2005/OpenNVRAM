@@ -232,6 +232,7 @@ class precharge_horizontal(precharge):
                           width=self.mid_x - bitcell_pin.lx())
             pin_y = y_offset - 0.5 * self.m2_width
             self.add_layout_pin(pin_names[i].lower(), METAL2, offset=vector(bitcell_pin.lx(), pin_y),
+                                width=bitcell_pin.width(),
                                 height=self.height - pin_y)
 
     def drc_fill(self):

@@ -49,12 +49,12 @@ class CmosBank(BaselineBank):
 
         self.route_control_buffer()
         self.route_control_flops()
-        return
         self.route_precharge()
         self.route_column_mux()
         self.route_sense_amp()
         self.route_bitcell()
         self.route_write_driver()
+        return
         self.route_flops()
         self.route_tri_gate()
         self.route_wordline_driver()
@@ -337,7 +337,9 @@ class CmosBank(BaselineBank):
                 bottom_pin = bottom_module.get_pin(pin_name + "[{}]".format(col))
                 precharge_pin = self.precharge_array_inst.get_pin(pin_name + "[{}]".format(col))
 
-                self.add_rect("metal4", offset=bottom_pin.ul(), height=precharge_pin.uy() - bottom_pin.uy())
+                self.add_rect("metal4", offset=bottom_pin.ul(),
+                              height=precharge_pin.uy() - bottom_pin.uy(),
+                              width=bitcell_pin.width())
                 m2_m4_via_pins = [precharge_pin]
                 if self.col_mux_array_inst is not None:
                     m2_m4_via_pins.append(bottom_pin)

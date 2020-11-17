@@ -288,7 +288,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             width = design.get_min_layer_width(layer)
         if min_height is None:
             min_height = min_side
-        height = max(utils.ceil(min_area / width), min_side)
+        height = max(utils.ceil(min_area / width), min_height)
         if height < min_height:
             height = min_height
             width = utils.ceil(min_area / height)

@@ -766,8 +766,8 @@ class BaselineBank(design, ControlBuffersMixin):
             for pin_name in pin_names:
                 precharge_pin = self.precharge_array_inst.get_pin(pin_name + "[{}]".format(col))
                 bitcell_pin = self.bitcell_array_inst.get_pin(pin_name + "[{}]".format(col))
-
-                self.add_rect(precharge_pin.layer, offset=precharge_pin.ul(),
+                offset = vector(bitcell_pin.cx() - 0.5 * self.m2_width, precharge_pin.uy())
+                self.add_rect(precharge_pin.layer, offset=offset,
                               height=bitcell_pin.by()-precharge_pin.uy())
 
         self.route_vdd_pin(self.precharge_array_inst.get_pin("vdd"), via_rotate=0)
@@ -1153,21 +1153,28 @@ class BaselineBank(design, ControlBuffersMixin):
             self.add_power_via(pin, self.mid_vdd, via_rotate=via_rotate)
             self.add_power_via(pin, self.right_vdd, via_rotate=via_rotate)
 
-    def add_power_via(self, pin, power_pin, via_rotate=90):
+    def add_power_via(self, pin, power_pin, via_rotate=90, via_size=None):
+        if via_size is None:
+            via_size = [2, 1]
         if hasattr(pin, "layer") and pin.layer == METAL1 and power_pin.layer == METAL1:
             return
         if hasattr(pin, "layer") and pin.layer == METAL3:
             via = m2m3
             if power_pin.layer == METAL1:
+                m2_via = self.add_contact_center(m1m2.layer_stack,
+                                                 offset=vector(power_pin.cx(), pin.cy()),
+                                                 size=via_size, rotate=via_rotate)
                 fill_width = power_pin.width()
-                _, fill_height = self.calculate_min_m1_area(fill_width, layer=METAL2)
+                min_height = m2_via.height if via_rotate == 0 else m2_via.width
+                _, fill_height = self.calculate_min_m1_area(fill_width, min_height=min_height,
+                                                            layer=METAL2)
                 self.add_rect_center(METAL2, offset=vector(power_pin.cx(), pin.cy()),
                                      width=fill_width, height=fill_height)
 
         else:
             via = m1m2
         self.add_contact_center(via.layer_stack, offset=vector(power_pin.cx(), pin.cy()),
-                                size=[2, 1], rotate=via_rotate)
+                                size=via_size, rotate=via_rotate)
 
     def add_decoder_power_vias(self):
         self.vdd_grid_rects = []

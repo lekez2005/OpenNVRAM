@@ -61,7 +61,6 @@ class CmosBank(BaselineBank):
         if hasattr(OPTS, "right_buffers_x_actual"):
             self.create_control_buffer_repeaters()
             self.route_control_buffer_repeaters()
-        return
 
         self.calculate_rail_vias()  # horizontal rail vias
         self.add_decoder_power_vias()
@@ -348,7 +347,8 @@ class CmosBank(BaselineBank):
                         m2_m4_via_pins.append(self.sense_amp_array_inst.get_pin(pin_name + "[{}]".format(bit)))
 
                 for m2_m4_via_pin in m2_m4_via_pins:
-                    offset = m2_m4_via_pin.ul() - vector(0, m2m3.second_layer_height)
+                    offset = vector(m2_m4_via_pin.cx() - 0.5 * m2m3.width,
+                                    m2_m4_via_pin.uy() - m2m3.second_layer_height)
 
                     self.add_contact(m2m3.layer_stack, offset=offset)
                     self.add_contact(m3m4.layer_stack, offset=offset)
@@ -540,7 +540,8 @@ class CmosBank(BaselineBank):
         attribute_names = ["mid_gnd", "right_gnd", "mid_vdd", "right_vdd"]
         for i in range(4):
             pin = self.add_layout_pin(pin_names[i], pin_layers[i],
-                                      vector(offsets[i], self.min_point), height=self.height,
+                                      vector(offsets[i], self.min_point),
+                                      height=self.height - self.min_point + m1m2.height,
                                       width=self.vdd_rail_width)
             setattr(self, attribute_names[i], pin)
         # for IDE assistance

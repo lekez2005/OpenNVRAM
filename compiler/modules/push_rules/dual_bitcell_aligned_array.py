@@ -113,13 +113,16 @@ class dual_bitcell_aligned_array(design, ABC):
 
     def add_layout_pins(self):
         bus_pins = []
-        prefixes = []
-        for pin_name in self.child_mod.pins:
-            for prefix in self.bus_pins:
-                regex_pattern = r"{}[\[\<].*".format(prefix)
+
+        for prefix in self.bus_pins:
+            found = False
+            regex_pattern = r"{}[\[\<].*".format(prefix)
+            for pin_name in self.child_mod.pins:
                 if re.match(regex_pattern, pin_name):
                     bus_pins.append(pin_name)
-                    prefixes.append(prefix)
+                    found = True
+            if not found:
+                bus_pins.append(prefix)
 
         for pin_name in self.child_mod.pins:
             if pin_name in self.horizontal_pins:
@@ -127,19 +130,12 @@ class dual_bitcell_aligned_array(design, ABC):
                     self.add_layout_pin(pin_name, pin.layer, offset=vector(0, pin.by()),
                                         height=pin.height(), width=self.width)
             elif pin_name in bus_pins:
-                for i in range(len(self.child_insts)):
-                    word_index = i * 2
-                    if self.mirror and i % 2 == 1:
-                        if "0" in pin_name:
-                            word_index += 1
-                    else:
-                        if "1" in pin_name:
-                            word_index += 1
-
-                    prefix = prefixes[bus_pins.index(pin_name)]
-                    self.copy_layout_pin(self.child_insts[i], pin_name,
-                                         "{}[{}]".format(prefix, word_index))
-
+                for word_index in range(len(self.child_insts)):
+                    conn_index = self.insts.index(self.child_insts[word_index])
+                    pin_index = self.child_mod.pins.index(pin_name)
+                    actual_connection = self.conns[conn_index][pin_index]
+                    self.copy_layout_pin(self.child_insts[word_index], pin_name,
+                                         actual_connection)
             else:
                 self.copy_layout_pin(self.child_insts[0], pin_name)
 

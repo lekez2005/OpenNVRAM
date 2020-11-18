@@ -69,9 +69,11 @@ class push_bitcell_array(bitcell_array):
         if len(tap_indices) == 0:
             tap_indices = [int(num_rows / 2)]
         elif tap_indices[-1] == num_rows - 1:  # avoid putting at top of array to make it predictable
-            tap_indices[-1] = [num_rows - 2]
+            tap_indices[-1] = [num_rows - 4]
         # normalize by cells_per_group
         tap_indices = [x - (x % cells_per_group) for x in tap_indices]
+        # offset by 1 since first cell will be mirrored
+        tap_indices = [x + 1 for x in tap_indices]
 
         bitcell_offsets = []
         tap_offsets = []
@@ -89,7 +91,7 @@ class push_bitcell_array(bitcell_array):
 
     def get_cell_offset(self, col_index, row_index):
         x_offset = col_index * self.bitcell.width
-        if row_index % 2 == 0:
+        if row_index % 2 == 1:
             y_offset = self.all_y_offsets[row_index]
             if col_index % 2 == 0:
                 mirror = ""

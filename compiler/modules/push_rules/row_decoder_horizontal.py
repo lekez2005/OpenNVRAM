@@ -60,7 +60,7 @@ class row_decoder_horizontal(hierarchical_decoder):
             get_bitcell_offsets(self.rows, 2)
 
         self.row_decoder_width = self.decoder_and.width + self.routing_width
-        self.row_decoder_height = self.bitcell_offsets[-1] + push_bitcell_array.bitcell.height
+        self.row_decoder_height = self.bitcell_offsets[-1] + 2 * push_bitcell_array.bitcell.height
 
         vdd_pin = (self.pre2_4 or self.pre3_8).get_pins("vdd")[0]
         self.predecoder_space = vdd_pin.height() + self.get_wide_space(METAL1)
@@ -76,7 +76,7 @@ class row_decoder_horizontal(hierarchical_decoder):
     def add_nand_array(self, nand_mod, correct=0):
         """Add and2/and3 instances and taps"""
         self.and_insts = []
-        y_base = self.predecoder_height + self.predecoder_space
+        y_base = self.predecoder_height + self.predecoder_space + self.bitcell_height
 
         for i in range(self.rows):
             if i % 2 == 0:

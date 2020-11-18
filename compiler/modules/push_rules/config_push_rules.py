@@ -147,4 +147,4 @@ def configure_sizes(bank, OPTS):
         OPTS.num_write_en_stages = 5
         OPTS.max_clk_buf_size = 60
         OPTS.max_write_en_size = 60
-        OPTS.tri_en_buffers = [3.42, 11.7, 40, 40]
+        OPTS.tri_en_buffers = [1, 2.6, 6.7, 17.4, 45]

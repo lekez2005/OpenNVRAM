@@ -248,13 +248,17 @@ class CmosSram(sram):
 
         self.row_decoder_inst = self.add_inst(name="row_decoder", mod=self.row_decoder,
                                               offset=vector(x_offset, y_offset))
+
+        self.connect_inst(self.get_row_decoder_connections())
+
+    def get_row_decoder_connections(self):
         temp = []
         for i in range(self.row_addr_size):
             temp.append("ADDR[{0}]".format(i))
         for j in range(self.num_rows):
             temp.append("dec_out[{0}]".format(j))
         temp.extend(["clk_buf_1", "vdd", "gnd"])
-        self.connect_inst(temp)
+        return temp
 
     def add_power_rails(self):
         bank_vdd = self.bank.mid_vdd

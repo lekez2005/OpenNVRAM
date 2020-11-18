@@ -25,19 +25,9 @@ class sram(design.design, sram_power_grid.Mixin):
 
     def __init__(self, word_size, num_words, num_banks, name, words_per_row=None):
 
-        c = reload(__import__(OPTS.control_logic))
-        self.mod_control_logic = getattr(c, OPTS.control_logic)
-        
-        c = reload(__import__(OPTS.ms_flop_array))
-        self.mod_ms_flop_array = getattr(c, OPTS.ms_flop_array)
-        
         c = __import__(OPTS.bitcell)
         self.mod_bitcell = getattr(c, OPTS.bitcell)
         self.bitcell = self.mod_bitcell()
-
-        c = reload(__import__(OPTS.ms_flop))
-        self.mod_ms_flop = getattr(c, OPTS.ms_flop)
-        self.ms_flop = self.mod_ms_flop()
 
         self.word_size = word_size
         self.num_words = num_words

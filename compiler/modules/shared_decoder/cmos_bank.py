@@ -42,6 +42,7 @@ class CmosBank(BaselineBank):
         self.top = self.bitcell_array_inst.uy()
 
         self.add_control_flops()
+        self.min_point = min(self.min_point, min(map(lambda x: x.by(), self.insts)))
 
         self.add_vdd_gnd_rails()
 
@@ -528,7 +529,7 @@ class CmosBank(BaselineBank):
         self.read_buf_inst = read_buf_inst
 
     def add_vdd_gnd_rails(self):
-        self.height = self.top - self.min_point
+        self.height = self.bitcell_array_inst.uy() - self.min_point
 
         right_vdd_offset = self.get_right_vdd_offset()
         right_gnd_offset = right_vdd_offset + self.vdd_rail_width + self.wide_m1_space
@@ -541,7 +542,8 @@ class CmosBank(BaselineBank):
         for i in range(4):
             pin = self.add_layout_pin(pin_names[i], pin_layers[i],
                                       vector(offsets[i], self.min_point),
-                                      height=self.height - self.min_point + m1m2.height,
+                                      height=self.bitcell_array_inst.uy()
+                                             - self.min_point + m1m2.height,
                                       width=self.vdd_rail_width)
             setattr(self, attribute_names[i], pin)
         # for IDE assistance

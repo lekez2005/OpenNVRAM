@@ -150,7 +150,7 @@ class LatchedControlLogic(ControlBuffers):
         self.sense_amp_buf = BufferStagesHorizontal(OPTS.sense_amp_buffers)
         self.add_mod(self.sense_amp_buf)
 
-        assert len(OPTS.tri_en_buffers) % 2 == 1, "Number of sense_en buffers should be odd"
+        assert len(OPTS.tri_en_buffers) % 2 == 1, "Number of tri_en buffers should be odd"
         self.tri_en_buf = BufferStagesHorizontal(OPTS.tri_en_buffers)
         self.add_mod(self.tri_en_buf)
 

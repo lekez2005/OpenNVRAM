@@ -19,26 +19,21 @@ class SramTest(TestBase):
 
     def test_sotfet_array(self):
         from globals import OPTS
-        if not OPTS.mram == "sotfet":
-            return
-
-        OPTS.run_optimizations = True
-
-        self.sweep_all(cols=None, rows=None, words_per_row=None, default_col=64, num_banks=1)
-
-    def sweep_all(self, rows=None, cols=None, words_per_row=None, default_row=64,
-                  default_col=64, num_banks=1):
-        from base import design
         from modules.shared_decoder.cmos_sram import CmosSram
         from modules.shared_decoder.sotfet.sotfet_mram import SotfetMram
-        from globals import OPTS
         if OPTS.mram == "sotfet":
             sram_class = SotfetMram
         else:
             sram_class = CmosSram
-
         import tech
         tech.drc_exceptions["CmosSram"] = tech.drc_exceptions["active_density"]
+        return sram_class
+
+    def sweep_all(self, rows=None, cols=None, words_per_row=None, default_row=64,
+                  default_col=64, num_banks=1):
+        from base import design
+
+        sram_class = self.get_sram_class()
 
         if rows is None:
             rows = [16, 32, 64, 128, 256]

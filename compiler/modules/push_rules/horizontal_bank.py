@@ -14,11 +14,18 @@ from modules.shared_decoder.cmos_bank import CmosBank
 class HorizontalBank(CmosBank):
     rotation_for_drc = GDS_ROT_270
 
+    def __init__(self, word_size, num_words, words_per_row, num_banks=1, name="",
+                 is_right_bank=True):
+        self.is_right_bank = is_right_bank
+        super().__init__(word_size, num_words, words_per_row, num_banks, name)
+
     def add_pins(self):
         super().add_pins()
         clk_buf_index = self.pins.index("clk_buf")
         self.pins = self.pins[:clk_buf_index]
         self.add_pin_list(["precharge_trig", "clk_buf", "clk_bar", "vdd", "gnd"])
+        if self.is_right_bank:
+            self.add_pin("wordline_en")
 
     @staticmethod
     def get_module_list():
@@ -78,7 +85,7 @@ class HorizontalBank(CmosBank):
             "clk_bar": self.data_in_flops_inst.get_pins("clk"),
             "write_en": self.write_driver_array_inst.get_pins("en"),
         }
-        if True:  # differentiate left right
+        if self.is_right_bank:  # differentiate left right
             destination_pins["wordline_en"] = self.precharge_array_inst.get_pins("en")
         return destination_pins
 
@@ -158,6 +165,10 @@ class HorizontalBank(CmosBank):
             x_offset += self.control_rail_pitch
 
         self.leftmost_rail = getattr(self, rail_names[0] + "_rail")
+        if self.is_right_bank:
+            wordline_en_rail = getattr(self, "wordline_en_rail")
+            self.add_layout_pin("wordline_en", METAL2, offset=wordline_en_rail.ll(),
+                                width=wordline_en_rail.width, height=wordline_en_rail.height)
 
     def get_control_flops_offset(self):
         wide_space = self.get_wide_space(METAL2)
@@ -173,8 +184,10 @@ class HorizontalBank(CmosBank):
         x_offset = (self.bank_sel_rail_x - wide_space
                     - self.control_flop.width)
         # place below predecoder
-        y_offset = (self.bitcell_array_inst.by() - self.decoder.predecoder_height
-                    - 2 * self.control_flop.height)
+        flop_vdd = self.control_flop.get_pins("vdd")[0]
+        y_offset = (self.bitcell_array_inst.uy() - self.decoder.height - self.bitcell.height
+                    - flop_vdd.height()
+                    - 2 * self.poly_pitch - 2 * self.control_flop.height)
         # place close to control_buffers
         y_offset = min(y_offset, self.control_buffers_inst.cy() - self.control_flop.height)
         # ensure no clash with rails above control_buffer
@@ -224,6 +237,13 @@ class HorizontalBank(CmosBank):
         args = ["dec_out[{}]".format(x) for x in range(self.num_rows)]
         args += ["wl[{}]".format(x) for x in range(self.num_rows)]
         self.connect_inst(args + ["vdd", "gnd"])
+
+    def add_control_flops(self):
+        super().add_control_flops()
+        y_offset = (self.bank_sel_buf_inst.by() - self.get_wide_space(METAL2)
+                    - self.bus_pitch)
+        self.cross_clk_rail_y = y_offset
+        self.min_point = min(self.min_point, self.cross_clk_rail_y)
 
     def fill_vertical_space(self, bottom_reference_inst: instance, top_reference_inst: instance,
                             fill_instances: List[instance], y_space: float,
@@ -295,11 +315,11 @@ class HorizontalBank(CmosBank):
         # vdd and gnd
         bottom_gnd, top_gnd = sorted(self.control_buffers_inst.get_pins("gnd"),
                                      key=lambda x: x.cy())
-        y_offsets = [bottom_gnd.cy(), 0.5 * (bottom_gnd.cy() + top_gnd.cy()), top_gnd.cy()]
+        y_offsets = [top_gnd.cy(), 0.5 * (bottom_gnd.cy() + top_gnd.cy()), bottom_gnd.cy()]
         destination_pins = [self.mid_gnd, self.mid_vdd, self.mid_gnd]
-        pins = [self.bank_sel_buf_inst.get_pin("gnd"),
+        pins = [self.read_buf_inst.get_pin("gnd"),
                 self.bank_sel_buf_inst.get_pin("vdd"),
-                self.read_buf_inst.get_pin("gnd")]
+                self.bank_sel_buf_inst.get_pin("gnd")]
         x_start = self.get_pin("precharge_trig").lx()
         pitch = bottom_gnd.height() + self.get_wide_space(METAL1)
         for i in range(3):
@@ -350,9 +370,7 @@ class HorizontalBank(CmosBank):
         # clk to control_buffer
         clk_pin = self.get_pin("clk")
         rail_x = self.get_pin("sense_trig").lx() + self.bus_pitch
-        y_offset = (self.bank_sel_buf_inst.by() - self.get_wide_space(METAL2)
-                    - self.bus_pitch)
-        self.cross_clk_rail_y = y_offset
+        y_offset = self.cross_clk_rail_y
         self.add_cross_contact_center(cross_m2m3, offset=vector(clk_pin.cx(),
                                                                 y_offset + 0.5 * self.bus_width))
         self.add_rect(METAL3, offset=vector(clk_pin.cx(), y_offset),

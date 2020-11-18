@@ -1,6 +1,6 @@
 from typing import List
 
-from base.contact import cross_m2m3, m2m3, m3m4
+from base.contact import cross_m2m3, m2m3, m3m4, m1m2, contact
 from base.design import METAL2, METAL1, METAL3, METAL4
 from base.geometry import instance
 from base.hierarchy_layout import GDS_ROT_270
@@ -26,9 +26,16 @@ class HorizontalBank(CmosBank):
                 "bitcell_array", "sense_amp_array", "precharge_array",
                 "write_driver_array", "tri_gate_array", "flop_buffer"]
 
+    def get_vdd_gnd_rail_layers(self):
+        return [METAL2] * 6
+
     def create_modules(self):
         super().create_modules()
         self.wordline_buffer = self.create_module("wordline_buffer", rows=self.num_rows)
+
+    def route_layout(self):
+        super().route_layout()
+        self.route_intra_array_power_grid()
 
     def add_modules(self):
         super().add_modules()
@@ -383,18 +390,12 @@ class HorizontalBank(CmosBank):
             if pin.layer == METAL3 and pin.width() > pin.height():  # Horizontal M3 vdd
                 self.route_vdd_pin(pin)
 
-        fill_width = self.mid_gnd.width()
-        fill_width, fill_height = self.calculate_min_m1_area(fill_width, min_height=self.m2_width,
-                                                             layer=METAL2)
         for pin in self.bitcell_array_inst.get_pins("gnd"):
             self.add_rect(METAL3, offset=vector(self.mid_gnd.lx(), pin.by()),
                           width=self.right_gnd.rx() - self.mid_gnd.lx(),
                           height=pin.height())
             for rail in [self.mid_gnd, self.right_gnd]:
-                self.add_contact_center(m2m3.layer_stack, offset=vector(rail.cx(), pin.cy()),
-                                        size=[1, 2], rotate=90)
-                self.add_rect_center(METAL2, offset=vector(rail.cx(), pin.cy()),
-                                     width=fill_width, height=fill_height)
+                self.add_power_via(pin, rail, via_size=[1, 2])
 
     def route_write_driver(self):
 
@@ -590,3 +591,148 @@ class HorizontalBank(CmosBank):
                 self.add_rect_center(METAL2, offset=vector(rail.cx(), pin.cy()),
                                      width=fill_width, height=fill_height)
 
+    def calculate_rail_vias(self):
+        pass
+
+    def add_decoder_power_vias(self):
+        pass
+
+    def get_all_power_pins(self):
+        """All power pins except bitcell"""
+        instances = [self.wordline_driver_inst, self.precharge_array_inst, self.sense_amp_array_inst,
+                     self.write_driver_array_inst, self.data_in_flops_inst, self.mask_in_flops_inst,
+                     self.tri_gate_array_inst]
+
+        def get_power_pins(inst):
+            results = inst.get_pins("vdd") if "vdd" in inst.mod.pins else []
+            results += inst.get_pins("gnd") if "gnd" in inst.mod.pins else []
+            return results
+
+        all_power_pins = []
+        for inst_ in instances:
+            all_power_pins.extend(get_power_pins(inst_))
+        return all_power_pins
+
+    def add_right_rails_vias(self):
+        all_power_pins = self.get_all_power_pins()
+
+        for rail in [self.mid_vdd, self.right_vdd, self.mid_gnd, self.right_gnd]:
+            y_offset = self.bitcell_array_inst.by() - m2m3.height
+            self.add_rect(METAL1, offset=vector(rail.lx(), y_offset), width=rail.width(),
+                          height=rail.uy() - y_offset)
+            self.add_layout_pin(rail.name, METAL4, offset=rail.ll(), width=rail.width(),
+                                height=rail.height())
+            for pin in all_power_pins:
+                if pin.cy() > self.precharge_array_inst.uy():
+                    self.add_contact_center(m1m2.layer_stack, offset=vector(rail.cx(), pin.cy()),
+                                            size=[1, 2], rotate=90)
+                if pin.name == rail.name and pin.layer == METAL3:
+                    # avoid bitcell conflict with right rail
+                    if pin.cy() > self.precharge_array_inst.uy() and rail == self.right_vdd:
+                        continue
+                    self.add_contact_center(m3m4.layer_stack, offset=vector(rail.cx(), pin.cy()),
+                                            size=[1, 2], rotate=90)
+
+    def route_body_tap_supplies(self):
+        pass
+
+    def route_control_buffers_power(self):
+        pass
+
+    def route_intra_array_power_grid(self):
+        """Route M4 power in between bitcell array"""
+        bitcell_power = (self.bitcell_array_inst.get_pins("vdd")
+                         + self.bitcell_array_inst.get_pins("gnd"))
+        bitcell_power = [x for x in bitcell_power if x.layer == METAL3]
+
+        # middle and right vdd
+        for pin in [self.mid_vdd, self.right_vdd]:
+            for power_pin in bitcell_power:
+                if power_pin.name == "vdd":
+                    self.add_contact_center(m3m4.layer_stack, size=[1, 2],
+                                            offset=vector(pin.cx(), power_pin.cy()),
+                                            rotate=90)
+
+        bitcell_width = self.bitcell.width
+        cell_spacing = OPTS.bitcell_vdd_spacing
+        # wide enough to accommodate two vias
+        bitcell_rail_top = self.mid_gnd.uy()
+
+        rail_width = m3m4.height
+        wide_space = self.get_wide_space(METAL4)
+        parallel_space = self.get_parallel_space(METAL4)
+
+        write_driver_power = (self.write_driver_array_inst.get_pins("vdd")
+                              + self.write_driver_array_inst.get_pins("gnd"))
+        write_driver_power_y = [x.uy() for x in write_driver_power if x.layer == METAL3]
+        pin_top = max(write_driver_power_y)
+
+        intermediate_top = self.precharge_array_inst.uy() + self.rail_height + wide_space
+        bitcell_rail_y = intermediate_top - self.rail_height
+
+        pin_names = ["vdd", "gnd"]
+
+        all_power_pins = [x for x in self.get_all_power_pins() if x.layer == METAL3]
+
+        control_buffers_power = (self.control_buffers_inst.get_pins("vdd")
+                                 + self.control_buffers_inst.get_pins("gnd"))
+        fill_width = m3m4.height
+        _, m2_fill_height = self.calculate_min_m1_area(fill_width, layer=METAL2)
+        _, m3_fill_height = self.calculate_min_m1_area(fill_width, layer=METAL3)
+
+        rail_pitch = wide_space + rail_width
+        for cell_index in range(cell_spacing, self.num_cols, cell_spacing):
+            mid_x = cell_index * bitcell_width
+            # power pin from min point to write driver array
+            x_offset = mid_x - 0.5 * wide_space - rail_width
+            for pin_name in pin_names:
+                pin = self.add_layout_pin(pin_name, METAL4,
+                                          offset=vector(x_offset, self.min_point),
+                                          width=rail_width, height=pin_top - self.min_point)
+                for power_pin in all_power_pins:
+                    if power_pin.cy() < pin.uy() and power_pin.name == pin_name:
+                        self.add_contact_center(m3m4.layer_stack,
+                                                offset=vector(pin.cx(), power_pin.cy()),
+                                                rotate=90)
+                if x_offset > self.control_buffers_inst.rx() + pin.width():
+                    for power_pin in control_buffers_power:
+                        if power_pin.name == pin_name:
+                            via_offset = vector(pin.cx(), power_pin.cy())
+                            self.add_contact_center(m1m2.layer_stack, via_offset)
+                            self.add_contact_center(m2m3.layer_stack, via_offset)
+                            self.add_contact_center(m3m4.layer_stack, via_offset)
+                            self.add_rect_center(METAL2, offset=via_offset, width=fill_width,
+                                                 height=m2_fill_height)
+                            self.add_rect_center(METAL3, offset=via_offset, width=fill_width,
+                                                 height=m3_fill_height)
+
+                x_offset += rail_pitch
+            # write driver array to bitcell
+            x_offset = mid_x - 0.5 * parallel_space - self.m4_width
+            for i in range(2):
+                pin_name = pin_names[i]
+                rect = self.add_rect(METAL4, offset=vector(x_offset, pin_top - self.m4_width),
+                                     width=self.m4_width,
+                                     height=intermediate_top - pin_top + self.m4_width)
+                for power_pin in all_power_pins:
+                    if (rect.by() < power_pin.cy() < rect.uy() and power_pin.name == pin_name
+                            and power_pin.height() >= m3m4.height):
+                        self.add_contact_center(m3m4.layer_stack,
+                                                offset=vector(rect.cx(), power_pin.cy()))
+                x_offset += parallel_space + self.m4_width
+
+            # through bitcell array
+            x_offset = mid_x - 0.5 * wide_space - rail_width
+            for i in range(2):
+                pin_name = pin_names[i]
+                pin = self.add_layout_pin(pin_name, METAL4,
+                                          offset=vector(x_offset, bitcell_rail_y),
+                                          width=rail_width,
+                                          height=bitcell_rail_top - bitcell_rail_y)
+                for power_pin in bitcell_power:
+                    if power_pin.name == pin_name:
+                        self.add_contact_center(m3m4.layer_stack,
+                                                offset=vector(pin.cx(), power_pin.cy()),
+                                                rotate=90)
+
+                x_offset += wide_space + rail_width

@@ -133,6 +133,9 @@ class options(optparse.Values):
     LATCHED_SENSE_AMP = "latched_sense_amp"
     MIRROR_SENSE_AMP = "sense_amp"
 
+    # for number of bitcells between M4 bitcell grids
+    bitcell_vdd_spacing = 10
+
     def __init__(self):
         super().__init__()
         self.set_temp_folder()

@@ -182,10 +182,6 @@ class wordline_buffer_array(design):
     def add_layout_pins(self):
         for pin_name in ["vdd", "gnd"]:
             for i in range(self.rows):
-                if pin_name == "vdd" and (i % 2 == 1 and not i == self.rows - 1):
-                    continue
-                elif pin_name == "gnd" and (i % 2 == 1):
-                    continue
                 self.copy_layout_pin(self.buffer_insts[i], pin_name)
         for i in range(self.rows):
             self.copy_layout_pin(self.buffer_insts[i], "in", "decode[{}]".format(i))

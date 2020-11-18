@@ -54,7 +54,6 @@ class CmosBank(BaselineBank):
         self.route_sense_amp()
         self.route_bitcell()
         self.route_write_driver()
-        return
         self.route_flops()
         self.route_tri_gate()
         self.route_wordline_driver()
@@ -62,6 +61,7 @@ class CmosBank(BaselineBank):
         if hasattr(OPTS, "right_buffers_x_actual"):
             self.create_control_buffer_repeaters()
             self.route_control_buffer_repeaters()
+        return
 
         self.calculate_rail_vias()  # horizontal rail vias
         self.add_decoder_power_vias()

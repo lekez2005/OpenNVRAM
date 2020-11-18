@@ -50,7 +50,7 @@ class BaselineBank(design, ControlBuffersMixin):
         self.add_modules()
         self.route_layout()
         self.calculate_dimensions()
-        return
+        self.add_lvs_correspondence_points()
 
         self.offset_all_coordinates()
 

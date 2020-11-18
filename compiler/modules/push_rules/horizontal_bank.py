@@ -14,6 +14,12 @@ from modules.shared_decoder.cmos_bank import CmosBank
 class HorizontalBank(CmosBank):
     rotation_for_drc = GDS_ROT_270
 
+    def add_pins(self):
+        super().add_pins()
+        clk_buf_index = self.pins.index("clk_buf")
+        self.pins = self.pins[:clk_buf_index]
+        self.add_pin_list(["precharge_trig", "clk_buf", "clk_bar", "vdd", "gnd"])
+
     @staticmethod
     def get_module_list():
         return ["bitcell", "decoder", "ms_flop_array", "wordline_buffer",
@@ -34,6 +40,11 @@ class HorizontalBank(CmosBank):
             args.remove("tri_en_bar")
         elif current_inst_name == "write_driver_array":
             args.remove("write_en_bar")
+        elif current_inst_name == "mask_in":
+            # swap mask and mask bar
+            args = " ".join(args)
+            args = args.replace("mask_in_bar", "old_bar").replace("mask_in", "mask_in_bar")
+            args = args.replace("old_bar", "mask_in").split()
         super().connect_inst(args, check)
 
     def create_control_buffers(self):
@@ -291,7 +302,7 @@ class HorizontalBank(CmosBank):
             self.add_rect(METAL1, offset=start_pin.lr(),
                           width=x_offset - start_pin.rx() + start_pin.height(),
                           height=start_pin.height())
-            if abs(destination_y == start_pin.cy()) > self.m1_width:
+            if abs(destination_y - start_pin.cy()) > self.m1_width:
                 self.add_rect(METAL1, offset=vector(x_offset, start_pin.cy()),
                               width=start_pin.height(), height=destination_y - start_pin.cy())
             destination_pin = destination_pins[i]
@@ -367,6 +378,10 @@ class HorizontalBank(CmosBank):
             driver_out = self.wordline_driver_inst.get_pin("wl[{0}]".format(row))
             self.add_rect(METAL3, offset=vector(driver_out.rx(), wl_in.by()),
                           width=wl_in.lx() - driver_out.rx(), height=wl_in.height())
+
+        for pin in self.bitcell_array_inst.get_pins("vdd"):
+            if pin.layer == METAL3 and pin.width() > pin.height():  # Horizontal M3 vdd
+                self.route_vdd_pin(pin)
 
         fill_width = self.mid_gnd.width()
         fill_width, fill_height = self.calculate_min_m1_area(fill_width, min_height=self.m2_width,
@@ -532,7 +547,7 @@ class HorizontalBank(CmosBank):
             self.add_rect(METAL4, offset=vector(mask_in.lx(), y_offset),
                           height=sense_out_y - y_offset)
             # sense_out_y to sense amp out
-            sense_out = self.sense_amp_array_inst.get_pin("dout[{}]".format(word))
+            sense_out = self.sense_amp_array_inst.get_pin("data[{}]".format(word))
             self.add_contact(m3m4.layer_stack, offset=vector(mask_in.lx(), sense_out_y))
             if word % 2 == 0:
                 self.add_rect(METAL3, offset=vector(mask_in.lx(), sense_out_y),
@@ -554,3 +569,24 @@ class HorizontalBank(CmosBank):
             self.add_contact_center(m2m3.layer_stack, offset=offset)
             self.add_contact_center(m3m4.layer_stack, offset=offset)
             self.add_rect_center(METAL3, offset=offset, width=fill_width, height=fill_height)
+
+    def route_wordline_driver(self):
+        for row in range(self.num_rows):
+            self.copy_layout_pin(self.wordline_driver_inst, "decode[{}]".format(row),
+                                 "dec_out[{}]".format(row))
+        fill_width = self.mid_vdd.width()
+        fill_width, fill_height = self.calculate_min_m1_area(fill_width, min_height=self.m2_width,
+                                                             layer=METAL2)
+        rails = [self.mid_vdd, self.mid_gnd]
+        pin_names = ["vdd", "gnd"]
+        for i in range(2):
+            pin_name = pin_names[i]
+            rail = rails[i]
+            for pin in self.wordline_driver_inst.get_pins(pin_name):
+                self.add_rect(pin.layer, offset=pin.lr(), height=pin.height(),
+                              width=rail.rx() - pin.rx())
+                self.add_contact_center(m2m3.layer_stack, offset=vector(rail.cx(), pin.cy()),
+                                        size=[1, 2], rotate=90)
+                self.add_rect_center(METAL2, offset=vector(rail.cx(), pin.cy()),
+                                     width=fill_width, height=fill_height)
+

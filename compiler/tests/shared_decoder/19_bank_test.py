@@ -66,7 +66,7 @@ class BankTest(TestBase):
                     word_size = int(col / words_per_row_)
                     num_words = row * words_per_row_
                     a = bank_class(word_size=word_size, num_words=num_words, words_per_row=words_per_row_,
-                                   name="bank1")
+                                   name="bank1", is_left_bank=True)
 
                     self.local_check(a)
             row = default_row

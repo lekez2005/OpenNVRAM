@@ -15,8 +15,11 @@ class HorizontalBank(CmosBank):
     rotation_for_drc = GDS_ROT_270
 
     def __init__(self, word_size, num_words, words_per_row, num_banks=1, name="",
-                 is_right_bank=True):
-        self.is_right_bank = is_right_bank
+                 adjacent_bank=None):
+        """For left bank, no buffer is instantiated for wordline_en"""
+        self.is_left_bank = adjacent_bank is not None
+        self.adjacent_bank = adjacent_bank
+
         super().__init__(word_size, num_words, words_per_row, num_banks, name)
 
     def add_pins(self):
@@ -24,7 +27,7 @@ class HorizontalBank(CmosBank):
         clk_buf_index = self.pins.index("clk_buf")
         self.pins = self.pins[:clk_buf_index]
         self.add_pin_list(["precharge_trig", "clk_buf", "clk_bar", "vdd", "gnd"])
-        if self.is_right_bank:
+        if not self.is_left_bank:
             self.add_pin("wordline_en")
 
     @staticmethod
@@ -37,8 +40,18 @@ class HorizontalBank(CmosBank):
         return [METAL2] * 6
 
     def create_modules(self):
-        super().create_modules()
-        self.wordline_buffer = self.create_module("wordline_buffer", rows=self.num_rows)
+        if self.is_left_bank:
+            for module_name in ["bitcell_array", "sense_amp_array", "precharge_array",
+                                "write_driver_array", "tri_gate_array", "control_flop",
+                                "msf_mask_in", "msf_data_in", "wordline_buffer", "decoder",
+                                "bitcell"]:
+                adjacent_mod = getattr(self.adjacent_bank, module_name)
+                setattr(self, module_name, adjacent_mod)
+                self.add_mod(adjacent_mod)
+            self.create_control_buffers()
+        else:
+            super().create_modules()
+            self.wordline_buffer = self.create_module("wordline_buffer", rows=self.num_rows)
 
     def route_layout(self):
         super().route_layout()
@@ -62,7 +75,7 @@ class HorizontalBank(CmosBank):
         super().connect_inst(args, check)
 
     def create_control_buffers(self):
-        self.control_buffers = LatchedControlLogic()
+        self.control_buffers = LatchedControlLogic(is_left_bank=self.is_left_bank)
         self.add_mod(self.control_buffers)
 
     def create_control_flop(self):
@@ -70,9 +83,12 @@ class HorizontalBank(CmosBank):
                                                OPTS.control_flop_buffers, dummy_indices=[0])
 
     def connect_control_buffers(self):
-        self.connect_inst(["bank_sel_buf", "read_buf", "clk", "sense_trig", "precharge_trig",
-                           "clk_buf", "clk_bar", "wordline_en", "precharge_en_bar",
-                           "write_en", "sense_en", "tri_en", "sample_en_bar", "vdd", "gnd"])
+        connections = ["bank_sel_buf", "read_buf", "clk", "sense_trig", "precharge_trig",
+                       "clk_buf", "clk_bar", "wordline_en", "precharge_en_bar",
+                       "write_en", "sense_en", "tri_en", "sample_en_bar", "vdd", "gnd"]
+        if self.is_left_bank:
+            connections.remove("wordline_en")
+        self.connect_inst(connections)
 
     def get_control_rails_destinations(self):
         destination_pins = {
@@ -85,7 +101,7 @@ class HorizontalBank(CmosBank):
             "clk_bar": self.data_in_flops_inst.get_pins("clk"),
             "write_en": self.write_driver_array_inst.get_pins("en"),
         }
-        if self.is_right_bank:  # differentiate left right
+        if not self.is_left_bank:  # differentiate left right
             destination_pins["wordline_en"] = self.precharge_array_inst.get_pins("en")
         return destination_pins
 
@@ -114,6 +130,7 @@ class HorizontalBank(CmosBank):
         self.control_rail_pitch = self.bus_pitch
 
         control_outputs = self.get_control_names()
+        control_outputs = [x for x in control_outputs if x in self.control_buffers.pins]
 
         control_outputs = list(sorted(control_outputs,
                                       key=lambda x: self.control_buffers.get_pin(x).lx()))
@@ -137,6 +154,9 @@ class HorizontalBank(CmosBank):
 
         control_logic_top = (self.logic_buffers_bottom + self.control_buffers.height
                              + module_space)
+        if self.is_left_bank:
+            # add extra space for missing wordline_en_rail so both banks stay same height
+            control_logic_top += self.bus_pitch
         self.trigate_y = (control_logic_top + (len(top_pins) * self.bus_pitch)) + self.get_line_end_space(METAL2)
         self.control_rail_offsets = {}
 
@@ -159,13 +179,14 @@ class HorizontalBank(CmosBank):
                                  key=lambda x: (-self.control_buffers_inst.get_pin(x).by(),
                                                 self.control_rail_offsets[x]),
                                  reverse=False))
+        self.rail_names = rail_names
         for rail_name in rail_names:
             self.add_control_rail(rail_name, destination_pins[rail_name],
                                   x_offset, self.control_rail_offsets[rail_name])
             x_offset += self.control_rail_pitch
 
         self.leftmost_rail = getattr(self, rail_names[0] + "_rail")
-        if self.is_right_bank:
+        if not self.is_left_bank:
             wordline_en_rail = getattr(self, "wordline_en_rail")
             self.add_layout_pin("wordline_en", METAL2, offset=wordline_en_rail.ll(),
                                 width=wordline_en_rail.width, height=wordline_en_rail.height)

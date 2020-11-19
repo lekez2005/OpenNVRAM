@@ -736,10 +736,11 @@ class sram(design.design, sram_power_grid.Mixin):
         # y_flip == -1 --> flip in y_axis
 
         # x_flip and y_flip are used for position translation
+        bank_mod = self.get_bank_mod(bank_num)
         position_copy = vector(position)
 
-        position_copy.x += int(y_flip == -1)*self.bank.width
-        position_copy.y += int(x_flip == -1)*self.bank.height
+        position_copy.x += int(y_flip == -1) * bank_mod.width
+        position_copy.y += int(x_flip == -1) * bank_mod.height
 
         if x_flip == -1 and y_flip == -1:
             bank_mirror = "XY"
@@ -749,15 +750,18 @@ class sram(design.design, sram_power_grid.Mixin):
             bank_mirror = "MY"
         else:
             bank_mirror = "R0"
-            
-        bank_inst=self.add_inst(name="bank{0}".format(bank_num),
-                                mod=self.bank,
-                                offset=position_copy,
-                                mirror=bank_mirror)
+
+        bank_inst = self.add_inst(name="bank{0}".format(bank_num),
+                                  mod=self.get_bank_mod(bank_num),
+                                  offset=position_copy,
+                                  mirror=bank_mirror)
 
         self.connect_inst(self.get_bank_connections(bank_num))
 
         return bank_inst
+
+    def get_bank_mod(self, bank_num):
+        return self.bank
 
     def get_bank_connections(self, bank_num):
         connections = []

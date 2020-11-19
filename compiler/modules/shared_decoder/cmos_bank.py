@@ -240,9 +240,12 @@ class CmosBank(BaselineBank):
             self.add_cross_contact_center(cross_m1m2, offset=vector(mid_x, y_offset),
                                           rotate=True)
 
+            if control_pin.cy() > y_offset:
+                height = max(control_pin.cy() - y_offset, fill_height)
+            else:
+                height = min(control_pin.cy() - y_offset, -fill_height)
             self.add_rect(METAL2, offset=vector(mid_x - 0.5 * rail_height, y_offset),
-                          width=rail_height,
-                          height=max(fill_height, control_pin.cy() - y_offset, key=abs))
+                          width=rail_height, height=height)
             self.add_cross_contact_center(cross_m2m3, offset=vector(mid_x, control_pin.cy()),
                                           rotate=False)
             m3_height = min(rail_height, control_pin.height())

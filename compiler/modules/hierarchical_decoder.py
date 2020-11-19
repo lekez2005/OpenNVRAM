@@ -198,7 +198,8 @@ class hierarchical_decoder(design.design):
                     clk_pin = predecoder.get_pin("clk")
                     self.add_rect("metal2", offset=clk_pin.ul(),
                                   height=self.pre3x8_inst[-1].get_pin("clk").by() - clk_pin.uy())
-            self.copy_layout_pin(predecoder, "clk", "clk")
+            for inst in self.pre2x4_inst + self.pre3x8_inst:
+                self.copy_layout_pin(inst, "clk", "clk")
 
     def add_pre2x4(self,num):
         """ Add a 2x4 predecoder """

@@ -265,11 +265,11 @@ class CmosSram(sram):
         y_offset = bank_vdd.by()
         x_offset = self.row_decoder_inst.lx() - self.wide_space - bank_vdd.width()
         self.mid_vdd = self.add_rect(METAL2, offset=vector(x_offset, y_offset), width=bank_vdd.width(),
-                                     height=self.row_decoder_inst.uy() - y_offset)
+                                     height=bank_vdd.height())
 
         x_offset -= (self.get_wide_space(METAL2) + bank_vdd.width())
         self.mid_gnd = self.add_rect(METAL2, offset=vector(x_offset, y_offset), width=bank_vdd.width(),
-                                     height=self.row_decoder_inst.uy() - y_offset)
+                                     height=bank_vdd.height())
 
     def get_bank_connections(self, bank_num):
         connections = []

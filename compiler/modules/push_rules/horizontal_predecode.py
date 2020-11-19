@@ -221,7 +221,7 @@ class horizontal_predecode(hierarchical_predecode, ABC):
             self.copy_layout_pin(self.inv_inst[num], "Z", "out[{}]".format(num))
 
     def route_vdd_gnd(self):
-        for i in range(len(self.in_inst) + 1, self.number_of_outputs):
+        for i in range(len(self.nand_inst)):
             nand_inst = self.nand_inst[i]
             for pin_name in ["vdd", "gnd"]:
                 pin = nand_inst.get_pin(pin_name)
@@ -244,7 +244,6 @@ class horizontal_predecode(hierarchical_predecode, ABC):
                                  m1m2.height)
                 self.add_rect_center(METAL2, offset=via_offset, width=fill_width,
                                      height=fill_height)
-                self.copy_layout_pin(self.in_inst[i], pin_name)
 
     def get_nand_connections(self):
         raise NotImplementedError

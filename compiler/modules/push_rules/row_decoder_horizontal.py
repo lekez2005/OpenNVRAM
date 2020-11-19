@@ -183,7 +183,7 @@ class row_decoder_horizontal(hierarchical_decoder):
         y_offset = en_pin.by() - self.get_wide_space(METAL3) - pin_height
         self.add_layout_pin("gnd", METAL3, offset=vector(pin_x, y_offset),
                             height=pin_height, width=self.width - pin_x)
-        # and gnd to bottom gnd
+        # AND gates gnd to bottom gnd
         for pin in gnd_pins:
             x_offset = pin.lx() + 0.5 * (m2m3.height - self.m3_width)
             y_offset = y_offset
@@ -191,7 +191,7 @@ class row_decoder_horizontal(hierarchical_decoder):
             self.connect_inst([])
             self.add_rect(METAL2, offset=vector(pin.lx(), y_offset), width=pin.width(),
                           height=pin.by() - y_offset)
-        # and vdd to predecoder vdd
+        # AND gates vdd to predecoder vdd
         all_predecoders = self.pre2x4_inst + self.pre3x8_inst
         top_predecoder = max(all_predecoders, key=lambda x: x.uy())
 
@@ -211,18 +211,13 @@ class row_decoder_horizontal(hierarchical_decoder):
 
         for predecoder in all_predecoders:
             for pin_name in ["vdd", "gnd"]:
-                all_pins = predecoder.get_pins(pin_name)
-                top_pin = max(all_pins, key=lambda x: x.uy())
-                for pin in all_pins:
-                    if pin.cy() == top_pin.cy() and pin_name == "vdd":
-                        continue
-                    self.add_layout_pin(pin_name, pin.layer, offset=pin.ll(), height=pin.height(),
-                                        width=self.width - pin.lx())
+                self.copy_layout_pin(predecoder, pin_name)
         # tap vdd and gnd
         for tap_inst in self.tap_insts:
             for pin_name in ["vdd", "gnd"]:
                 pins = utils.get_libcell_pins([pin_name],
                                               self.decoder_and_tap.child_mod.lib_name)[pin_name]
+                setattr(self, "tap_{}_pins".format(pin_name), pins)
                 for pin in pins:
                     x_offset = tap_inst.lx() + pin.by()
                     y_offset = tap_inst.by() + (tap_inst.height - pin.rx())

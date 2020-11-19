@@ -9,7 +9,12 @@ from test_base import TestBase
 class LatchedControlLogicTest(TestBase):
     def test_control_buffers(self):
         from modules.push_rules.latched_control_logic import LatchedControlLogic
-        a = LatchedControlLogic()
+        a = LatchedControlLogic(is_left_bank=False)
+        self.local_check(a)
+
+    def test_left_control_buffers(self):
+        from modules.push_rules.latched_control_logic import LatchedControlLogic
+        a = LatchedControlLogic(is_left_bank=True)
         self.local_check(a)
 
 

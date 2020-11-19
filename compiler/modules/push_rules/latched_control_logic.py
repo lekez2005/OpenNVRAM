@@ -38,10 +38,19 @@ class LatchedControlLogic(ControlBuffers):
     """
     rotation_for_drc = GDS_ROT_270
 
+    def __init__(self, is_left_bank=False):
+        self.is_left_bank = is_left_bank
+        if is_left_bank:
+            self.name += "_left"
+        super().__init__()
+
     def add_pins(self):
+        wordline = [] if self.is_left_bank else ["wordline_en"]
         self.add_pin_list(["bank_sel", "read", "clk", "sense_trig", "precharge_trig",
-                           "clk_buf", "clk_bar", "wordline_en", "precharge_en_bar",
-                           "write_en", "sense_en", "tri_en", "sample_bar", "vdd", "gnd"])
+                           "clk_buf", "clk_bar"]
+                          + wordline +
+                          ["precharge_en_bar", "write_en", "sense_en",
+                           "tri_en", "sample_bar", "vdd", "gnd"])
 
     def get_num_rails(self):
         return 5
@@ -61,35 +70,61 @@ class LatchedControlLogic(ControlBuffers):
         self.mid_y = 0.5 * self.height
         self.forbidden_m2 = []
 
-    @staticmethod
-    def get_all_mods():
-        return ["clk_buf", "precharge_buf", "nand2", "body_tap", "inv", "nand2",
+    def get_all_mods(self):
+        mods = ["clk_buf", "precharge_buf", "nand2", "body_tap", "inv", "nand2",
                 "wordline_buf", "write_buf", "nor2", "sample_bar", "body_tap",
                 "sense_amp_buf", "tri_en_buf"]
+        if self.is_left_bank:
+            mods.remove("wordline_buf")
+        return mods
+
+    def get_z_b_pairs(self):
+        """Get direct z pin to b pin connection to prevent splitting for adjacent modules"""
+        if self.is_left_bank:
+            return [(4, 5), (7, 8)]
+        return [(4, 5, 6), (8, 9)]
 
     def calculate_split_index(self):
         all_mods = self.get_all_mods()
-        widths = [getattr(self, x).width for x in all_mods]
+        z_b_pairs = list(sorted(self.get_z_b_pairs(), key=lambda x: x[0]))
+        groups = []
+        i = 0
+        while i < len(all_mods):
+            if len(z_b_pairs) > 0 and i in z_b_pairs[0]:
+                groups.append(z_b_pairs[0])
+                i = z_b_pairs[0][-1] + 1
+                z_b_pairs.pop(0)
+            else:
+                groups.append((i,))
+                i += 1
+        widths = []
+        for group in groups:
+            group_widths = [getattr(self, all_mods[x]).width for x in group]
+            widths.append(sum(group_widths))
+
         # get split index
         split_widths = []
         for i in range(1, len(all_mods) - 1):
             width = max(sum(widths[:i]), sum(widths[i:]))
             split_widths.append(width)
-        self.split_index = split_widths.index(min(split_widths)) + 1
         self.width = min(split_widths)
+        group_split_index = split_widths.index(min(split_widths))
+        self.split_index = groups[group_split_index][-1] + 1
 
         x_offset = 0.0
         all_offsets = []
-        for i in range(len(all_mods)):
-            if i < self.split_index:
-                all_offsets.append(x_offset)
-                x_offset += widths[i]
-            else:
-                if i == self.split_index:
-                    x_offset = self.width
-                all_offsets.append(x_offset)
-                if i < len(all_mods) - 1:
-                    x_offset -= widths[i]
+        widths = [getattr(self, all_mods[x]).width for x in range(len(all_mods))]
+        for j in range(len(groups)):
+            for i in groups[j]:
+                if i < self.split_index:
+                    all_offsets.append(x_offset)
+                    x_offset += widths[i]
+                else:
+                    if i == self.split_index:
+                        x_offset = self.width
+                    all_offsets.append(x_offset)
+                    if i < len(all_mods) - 1:
+                        x_offset -= widths[i]
         self.mod_x_offsets = all_offsets
 
     def get_module_offset(self):
@@ -134,9 +169,10 @@ class LatchedControlLogic(ControlBuffers):
         self.precharge_buf = LogicBufferHorizontal(OPTS.precharge_buffers, "pnand2")
         self.add_mod(self.precharge_buf)
 
-        assert len(OPTS.wordline_en_buffers) % 2 == 0, "Number of wordline buffers should be even"
-        self.wordline_buf = LogicBufferHorizontal(OPTS.wordline_en_buffers, "pnor2")
-        self.add_mod(self.wordline_buf)
+        if not self.is_left_bank:
+            assert len(OPTS.wordline_en_buffers) % 2 == 0, "Number of wordline buffers should be even"
+            self.wordline_buf = LogicBufferHorizontal(OPTS.wordline_en_buffers, "pnor2")
+            self.add_mod(self.wordline_buf)
 
         assert len(OPTS.wordline_en_buffers) % 2 == 0, "Number of write buffers should be even"
         self.write_buf = LogicBufferHorizontal(OPTS.write_buffers, "pnor2")
@@ -178,9 +214,10 @@ class LatchedControlLogic(ControlBuffers):
         self.bank_sel_cbar_inst = self.add_module("bank_sel_cbar", mod=self.nand2)
         self.connect_inst(["bank_sel", "clk_bar_int", "bank_sel_cbar", "vdd", "gnd"])
 
-        self.wordline_buf_inst = self.add_module("wordline_buf", mod=self.wordline_buf)
-        self.connect_inst(["sense_trig", "bank_sel_cbar",
-                           "wordline_en_bar", "wordline_en", "vdd", "gnd"])
+        if not self.is_left_bank:
+            self.wordline_buf_inst = self.add_module("wordline_buf", mod=self.wordline_buf)
+            self.connect_inst(["sense_trig", "bank_sel_cbar",
+                               "wordline_en_bar", "wordline_en", "vdd", "gnd"])
 
         self.write_buf_inst = self.add_module("write_buf", mod=self.write_buf)
         self.connect_inst(["read", "bank_sel_cbar", "write_en", "write_en_bar", "vdd", "gnd"])
@@ -286,8 +323,9 @@ class LatchedControlLogic(ControlBuffers):
         self.connect_z_to_b(z_inst=self.clk_bar_inst, b_inst=self.bank_sel_cbar_inst)
         self.connect_pin_to_rail(self.bank_sel_cbar_inst, "A", self.bank_sel_pin)
 
-        self.connect_z_to_b(z_inst=self.bank_sel_cbar_inst, b_inst=self.wordline_buf_inst)
-        self.connect_pin_to_rail(self.wordline_buf_inst, "A", self.sense_trig_pin)
+        if not self.is_left_bank:
+            self.connect_z_to_b(z_inst=self.bank_sel_cbar_inst, b_inst=self.wordline_buf_inst)
+            self.connect_pin_to_rail(self.wordline_buf_inst, "A", self.sense_trig_pin)
 
         self.connect_pin_to_rail(self.write_buf_inst, "A", self.read_pin)
         self.connect_pin_to_rail(self.write_buf_inst, "B", self.bank_sel_cbar_rail)
@@ -415,6 +453,8 @@ class LatchedControlLogic(ControlBuffers):
                      self.precharge_buf_inst, self.write_buf_inst, self.sense_amp_buf_inst,
                      self.tri_en_buf_inst, self.sample_bar_inst]
         for i in range(len(pin_names)):
+            if not instances[i]:
+                continue
             out_pin = instances[i].get_pin(mod_names[i])
             if out_pin.cy() > self.mid_y:
                 via_offset = out_pin.ul() - vector(0, m1m2.height)
@@ -432,3 +472,9 @@ class LatchedControlLogic(ControlBuffers):
                 pin = inst.get_pin(pin_name)
                 self.add_layout_pin(pin_name, pin.layer, offset=vector(0, pin.by()),
                                     height=pin.height(), width=self.width)
+
+
+class LeftLatchedControlLogic(LatchedControlLogic):
+    def add_pin_list(self, pin_list, pin_type_list=None):
+        pin_list.remove("wordline_en")
+        super().add_pin_list(pin_list)

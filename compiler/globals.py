@@ -161,18 +161,19 @@ def read_config(config_file, is_unit_test=True, openram_temp=None):
     # Create a full path relative to current dir unless it is already an abs path
     if not os.path.isabs(config_file):
         config_file = os.path.join(os.getcwd(), config_file)
-    # Make it a python file if the base name was only given
-    config_file = re.sub(r'\.py$', "", config_file)
     # Expand the user if it is used
     config_file = os.path.expanduser(config_file)
     # Import the configuration file of which modules to use
-    debug.info(1, "Configuration file is " + config_file + ".py")
+    debug.info(1, "Configuration file is " + config_file)
     try:
-        spec = importlib.util.spec_from_file_location("config_file", config_file + ".py")
-        config = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(config)
+        if os.path.exists(config_file):
+            spec = importlib.util.spec_from_file_location("config_file")
+            config = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(config)
+        else:
+            config = importlib.import_module(os.path.basename(config_file))
     except:
-        debug.error("Unable to read configuration file: {0}".format(config_file),2)
+        debug.error("Unable to read configuration file: {0}".format(config_file), 2)
 
     for k,v in config.__dict__.items():
         # The command line will over-ride the config file

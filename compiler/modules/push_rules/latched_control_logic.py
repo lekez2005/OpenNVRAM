@@ -220,7 +220,7 @@ class LatchedControlLogic(ControlBuffers):
                                "wordline_en_bar", "wordline_en", "vdd", "gnd"])
 
         self.write_buf_inst = self.add_module("write_buf", mod=self.write_buf)
-        self.connect_inst(["read", "bank_sel_cbar", "write_en", "write_en_bar", "vdd", "gnd"])
+        self.connect_inst(["read", "bank_sel_cbar", "write_en_bar", "write_en", "vdd", "gnd"])
 
         self.sel_cbar_trig_inst = self.add_module("sel_cbar_trig", mod=self.nor2)
         self.connect_inst(["sense_trig", "bank_sel_cbar", "sel_cbar_trig", "vdd", "gnd"])

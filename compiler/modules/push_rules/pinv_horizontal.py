@@ -49,6 +49,7 @@ class pinv_horizontal(pgate_horizontal, metaclass=unique_meta.Unique):
                 raise ValueError("Cannot estimate number of fingers to "
                                  "use. Size {} may be too large".format(self.size))
         self.num_fingers = num_fingers
+        self.tx_mults = num_fingers
 
     def calculate_num_fingers(self, size):
         """Estimate the number of fingers

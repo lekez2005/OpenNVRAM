@@ -2,8 +2,9 @@ import os
 
 python_path = ["modules/push_rules"]
 
-baseline = True
+baseline = False
 mram = False
+push = True
 
 bitcell_mod = "push_rules/cell_6t_hs_push"
 body_tap = "push_rules/cell_6t_hs_push_tap"
@@ -84,7 +85,7 @@ predecode_sizes = [1.2, 4]
 
 sense_amp_type = "latched_sense_amp"
 
-write_buffers = [1, 5, 25, 50, 65]
+write_buffers = [1, 3.7, 13.6, 50]
 wordline_en_buffers = [1, 3.7, 13.6, 50]
 
 clk_buffers = [1, 5, 20, 65, 30]  # clk only used by decoders (no latches)

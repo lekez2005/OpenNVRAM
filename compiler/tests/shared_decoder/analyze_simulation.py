@@ -11,7 +11,7 @@ import numpy as np
 matplotlib.use("Qt5Agg")
 from matplotlib import pyplot as plt
 
-from shared_simulator import create_arg_parser, parse_options, get_sim_directory, CMOS_MODE
+from shared_simulator import create_arg_parser, parse_options, get_sim_directory, CMOS_MODE, PUSH_MODE
 import sim_analyzer
 from sim_analyzer import measure_delay_from_stim_measure
 
@@ -67,7 +67,8 @@ arg_parser = create_arg_parser()
 arg_parser.add_argument("-v", "--verbose", action="count", default=0)
 mode, options = parse_options(arg_parser)
 openram_temp = get_sim_directory(options, mode) + ""
-cmos = mode == CMOS_MODE
+cmos = mode in [CMOS_MODE, PUSH_MODE]
+push = mode == PUSH_MODE
 
 word_size = options.word_size
 schematic = options.schematic
@@ -89,8 +90,8 @@ num_words = words_per_row * options.num_rows * options.num_banks
 address_width = int(np.log2(num_words))
 
 # Take overlap between cycles into account
-read_settling_time = 150e-12
-write_settling_time = 500e-12
+read_settling_time = 50e-12
+write_settling_time = 50e-12
 
 logging.info("Simulation Dir = {}".format(openram_temp))
 
@@ -117,7 +118,11 @@ if not schematic:
     if cmos:
         wordline_pattern = pattern_from_saved("v\(\S+wl\S+Xbitcell_array\S+\)", "wl\[[0-9]+\]", "wl[{1}]",
                                               "r[0-9]+", "r{1}")
-        wordline_en_pattern = pattern_from_saved("v\(\S+wordline_en\S+Xwordline_driver\S+\)")
+        if push:
+            wordline_en_pattern = pattern_from_saved("v\(\S+wordline_en\S+Xrow_decoder\S+\)",
+                                                     "Xand_[0-9]+", "Xand_{}")
+        else:
+            wordline_en_pattern = pattern_from_saved("v\(\S+wordline_en\S+Xwordline_driver\S+\)")
     else:
         wordline_en_pattern = pattern_from_saved("v\(\S+wwl_en\S+Xwwl_driver\S+\)")
         rwl_en_pattern = pattern_from_saved("v\(\S+rwl_en\S+Xrwl_driver\S+\)")
@@ -174,8 +179,9 @@ if __name__ == "__main__":
     # Precharge and Decoder delay
     max_decoder_delay = 0
     max_precharge = 0
+    max_clk_to_decoder_in = 0
     for event in all_read_events + all_write_events:
-        max_dec_, dec_delays = measure_delay_from_stim_measure("decoder",
+        max_dec_, dec_delays = measure_delay_from_stim_measure("decoder_a[0-9]+",
                                                                max_delay=0.9 * event[2],
                                                                event_time=event[0])
         max_decoder_delay = max(max_decoder_delay, max_dec_)
@@ -185,8 +191,22 @@ if __name__ == "__main__":
                                                                    event_time=event[0])
         max_precharge = max(max_precharge, max_prech_)
 
-    print("\nDecoder delay = {:.2f}p".format(max_decoder_delay / 1e-12))
-    print("Precharge delay = {:.2f}p".format(max_precharge / 1e-12))
+        if push:
+            max_clk_dec_, _ = measure_delay_from_stim_measure("decoder_in[0-9]+", max_delay=0.9 * event[2],
+                                                              event_time=event[0])
+            max_clk_to_decoder_in = max(max_clk_to_decoder_in, max_clk_dec_)
+
+    print("\nPrecharge delay = {:.2f}p".format(max_precharge / 1e-12))
+
+    if push:
+        print("Clk to dec_in = {:.2f}p".format(max_clk_to_decoder_in / 1e-12))
+        print("Decoder enable to dec_out = {:.2f}p".format(max_decoder_delay / 1e-12))
+    else:
+        print("Decoder delay = {:.2f}p".format(max_decoder_delay / 1e-12))
+
+    if push:
+        max_decoder_delay, max_clk_to_decoder_in = max_clk_to_decoder_in, max_decoder_delay
+
 
     # Analyze Reads
 
@@ -304,12 +324,13 @@ if __name__ == "__main__":
         write_period = max_write_event[2]
         write_start_time = max_write_event[0]
         max_write_row = max_write_event[4]
-        write_bank = max_write_event[6]
+
         write_end_time = write_start_time + write_period + write_settling_time + 0.2e-9
 
         q_net = "v({})".format(state_probes[str(write_address)][max_write_bit])
 
         max_write_col = int(re.search("r[0-9]+_c([0-9]+)", q_net).group(1))
+        write_bank = int(re.search("Xbank([0-1]+)", q_net).group(1))
 
         # col = max_write_bit *
         start_time = write_start_time
@@ -317,14 +338,16 @@ if __name__ == "__main__":
         bank = write_bank
 
         write_en_delay = get_max_pattern_delay(write_en_pattern, max_write_bit, edge=sim_data.RISING_EDGE)
-        write_en_bar_delay = get_max_pattern_delay(write_en_bar_pattern, max_write_bit, edge=sim_data.FALLING_EDGE)
+        if not push:
+            write_en_bar_delay = get_max_pattern_delay(write_en_bar_pattern,
+                                                       max_write_bit, edge=sim_data.FALLING_EDGE)
+            print_max_delay("Write ENB", write_en_bar_delay)
         flop_out_delay = get_max_pattern_delay(write_driver_in_pattern, max_write_bit)
         bl_delay = get_max_pattern_delay(bl_pattern, max_write_col, edge=sim_data.FALLING_EDGE)
         br_delay = get_max_pattern_delay(br_pattern, max_write_col, edge=sim_data.FALLING_EDGE)
         q_delay = get_max_pattern_delay(q_net)
 
         print_max_delay("Write EN", write_en_delay)
-        print_max_delay("Write ENB", write_en_bar_delay)
         print_max_delay("Flop out", flop_out_delay)
         print_max_delay("BL", bl_delay)
         print_max_delay("BR", br_delay)
@@ -341,21 +364,25 @@ if __name__ == "__main__":
         max_read_period = max_read_event[2]
         read_start_time = max_read_event[0]
         read_end_time = read_start_time + max_read_period + read_settling_time + 0.1e-9
-        read_bank = max_read_event[6]
 
         read_q_net = "v({})".format(state_probes[str(max_read_address)][max_read_bit])
+        read_bank = int(re.search("Xbank([0-1]+)", read_q_net).group(1))
 
         max_read_col = int(re.search("r[0-9]+_c([0-9]+)", read_q_net).group(1))
 
         start_time = read_start_time
         end_time = read_end_time
         bank = read_bank
+        if push:
+            sense_mod_index = int(max_read_bit / 2)
+        else:
+            sense_mod_index = max_read_bit
 
         wordline_en_delay = get_max_pattern_delay(wordline_en_pattern, edge=sim_data.RISING_EDGE)
         wordline_delay = get_max_pattern_delay(wordline_pattern, max_read_row, edge=sim_data.RISING_EDGE)
-        sample_fall_delay = get_max_pattern_delay(sample_en_bar_pattern, max_read_bit, edge=sim_data.FALLING_EDGE)
-        sample_rise_delay = get_max_pattern_delay(sample_en_bar_pattern, max_read_bit, edge=sim_data.RISING_EDGE)
-        sense_en_delay = get_max_pattern_delay(sense_en_pattern, max_read_bit)
+        sample_fall_delay = get_max_pattern_delay(sample_en_bar_pattern, sense_mod_index, edge=sim_data.FALLING_EDGE)
+        sample_rise_delay = get_max_pattern_delay(sample_en_bar_pattern, sense_mod_index, edge=sim_data.RISING_EDGE)
+        sense_en_delay = get_max_pattern_delay(sense_en_pattern, sense_mod_index)
         if words_per_row == 1:
             bl_delay = get_max_pattern_delay(bl_pattern, max_read_bit)
             br_delay = get_max_pattern_delay(br_pattern, max_read_bit)

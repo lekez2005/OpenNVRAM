@@ -13,10 +13,14 @@ class SharedProbe(SramProbe):
 
     def __init__(self, sram, pex_file=None):
         super().__init__(sram, pex_file)
+        debug.info(1, "Initialize sram probe")
+        self.two_bank_push = OPTS.push and self.sram.num_banks == 2
+        self.is_cmos = OPTS.baseline or OPTS.push
 
         self.state_probes = {}
         self.sense_amp_probes = {}
         self.decoder_probes = {}
+        self.decoder_inputs_probes = {}
         self.dout_probes = {}
         self.mask_probes = {}
         self.wwl_probes = {}
@@ -28,8 +32,8 @@ class SharedProbe(SramProbe):
         self.current_probes = set()
 
     def get_bitcell_label(self, bank_index, row, col, pin_name):
-        if OPTS.baseline or not OPTS.use_pex:
-            if not OPTS.baseline:
+        if self.is_cmos or not OPTS.use_pex:
+            if not self.is_cmos:
                 pin_name = "state"
             return "Xsram.Xbank{}.Xbitcell_array.Xbit_r{}_c{}.{}".format(
                 bank_index, row, col, pin_name)
@@ -38,9 +42,12 @@ class SharedProbe(SramProbe):
             return bitcell_name + ".state"
 
     def get_storage_node_pattern(self):
-        if OPTS.baseline or not OPTS.use_pex:
-            return super().get_storage_node_pattern()
-        return OPTS.bitcell_name_template + ".state"
+        if self.is_cmos or not OPTS.use_pex:
+            pattern = super().get_storage_node_pattern()
+        else:
+            pattern = OPTS.bitcell_name_template + ".state"
+        debug.info(2, "Storage node pattern = {}".format(pattern))
+        return pattern
 
     def get_w_label(self, bank_index, row, col):
         if OPTS.use_pex:
@@ -52,7 +59,7 @@ class SharedProbe(SramProbe):
 
     def get_wordline_label(self, bank_index, row, col):
         w_label = self.get_w_label(bank_index, row, col)
-        if not OPTS.baseline:
+        if not (OPTS.baseline or OPTS.push):
             w_label = w_label.replace("wl", "rwl")
         return w_label
 
@@ -82,7 +89,7 @@ class SharedProbe(SramProbe):
         if not OPTS.verbose_save:
             return
 
-        if OPTS.use_pex:
+        if OPTS.use_pex and not OPTS.push:
             for col in range(self.sram.word_size):
                 # write drivers
                 self.current_probes.add("Xsram.XXbank{}_Xwrite_driver_array_Xdriver_{}_mm4:d".
@@ -111,7 +118,7 @@ class SharedProbe(SramProbe):
                             format(bank, col))
 
             insts = ["precharge_buf_inst", "clk_buf_inst", "write_buf_inst", "sense_amp_buf_inst"]
-            if OPTS.baseline:
+            if OPTS.baseline or (OPTS.push and bank == 0):
                 insts.append("wordline_buf_inst")
             else:
                 insts.extend(["wwl_en_inst", "rwl_buf_inst"])
@@ -130,12 +137,13 @@ class SharedProbe(SramProbe):
 
         for bit in bits:
             col = bit * self.sram.words_per_row + col_index
-            if OPTS.use_pex and OPTS.baseline:
+            if OPTS.use_pex and self.is_cmos:
+                prefix = "X" if OPTS.baseline else "m"
                 # bitcells
-                self.current_probes.add("Xsram.Xbank{}_Xbitcell_array_Xbit_r{}_c{}_m4:d".
-                                        format(bank, row, col))
-                self.current_probes.add("Xsram.Xbank{}_Xbitcell_array_Xbit_r{}_c{}_m5:d".
-                                        format(bank, row, col))
+                self.current_probes.add("Xsram.{}Xbank{}_Xbitcell_array_Xbit_r{}_c{}_m4:d".
+                                        format(prefix, bank, row, col))
+                self.current_probes.add("Xsram.{}Xbank{}_Xbitcell_array_Xbit_r{}_c{}_m5:d".
+                                        format(prefix, bank, row, col))
             elif OPTS.use_pex:
                 bitcell_name = OPTS.bitcell_name_template.format(bank=bank, row=row, col=col)
                 self.current_probes.add(bitcell_name + ".m1:d")
@@ -165,39 +173,32 @@ class SharedProbe(SramProbe):
         """Probe write driver internal bl_bar, br_bar"""
 
         for bit in range(self.sram.word_size):
-            col = int(bit * self.sram.words_per_row)
             if OPTS.verbose_save:
                 # bl_bar and br_bar
-                for pin_name in ["bl_bar", "br_bar"]:
+                if OPTS.push:
+                    pin_names = ["Xchild_mod.bl_p", "Xchild_mod.bl_n", "Xchild_mod.mask_en"]
+                else:
+                    pin_names = ["bl_bar", "br_bar"]
+                for pin_name in pin_names:
                     pin_label = "Xsram.Xbank{}.Xwrite_driver_array.Xdriver_{}.{}". \
                         format(0, bit, pin_name)
                     self.probe_labels.add(pin_label)
 
                 if OPTS.use_pex:
-                    # clk_buf at flop in
-                    self.probe_labels.add("Xsram.clk_bar_{b1}_Xbank{bank}_Xdata_in_Xdff{bit}".
-                                          format(bank=bank, b1=bank + 1, bit=bit))
-                    # write_en
-                    self.probe_labels.add("Xsram.Xbank{bank}_write_en_Xbank{bank}_Xwrite_driver_array_Xdriver_{bit}".
-                                          format(bank=bank, bit=bit))
-                    self.probe_labels.add(
-                        "Xsram.Xbank{bank}_write_en_bar_Xbank{bank}_Xwrite_driver_array_Xdriver_{bit}".
-                            format(bank=bank, bit=bit))
                     # vdd
                     self.probe_labels.add("vdd_Xbank{bank}_Xwrite_driver_array_Xdriver_{bit}".
                                           format(bank=bank, bit=bit))
 
-                    # sense_en
-                    self.probe_labels.add("Xsram.Xbank{bank}_sense_en_Xbank{bank}_Xsense_amp_array_Xsa_d{bit}".
-                                          format(bank=bank, bit=bit))
-                    # precharge_en
-                    self.probe_labels.add("Xsram.Xbank{bank}_precharge_en_bar_Xbank{bank}_Xprecharge_array"
-                                          "_Xpre_column_{col}".format(bank=bank, col=col))
-
-            # flop in
+            # flop clk_bar
             if OPTS.use_pex:
-                pin_label = "Xsram.Xbank{bank}_Xdata_in_Xdff{bit}_clk_bar".format(bank=bank, bit=bit)
-                self.probe_labels.add(pin_label)
+                if OPTS.push:
+                    i_range = range(0) if bit % 2 == 1 else range(2)
+                    for i in i_range:
+                        self.probe_labels.add("Xsram.Xbank{}_Xdata_in_Xdff{}"
+                                              "_Xchild_mod_xi0<{}>_clk_bar".format(bank, int(bit / 2), i))
+                else:
+                    pin_label = "Xsram.Xbank{bank}_Xdata_in_Xdff{bit}_clk_bar".format(bank=bank, bit=bit)
+                    self.probe_labels.add(pin_label)
 
             if OPTS.verbose_save:
                 # flop out
@@ -209,11 +210,15 @@ class SharedProbe(SramProbe):
                 self.probe_labels.add(pin_label)
 
             # mask in
-            if OPTS.use_pex:
-                pin_label = "Xsram.Xbank{bank}_mask_in_bar[{bit}]_Xbank{bank}_Xwrite_driver_array_Xdriver_{bit}". \
-                    format(bank=bank, bit=bit)
+            if OPTS.push:
+                mask_net = "mask_in"
             else:
-                pin_label = "Xsram.Xbank{bank}.mask_in_bar[{bit}]".format(bank=bank, bit=bit)
+                mask_net = "mask_in_bar"
+            if OPTS.use_pex:
+                pin_label = "Xsram.Xbank{bank}_{net}[{bit}]_Xbank{bank}_Xwrite_driver_array_Xdriver_{bit}". \
+                    format(bank=bank, bit=bit, net=mask_net)
+            else:
+                pin_label = "Xsram.Xbank{bank}.{net}[{bit}]".format(bank=bank, bit=bit, net=mask_net)
             self.probe_labels.add(pin_label)
 
     def probe_latched_sense_amps(self, bank):
@@ -227,12 +232,19 @@ class SharedProbe(SramProbe):
         for bit in bits:
             if self.sram.bank.mirror_sense_amp:
                 continue
-            if OPTS.use_pex:
+            if OPTS.use_pex and not OPTS.push:
                 self.probe_labels.add("Xbank{0}_Xsense_amp_array_Xsa_d{1}_out_int_Xbank{0}_Xsense_amp_array".
                                       format(bank, bit))
                 self.probe_labels.add("Xbank{0}_Xsense_amp_array_Xsa_d{1}_outb_int_Xbank{0}_Xsense_amp_array".
                                       format(bank, bit))
                 self.probe_labels.add("Xbank{0}_and_out[{1}]_Xbank{0}_Xsense_amp_array".format(bank, bit))
+            elif OPTS.use_pex and OPTS.push:
+                if bit % 2 == 1:
+                    continue
+
+                child_mod = "Xbank{}_Xsense_amp_array_Xsa_d{}_Xchild_mod".format(bank, int(bit / 2))
+                for i in range(2):
+                    self.probe_labels.add("{0}_out_int<{1}>_{0}".format(child_mod, i))
             else:
                 self.probe_labels.add("Xsram.Xbank{0}.Xsense_amp_array.Xsa_d{1}.out_int".format(bank, bit))
                 self.probe_labels.add("Xsram.Xbank{0}.and_out[{1}]".format(bank, bit))
@@ -254,15 +266,19 @@ class SharedProbe(SramProbe):
         nets = {
             "precharge_en_bar": "Xprecharge_array_Xpre_column_{col}",
             "write_en": "Xwrite_driver_array_Xdriver_{bit}",
-            "write_en_bar": "Xwrite_driver_array_Xdriver_{bit}",
             "sense_en": "Xsense_amp_array_Xsa_d{bit}",
-            "tri_en": "Xtri_gate_array_Xtri_gate{bit}",
-            "tri_en_bar": "Xtri_gate_array_Xtri_gate{bit}"
+            "tri_en": "Xtri_gate_array_Xtri_gate{bit}"
         }
+        if not OPTS.push:
+            nets["tri_en_bar"] = "Xtri_gate_array_Xtri_gate{bit}"
+            nets["write_en_bar"] = "Xwrite_driver_array_Xdriver_{bit}"
+
         if not self.sram.bank.mirror_sense_amp:
             nets["sample_en_bar"] = "Xsense_amp_array_Xsa_d{bit}"
         if OPTS.baseline:
             nets["wordline_en"] = "Xwordline_driver_Xdriver{row}"
+        elif OPTS.push:
+            pass
         else:
             nets["rwl_en"] = "Xrwl_driver_Xdriver{row}"
             nets["wwl_en"] = "Xwwl_driver_Xdriver{row}"
@@ -284,6 +300,11 @@ class SharedProbe(SramProbe):
                 for i in range(len(cols)):
                     bit = bits[i]
                     col = cols[i]
+                    if OPTS.push:
+                        if "write_driver_array" not in nets[net]:
+                            if bit % 2 == 1:
+                                continue
+                            bit = int(bit / 2)
                     # control buffer outputs
                     probe_label = net_format.format(bank=bank, net=net,
                                                     net_location=nets[net].format(bit=bit, row=row,
@@ -292,6 +313,14 @@ class SharedProbe(SramProbe):
             else:
                 probe_label = "Xsram.Xbank{}.{}".format(bank, net)
                 self.probe_labels.add(probe_label)
+        # push wordline_en
+        if OPTS.push and bank == 0:
+            if OPTS.use_pex:
+                self.probe_labels.add("wordline_en_Xbank0_Xcontrol_buffers")
+                self.probe_labels.add("wordline_en_Xrow_decoder_Xand_{}".format(0))
+                self.probe_labels.add("wordline_en_Xrow_decoder_Xand_{}".format(int(self.sram.bank.num_rows / 2) - 2))
+            else:
+                self.probe_labels.add("Xsram.wordline_en")
 
         # bl_out
         if OPTS.use_pex and self.sram.words_per_row > 1:
@@ -302,7 +331,15 @@ class SharedProbe(SramProbe):
         # clk_bar
         if OPTS.use_pex:
             for bit in bits:
-                self.probe_labels.add("Xsram.clk_bar_{}_Xbank{}_Xdata_in_Xdff{}".format(bank + 1, bank, bit))
+                if OPTS.push:
+                    if bit % 2 == 1:
+                        continue
+                    for i in range(2):
+                        self.probe_labels.add("Xsram.clk_bar_{}_Xbank{}_Xdata_in"
+                                              "_Xdff{}_Xchild_mod_xi0<{}>".
+                                              format(bank + 1, bank, int(bit / 2), i))
+                else:
+                    self.probe_labels.add("Xsram.clk_bar_{}_Xbank{}_Xdata_in_Xdff{}".format(bank + 1, bank, bit))
         else:
             self.probe_labels.add("Xsram.clk_bar_{}".format(bank + 1))
 
@@ -310,7 +347,7 @@ class SharedProbe(SramProbe):
 
         for bit in bits:
             if OPTS.use_pex:
-                if not OPTS.baseline:
+                if not OPTS.baseline and not OPTS.push:
                     # sense amp ref
                     self.probe_labels.add("vref_Xbank{bank}_Xsense_amp_array_Xsa_d{bit}".
                                           format(bank=bank, bit=bit))
@@ -336,11 +373,15 @@ class SharedProbe(SramProbe):
 
         # predecoder flop output
         if OPTS.use_pex:
-            self.probe_labels.add("Xsram.Xrow_decoder_Xpre[0]_in[0]")
+            decoder = self.sram.bank.decoder
+            for i in range(len(decoder.pre2x4_inst) + len(decoder.pre3x8_inst)):
+                pass
+                self.probe_labels.add("Xsram.Xrow_decoder_Xpre_{}_in[0]".format(i))
+                self.probe_labels.add("Xsram.Xrow_decoder_Xpre_{}_in[1]".format(i))
             self.probe_labels.add("Xsram.clk_buf_1_Xrow_decoder")
 
         # sel outputs
-        if self.sram.words_per_row > 0 and OPTS.verbose_save:
+        if self.sram.words_per_row > 1 and OPTS.verbose_save:
             for i in range(self.sram.words_per_row):
                 if OPTS.use_pex:
                     col = (self.sram.word_size - 1) * self.sram.words_per_row + i
@@ -348,6 +389,26 @@ class SharedProbe(SramProbe):
                                           format(i, bank, col))
                 else:
                     self.probe_labels.add("Xsram.sel[{}]".format(bank, i))
+
+    def add_decoder_inputs(self, address):
+        if not OPTS.push:
+            return
+        # get logic input node names
+        decoder = self.sram.bank.decoder
+        and_gate_index = int(address / 2)
+        nand_inst = decoder.and_insts[and_gate_index]
+        decoder_conn = decoder.conns[decoder.insts.index(nand_inst)]
+        enable_index = decoder_conn.index("en")
+        logic_inputs = decoder_conn[:enable_index]
+        # get hierarchy of module names
+        labels = []
+        for node_name in logic_inputs:
+            if OPTS.use_pex:
+                labels.append("Xsram.Xrow_decoder_{}_Xrow_decoder_X{}".format(node_name, nand_inst.name))
+            else:
+                labels.append("Xsram.Xrow_decoder.{}".format(node_name))
+        self.probe_labels.update(labels)
+        self.decoder_inputs_probes[address] = labels
 
     def probe_address(self, address, pin_name="q"):
 
@@ -360,19 +421,24 @@ class SharedProbe(SramProbe):
         self.decoder_probes[address_int] = decoder_label
         self.probe_labels.add(decoder_label)
 
+        self.add_decoder_inputs(address_int)
+
         col = self.sram.num_cols - 1
         wl_label = self.get_wordline_label(bank_index, row, col)
-        if not OPTS.baseline:
+        if not self.is_cmos:
             self.wwl_probes[address_int] = self.get_wwl_label(bank_index, row, col)
             self.probe_labels.add(self.wwl_probes[address_int])
 
         self.wordline_probes[address_int] = wl_label
         self.probe_labels.add(wl_label)
 
-        pin_labels = [""] * self.sram.word_size
+        full_word_size = 2 * self.sram.word_size if self.two_bank_push else self.sram.word_size
+        pin_labels = [""] * full_word_size
         for bit in range(self.sram.word_size):
             col = bit * self.sram.words_per_row + col_index
             pin_labels[bit] = self.get_bitcell_label(bank_index, row, col, pin_name)
+            if self.two_bank_push:
+                pin_labels[bit + self.sram.word_size] = self.get_bitcell_label(1, row, col, pin_name)
 
         self.probe_labels.update(pin_labels)
         self.state_probes[address_int] = pin_labels
@@ -400,6 +466,9 @@ class SharedProbe(SramProbe):
                 for address, address_labels in self.state_probes.items():
                     self.state_probes[address] = [self.extract_from_pex(address_label)
                                                   for address_label in address_labels]
+                for _, val in self.decoder_inputs_probes.items():
+                    for i in range(len(val)):
+                        val[i] = self.extract_from_pex(val[i])
                 self.clk_buf_probe = self.extract_from_pex(self.clk_buf_probe)
             except CalledProcessError:  # ignore missing probe errors
                 pass

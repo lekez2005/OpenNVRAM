@@ -24,18 +24,25 @@ class SimStepsGenerator(SequentialDelay):
     def __init__(self, sram, spfile, corner, initialize=False):
         super().__init__(sram, spfile, corner, initialize=initialize)
 
+        self.two_bank_push = OPTS.push and self.sram.num_banks == 2
+        self.is_cmos = OPTS.baseline or OPTS.push
+
         for i in range(self.word_size):
             self.bus_sigs.append("mask[{}]".format(i))
+
         self.control_sigs = ["read", "acc_en", "acc_en_inv", "sense_trig", "bank_sel"]
+        if OPTS.push:
+            self.control_sigs.append("precharge_trig")
 
         self.words_per_row = self.sram.words_per_row
 
         self.sense_trig = self.prev_sense_trig = 0
+        self.precharge_trig = self.prev_precharge_trig = 0
         self.bank_sel = self.prev_bank_sel = 0
         self.read = self.prev_read = 0
         self.chip_enable = 1
 
-        self.mask = self.prev_mask = [1] * OPTS.word_size
+        self.mask = self.prev_mask = [1] * self.word_size
 
         mid_address = int(0.5 * self.sram.num_rows)
         self.address_1 = self.prev_address_1 = self.convert_address(mid_address)
@@ -58,12 +65,18 @@ class SimStepsGenerator(SequentialDelay):
                 # This adds some delay to enable tri-state driver
                 # For differential sense amp, give some window so data can be read
                 setup_time = -(self.slew + OPTS.sense_trigger_setup)
+        elif key == "precharge_trig":
+            trigger_delay = OPTS.precharge_trigger_delay
+            if prev_val == 1:
+                setup_time = -(self.duty_cycle * self.period + trigger_delay) + self.period
+            else:
+                setup_time = 0
         else:
             setup_time = self.setup_time
 
         t2 = max(self.slew, self.current_time + 0.5 * self.slew - setup_time)
         t1 = max(0.0, self.current_time - 0.5 * self.slew - setup_time)
-        self.v_data[key] += " {0}n {1}v {2}n {3}v ".format(t1, self.vdd_voltage * prev_val, t2,
+        self.v_data[key] += " {0:5.5g}n {1}v {2:5.5g}n {3}v ".format(t1, self.vdd_voltage * prev_val, t2,
                                                            self.vdd_voltage * curr_val)
         self.v_comments[key] += " ({0}, {1}) ".format(int(self.current_time / self.period),
                                                       curr_val)
@@ -79,8 +92,8 @@ class SimStepsGenerator(SequentialDelay):
         if not getattr(self, "sf", None):
             temp_stim = os.path.join(OPTS.openram_temp, "stim.sp")
             self.sf = open(temp_stim, "w")
-        self.sf.write("{} \n".format(self.sram))
         if OPTS.spice_name == "spectre":
+            self.sf.write("// {} \n".format(self.sram))
             self.sf.write("simulator lang=spice\n")
         self.sf.write("* Delay stimulus.\n * Area={0:.0f}um2 load={1}fF slew={2}n\n\n".format(
             (self.sram.width * self.sram.height), self.load, self.slew))
@@ -160,7 +173,7 @@ class SimStepsGenerator(SequentialDelay):
     def generate_energy_stimulus(self):
         num_sims = OPTS.energy
         num_sims = 1
-        mask = [1] * self.sram.word_size
+        mask = [1] * self.word_size
 
         ops = ["read", "write"]
         for i in range(num_sims):
@@ -170,7 +183,7 @@ class SimStepsGenerator(SequentialDelay):
             if op == "read":
                 self.read_address(address)
             else:
-                data = [randint(0, 1) for x in range(self.sram.word_size)]
+                data = [randint(0, 1) for x in range(self.word_size)]
                 self.write_address(address, data, mask)
             self.sf.write("* -- {}: t = {:.5g} period = {}\n".format(op.upper(), self.current_time - self.period,
                                                                      self.period))
@@ -214,7 +227,7 @@ class SimStepsGenerator(SequentialDelay):
         self.setup_write_measurements(address)
         self.write_address(address, data_bar, mask)
 
-        if not OPTS.baseline:
+        if not self.is_cmos:
             # give enough time to settle before timed read
             self.write_address(dummy_address, data, mask)
             self.write_address(dummy_address, data, mask)
@@ -227,7 +240,7 @@ class SimStepsGenerator(SequentialDelay):
         # write data_bar to force transition on the data bus
         self.write_address(dummy_address, data_bar, mask)
 
-        if not OPTS.baseline:
+        if not self.is_cmos:
             # give enough time to settle before timed read
             self.write_address(dummy_address, data_bar, mask)
         self.setup_read_measurements(address)
@@ -249,7 +262,7 @@ class SimStepsGenerator(SequentialDelay):
 
     def update_output(self, increment_time=True):
         # bank_sel
-        if self.num_banks == 1:
+        if self.num_banks == 1 or OPTS.push:
             self.bank_sel = self.chip_enable
         else:
             self.bank_sel = int(not self.address[-1] and self.chip_enable)
@@ -263,10 +276,16 @@ class SimStepsGenerator(SequentialDelay):
         if self.read and increment_time:
             self.write_pwl("sense_trig", 0, 1)
 
+        if increment_time:
+            self.write_pwl("precharge_trig", 0, 1)
+
         super().update_output(increment_time)
 
         if self.read:
             self.write_pwl("sense_trig", 1, 0)
+
+        if increment_time:
+            self.write_pwl("precharge_trig", 1, 0)
 
     def read_address(self, addr):
         """Read an address. Address is binary vector"""
@@ -341,11 +360,24 @@ class SimStepsGenerator(SequentialDelay):
                                      targ_td=time + self.duty_cycle * self.period)
 
     def setup_decoder_delays(self):
+        time_suffix = "{:.2g}".format(self.current_time).replace('.', '_')
+        for address_int, in_nets in self.probe.decoder_inputs_probes.items():
+            for i in range(len(in_nets)):
+                meas_name = "decoder_in{}_{}_t{}".format(address_int, i, time_suffix)
+                self.stim.gen_meas_delay(meas_name=meas_name,
+                                         trig_name=self.clk_buf_probe, trig_val=0.5 * self.vdd_voltage, trig_dir="RISE",
+                                         trig_td=self.current_time,
+                                         targ_name=in_nets[i], targ_val=0.5 * self.vdd_voltage, targ_dir="CROSS",
+                                         targ_td=self.current_time)
+        if OPTS.push:
+            trig_dir = "FALL"
+        else:
+            trig_dir = "RISE"
         for address_int, decoder_label in self.decoder_probes.items():
             time_suffix = "{:.2g}".format(self.current_time).replace('.', '_')
             meas_name = "decoder_a{}_t{}".format(address_int, time_suffix)
             self.stim.gen_meas_delay(meas_name=meas_name,
-                                     trig_name=self.clk_buf_probe, trig_val=0.5 * self.vdd_voltage, trig_dir="RISE",
+                                     trig_name=self.clk_buf_probe, trig_val=0.5 * self.vdd_voltage, trig_dir=trig_dir,
                                      trig_td=self.current_time,
                                      targ_name=decoder_label, targ_val=0.5 * self.vdd_voltage, targ_dir="CROSS",
                                      targ_td=self.current_time)
@@ -417,7 +449,7 @@ class SimStepsGenerator(SequentialDelay):
         self.stim.inst_accesstx(self.word_size)
 
     def write_ic(self, ic, col_node, col_voltage):
-        if OPTS.baseline:
+        if self.is_cmos:
             ic.write("ic {}={} \n".format(col_node, col_voltage))
         else:
             phi = 0.1 * OPTS.llg_prescale

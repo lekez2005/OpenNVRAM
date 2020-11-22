@@ -44,6 +44,9 @@ class SharedDecoderSimulator(TestBase):
         if mode == CMOS_MODE:
             from modules.shared_decoder.cmos_sram import CmosSram
             sram_class = CmosSram
+        elif mode == PUSH_MODE:
+            from modules.push_rules.horizontal_sram import HorizontalSram
+            sram_class = HorizontalSram
         else:
             from modules.shared_decoder.sotfet.sotfet_mram import SotfetMram
             OPTS.configure_sense_amp(not options.latched, OPTS)
@@ -52,10 +55,17 @@ class SharedDecoderSimulator(TestBase):
         self.sram = sram_class(word_size=OPTS.word_size, num_words=OPTS.num_words,
                                num_banks=OPTS.num_banks, words_per_row=OPTS.words_per_row,
                                name="sram1")
+        debug.info(1, "Write netlist to file")
         self.sram.sp_write(OPTS.spice_file)
+
+        # temporarily set word size
+        if OPTS.push and self.sram.num_banks == 2:
+            self.sram.word_size *= 2
 
         delay = SimStepsGenerator(self.sram, spfile=OPTS.spice_file,
                                   corner=self.corner, initialize=False)
+
+        self.sram.word_size = OPTS.word_size
 
         delay.trimsp = OPTS.trim_netlist = False
 
@@ -95,6 +105,12 @@ class SharedDecoderSimulator(TestBase):
                 second_read = 0.4
                 OPTS.sense_trigger_delay = 0.25
                 OPTS.sense_trigger_setup = 0.2
+        elif OPTS.push:
+            OPTS.sense_trigger_delay = 0.25
+            OPTS.sense_trigger_setup = 0.1
+            OPTS.precharge_trigger_delay = 0.1
+            first_read = first_write = 0.4
+            second_read = second_write = 0.4
         else:
 
             if num_rows == 64:
@@ -132,6 +148,8 @@ class SharedDecoderSimulator(TestBase):
         delay.saved_nodes = []
 
         delay.prepare_netlist()
+        if options.schematic:
+            delay.replace_models(delay.sim_sp_file)
 
         delay.current_time = delay.duty_cycle * delay.period
 
@@ -152,7 +170,7 @@ class SharedDecoderSimulator(TestBase):
             addresses = [(options.num_rows * self.sram.words_per_row - 1), 0]
             banks = [0, max_bank]
 
-            if not OPTS.baseline:
+            if not OPTS.baseline and not OPTS.push:
                 delay.probe_addresses([dummy_address], 0)
 
             for i in range(len(addresses)):
@@ -228,7 +246,7 @@ def create_arg_parser():
 
 def parse_options(parser):
     mode_ = sys.argv[1]
-    assert mode_ in [CMOS_MODE, SOT_MODE, SOTFET_MODE]
+    assert mode_ in [CMOS_MODE, SOT_MODE, SOTFET_MODE, PUSH_MODE]
 
     options_, other_args = parser.parse_known_args()
     sys.argv = other_args
@@ -267,6 +285,7 @@ def get_sim_directory(options_, mode_):
 CMOS_MODE = "cmos"
 SOT_MODE = "sot"
 SOTFET_MODE = "sotfet"
+PUSH_MODE = "push"
 
 DEFAULT_WORD_SIZE = 32
 

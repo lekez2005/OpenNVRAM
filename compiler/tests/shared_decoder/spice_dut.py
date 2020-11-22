@@ -25,13 +25,18 @@ class SpiceDut(stimuli):
             self.sf.write("A[{0}] ".format(i))
 
         # connect bank_sel_2 to last address bit
-        bank_sel_2 = "A[{0}]".format(abits - 1) * int(num_banks == 2)
+        if not OPTS.push:
+            bank_sel_2 = "A[{0}]".format(abits - 1) * int(num_banks == 2)
+        else:
+            bank_sel_2 = ""
 
         self.sf.write(" read {0} bank_sel {1} sense_trig {2} {3} ".
                       format(tech.spice["clk"], bank_sel_2, self.vdd_name,
                              self.gnd_name))
         if OPTS.mram == "sotfet":
             self.sf.write(" vref ")
+        elif OPTS.push:
+            self.sf.write(" precharge_trig ")
 
         self.sf.write(" {0}\n".format(sram_name))
 

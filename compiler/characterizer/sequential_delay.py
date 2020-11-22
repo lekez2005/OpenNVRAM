@@ -1,4 +1,5 @@
 import os
+import subprocess
 from importlib import reload
 
 import numpy as np
@@ -114,7 +115,7 @@ class SequentialDelay(delay):
 
         for address in range(self.sram.num_words):
             if address not in existing_data:
-                existing_data[address] = utils.get_random_vector(self.sram.word_size)
+                existing_data[address] = utils.get_random_vector(self.word_size)
 
         self.existing_data = existing_data
 
@@ -127,7 +128,7 @@ class SequentialDelay(delay):
             storage_nodes = probe.get_bitcell_storage_nodes()
             for address in range(self.sram.num_words):
                 address_data = list(reversed(existing_data[address]))
-                for col in range(self.sram.word_size):
+                for col in range(self.word_size):
                     col_voltage = self.binary_to_voltage(address_data[col])
                     col_node = storage_nodes[address][col]
                     self.write_ic(ic, col_node, col_voltage)
@@ -258,7 +259,7 @@ class SequentialDelay(delay):
         """Generate voltage at current time for each pwl voltage supply"""
         # control signals
         for key in self.control_sigs:
-            if key in ["sense_trig", "diff", "diffb"]:
+            if key in ["precharge_trig", "sense_trig", "diff", "diffb"]:
                 continue
             self.write_pwl_from_key(key)
 
@@ -469,6 +470,15 @@ class SequentialDelay(delay):
                                      targ_name=label, targ_val=targ_val, targ_dir=targ_dir,
                                      targ_td=self.current_time + self.duty_cycle * self.period)
 
+    def replace_models(self, file_name):
+        if hasattr(OPTS, "model_replacements"):
+            model_replacements = OPTS.model_replacements
+            sed_patterns = "; ".join(["s/{}/{}/g".format(mod, rep)
+                                      for mod, rep in model_replacements])
+            command = ["sed", "--in-place", sed_patterns, file_name]
+            debug.info(1, "Replacing bitcells with command: {}".format(" ".join(command)))
+            subprocess.run(command, shell=False)
+
     def run_drc_lvs_pex(self):
         OPTS.check_lvsdrc = True
         reload(verify)
@@ -477,7 +487,8 @@ class SequentialDelay(delay):
         self.sram.gds_write(OPTS.gds_file)
 
         if OPTS.run_drc:
-            drc_result = verify.run_drc(self.sram.name, OPTS.gds_file, exception_group="sram")
+            drc_result = verify.run_drc(self.sram.drc_gds_name,
+                                        OPTS.gds_file, exception_group="sram")
             if drc_result:
                 raise AssertionError("DRC Failed")
 
@@ -489,6 +500,8 @@ class SequentialDelay(delay):
 
         force_pex = not os.path.exists(OPTS.pex_spice)
         if OPTS.use_pex and (force_pex or OPTS.run_pex):
-            errors = verify.run_pex(self.sram.name, OPTS.gds_file, OPTS.spice_file, OPTS.pex_spice)
+            errors = verify.run_pex(self.sram.name, OPTS.gds_file, OPTS.spice_file, OPTS.pex_spice,
+                                    run_drc_lvs=False)
+            self.replace_models(OPTS.pex_spice)
             if errors:
                 raise AssertionError("PEX failed")

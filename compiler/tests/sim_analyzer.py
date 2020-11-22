@@ -45,7 +45,7 @@ def setup(num_cols_, num_rows_, sim_dir_):
     all_saved_list = list(sim_data.get_signal_names())
     all_saved_signals = "\n".join(sim_data.get_signal_names())
 
-    if os.path.exists(meas_str):
+    if os.path.exists(meas_file):
         meas_str = open(meas_file, 'r').read()
     stim_str = open(stim_file, 'r').read()
 
@@ -164,7 +164,6 @@ def verify_write_event(write_time, write_address, write_period, write_duty, nega
             expected_data[i] = current_data[i]
     settling_time = write_period
     actual_data = get_address_data(write_address, write_time + settling_time)
-
 
     debug_error("Write failure: At time {:.3g} address {}".format(write_time, write_address),
                 expected_data, actual_data)

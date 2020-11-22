@@ -294,32 +294,40 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             width = utils.ceil(min_area / height)
         return width, height
 
-    def get_layer_shapes(self, layer, purpose="drawing", recursive=False):
+    @staticmethod
+    def get_purpose_number(layer, purpose):
+        if purpose is None:
+            return tech_purpose["drawing"] if layer not in tech_purpose else tech_purpose[layer]
+        return tech_purpose[purpose]
+
+    def get_layer_shapes(self, layer, purpose=None, recursive=False):
+
         if self.gds.from_file:
             return self.get_gds_layer_rects(layer, purpose, recursive=recursive)
 
         def filter_match(x):
             return (x.__class__.__name__ == "rectangle" and x.layerNumber == tech_layers[layer] and
-                    x.layerPurpose == tech_purpose[purpose])
+                    x.layerPurpose == self.get_purpose_number(layer, purpose))
 
         return list(filter(filter_match, self.objs))
 
-    def get_gds_layer_shapes(self, cell, layer, purpose="drawing", recursive=False):
+    def get_gds_layer_shapes(self, cell, layer, purpose=None, recursive=False):
+        purpose_number = self.get_purpose_number(layer, purpose)
         if recursive:
-            return cell.gds.getShapesInLayerRecursive(tech_layers[layer],
-                                                      tech_purpose[purpose])
+            return cell.gds.getShapesInLayerRecursive(tech_layers[layer], purpose_number)
         else:
-            return cell.gds.getShapesInLayer(tech_layers[layer], tech_purpose[purpose])
+            return cell.gds.getShapesInLayer(tech_layers[layer], purpose_number)
 
-    def get_gds_layer_rects(self, layer, purpose="drawing", recursive=False):
+    def get_gds_layer_rects(self, layer, purpose=None, recursive=False):
         def rect(shape):
             return rectangle(0, shape[0], width=shape[1][0] - shape[0][0],
                              height=shape[1][1] - shape[0][1])
 
+        purpose_number = self.get_purpose_number(layer, purpose)
         if recursive:
-            boundaries = self.gds.getShapesInLayerRecursive(tech_layers[layer], tech_purpose[purpose])
+            boundaries = self.gds.getShapesInLayerRecursive(tech_layers[layer], purpose_number)
         else:
-            boundaries = self.gds.getShapesInLayer(tech_layers[layer], tech_purpose[purpose])
+            boundaries = self.gds.getShapesInLayer(tech_layers[layer], purpose_number)
         return [rect(x) for x in boundaries]
 
     def get_poly_fills(self, cell):
@@ -485,6 +493,8 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                     top_rects = list(sorted(top_rects, key=lambda x: x.by()))
                     bottom_rects = bottom_module.get_layer_shapes(layer, recursive=True)
                     bottom_rects = list(sorted(bottom_rects, key=lambda x: x.uy(), reverse=True))
+                    if not (top_rects or bottom_rects):  # layer does not exist
+                        continue
                     wide_space = self.get_wide_space(layer)
                     for bottom_rect in bottom_rects:
                         bottom_clearance = reference_bottom.height - bottom_rect.uy()

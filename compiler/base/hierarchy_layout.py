@@ -518,9 +518,13 @@ class layout(lef.lef):
         debug.info(3, "Writing to {0}".format(gds_name))
 
         if not self.rotation_for_drc == GDS_ROT_0:
-            from base.rotation_wrapper import RotationWrapper
-            wrapped_cell = RotationWrapper(self, rotation_angle=self.rotation_for_drc)
-            self.drc_gds_name = wrapped_cell.name
+            if hasattr(self, "wrapped_rot_cell"):
+                wrapped_cell = self.wrapped_rot_cell
+            else:
+                from base.rotation_wrapper import RotationWrapper
+                wrapped_cell = RotationWrapper(self, rotation_angle=self.rotation_for_drc)
+                self.drc_gds_name = wrapped_cell.name
+                self.wrapped_rot_cell = wrapped_cell
             wrapped_cell.gds_write(gds_name)
             return
 

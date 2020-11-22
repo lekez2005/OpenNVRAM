@@ -174,7 +174,7 @@ class LatchedControlLogic(ControlBuffers):
             self.wordline_buf = LogicBufferHorizontal(OPTS.wordline_en_buffers, "pnor2")
             self.add_mod(self.wordline_buf)
 
-        assert len(OPTS.wordline_en_buffers) % 2 == 0, "Number of write buffers should be even"
+        assert len(OPTS.write_buffers) % 2 == 0, "Number of write buffers should be even"
         self.write_buf = LogicBufferHorizontal(OPTS.write_buffers, "pnor2")
         self.add_mod(self.write_buf)
 
@@ -448,7 +448,7 @@ class LatchedControlLogic(ControlBuffers):
     def add_output_pins(self):
         pin_names = ["clk_buf", "clk_bar", "wordline_en", "precharge_en_bar",
                      "write_en", "sense_en", "tri_en", "sample_bar", ]
-        mod_names = ["out_inv", "out", "out", "out", "out_inv", "out_inv", "out_inv", "out"]
+        mod_names = ["out_inv", "out", "out", "out", "out", "out_inv", "out_inv", "out"]
         instances = [self.clk_buf_inst, self.clk_buf_inst, self.wordline_buf_inst,
                      self.precharge_buf_inst, self.write_buf_inst, self.sense_amp_buf_inst,
                      self.tri_en_buf_inst, self.sample_bar_inst]

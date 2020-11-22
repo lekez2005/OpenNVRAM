@@ -270,8 +270,8 @@ usim_opt  rcr_fmax=20G
             self.sf.write("simulatorOptions options reltol=1e-3 vabstol=1e-6 iabstol=1e-12 temp={0} try_fast_op=no "
                           "gmin={1} rforce=10m maxnotes=10 maxwarns=10 "
                           " preservenode=all topcheck=fixall "
-                          "digits=5 cols=80 dc_pivot_check=yes pivrel=1e-3\n".format(self.temperature,
-                                                                                     tech.spice["gmin"]))
+                          "digits=5 cols=80 dc_pivot_check=yes pivrel=1e-3 {2} "
+                          " \n".format(self.temperature, tech.spice["gmin"], OPTS.spectre_simulator_options))
             self.sf.write('dcOp dc write="spectre.dc" readns="spectre.dc" maxiters=150 maxsteps=10000 annotate=status\n')
             tran_options = OPTS.tran_options if hasattr(OPTS, "tran_options") else ""
             self.sf.write('tran tran step={} stop={}n ic={} write=spectre.dc'
@@ -381,8 +381,8 @@ usim_opt  rcr_fmax=20G
             if use_ultrasim:
                 cmd = "{0} -64 {1} -raw {2}".format(OPTS.spice_exe, temp_stim, OPTS.openram_temp)
             else:
-                if hasattr(OPTS, "spectre_options"):
-                    extra_options = OPTS.spectre_options
+                if hasattr(OPTS, "spectre_command_options"):
+                    extra_options = OPTS.spectre_command_options
                 else:
                     extra_options = " +aps +mt={} ".format(OPTS.simulator_threads)
                 if OPTS.use_pex:

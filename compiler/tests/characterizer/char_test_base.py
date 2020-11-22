@@ -122,7 +122,7 @@ class CharTestBase(testutils.OpenRamTest):
 
         OPTS.analytical_delay = False
         OPTS.spice_name = self.options.spice_name
-        OPTS.spectre_options = " +aps +mt=16 "
+        OPTS.spectre_command_options = " +aps +mt=16 "
 
         self.set_beta(self.options)
 
@@ -337,7 +337,7 @@ mvarsearch {{
 
             if self.options.use_mdl:
                 stim_file.write(".PARAM Cload=1f\n")
-                OPTS.spectre_options = " =mdlcontrol optimize.mdl "
+                OPTS.spectre_command_options = " =mdlcontrol optimize.mdl "
 
                 self.mdl_file = self.prefix("optimize.mdl")
                 with open(self.mdl_file, "w") as mdl_file:

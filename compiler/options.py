@@ -62,6 +62,7 @@ class options(optparse.Values):
 
     spectre_format = "psfbin"
     spectre_ic_mode = "node"
+    spectre_simulator_options = " "
     decoder_flops = False
 
     verbose_save = False  # whether to save all lots of internal nodes e.g. cols for control signals, currents

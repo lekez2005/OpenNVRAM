@@ -223,7 +223,7 @@ class hierarchical_decoder(design.design):
             pins.append("clk")
         pins.extend(["vdd", "gnd"])
 
-        self.pre2x4_inst.append(self.add_inst(name="pre2x4_{0}".format(num),
+        self.pre2x4_inst.append(self.add_inst(name="pre_{0}".format(num),
                                                  mod=self.get_pre2x4_mod(num),
                                                  offset=base,
                                                  mirror=mirror))
@@ -273,7 +273,8 @@ class hierarchical_decoder(design.design):
             pins.append("clk")
         pins.extend(["vdd", "gnd"])
 
-        self.pre3x8_inst.append(self.add_inst(name="pre3x8_{0}".format(num),
+        pre_num = len(self.pre2x4_inst) + num
+        self.pre3x8_inst.append(self.add_inst(name="pre_{0}".format(pre_num),
                                               mod=self.get_pre3x8_mod(num),
                                               offset=offset,
                                               mirror=mirror))

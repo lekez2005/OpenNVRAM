@@ -22,6 +22,7 @@ class FlopArray(dual_bitcell_aligned_array):
     mod_rotation = GDS_ROT_90
 
     name = "flop_array"
+    instance_name_prefix = "dff"
     mod_name = OPTS.flop_class
     horizontal_pins = ["clk", "vdd", "gnd"]
     bus_pins = ["din", "dout", "dout_bar"]

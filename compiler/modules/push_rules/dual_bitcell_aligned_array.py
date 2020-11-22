@@ -19,6 +19,7 @@ class dual_bitcell_aligned_array(design, ABC):
     rotation_for_drc = GDS_ROT_270  # rotation of full for DRC runs
     mirror = True  # Mirror instances
     num_dummies = 1
+    instance_name_prefix = "child_mod_"
 
     @property
     def name(self):
@@ -92,7 +93,7 @@ class dual_bitcell_aligned_array(design, ABC):
 
         for i in range(int(self.word_size / 2)):
             x_offset = self.get_x_offset(i)
-            name = self.child_mod.child_mod.name + "_{}".format(i)
+            name = self.instance_name_prefix + "{}".format(i)
             if self.mirror and i % 2 == 1:
                 placement_x = x_offset + self.child_mod.width
                 mirror = "MY"

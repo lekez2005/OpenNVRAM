@@ -22,6 +22,7 @@ class TriGateArray(dual_bitcell_aligned_array):
     mod_rotation = GDS_ROT_90
 
     name = "tri_gate_array"
+    instance_name_prefix = "tri_gate"
     mod_name = OPTS.tri_gate_class
     horizontal_pins = ["en", "vdd", "gnd"]
     bus_pins = ["in", "out"]

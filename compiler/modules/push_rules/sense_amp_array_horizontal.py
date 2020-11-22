@@ -24,6 +24,7 @@ class SenseAmpArray(dual_bitcell_aligned_array):
     mod_rotation = GDS_ROT_90
 
     name = "sense_amp_array"
+    instance_name_prefix = "sa_d"
     mod_name = OPTS.sense_amp_class
     horizontal_pins = ["en", "preb", "sampleb", "vdd", "gnd"]
     bus_pins = ["bl", "br", "dout", "dout_bar"]

@@ -169,7 +169,7 @@ class wordline_buffer_array(design):
                 mirror = ""
 
             offset = vector(0, y_offset)
-            buffer_inst = self.add_inst("buffer_{}".format(i), self.buffer, offset=offset,
+            buffer_inst = self.add_inst("driver{}".format(i), self.buffer, offset=offset,
                                         mirror=mirror)
             self.connect_inst(["decode[{}]".format(i), "wl_bar[{}]".format(i),
                                "wl[{}]".format(i), "vdd", "gnd"])

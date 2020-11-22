@@ -1,5 +1,6 @@
 from typing import List
 
+import debug
 from base.contact import cross_m2m3, m2m3, m3m4, m1m2, contact
 from base.design import METAL2, METAL1, METAL3, METAL4
 from base.geometry import instance
@@ -66,12 +67,9 @@ class HorizontalBank(CmosBank):
         if current_inst_name == "tri_gate_array":
             args.remove("tri_en_bar")
         elif current_inst_name == "write_driver_array":
-            args.remove("write_en_bar")
-        elif current_inst_name == "mask_in":
-            # swap mask and mask bar
             args = " ".join(args)
-            args = args.replace("mask_in_bar", "old_bar").replace("mask_in", "mask_in_bar")
-            args = args.replace("old_bar", "mask_in").split()
+            args = args.replace("mask_in_bar", "mask_in").split()
+            args.remove("write_en_bar")
         super().connect_inst(args, check)
 
     def create_control_buffers(self):
@@ -290,9 +288,14 @@ class HorizontalBank(CmosBank):
                               width=width, height=height + y_space)
 
     def fill_modules(self):
+        debug.info(1, "Filling space between modules")
+
         def fill_dual_mirror(bottom_inst, top_inst):
             """Fill between modules that are mirrored in groups of two"""
+            debug.info(2, "Fill space between {} and {}".format(bottom_inst.name,
+                                                                top_inst.name))
             y_space_ = top_inst.by() - bottom_inst.uy()
+            debug.info(2, "y_space = {:.3g}".format(y_space_))
             self.fill_vertical_space(bottom_inst.mod.child_insts[0],
                                      top_inst.mod.child_insts[0],
                                      top_inst.mod.child_insts[::2], y_space_, top_inst)
@@ -311,6 +314,7 @@ class HorizontalBank(CmosBank):
         fill_dual_mirror(self.mask_in_flops_inst, self.data_in_flops_inst)
 
         # data flop -> write driver
+        debug.info(2, "Fill space between data flop and write driver")
         y_space = self.write_driver_array_inst.by() - self.data_in_flops_inst.uy()
         fill_single_mirror(self.data_in_flops_inst, self.write_driver_array_inst, 0, 0)
         fill_single_mirror(self.data_in_flops_inst, self.write_driver_array_inst, 0, 1)
@@ -318,6 +322,7 @@ class HorizontalBank(CmosBank):
         fill_single_mirror(self.data_in_flops_inst, self.write_driver_array_inst, 1, 3)
 
         # write_driver -> sense amp
+        debug.info(2, "Fill space between write driver and sense amp")
         y_space = self.sense_amp_array_inst.by() - self.write_driver_array_inst.uy()
         fill_single_mirror(self.write_driver_array_inst, self.sense_amp_array_inst, 0, 0, 2)
         fill_single_mirror(self.write_driver_array_inst, self.sense_amp_array_inst, 1, 0, 2)
@@ -325,6 +330,7 @@ class HorizontalBank(CmosBank):
         fill_single_mirror(self.write_driver_array_inst, self.sense_amp_array_inst, 3, 1, 2)
 
         # sense amp -> precharge
+        debug.info(2, "Fill space between sense amp and precharge")
         y_space = self.precharge_array_inst.by() - self.sense_amp_array_inst.uy()
         if self.col_mux_array_inst is None:
             fill_single_mirror(self.sense_amp_array_inst, self.precharge_array_inst, 0, 0)
@@ -680,6 +686,7 @@ class HorizontalBank(CmosBank):
 
     def route_intra_array_power_grid(self):
         """Route M4 power in between bitcell array"""
+        debug.info(1, "Route intra-array power grid")
         bitcell_power = (self.bitcell_array_inst.get_pins("vdd")
                          + self.bitcell_array_inst.get_pins("gnd"))
         bitcell_power = [x for x in bitcell_power if x.layer == METAL3]

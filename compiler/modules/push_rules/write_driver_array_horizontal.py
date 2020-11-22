@@ -23,6 +23,7 @@ class WriteDriverArray(bitcell_aligned_array):
     mod_rotation = GDS_ROT_90
 
     name = "write_driver_array"
+    instance_name_prefix = "driver_"
     mod_name = OPTS.write_driver_class
     horizontal_pins = ["en", "vdd", "gnd"]
     bus_pins = ["bl", "br", "data", "data_bar", "mask"]

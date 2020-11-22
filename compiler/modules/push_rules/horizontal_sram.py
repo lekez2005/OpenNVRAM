@@ -1,3 +1,4 @@
+import debug
 from base.contact import m1m2, cross_m2m3, m2m3, m3m4
 from base.design import METAL2, METAL3, METAL1, METAL4
 from base.hierarchy_layout import GDS_ROT_270
@@ -14,6 +15,7 @@ class HorizontalSram(CmosSram):
         """Words will be split across banks in case of two banks"""
         assert num_banks in [1, 2], "Only one or two banks supported"
         assert word_size % 2 == 0, "Word-size must be even"
+        assert words_per_row == 1, "Only one word per row supported"
         if num_banks == 2:
             word_size = int(word_size / 2)
         super().__init__(word_size, num_words, num_banks, name, words_per_row)
@@ -31,16 +33,21 @@ class HorizontalSram(CmosSram):
 
     def route_layout(self):
         super().route_layout()
+        debug.info(1, "Route sram decoder enable bank")
         self.route_decoder_enable()
+        debug.info(1, "Route left bank sram power")
         self.route_left_bank_power()
+        debug.info(1, "Route sram power grid")
         self.route_power_grid()
 
     def create_bank(self):
+        debug.info(1, "Creating right bank")
         self.bank = HorizontalBank(name="bank", word_size=self.word_size,
                                    num_words=self.num_words_per_bank,
                                    words_per_row=self.words_per_row, num_banks=self.num_banks)
         self.add_mod(self.bank)
         if self.num_banks == 2:
+            debug.info(1, "Creating left bank")
             self.left_bank = HorizontalBank(name="left_bank", word_size=self.word_size,
                                             num_words=self.num_words_per_bank,
                                             words_per_row=self.words_per_row,

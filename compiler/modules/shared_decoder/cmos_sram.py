@@ -1,3 +1,4 @@
+import debug
 from base import utils
 from base.contact import m1m2, m2m3
 from base.design import METAL1, METAL2, NWELL, METAL3
@@ -27,6 +28,7 @@ class CmosSram(sram):
         self.route_layout()
 
     def create_modules(self):
+        debug.info(1, "Create sram modules")
         self.create_bank()
         self.row_decoder = self.bank.decoder
         self.min_point = self.bank.min_point
@@ -35,6 +37,7 @@ class CmosSram(sram):
         self.create_column_decoder()
 
     def add_modules(self):
+        debug.info(1, "Add sram modules")
         self.right_bank_inst = self.bank_inst = self.add_bank(0, vector(0, 0), x_flip=0, y_flip=0)
         self.bank_insts = [self.right_bank_inst]
         if self.num_banks == 1:
@@ -49,6 +52,7 @@ class CmosSram(sram):
             self.bank_insts.append(self.left_bank_inst)
 
     def route_layout(self):
+        debug.info(1, "Route sram")
         self.route_column_decoder()
         self.route_row_decoder_clk()
         self.join_decoder_wells()

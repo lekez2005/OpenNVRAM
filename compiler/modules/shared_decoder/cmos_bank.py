@@ -1,3 +1,4 @@
+import debug
 from base import utils
 from base.contact import m2m3, m3m4, m1m2, contact, cross_m2m3, cross_m1m2
 from base.design import PIMP, NIMP, METAL1, METAL2, METAL3, METAL4
@@ -47,16 +48,25 @@ class CmosBank(BaselineBank):
         self.add_vdd_gnd_rails()
 
     def route_layout(self):
-
+        debug.info(1, "Route control buffers")
         self.route_control_buffer()
+        debug.info(1, "Route control flops")
         self.route_control_flops()
+        debug.info(1, "Route precharge")
         self.route_precharge()
+        debug.info(1, "Route column mux")
         self.route_column_mux()
+        debug.info(1, "Route sense amp")
         self.route_sense_amp()
+        debug.info(1, "Route bitcells")
         self.route_bitcell()
+        debug.info(1, "Route write driver")
         self.route_write_driver()
+        debug.info(1, "Route mask and data flops")
         self.route_flops()
+        debug.info(1, "Route tri state array")
         self.route_tri_gate()
+        debug.info(1, "Route wordline driver")
         self.route_wordline_driver()
 
         if hasattr(OPTS, "right_buffers_x_actual"):

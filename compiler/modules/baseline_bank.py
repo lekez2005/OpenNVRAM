@@ -45,13 +45,17 @@ class BaselineBank(design, ControlBuffersMixin):
 
         self.compute_sizes()
         self.add_pins()
+        debug.info(1, "Create modules")
         self.create_modules()
+        debug.info(1, "Calculate rail offsets")
         self.calculate_rail_offsets()
+        debug.info(1, "Add modules")
         self.add_modules()
+        debug.info(1, "Route bank layout")
         self.route_layout()
         self.calculate_dimensions()
         self.add_lvs_correspondence_points()
-
+        debug.info(1, "Offset bank coordinates to origin")
         self.offset_all_coordinates()
 
     def set_modules(self, mod_list):
@@ -210,6 +214,9 @@ class BaselineBank(design, ControlBuffersMixin):
     def create_module(self, mod_name, *args, **kwargs):
         if mod_name not in self.get_module_list():
             return
+        debug.info(2, "Creating module {} with args {} {}".format(mod_name,
+                                                                  " ".join(map(str, args)),
+                                                                  kwargs))
         mod = getattr(self, 'mod_' + mod_name)(*args, **kwargs)
         self.add_mod(mod)
         return mod

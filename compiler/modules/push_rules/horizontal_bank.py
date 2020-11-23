@@ -1,6 +1,7 @@
 from typing import List
 
 import debug
+from base import utils
 from base.contact import cross_m2m3, m2m3, m3m4, m1m2, contact
 from base.design import METAL2, METAL1, METAL3, METAL4
 from base.geometry import instance
@@ -204,9 +205,50 @@ class HorizontalBank(CmosBank):
                     - self.control_flop.width)
         # place below predecoder
         flop_vdd = self.control_flop.get_pins("vdd")[0]
-        y_offset = (self.bitcell_array_inst.uy() - self.decoder.height - self.bitcell.height
-                    - flop_vdd.height()
-                    - 2 * self.poly_pitch - 2 * self.control_flop.height)
+        row_decoder_flop_space = flop_vdd.height() + 2 * self.poly_pitch
+        space = utils.ceil(1.2 * self.bus_space)
+        row_decoder_col_decoder_space = flop_vdd.height() + 2 * space + self.bus_width
+
+        # y offset based on control buffer
+        y_offset_control_buffer = self.control_buffers_inst.cy() - self.control_flop.height
+
+        row_decoder_y = self.bitcell_array_inst.uy() - self.decoder.height - self.bitcell.height
+        y_offset = row_decoder_y - row_decoder_flop_space - 2 * self.control_flop.height
+
+        # check if we can squeeze column decoder between predecoder and control flops
+        self.col_decoder_is_left = False
+        if self.words_per_row > 1:
+            if self.words_per_row == 2:
+                col_decoder_height = self.control_flop.height
+            elif self.words_per_row == 4:
+                col_decoder_height = self.decoder.pre2_4.height
+            else:
+                col_decoder_height = self.decoder.pre3_8.height
+
+            rail_space_above_controls = row_decoder_flop_space + (1 + self.words_per_row) * self.bus_pitch
+
+            if row_decoder_y - row_decoder_col_decoder_space - col_decoder_height - row_decoder_col_decoder_space > \
+                    y_offset_control_buffer + 2 * self.control_flop.height:
+                # predecoder is above control flops
+                y_offset = y_offset_control_buffer
+                self.col_decoder_y = row_decoder_y - row_decoder_col_decoder_space - col_decoder_height
+            elif row_decoder_y - row_decoder_col_decoder_space - col_decoder_height > \
+                    (y_offset_control_buffer + 2 * self.control_flop.height + rail_space_above_controls):
+                # predecoder is still above control flops but move control flops down
+                # if predecoder had been moved left, the rails above the control flops would have still
+                # required moving control flops down anyway
+                y_offset = (row_decoder_y - row_decoder_col_decoder_space - col_decoder_height -
+                            rail_space_above_controls - 2 * self.control_flop.height)
+                self.col_decoder_y = y_offset + 2 * self.control_flop.height + rail_space_above_controls
+            else:
+                # predecoder will be moved left
+                self.col_decoder_is_left = True
+                y_offset = (row_decoder_y - row_decoder_flop_space - rail_space_above_controls
+                            - 2 * self.control_flop.height)
+                self.col_decoder_y = row_decoder_y - row_decoder_col_decoder_space - col_decoder_height
+                self.rail_space_above_controls = rail_space_above_controls
+            self.min_point = min(self.min_point, self.col_decoder_y - self.rail_height)
+
         # place close to control_buffers
         y_offset = min(y_offset, self.control_buffers_inst.cy() - self.control_flop.height)
         # ensure no clash with rails above control_buffer
@@ -215,6 +257,7 @@ class HorizontalBank(CmosBank):
         if y_offset + 2 * self.control_flop.height > leftmost_top_rail.by() - wide_space:
             x_offset = leftmost_top_rail.by() - wide_space - 2 * self.control_flop.height
 
+        self.control_flop_y = y_offset
         return x_offset, y_offset
 
     def get_non_flop_control_inputs(self):

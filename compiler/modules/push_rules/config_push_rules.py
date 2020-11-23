@@ -100,7 +100,7 @@ tri_en_buffers = [1, 2.6, 6.7, 17.4, 45]
 precharge_buffers = [1, 3.9, 15, 60]
 precharge_size = 1.5
 
-column_decoder_buffers = [2, 2]
+column_decoder_buffers = [4, 4]
 
 # default sizes config
 word_size = 64

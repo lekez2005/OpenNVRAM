@@ -620,15 +620,8 @@ class BaselineBank(design, ControlBuffersMixin):
 
     def add_cross_contact_center(self, cont, offset, rotate=False,
                                  rail_width=None):
-        if rail_width is None:
-            rail_width = self.bus_width
         super().add_cross_contact_center(cont, offset, rotate)
-        if rotate:
-            layers = cont.layer_stack[0], cont.layer_stack[2]
-        else:
-            layers = cont.layer_stack[2], cont.layer_stack[0]
-        self.add_rect_center(layers[1], offset=offset, width=rail_width, height=cont.height)
-        self.add_rect_center(layers[0], offset=offset, width=cont.height, height=rail_width)
+        self.add_cross_contact_center_fill(cont, offset, rotate, rail_width)
 
     def add_control_rail(self, rail_name, dest_pins, x_offset, y_offset):
         control_pin = self.control_buffers_inst.get_pin(rail_name)

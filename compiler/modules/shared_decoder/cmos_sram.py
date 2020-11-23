@@ -34,6 +34,8 @@ class CmosSram(sram):
         self.min_point = self.bank.min_point
         self.fill_width = self.bank.fill_width
         self.fill_height = self.bank.fill_height
+        self.row_decoder_y = (self.bank.bitcell_array_inst.uy() - self.row_decoder.height
+                              - self.bank.bitcell.height)
         self.create_column_decoder()
 
     def add_modules(self):
@@ -68,20 +70,28 @@ class CmosSram(sram):
                              words_per_row=self.words_per_row, num_banks=self.num_banks)
         self.add_mod(self.bank)
 
+    def create_column_decoder_modules(self):
+        buffer_sizes = [OPTS.predecode_sizes[0]] + OPTS.column_decoder_buffers[1:]
+        if self.words_per_row == 2:
+            self.column_decoder = FlopBuffer(OPTS.control_flop, OPTS.column_decoder_buffers)
+        elif self.words_per_row == 4:
+            self.column_decoder = hierarchical_predecode2x4(use_flops=True, buffer_sizes=buffer_sizes)
+        else:
+            self.column_decoder = hierarchical_predecode3x8(use_flops=True, buffer_sizes=buffer_sizes)
+
     def create_column_decoder(self):
         if self.words_per_row < 2:
             return
         assert self.words_per_row <= 8, "Maximum of 8 words per row supported"
+        self.create_column_decoder_modules()
         col_decoder_clk = "clk_buf_1" if self.num_banks == 1 else "clk_buf_2"
         if self.words_per_row == 2:
-            self.column_decoder = column_decoder = FlopBuffer(OPTS.control_flop, OPTS.column_decoder_buffers)
+            column_decoder = self.column_decoder
             column_decoder.pins = ["din", "clk", "dout", "dout_bar", "vdd", "gnd"]
             column_decoder.copy_layout_pin(column_decoder.buffer_inst, "out_inv", "dout_bar")
             self.col_decoder_connections = ["ADDR[{}]".format(self.bank_addr_size - 1), col_decoder_clk,
                                             "sel[1]", "sel[0]", "vdd", "gnd"]
         else:
-
-            buffer_sizes = [OPTS.predecode_sizes[0]] + OPTS.column_decoder_buffers[1:]
             self.col_decoder_connections = []
             for i in reversed(range(self.col_addr_size)):
                 self.col_decoder_connections.append("ADDR[{}]".format(self.bank_addr_size - 1 - i))
@@ -89,10 +99,6 @@ class CmosSram(sram):
                 self.col_decoder_connections.append("sel[{}]".format(i))
             self.col_decoder_connections.extend([col_decoder_clk, "vdd", "gnd"])
 
-            if self.words_per_row == 4:
-                self.column_decoder = hierarchical_predecode2x4(use_flops=True, buffer_sizes=buffer_sizes)
-            else:
-                self.column_decoder = hierarchical_predecode3x8(use_flops=True, buffer_sizes=buffer_sizes)
         self.add_mod(self.column_decoder)
 
     def add_pins(self):
@@ -267,7 +273,10 @@ class CmosSram(sram):
     def add_power_rails(self):
         bank_vdd = self.bank.mid_vdd
         y_offset = bank_vdd.by()
-        x_offset = self.row_decoder_inst.lx() - self.wide_space - bank_vdd.width()
+        min_decoder_x = self.row_decoder_inst.lx()
+        if self.column_decoder_inst is not None:
+            min_decoder_x = min(min_decoder_x, self.column_decoder_inst.lx() - 2 * self.bus_pitch)
+        x_offset = min_decoder_x - self.wide_space - bank_vdd.width()
         self.mid_vdd = self.add_rect(METAL2, offset=vector(x_offset, y_offset), width=bank_vdd.width(),
                                      height=bank_vdd.height())
 
@@ -793,3 +802,8 @@ class CmosSram(sram):
 
     def add_lvs_correspondence_points(self):
         pass
+
+    def add_cross_contact_center(self, cont, offset, rotate=False,
+                                 rail_width=None):
+        super().add_cross_contact_center(cont, offset, rotate)
+        self.add_cross_contact_center_fill(cont, offset, rotate, rail_width)

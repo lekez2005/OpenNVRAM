@@ -452,6 +452,18 @@ class layout(lef.lef):
             via_y = offset.y - 0.5 * cont.height
         self.add_inst(cont.name, cont, offset=vector(via_x, via_y), rotate=rotate)
         self.connect_inst([])
+
+    def add_cross_contact_center_fill(self, cont, offset, rotate=False, rail_width=None):
+        if rail_width is None:
+            rail_width = self.bus_width
+        if rotate:
+            layers = cont.layer_stack[0], cont.layer_stack[2]
+        else:
+            layers = cont.layer_stack[2], cont.layer_stack[0]
+        self.add_rect_center(layers[1], offset=offset, width=rail_width, height=cont.height)
+        self.add_rect_center(layers[0], offset=offset, width=cont.height, height=rail_width)
+
+
     
     def add_ptx(self, offset, mirror="R0", rotate=0, width=1, mults=1, tx_type="nmos"):
         """Adds a ptx module to the design."""

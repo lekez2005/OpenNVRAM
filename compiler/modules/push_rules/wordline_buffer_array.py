@@ -174,9 +174,9 @@ class wordline_buffer_array(design):
             self.connect_inst(["decode[{}]".format(i), "wl_bar[{}]".format(i),
                                "wl[{}]".format(i), "vdd", "gnd"])
             self.buffer_insts.append(buffer_inst)
-
+        self.tap_insts = []
         for y_offset in self.tap_offsets:
-            self.add_inst(self.tap.name, self.tap, offset=vector(0, y_offset))
+            self.tap_insts.append(self.add_inst(self.tap.name, self.tap, offset=vector(0, y_offset)))
             self.connect_inst([])
 
     def add_layout_pins(self):

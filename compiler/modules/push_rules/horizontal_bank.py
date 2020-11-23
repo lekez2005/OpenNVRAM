@@ -35,7 +35,7 @@ class HorizontalBank(CmosBank):
     def get_module_list():
         return ["bitcell", "decoder", "ms_flop_array", "wordline_buffer",
                 "bitcell_array", "sense_amp_array", "precharge_array",
-                "write_driver_array", "tri_gate_array", "flop_buffer"]
+                "write_driver_array", "tri_gate_array", "flop_buffer", "column_mux_array"]
 
     def get_vdd_gnd_rail_layers(self):
         return [METAL2] * 6
@@ -246,8 +246,14 @@ class HorizontalBank(CmosBank):
     def get_precharge_mirror(self):
         return ""
 
+    def get_column_mux_array_y(self):
+        space = 2 * (self.m3_width + self.get_parallel_space(METAL3))
+        return self.sense_amp_array_inst.uy() + space
+
     def get_precharge_y(self):
-        return self.get_module_y_space(self.sense_amp_array_inst, self.precharge_array)
+        if self.col_mux_array_inst is None:
+            return self.get_module_y_space(self.sense_amp_array_inst, self.precharge_array)
+        return self.col_mux_array_inst.uy()
 
     def add_wordline_driver(self):
         x_offset = self.mid_vdd_offset - (self.wordline_buffer.width + self.wide_m1_space)
@@ -422,6 +428,7 @@ class HorizontalBank(CmosBank):
             self.add_power_via(pin, self.right_gnd, via_rotate)
 
     def route_sense_amp(self):
+        self.connect_sense_amp_bitlines()
         self.route_all_power(self.sense_amp_array_inst)
 
     def route_bitcell(self):
@@ -448,21 +455,29 @@ class HorizontalBank(CmosBank):
             fill_width = self.medium_m3
             fill_width, fill_height = self.calculate_min_m1_area(fill_width, layer=METAL3)
             # connect bitline to sense amp
-            for pin_name in ["bl", "br"]:
+            data_pin_y = self.sense_amp_array_inst.get_pin("data[0]").by()
+            y_base = data_pin_y - self.get_line_end_space(METAL2) - self.m2_width
+            pin_names = ["bl", "br"]
+            for i in range(2):
+                pin_name = pin_names[i]
+                y_offset = y_base - (1 - i) * self.m2_pitch
                 sense_pin = self.sense_amp_array_inst.get_pin(pin_name + "[{}]".format(col))
                 driver_pin = self.write_driver_array_inst.get_pin(pin_name + "[{}]".format(col))
+                x_offset = driver_pin.cx() - 0.5 * self.m2_width
+                self.add_rect(METAL2, offset=vector(x_offset, driver_pin.uy()),
+                              height=y_offset - driver_pin.uy() + self.m2_width)
+                self.add_rect(METAL2, offset=vector(x_offset, y_offset),
+                              width=sense_pin.cx() - x_offset)
                 x_offset = sense_pin.cx() - 0.5 * self.m2_width
-                self.add_rect(METAL2, offset=vector(driver_pin.lx(), driver_pin.uy() - self.m2_width),
-                              width=x_offset - driver_pin.lx())
-                self.add_rect(METAL2, offset=vector(x_offset, driver_pin.uy() - self.m2_width),
-                              height=sense_pin.by() - driver_pin.uy() + self.m2_width)
+                self.add_rect(METAL2, offset=vector(x_offset, y_offset),
+                              height=sense_pin.by() - y_offset + self.m2_width)
+
                 self.add_rect(METAL3, offset=vector(sense_pin.cx() - 0.5 * fill_width,
                                                     sense_pin.by()),
                               width=fill_width, height=fill_height)
                 via_offset = vector(x_offset, sense_pin.by())
                 self.add_contact(m2m3.layer_stack, offset=via_offset)
                 self.add_contact(m3m4.layer_stack, offset=via_offset)
-
             # route data_bar
             flop_pin = self.data_in_flops_inst.get_pin("dout_bar[{}]".format(col))
             driver_pin = self.write_driver_array_inst.get_pin("data_bar[{}]".format(col))
@@ -493,16 +508,20 @@ class HorizontalBank(CmosBank):
             flop_pin = self.mask_in_flops_inst.get_pin("dout[{}]".format(col))
 
             # m2 from mask to align with data flop
-            y_offset = data_in.by()
+            y_offset = flop_pin.uy() + self.get_line_end_space(METAL2)
+            self.add_rect(METAL2, offset=flop_pin.ul(), width=flop_pin.width(),
+                          height=y_offset + self.m2_width - flop_pin.uy())
             x_offset = driver_pin.lx()
             if col % 2 == 0:
-                self.add_rect(METAL2, offset=vector(flop_pin.lx(), flop_pin.uy()),
+                self.add_rect(METAL2, offset=vector(flop_pin.lx(), y_offset),
                               width=x_offset - flop_pin.lx())
             else:
-                self.add_rect(METAL2, offset=vector(flop_pin.rx(), flop_pin.uy()),
+                self.add_rect(METAL2, offset=vector(flop_pin.rx(), y_offset),
                               width=x_offset - flop_pin.rx())
-            self.add_rect(METAL2, offset=vector(x_offset, flop_pin.uy()),
-                          height=y_offset - flop_pin.uy())
+
+            self.add_rect(METAL2, offset=vector(x_offset, y_offset),
+                          height=data_in.by() - y_offset)
+            y_offset = data_in.by()
             # via from m2 to m4
             via_offset = vector(x_offset, y_offset)
             self.add_contact(m2m3.layer_stack, offset=via_offset)
@@ -602,9 +621,9 @@ class HorizontalBank(CmosBank):
                 self.add_rect(METAL3, offset=vector(mask_in.lx(), sense_out_y),
                               width=sense_out.lx() - mask_in.lx(), height=m3m4.height)
             y_offset = sense_out_y + m3m4.height
-            self.add_contact(m2m3.layer_stack, offset=vector(sense_out.lx(), y_offset))
-            self.add_rect(METAL2, offset=vector(sense_out.lx(), y_offset),
-                          width=sense_out.width(), height=sense_out.by() - y_offset)
+            self.add_contact(m2m3.layer_stack, offset=vector(sense_out.lx(), sense_out.by()))
+            self.add_rect(METAL3, offset=vector(sense_out.lx(), y_offset), width=sense_out.width(),
+                          height=sense_out.by() - y_offset)
 
             # tri output to data pin
             tri_out = self.tri_gate_array_inst.get_pin("out[{}]".format(word))

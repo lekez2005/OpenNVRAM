@@ -16,8 +16,13 @@ class column_mux(design):
 class ColumnMuxArrayHorizontal(single_level_column_mux_array):
     rotation_for_drc = GDS_ROT_270
 
+    def add_pins(self):
+        super().add_pins()
+        self.add_pin("vdd")
+
     def add_modules(self):
         self.mux = self.create_mod_from_str(OPTS.column_mux_class, rotation=GDS_ROT_90)
+        self.child_mod = self.mux
 
     def setup_layout_constants(self):
         self.route_height = (self.words_per_row + 2) * self.bus_pitch + self.get_line_end_space(METAL2)

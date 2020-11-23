@@ -41,13 +41,13 @@ class BankTest(TestBase):
             bank_class = CmosBank
         else:
             bank_class = SotfetMramBank
-        return bank_class
+        return bank_class, {}
 
     def sweep_all(self, rows=None, cols=None, words_per_row=None, default_row=64, default_col=64):
         from base import design
         from globals import OPTS
 
-        bank_class = self.get_bank_class()
+        bank_class, kwargs = self.get_bank_class()
 
         OPTS.run_optimizations = False
 
@@ -66,7 +66,7 @@ class BankTest(TestBase):
                     word_size = int(col / words_per_row_)
                     num_words = row * words_per_row_
                     a = bank_class(word_size=word_size, num_words=num_words, words_per_row=words_per_row_,
-                                   name="bank1", is_left_bank=True)
+                                   name="bank1", **kwargs)
 
                     self.local_check(a)
             row = default_row

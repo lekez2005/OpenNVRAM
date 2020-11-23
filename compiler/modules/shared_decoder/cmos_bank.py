@@ -187,12 +187,15 @@ class CmosBank(BaselineBank):
                     wide_space - self.control_flop.width)
         return x_offset, y_offset
 
+    def get_column_mux_array_y(self):
+        return self.sense_amp_array_inst.uy()
+
     def add_column_mux_array(self):
         if self.col_addr_size == 0:
             self.col_mux_array_inst = None
             return
 
-        y_offset = self.sense_amp_array_inst.uy()
+        y_offset = self.get_column_mux_array_y()
         self.col_mux_array_inst = self.add_inst(name="column_mux_array", mod=self.column_mux_array,
                                                 offset=vector(self.sense_amp_array_inst.lx(), y_offset))
         temp = []
@@ -356,9 +359,6 @@ class CmosBank(BaselineBank):
                 m2_m4_via_pins = [precharge_pin]
                 if self.col_mux_array_inst is not None:
                     m2_m4_via_pins.append(bottom_pin)
-                    if col % self.words_per_row == 0:
-                        bit = int(col / self.words_per_row)
-                        m2_m4_via_pins.append(self.sense_amp_array_inst.get_pin(pin_name + "[{}]".format(bit)))
 
                 for m2_m4_via_pin in m2_m4_via_pins:
                     offset = vector(m2_m4_via_pin.cx() - 0.5 * m2m3.width,
@@ -385,7 +385,44 @@ class CmosBank(BaselineBank):
         for pin in self.col_mux_array_inst.get_pins("gnd"):
             self.route_gnd_pin(pin)
 
+    def connect_sense_amp_bitlines(self):
+        top_inst = (self.precharge_array_inst if self.col_mux_array_inst is None
+                    else self.col_mux_array_inst)
+        sense_pins = ["bl", "br"]
+        top_pins = ["bl_out", "br_out"] if self.col_mux_array_inst is not None else sense_pins
+        for col in range(self.word_size):
+            for i in range(2):
+                top_pin = top_inst.get_pin(top_pins[i] + "[{}]".format(col))
+                sense_pin = self.sense_amp_array_inst.get_pin(sense_pins[i] + "[{}]".format(col))
+
+                if sense_pin.cx() == top_pin.cx():
+                    self.add_rect(sense_pin.layer, sense_pin.ul(), width=sense_pin.width(),
+                                  height=top_pin.by() - sense_pin.uy())
+                    offset = vector(sense_pin.cx(), top_pin.by() - 0.5 * m2m3.height)
+                    self.add_contact_center(m2m3.layer_stack, offset=offset)
+                    self.add_contact_center(m3m4.layer_stack, offset=offset)
+                    self.add_rect_center(METAL3, offset=offset,
+                                         width=self.fill_width, height=self.fill_height)
+                else:
+                    y_offset = sense_pin.uy() + (1 - i) * self.m3_pitch
+                    via_y = y_offset + self.m3_width - 0.5 * m3m4.height
+                    self.add_rect(METAL4, sense_pin.ul(), width=sense_pin.width(),
+                                  height=via_y + 0.5 * m3m4.height - sense_pin.uy())
+                    self.add_contact_center(m3m4.layer_stack,
+                                            offset=vector(sense_pin.cx(), via_y))
+                    self.add_rect(METAL3, offset=vector(sense_pin.cx(), y_offset),
+                                  width=top_pin.cx() - sense_pin.cx())
+                    self.add_cross_contact_center(cross_m2m3, rail_width=top_pin.width(),
+                                                  offset=vector(top_pin.cx(),
+                                                                y_offset + 0.5 * self.m3_width))
+                    self.add_rect(METAL2,
+                                  offset=vector(top_pin.lx(), y_offset), width=top_pin.width(),
+                                  height=top_pin.by() - y_offset)
+
     def route_sense_amp(self):
+
+        self.connect_sense_amp_bitlines()
+
         dummy_contact = contact(m1m2.layer_stack, dimensions=[2, 1])
 
         pin_list = self.sense_amp_array.pin_map.values()

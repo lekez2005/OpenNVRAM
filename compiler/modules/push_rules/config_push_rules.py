@@ -32,6 +32,7 @@ write_driver_tap = "write_driver_mask_3x_tap"
 
 column_mux_mod = "push_rules/tgate_column_mux_push_hs"
 column_mux_class = "column_mux_array_horizontal.column_mux"
+column_mux_array = "column_mux_array_horizontal.ColumnMuxArrayHorizontal"
 
 # modules
 decoder_flops = True

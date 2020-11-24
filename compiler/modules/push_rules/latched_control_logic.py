@@ -345,23 +345,23 @@ class LatchedControlLogic(ControlBuffers):
         via_space = self.parallel_via_space  # space for side by side via
         parallel_space = self.get_parallel_space(METAL2)  # space for parallel lines
 
-        pitch = via_space + self.m2_width
+        via_pitch = via_space + self.m2_width
         desired_x = pin.cx() - 0.5 * self.m2_width
-        if desired_x > max(all_m2, key=lambda x: x[0])[0] + pitch:
+        if desired_x > max(all_m2, key=lambda x: x[0])[0] + via_pitch:
             return desired_x
         for (x_offset, rail_y) in all_m2:
             if rail_y == desired_rail_y:
-                pitch = via_space + self.m2_width
+                pitch = via_pitch
             else:
                 pitch = parallel_space + self.m2_width
             if x_offset - desired_x >= pitch or rail_y > desired_rail_y + self.bus_pitch:
                 # too far away on the right or above
                 continue
             elif x_offset >= desired_x and x_offset - desired_x < pitch:  # to the right but too close
-                desired_x = x_offset - pitch
+                desired_x = min(x_offset - pitch, pin.lx() - via_pitch)
                 continue
             elif desired_x >= x_offset and desired_x - x_offset < pitch:  # to the left but too close
-                desired_x = x_offset - pitch
+                desired_x = min(x_offset - pitch, pin.lx() - via_pitch)
                 continue
             else:  # nothing close enough
                 break

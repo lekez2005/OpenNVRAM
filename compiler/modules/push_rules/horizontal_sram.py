@@ -1,6 +1,6 @@
 import debug
 from base.contact import m1m2, cross_m2m3, m2m3, m3m4, cross_m1m2
-from base.design import METAL2, METAL3, METAL1, METAL4, NWELL, NIMP
+from base.design import METAL2, METAL3, METAL1, METAL4, NIMP
 from base.hierarchy_layout import GDS_ROT_270
 from base.vector import vector
 from globals import OPTS
@@ -35,6 +35,18 @@ class HorizontalSram(CmosSram):
         self.add_pin_list(["read", "clk", "bank_sel", "sense_trig",
                            "vdd", "gnd", "precharge_trig"])
 
+    def add_modules(self):
+        debug.info(1, "Add sram modules")
+        self.right_bank_inst = self.bank_inst = self.add_bank(0, vector(0, 0), x_flip=0, y_flip=0)
+        self.bank_insts = [self.right_bank_inst]
+        self.add_col_decoder()
+        self.add_row_decoder()
+        self.add_power_rails()
+        if self.num_banks == 2:
+            x_offset = self.get_left_bank_x()
+            self.left_bank_inst = self.add_bank(1, vector(x_offset, 0), x_flip=0, y_flip=-1)
+            self.bank_insts = [self.right_bank_inst, self.left_bank_inst]
+
     def route_layout(self):
         super().route_layout()
         debug.info(1, "Route sram decoder enable bank")
@@ -59,6 +71,13 @@ class HorizontalSram(CmosSram):
                                             num_banks=self.num_banks,
                                             adjacent_bank=self.bank)
             self.add_mod(self.left_bank)
+
+    def create_column_decoder(self):
+        super().create_column_decoder()
+        if self.words_per_row > 1:
+            # decoder clock is always connected to clk_buf_1
+            self.col_decoder_connections = [x if not (x == "clk_buf_2") else "clk_buf_1"
+                                            for x in self.col_decoder_connections]
 
     def get_bank_mod(self, bank_num):
         return self.bank if bank_num == 0 else self.left_bank
@@ -139,7 +158,10 @@ class HorizontalSram(CmosSram):
         if self.single_bank:
             return
         pin_names = ["precharge_trig", "sense_trig", "clk", "read", "bank_sel"]
-        cross_clk_rail_y = (self.bank.bank_sel_buf_inst.by() - self.get_wide_space(METAL2)
+        bottom_inst_y = self.bank.bank_sel_buf_inst.by()
+        if self.column_decoder_inst is not None:
+            bottom_inst_y = min(bottom_inst_y, self.column_decoder_inst.by())
+        cross_clk_rail_y = (bottom_inst_y - self.get_wide_space(METAL2)
                             - self.bus_pitch)
         y_offset = cross_clk_rail_y - (len(pin_names) + 1) * self.bus_pitch
         via_extension = 0.5 * (cross_m2m3.height - cross_m2m3.contact_width)
@@ -222,6 +244,8 @@ class HorizontalSram(CmosSram):
         via_offsets = []
         if self.num_banks == 1:
             via_top = self.mid_vdd.height - via_pitch
+        elif self.num_banks == 2 and self.column_decoder_inst is not None:
+            via_top = self.left_col_mux_select_y
         else:
             via_top = self.bank.bitcell_array_inst.by()
         while y_offset < via_top:
@@ -247,6 +271,8 @@ class HorizontalSram(CmosSram):
                                      height=fill_height)
             if self.num_banks == 1:
                 rail_top = rail.uy()
+            elif self.num_banks == 2 and self.column_decoder_inst is not None:
+                rail_top = self.left_col_mux_select_y
             else:
                 rail_top = self.bank.bitcell_array_inst.by()
             rect = self.add_rect(METAL4, offset=rail.ll(),
@@ -349,7 +375,7 @@ class HorizontalSram(CmosSram):
         else:
             self.column_decoder = predecode3x8_horizontal(use_flops=True, buffer_sizes=buffer_sizes)
 
-    def add_right_col_decoder(self):
+    def add_col_decoder(self):
         if self.words_per_row == 1:
             return
         # check if there is enough space between row decoder and read_buf
@@ -367,9 +393,6 @@ class HorizontalSram(CmosSram):
                                                  offset=vector(col_decoder_x, column_decoder_y))
         self.connect_inst(self.col_decoder_connections)
 
-    def add_left_col_decoder(self):
-        self.add_right_col_decoder()
-
     def route_flop_column_decoder(self):
         self.route_col_decoder_clock()
 
@@ -383,12 +406,12 @@ class HorizontalSram(CmosSram):
 
         self.route_col_decoder_outputs()
         self.route_col_decoder_power()
-        self.copy_layout_pin(self.column_decoder_inst, "din", "ADDR[{}]".format(self.addr_size - 1))
+        self.copy_layout_pin(self.column_decoder_inst, "din", "ADDR[{}]".format(self.addr_size - self.num_banks))
 
     def route_predecoder_column_decoder(self):
         self.route_col_decoder_clock()
         # address pins
-        all_addr_pins = ["ADDR[{}]".format(self.addr_size - 1 - i) for i in range(self.col_addr_size)]
+        all_addr_pins = ["ADDR[{}]".format(self.addr_size - self.num_banks - i) for i in range(self.col_addr_size)]
         all_addr_pins = list(reversed(all_addr_pins))
         for i in range(self.col_addr_size):
             self.copy_layout_pin(self.column_decoder_inst, "flop_in[{}]".format(i), all_addr_pins[i])
@@ -478,6 +501,15 @@ class HorizontalSram(CmosSram):
                                                               width=self.bus_width, height=self.bus_width))
 
     def route_col_decoder_outputs(self):
+        if self.num_banks == 2:
+            top_predecoder_inst = max(self.row_decoder.pre2x4_inst + self.row_decoder.pre3x8_inst,
+                                      key=lambda x: x.uy())
+            # place rails just above the input flops
+            num_flops = top_predecoder_inst.mod.num_inputs
+            y_space = top_predecoder_inst.get_pins("vdd")[0].height() + self.get_wide_space(METAL3) + self.bus_space
+            self.left_col_mux_select_y = (self.row_decoder_inst.by() + top_predecoder_inst.by()
+                                          + num_flops * top_predecoder_inst.mod.flop.height + y_space)
+
         for i in range(self.words_per_row):
             sel_pin = self.right_bank_inst.get_pin("sel[{}]".format(i))
             rail = self.col_decoder_outputs[i]
@@ -485,6 +517,27 @@ class HorizontalSram(CmosSram):
             self.add_rect(METAL1, offset=vector(rail.lx(), sel_pin.cy() - 0.5 * self.bus_width),
                           width=sel_pin.lx() - rail.lx(), height=self.bus_width)
             self.add_cross_contact_center(cross_m1m2, offset=vector(rail.cx(), sel_pin.cy()), rotate=True)
+
+            if self.num_banks == 2:
+                # route to the left
+                x_start = self.left_bank_inst.rx() - self.left_bank.leftmost_rail.offset.x
+                x_offset = x_start + (1 + i) * self.bus_pitch
+
+                y_offset = self.left_col_mux_select_y + i * self.bus_pitch
+                self.add_rect(METAL2, offset=vector(rail.lx(), sel_pin.cy()), width=self.bus_width,
+                              height=y_offset - sel_pin.cy())
+                self.add_cross_contact_center(cross_m2m3, offset=vector(rail.cx(), y_offset + 0.5 * self.bus_width))
+                self.add_rect(METAL3, offset=vector(x_offset, y_offset), height=self.bus_width,
+                              width=rail.lx() - x_offset)
+                self.add_cross_contact_center(cross_m2m3, offset=vector(x_offset + 0.5 * self.bus_width,
+                                                                        y_offset + 0.5 * self.bus_width))
+                sel_pin = self.left_bank_inst.get_pin("sel[{}]".format(i))
+                self.add_rect(METAL2, offset=vector(x_offset, sel_pin.cy()), width=self.bus_width,
+                              height=y_offset - sel_pin.cy())
+                self.add_cross_contact_center(cross_m1m2, offset=vector(x_offset + 0.5 * self.bus_width,
+                                                                        sel_pin.cy()), rotate=True)
+                self.add_rect(METAL1, offset=sel_pin.lr(), height=sel_pin.height(),
+                              width=x_offset - sel_pin.rx())
 
     def route_col_decoder_power(self):
         rails = [self.mid_vdd, self.mid_gnd]
@@ -543,6 +596,3 @@ class HorizontalSram(CmosSram):
                      + self.bank.wordline_driver_inst.mod.buffer_insts[-1].uy() + implant_extension)
             self.add_rect(NIMP, offset=vector(x_start, y_offset), width=x_end - x_start,
                           height=y_top - y_offset)
-
-    def offset_all_coordinates(self):
-        pass

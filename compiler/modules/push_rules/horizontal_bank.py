@@ -46,7 +46,9 @@ class HorizontalBank(CmosBank):
             for module_name in ["bitcell_array", "sense_amp_array", "precharge_array",
                                 "write_driver_array", "tri_gate_array", "control_flop",
                                 "msf_mask_in", "msf_data_in", "wordline_buffer", "decoder",
-                                "bitcell"]:
+                                "bitcell", "column_mux_array"]:
+                if not hasattr(self.adjacent_bank, module_name):
+                    continue
                 adjacent_mod = getattr(self.adjacent_bank, module_name)
                 setattr(self, module_name, adjacent_mod)
                 self.add_mod(adjacent_mod)

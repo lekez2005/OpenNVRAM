@@ -50,8 +50,7 @@ class CmosSram(sram):
             self.add_left_col_decoder()
             x_offset = self.get_left_bank_x()
             self.left_bank_inst = self.add_bank(1, vector(x_offset, 0), x_flip=0, y_flip=-1)
-            self.bank_inst = [self.right_bank_inst, self.left_bank_inst]
-            self.bank_insts.append(self.left_bank_inst)
+            self.bank_insts = [self.right_bank_inst, self.left_bank_inst]
 
     def route_layout(self):
         debug.info(1, "Route sram")

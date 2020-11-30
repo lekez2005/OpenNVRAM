@@ -348,6 +348,13 @@ def get_temp_file(file_name):
     return os.path.join(OPTS.openram_temp, file_name)
 
 
+def get_sorted_metal_layers():
+    layers = [x for x in tech.layer.keys() if x.startswith("metal")]
+    layers = sorted(layers, key=lambda x: int(x[5:]))
+    layer_numbers = [int(x[5:]) for x in layers]
+    return list(layers), layer_numbers
+
+
 def to_cadence(gds_file):
     abs_path = os.path.dirname(os.path.abspath(__file__))
     file_dir = os.path.join(abs_path, '..', '..', 'technology', 'freepdk45', 'scripts')

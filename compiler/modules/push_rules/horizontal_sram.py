@@ -1,5 +1,7 @@
 import debug
+from base import utils
 from base.contact import m1m2, cross_m2m3, m2m3, m3m4, cross_m1m2
+from base.contact_full_stack import ContactFullStack
 from base.design import METAL2, METAL3, METAL1, METAL4, NIMP
 from base.hierarchy_layout import GDS_ROT_270
 from base.vector import vector
@@ -15,13 +17,15 @@ class HorizontalSram(CmosSram):
     rotation_for_drc = GDS_ROT_270
     config_template = "config_push_hs_{}"
 
-    def __init__(self, word_size, num_words, num_banks, name, words_per_row=None):
+    def __init__(self, word_size, num_words, num_banks, name, words_per_row=None,
+                 add_power_grid=True):
         """Words will be split across banks in case of two banks"""
         assert num_banks in [1, 2], "Only one or two banks supported"
         assert word_size % 2 == 0, "Word-size must be even"
         assert words_per_row in [1, 2, 4, 8], "Max 8 words per row supported"
         if num_banks == 2:
             word_size = int(word_size / 2)
+        self.add_power_grid = add_power_grid
         super().__init__(word_size, num_words, num_banks, name, words_per_row)
         # restore word-size
         self.word_size = num_banks * self.word_size
@@ -256,8 +260,13 @@ class HorizontalSram(CmosSram):
                 via_offsets.append(y_offset)
                 y_offset += via_pitch
 
-        m4_power_pins = self.bank.get_pins("vdd") + self.bank.get_pins("gnd")
+        m4_power_pins = self.right_bank_inst.get_pins("vdd") + self.right_bank_inst.get_pins("gnd")
+        if self.num_banks == 2:
+            m4_power_pins.extend(self.left_bank_inst.get_pins("vdd") + self.left_bank_inst.get_pins("gnd"))
         m4_power_pins = [x for x in m4_power_pins if x.layer == METAL4]
+
+        self.m4_vdd_rects = []
+        self.m4_gnd_rects = []
 
         for i in range(2):
             rail = rails[i]
@@ -277,7 +286,10 @@ class HorizontalSram(CmosSram):
                 rail_top = self.bank.bitcell_array_inst.by()
             rect = self.add_rect(METAL4, offset=rail.ll(),
                                  width=rail.width, height=rail_top - rail.by())
-            m4_power_pins.append(rect)
+            if i % 2 == 0:
+                self.m4_vdd_rects.append(rect)
+            else:
+                self.m4_gnd_rects.append(rect)
 
         self.m4_power_pins = m4_power_pins
 
@@ -361,9 +373,85 @@ class HorizontalSram(CmosSram):
                                          "{0}[{1}]".format(pin_name, bit_index))
 
     def route_power_grid(self):
-        for i in range(self.num_banks):
-            self.copy_layout_pin(self.bank_insts[i], "vdd")
-            self.copy_layout_pin(self.bank_insts[i], "gnd")
+        if not self.add_power_grid:
+            for i in range(self.num_banks):
+                self.copy_layout_pin(self.bank_insts[i], "vdd")
+                self.copy_layout_pin(self.bank_insts[i], "gnd")
+        else:
+            metal_layers, layer_numbers = utils.get_sorted_metal_layers()
+            top_layer = metal_layers[-1]
+            second_top_layer = metal_layers[-2]
+
+            # second_top to top layer via
+            m_top_via = ContactFullStack(start_layer=-2, stop_layer=-1, centralize=False)
+            # m4 to second_top layer vias
+            all_m4_power_pins = self.m4_power_pins + self.m4_gnd_rects + self.m4_vdd_rects
+            all_m4_power_widths = list(set([utils.round_to_grid(x.rx() - x.lx()) for x in all_m4_power_pins]))
+            all_m4_vias = {}
+            for width in all_m4_power_widths:
+                all_m4_vias[width] = ContactFullStack(start_layer=3, stop_layer=-2, centralize=True,
+                                                      max_width=width)
+            # dimensions of vertical top layer grid
+            left = min(map(lambda x: x.lx(), all_m4_power_pins)) - 0.5 * m_top_via.width
+            right = max(map(lambda x: x.rx(), all_m4_power_pins)) - 0.5 * m_top_via.width
+            bottom = min(map(lambda x: x.by(), all_m4_power_pins))
+            top = max(map(lambda x: x.uy(), all_m4_power_pins)) - m_top_via.height
+
+            # add top layer
+            top_layer_width = m_top_via.width
+            top_layer_space = self.get_wide_space(top_layer)
+            top_layer_pitch = top_layer_width + top_layer_space
+            top_layer_pins = []
+
+            x_offset = left
+            i = 0
+            while x_offset < right:
+                pin_name = "gnd" if i % 2 == 0 else "vdd"
+                top_layer_pins.append(self.add_layout_pin(pin_name, top_layer, offset=vector(x_offset, bottom),
+                                                          width=top_layer_width, height=top - bottom))
+                x_offset += top_layer_pitch
+                i += 1
+            top_gnd = top_layer_pins[0::2]
+            top_vdd = top_layer_pins[1::2]
+
+            # add second_top layer
+            y_offset = bottom
+            rail_height = max(map(lambda x: x.height, [m_top_via] + list(all_m4_vias.values())))
+            rail_space = self.get_wide_space(second_top_layer)
+            rail_pitch = rail_height + rail_space
+
+            m4_vdd_rects = self.m4_vdd_rects + [x for x in self.m4_power_pins if x.name == "vdd"]
+            m4_vdd_rects = list(sorted(m4_vdd_rects, key=lambda x: x.lx()))
+            m4_gnd_rects = self.m4_gnd_rects + [x for x in self.m4_power_pins if x.name == "gnd"]
+            m4_gnd_rects = list(sorted(m4_gnd_rects, key=lambda x: x.lx()))
+
+            i = 0
+            while y_offset < top - m_top_via.height:
+                rail_rect = self.add_rect(second_top_layer, offset=vector(left, y_offset), height=rail_height,
+                                          width=right + m_top_via.width - left)
+                # connect to top grid
+                top_pins = top_gnd if i % 2 == 0 else top_vdd
+                for top_pin in top_pins:
+                    self.add_inst(m_top_via.name, m_top_via,
+                                  offset=vector(top_pin.lx(), rail_rect.cy() - 0.5 * m_top_via.height))
+                    self.connect_inst([])
+
+                # connect to m4 below
+                m4_rects = m4_gnd_rects if i % 2 == 0 else m4_vdd_rects
+                x_offset = m4_rects[0].lx()
+                for m4_rect in m4_rects:
+                    if m4_rect.by() < y_offset and m4_rect.uy() > rail_rect.uy():
+                        if m4_rect.lx() < x_offset:  # prevent via clash
+                            continue
+                        m4_rect_width = utils.round_to_grid(m4_rect.rx() - m4_rect.lx())
+                        m4_via = all_m4_vias[m4_rect_width]
+                        self.add_inst(m4_via.name, mod=m4_via,
+                                      offset=vector(m4_rect.cx(), rail_rect.cy() - 0.5 * m4_via.height))
+                        self.connect_inst([])
+                        x_offset = m4_rect.cx() + 0.5 * m4_via.width + rail_space
+
+                y_offset += rail_pitch
+                i += 1
 
     def create_column_decoder_modules(self):
         buffer_sizes = [OPTS.predecode_sizes[0]] + OPTS.column_decoder_buffers[1:]

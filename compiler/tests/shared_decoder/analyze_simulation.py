@@ -85,7 +85,10 @@ print("Word-size = ", word_size)
 verbose_save = options.verbose_save
 
 words_per_row = int(options.num_cols / options.word_size)
-num_words = words_per_row * options.num_rows * options.num_banks
+if push:
+    num_words = words_per_row * options.num_rows
+else:
+    num_words = words_per_row * options.num_rows * options.num_banks
 
 address_width = int(np.log2(num_words))
 
@@ -290,8 +293,6 @@ if __name__ == "__main__":
 
         print("----------------Critical Paths---------------")
 
-        print("\nWrite Critical Path: t = {:.3g}n\n".format(max_write_event[0]))
-
         start_time = end_time = 0
         bank = 0
 
@@ -330,6 +331,7 @@ if __name__ == "__main__":
         q_net = "v({})".format(state_probes[str(write_address)][max_write_bit])
 
         max_write_col = int(re.search("r[0-9]+_c([0-9]+)", q_net).group(1))
+        max_write_bit = int(max_write_col / words_per_row)
         write_bank = int(re.search("Xbank([0-1]+)", q_net).group(1))
 
         # col = max_write_bit *
@@ -347,14 +349,13 @@ if __name__ == "__main__":
         br_delay = get_max_pattern_delay(br_pattern, max_write_col, edge=sim_data.FALLING_EDGE)
         q_delay = get_max_pattern_delay(q_net)
 
+        print("\nWrite Critical Path: t = {:.3g}n row={} bit={} bank={}\n".format(max_write_event[0], max_write_row,
+                                                                                  max_write_bit, bank))
         print_max_delay("Write EN", write_en_delay)
         print_max_delay("Flop out", flop_out_delay)
         print_max_delay("BL", bl_delay)
         print_max_delay("BR", br_delay)
         print_max_delay("Q", q_delay)
-
-        # max_read_event = all_read_events[4]
-        print("\nRead Critical Path: t = {:.3g}n\n".format(max_read_event[0]))
 
         # Read analysis
         max_read_bit = get_analysis_bit(max_read_bit_delays)
@@ -369,14 +370,19 @@ if __name__ == "__main__":
         read_bank = int(re.search("Xbank([0-1]+)", read_q_net).group(1))
 
         max_read_col = int(re.search("r[0-9]+_c([0-9]+)", read_q_net).group(1))
+        max_read_bit = int(max_read_col / words_per_row)
 
         start_time = read_start_time
         end_time = read_end_time
         bank = read_bank
         if push:
             sense_mod_index = int(max_read_bit / 2)
+            wordline_en_pattern = wordline_en_pattern.format(2 * int(max_read_row / 2))
         else:
             sense_mod_index = max_read_bit
+
+        print("\nRead Critical Path: t = {:.3g}n row={} bit={} bank={} \n".format(max_read_event[0], max_read_row,
+                                                                                  max_read_bit, bank))
 
         wordline_en_delay = get_max_pattern_delay(wordline_en_pattern, edge=sim_data.RISING_EDGE)
         wordline_delay = get_max_pattern_delay(wordline_pattern, max_read_row, edge=sim_data.RISING_EDGE)

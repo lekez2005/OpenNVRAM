@@ -64,7 +64,7 @@ class SramProbe(object):
     def get_bitcell_label(self, bank_index, row, col, pin_name):
         return "Xsram.Xbank{}.Xbitcell_array.Xbit_r{}_c{}.{}".format(bank_index, row, col, pin_name)
 
-    def probe_bitlines(self, bank, row=None):
+    def probe_bitlines(self, bank, row=None, col_offset=0):
         if row is None:
             row = self.sram.num_rows - 1
         for col in range(self.sram.num_cols):
@@ -72,9 +72,9 @@ class SramProbe(object):
                 pin_label = self.get_bitline_label(bank, col, pin_name, row)
                 self.probe_labels.add(pin_label)
                 if pin_name == "bl":
-                    self.bitline_probes[col] = pin_label
+                    self.bitline_probes[col + col_offset] = pin_label
                 else:
-                    self.br_probes[col] = pin_label
+                    self.br_probes[col + col_offset] = pin_label
 
     def get_bitline_label(self, bank, col, label, row):
         if OPTS.use_pex:  # select top right bitcell
@@ -394,7 +394,7 @@ class SramProbe(object):
             address = address[2:]
         elif self.sram.num_banks == 2:
             bank_index = address[0]
-            bank_inst = self.sram.bank_inst[bank_index]
+            bank_inst = self.sram.bank_insts[bank_index]
             address = address[1:]
         else:
             bank_index = 0

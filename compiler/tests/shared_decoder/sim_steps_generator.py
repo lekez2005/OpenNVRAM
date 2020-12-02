@@ -143,7 +143,10 @@ class SimStepsGenerator(SequentialDelay):
             json.dump(self.probe.state_probes, f, indent=4, sort_keys=True)
 
     def probe_bank(self, bank):
-        self.probe.probe_bitlines(bank)
+        if self.two_bank_push and bank == 1:
+            self.probe.probe_bitlines(bank, col_offset=self.sram.num_cols)
+        else:
+            self.probe.probe_bitlines(bank)
         self.probe.probe_write_drivers(bank)
         self.probe.probe_latched_sense_amps(bank)
         self.probe.probe_misc_bank(bank)
@@ -248,6 +251,8 @@ class SimStepsGenerator(SequentialDelay):
 
     def offset_address_by_bank(self, address, bank):
         assert type(address) == int and bank < self.num_banks
+        if OPTS.push and self.num_banks == 2:
+            return address
         address += bank * int(2 ** self.sram.bank_addr_size)
         return address
 

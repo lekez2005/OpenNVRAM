@@ -15,6 +15,8 @@ class SpiceDut(stimuli):
 
     def instantiate_sram(self, abits, dbits, num_banks, sram_name):
         self.sf.write("Xsram ")
+        if OPTS.push:
+            num_banks = 1
 
         for j in range(num_banks):
             for i in range(dbits):

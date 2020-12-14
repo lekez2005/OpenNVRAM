@@ -75,7 +75,7 @@ class SharedProbe(SramProbe):
     def get_bank_col(self, bank, bit, col_index=0):
         if self.two_bank_push:
             bank = int(bit >= self.word_size)
-            bit = bit - self.word_size if bit >=self.word_size else bit
+            bit = bit - self.word_size if bit >= self.word_size else bit
         col = bit * self.sram.words_per_row + col_index
         return bank, bit, col
 
@@ -272,6 +272,7 @@ class SharedProbe(SramProbe):
                 child_mod = "Xbank{}_Xsense_amp_array_Xsa_d{}_Xchild_mod".format(bank, int(bit / 2))
                 for i in range(2):
                     self.probe_labels.add("{0}_out_int<{1}>_{0}".format(child_mod, i))
+                    self.probe_labels.add("Xbank{0}_and_out[{1}]_Xbank{0}_Xsense_amp_array".format(bank, bit+i))
             elif not OPTS.push:
                 self.probe_labels.add("Xsram.Xbank{0}.Xsense_amp_array.Xsa_d{1}.out_int".format(bank, bit))
                 self.probe_labels.add("Xsram.Xbank{0}.and_out[{1}]".format(bank, bit))

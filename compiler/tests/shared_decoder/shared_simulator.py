@@ -106,11 +106,34 @@ class SharedDecoderSimulator(TestBase):
                 OPTS.sense_trigger_delay = 0.25
                 OPTS.sense_trigger_setup = 0.2
         elif OPTS.push:
-            OPTS.sense_trigger_delay = 0.25
-            OPTS.sense_trigger_setup = 0.1
-            OPTS.precharge_trigger_delay = 0.1
-            first_read = first_write = 0.4
-            second_read = second_write = 0.4
+            OPTS.sense_trigger_setup = 0.15
+            if num_rows == 64:
+                if OPTS.num_banks == 1:
+                    OPTS.sense_trigger_delay = 0.15
+                    OPTS.precharge_trigger_delay = 0.175
+                    second_read = 0.25
+                else:
+                    OPTS.sense_trigger_delay = 0.15
+                    OPTS.precharge_trigger_delay = 0.2
+                    second_read = 0.25
+                first_read = first_write = 0.15
+
+                second_write = 0.25
+            else:
+                if OPTS.num_banks == 1:
+                    OPTS.sense_trigger_delay = 0.325
+                    OPTS.sense_trigger_setup = 0.1
+                    OPTS.precharge_trigger_delay = 0.65
+                    first_read = first_write = 0.4
+                    second_read = 0.5
+                    second_write = 0.5
+                else:
+                    OPTS.sense_trigger_delay = 0.3
+                    OPTS.sense_trigger_setup = 0.1
+                    OPTS.precharge_trigger_delay = 0.35
+                    first_read = first_write = 0.15
+                    second_read = 0.4
+                    second_write = 0.4
         else:
 
             if num_rows == 64:

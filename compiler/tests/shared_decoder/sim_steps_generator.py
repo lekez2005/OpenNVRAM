@@ -68,7 +68,7 @@ class SimStepsGenerator(SequentialDelay):
         elif key == "precharge_trig":
             trigger_delay = OPTS.precharge_trigger_delay
             if prev_val == 1:
-                setup_time = -(self.duty_cycle * self.period + trigger_delay) + self.period
+                setup_time = -trigger_delay + self.period
             else:
                 setup_time = 0
         else:

@@ -43,7 +43,7 @@ def setup(num_cols_, num_rows_, sim_dir_):
     sim_data = PsfReader(sim_file)
 
     all_saved_list = list(sim_data.get_signal_names())
-    all_saved_signals = "\n".join(sim_data.get_signal_names())
+    all_saved_signals = "\n".join(sorted(sim_data.get_signal_names()))
 
     if os.path.exists(meas_file):
         meas_str = open(meas_file, 'r').read()

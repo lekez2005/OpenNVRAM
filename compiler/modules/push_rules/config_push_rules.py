@@ -146,10 +146,15 @@ def configure_sizes(bank, OPTS):
         OPTS.num_write_en_stages = 4
         OPTS.max_clk_buf_size = 40
         OPTS.max_write_en_size = 40
+        OPTS.precharge_size = 1.5
         # OPTS.tri_en_buffers = [, 11.7, 40, 40]
     else:
         OPTS.num_clk_buf_stages = 5
         OPTS.num_write_en_stages = 5
         OPTS.max_clk_buf_size = 60
         OPTS.max_write_en_size = 60
+        if OPTS.num_banks == 2:
+            OPTS.precharge_size = 1.75
+        else:
+            OPTS.precharge_size = 1.75
         OPTS.tri_en_buffers = [1, 2.6, 6.7, 17.4, 45]

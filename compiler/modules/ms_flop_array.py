@@ -116,11 +116,12 @@ class ms_flop_array(design.design):
             
             
         # Continous clk rail along with label.
+        reference_clk_pin = self.ms_inst[0].get_pin("clk")
         self.add_layout_pin(text="clk",
-                            layer="metal1",
-                            offset=self.ms_inst[0].get_pin("clk").ll().scale(0,1),
+                            layer=reference_clk_pin.layer,
+                            offset=reference_clk_pin.ll().scale(0,1),
                             width=self.width,
-                            height=self.ms_inst[0].get_pin("clk").height())
+                            height=reference_clk_pin.height())
 
         
         # Continous vdd rail along with label.

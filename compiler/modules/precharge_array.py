@@ -43,12 +43,9 @@ class precharge_array(design.design):
 
     def create_layout(self):
         self.add_insts()
-        vdd_pin = self.pc_cell.get_pin("vdd")
-        self.add_layout_pin(text="vdd",
-                            layer=vdd_pin.layer,
-                            offset=vdd_pin.ll(),
-                            width=self.width,
-                            height=vdd_pin.height())
+        for vdd_pin in self.pc_cell.get_pins("vdd"):
+            self.add_layout_pin(text="vdd", layer=vdd_pin.layer, offset=vdd_pin.ll(),
+                                width=self.width, height=vdd_pin.height())
         en_pin = self.pc_cell.get_pin("en")
         self.add_layout_pin(text="en",
                             layer=en_pin.layer,

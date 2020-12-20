@@ -3,7 +3,7 @@ from base import contact
 from base import design
 from base import utils
 from base.contact import m1m2, m2m3, m3m4
-from base.design import METAL2, METAL1
+from base.design import METAL2, METAL1, METAL3
 from base.vector import vector
 from globals import OPTS
 from pgates.ptx_spice import ptx_spice
@@ -44,6 +44,7 @@ class precharge(design.design):
         self.connect_bitlines()
         self.drc_fill()
         self.add_ptx_inst()
+        self.add_boundary()
 
     def set_layout_constants(self):
 
@@ -172,18 +173,24 @@ class precharge(design.design):
     def add_nwell_contacts(self):
         self.add_rect_center("nimplant", offset=vector(self.mid_x, self.contact_y), width=self.implant_width,
                              height=self.well_contact_implant_height)
-        # TODO temp fix since sense amps expect vdd rail to extend by 0.5*self.rail_height
 
-        vdd_pin_y = self.poly_contact_mid_y + 0.5 * self.m1_width + self.get_parallel_space(METAL1)
+        enable_pin_top = self.poly_contact_mid_y + 0.5 * self.m1_width
+        vdd_space = self.get_parallel_space(METAL1)
+
+        vdd_pin_y = enable_pin_top + vdd_space
         pin_height = self.height - vdd_pin_y
-        self.add_layout_pin("vdd", "metal1", offset=vector(0, vdd_pin_y),
-                            width=self.width, height=pin_height)
-
-        self.add_rect("metal3", offset=vector(0, vdd_pin_y),
+        # cover via totally with appropriate m1 but match m1 and m3 pins
+        self.add_rect(METAL1, offset=vector(0, vdd_pin_y),
                       width=self.width, height=pin_height)
-        self.add_contact_center(m1m2.layer_stack, offset=vector(self.mid_x, self.contact_y),
+
+        # m3 pin
+        m3_vdd_y = enable_pin_top + self.get_wide_space(METAL3)
+        for layer in [METAL1, METAL3]:
+            vdd_pin = self.add_layout_pin("vdd", layer, offset=vector(0, m3_vdd_y),
+                                          width=self.width, height=self.height - m3_vdd_y)
+        self.add_contact_center(m1m2.layer_stack, offset=vector(self.mid_x, vdd_pin.cy()),
                                 size=[1, 3], rotate=90)
-        self.add_contact_center(m2m3.layer_stack, offset=vector(self.mid_x, self.contact_y),
+        self.add_contact_center(m2m3.layer_stack, offset=vector(self.mid_x, vdd_pin.cy()),
                                 size=[1, 3], rotate=90)
 
         self.add_rect_center("active", offset=vector(self.mid_x, self.contact_y),
@@ -298,8 +305,8 @@ class precharge_tap(design.design):
 
         vdd_rail = utils.get_libcell_pins(["vdd"], OPTS.body_tap)["vdd"][0]
 
-        precharge_vdd = self.precharge_cell.get_pin("vdd")
-        self.add_rect("metal3", offset=vector(0, precharge_vdd.by()), width=self.width,
+        precharge_vdd = next(x for x in self.precharge_cell.get_pins("vdd") if x.layer == METAL3)
+        self.add_rect(METAL3, offset=vector(0, precharge_vdd.by()), width=self.width,
                       height=precharge_vdd.height())
         en_pin = self.precharge_cell.get_pin("en")
 

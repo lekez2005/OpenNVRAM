@@ -58,16 +58,22 @@ class precharge(design.design):
 
         self.well_contact_active_height = contact.active.first_layer_height
         # nwell contact top space requirement
-        nwell_top_space = (0.5 * self.well_contact_implant_height +
-                           0.5 * self.well_contact_active_height + self.poly_to_active)
+        poly_to_well_cont_top = (self.poly_to_active + 0.5 * self.well_contact_active_height +
+                                 0.5 * self.well_contact_implant_height)
 
         # space to add poly contacts
-        poly_top_space = self.line_end_space  # space to the en metal1
-        poly_top_space += 0.5 * contact.poly.second_layer_width  # space to middle of poly contact
-        self.active_to_poly_cont_mid = poly_top_space
-        self.poly_top_space = poly_top_space = self.active_to_poly_cont_mid + 0.5 * contact.poly.first_layer_height
+        active_to_poly_top = self.line_end_space  # space to the en metal1
+        active_to_poly_top += 0.5 * contact.poly.second_layer_width  # space to middle of poly contact
+        self.active_to_poly_cont_mid = active_to_poly_top
+        self.poly_top_space = active_to_poly_top = self.active_to_poly_cont_mid + 0.5 * contact.poly.first_layer_height
 
-        self.top_space = nwell_top_space + poly_top_space
+        # en pin top space requirement
+        self.en_rail_height = self.bus_width
+        self.active_to_enable_top = self.get_line_end_space(METAL1) + self.en_rail_height
+        en_rail_top_space = (self.active_to_enable_top + self.get_parallel_space(METAL2) +
+                             m2m3.height)
+
+        self.top_space = max(active_to_poly_top + poly_to_well_cont_top, en_rail_top_space)
 
         self.bottom_space = poly_enclosure + self.poly_extend_active
 
@@ -150,7 +156,8 @@ class precharge(design.design):
         en_m1_width = 2 * m1_poly_extension + gate_pos[2] - gate_pos[0]
         self.en_m1_rect = self.add_rect_center(METAL1, offset=offset, width=en_m1_width)
 
-        self.add_layout_pin_center_rect("en", "metal2", offset=offset, width=self.width)
+        self.add_layout_pin("en", "metal2", offset=vector(0, self.en_m1_rect.by()),
+                            width=self.width, height=self.en_rail_height)
 
     def calculate_body_contacts(self):
         if self.mults % 2 == 0:
@@ -174,17 +181,17 @@ class precharge(design.design):
         self.add_rect_center("nimplant", offset=vector(self.mid_x, self.contact_y), width=self.implant_width,
                              height=self.well_contact_implant_height)
 
-        enable_pin_top = self.poly_contact_mid_y + 0.5 * self.m1_width
+        m1_enable_pin_top = self.poly_contact_mid_y + 0.5 * self.m1_width
         vdd_space = self.get_parallel_space(METAL1)
 
-        vdd_pin_y = enable_pin_top + vdd_space
+        vdd_pin_y = m1_enable_pin_top + vdd_space
         pin_height = self.height - vdd_pin_y
         # cover via totally with appropriate m1 but match m1 and m3 pins
         self.add_rect(METAL1, offset=vector(0, vdd_pin_y),
                       width=self.width, height=pin_height)
 
         # m3 pin
-        m3_vdd_y = enable_pin_top + self.get_wide_space(METAL3)
+        m3_vdd_y = self.active_top + self.active_to_enable_top + self.get_parallel_space(METAL2)
         for layer in [METAL1, METAL3]:
             vdd_pin = self.add_layout_pin("vdd", layer, offset=vector(0, m3_vdd_y),
                                           width=self.width, height=self.height - m3_vdd_y)
@@ -238,7 +245,6 @@ class precharge(design.design):
 
         bottom_connection_y = self.active_bot_y - self.line_end_space
 
-        x_offsets = [0, 0, self.width - self.m1_width]
         for i in [1, 2]:
             x_offset = self.source_drain_pos[i] - 0.5 * self.m2_width
             self.add_rect("metal2", offset=vector(x_offset, bottom_connection_y),
@@ -310,7 +316,7 @@ class precharge_tap(design.design):
                       height=precharge_vdd.height())
         en_pin = self.precharge_cell.get_pin("en")
 
-        max_via_height = precharge_vdd.uy() - en_pin.uy() - self.line_end_space
+        max_via_height = precharge_vdd.uy() - en_pin.uy() - self.get_parallel_space(METAL2)
         num_vias = 1
         while True:
             sample_contact = contact.contact(m1m2.layer_stack, dimensions=[1, num_vias])
@@ -320,16 +326,13 @@ class precharge_tap(design.design):
                 break
             num_vias += 1
 
-        self.add_rect(vdd_rail.layer, offset=vector(vdd_rail.lx(), 0), width=vdd_rail.width(), height=self.height)
+        self.add_rect(vdd_rail.layer, offset=vector(vdd_rail.lx(), 0), width=vdd_rail.width(),
+                      height=self.height)
         via_offset = vector(vdd_rail.cx() - 0.5 * m1m2.second_layer_width,
                             precharge_vdd.uy() - sample_contact.second_layer_height)
         m1m2_cont = self.add_contact(m1m2.layer_stack, offset=via_offset, size=[1, num_vias])
         self.add_contact(m2m3.layer_stack, offset=via_offset, size=[1, num_vias])
         self.add_contact(m3m4.layer_stack, offset=via_offset, size=[1, num_vias])
-        m2_area = m1m2_cont.width * m1m2.height
-        if m2_area < self.minarea_metal1_contact:
-            fill_height = m1m2_cont.height
-            fill_width = self.minarea_metal1_contact / fill_height
-            self.add_rect_center(METAL2, offset=vector(vdd_rail.cx(),
-                                                       via_offset.y + 0.5 * fill_height),
-                                 width=fill_width, height=fill_height)
+        fill_height, fill_width = self.calculate_min_m1_area(m1m2_cont.height, layer=METAL2)
+        self.add_rect(METAL2, offset=vector(vdd_rail.cx() - 0.5 * fill_width, via_offset.y),
+                      width=fill_width, height=fill_height)

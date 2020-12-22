@@ -1,4 +1,5 @@
 import itertools
+import math
 import os
 
 import debug
@@ -159,12 +160,16 @@ class layout(lef.lef):
                 return inst
         return None
     
-    def add_rect(self, layer, offset, width=0, height=0, layer_purpose=None):
+    def add_rect(self, layer, offset, width=None, height=None, layer_purpose=None):
         """Adds a rectangle on a given layer,offset with width and height"""
-        if width==0:
-            width=drc["minwidth_{}".format(layer)]
-        if height==0:
-            height=drc["minwidth_{}".format(layer)]
+        if width is None:
+            width = drc["minwidth_{}".format(layer)]
+        if height is None:
+            height = drc["minwidth_{}".format(layer)]
+        tolerance = 0.1 * drc["grid"]
+        if (math.isclose(width, 0.0, abs_tol=tolerance) or
+                math.isclose(height, 0.0, abs_tol=tolerance)):
+            return
         # negative layers indicate "unused" layers in a given technology
         layer_num = techlayer[layer]
         if layer_num >= 0:

@@ -6,6 +6,7 @@ from base import utils
 from base.design import NWELL, PIMP, NIMP
 from base.library_import import library_import
 from base.vector import vector
+from base.well_implant_fills import get_default_fill_layers
 from globals import OPTS
 from tech import layer as tech_layers
 from tech import purpose as tech_purpose
@@ -96,8 +97,7 @@ class tri_gate_array(design.design):
                 previous_index = i
 
     def fill_implants_and_nwell(self):
-        layers = [NWELL, PIMP, NIMP]
-        purposes = ["drawing", "drawing", "drawing"]
+        layers, purposes = get_default_fill_layers()
         for i in range(len(layers)):
             self.fill_array_layer(layers[i], self.tri, purpose=purposes[i])
 
@@ -120,19 +120,17 @@ class tri_gate_array(design.design):
                                 width=out_pin.width(),
                                 height=out_pin.height())
 
-
-
         last_instance_key = max(map(int, self.tri_inst.keys()))
         width = self.tri_inst[last_instance_key].rx()
         en_pin = self.tri_inst[0].get_pin("en")
-        self.add_layout_pin(text="en",
-                            layer="metal2",
-                            offset=en_pin.ll())
+        self.add_layout_pin(text="en", height=en_pin.height(),
+                            layer=en_pin.layer, width=self.width,
+                            offset=en_pin.ll().scale(0, 1))
         
         enbar_pin = self.tri_inst[0].get_pin("en_bar")
-        self.add_layout_pin(text="en_bar",
-                            layer="metal2",
-                            offset=enbar_pin.ll())
+        self.add_layout_pin(text="en_bar", height=en_pin.height(),
+                            layer=en_pin.layer, width=self.width,
+                            offset=enbar_pin.ll().scale(0, 1))
         
         vdd_pin = self.tri_inst[0].get_pin("vdd")
         self.add_layout_pin(text="vdd",

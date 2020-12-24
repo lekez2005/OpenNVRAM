@@ -1,9 +1,8 @@
 from base.design import design
 from base.hierarchy_layout import GDS_ROT_90
 from base.library_import import library_import
-from base.vector import vector
 from globals import OPTS
-from modules.push_rules.bitcell_aligned_array import bitcell_aligned_array
+from modules.push_rules.single_mod_dual_bitcell_aligned_array import single_mod_dual_bitcell_aligned_array
 
 
 @library_import
@@ -15,7 +14,7 @@ class driver(design):
     lib_name = OPTS.write_driver_mod
 
 
-class WriteDriverArray(bitcell_aligned_array):
+class WriteDriverArray(single_mod_dual_bitcell_aligned_array):
     """
     Dynamically generated write driver array of all bitlines.  words_per_row
     """

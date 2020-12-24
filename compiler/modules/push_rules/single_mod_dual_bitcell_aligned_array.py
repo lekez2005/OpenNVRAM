@@ -1,12 +1,11 @@
 from abc import ABC
 
-from base.vector import vector
 from modules.push_rules.dual_bitcell_aligned_array import dual_bitcell_aligned_array
 
 
-class bitcell_aligned_array(dual_bitcell_aligned_array, ABC):
+class single_mod_dual_bitcell_aligned_array(dual_bitcell_aligned_array, ABC):
     """
-    Base class for arrays that are aligned with the bitcell array in groups of 1
+    Base class for arrays that are aligned with the bitcell array in groups of 2 using groups of 1 mods
     """
 
     def create_connection_template(self):
@@ -23,8 +22,11 @@ class bitcell_aligned_array(dual_bitcell_aligned_array, ABC):
         self.connect_inst(self.connection_template.format(mod_index).split())
 
     def get_x_offset(self, mod_index):
-        return (self.child_mod.width * self.num_dummies
-                + (self.child_mod.width * self.words_per_row) * mod_index)
+        x_base = self.child_mod.width * self.num_dummies
+        if mod_index % 2 == 1:
+            x_base += self.child_mod.width
+            mod_index -= 1
+        return x_base + mod_index * self.words_per_row * self.child_mod.width
 
     def create_layout(self):
         self.word_size *= 2

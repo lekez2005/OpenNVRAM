@@ -129,8 +129,6 @@ class precharge_horizontal(precharge):
         if hasattr(tech, "add_tech_layers"):
             tech.add_tech_layers(self)
 
-        self.add_boundary()
-
     def connect_input_gates(self):
         pin_height = push_bitcell_array.bitcell.get_pin("wl").height()
         pin_x = min(0, self.gate_contact_x + 0.5 * self.contact_width - 0.5 * m1m2.height)
@@ -191,25 +189,12 @@ class precharge_horizontal(precharge):
                 self.add_rect(METAL1, offset=vector(self.mid_x, y_offset - 0.5 * self.m1_width),
                               width=vdd_rail_x - self.mid_x)
             else:
-                if contact_inst.height > self.get_drc_by_layer(METAL1, "minside_contact"):
+                if not fill:
                     continue
-
-                adjacent_space = self.get_parallel_space(METAL1) + 0.5 * self.m1_width
-                # adjacent drain contact will be min-width
-                fill_below_contact = self.poly_pitch - adjacent_space
-                # adjacent above contact will be another fill
-                fill_above_contact = 0.5 * (self.poly_pitch - self.get_parallel_space(METAL1))
-
-                fill_height = fill_above_contact + fill_below_contact
-                fill_height, fill_width = self.calculate_min_m1_area(fill_height,
-                                                                     min_height=contact_inst.width,
-                                                                     layer=METAL1)
-                if i == 1:
-                    fill_y = y_offset - self.poly_pitch + adjacent_space
-                else:
-                    fill_y = y_offset + self.poly_pitch - adjacent_space - fill_height
-                fill_x = max(self.active_rect.lx(), self.active_rect.cx() - 0.5 * fill_width)
-                self.add_rect(METAL1, offset=vector(fill_x, fill_y),
+                fill_x, _, fill_height, fill_width = fill
+                real_fill_x = fill_x + self.active_x
+                fill_y = y_offset - 0.5 * fill_height
+                self.add_rect(METAL1, offset=vector(real_fill_x, fill_y),
                               width=fill_width, height=fill_height)
 
         rail_y = self.get_mid_contact_y(0) - 0.5 * self.m1_width

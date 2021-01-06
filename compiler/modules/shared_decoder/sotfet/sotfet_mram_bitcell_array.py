@@ -41,7 +41,7 @@ class sotfet_mram_bitcell_array(bitcell_array):
                 self.connect_inst(["bl[{0}]".format(col), "br[{0}]".format(col),
                                    "rwl[{0}]".format(row), "wwl[{0}]".format(row), "gnd"])
 
-            for x_offset in self.tap_offsets + OPTS.right_buffers_offsets:
+            for x_offset in self.tap_offsets + OPTS.repeaters_array_space_offsets:
                 tap_inst = self.add_inst(name=self.body_tap.name, mod=self.body_tap,
                                          offset=vector(x_offset, y_offset), mirror=dir_key)
                 self.body_tap_insts.append(tap_inst)

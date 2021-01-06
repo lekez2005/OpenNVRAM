@@ -174,6 +174,32 @@ class contact(design.design, metaclass=unique_meta.Unique):
                       width=well_width,
                       height=well_height)
 
+    @staticmethod
+    def get_layer_vias(layer1, layer2, cross_via=True):
+        layer_nums = list(sorted([int(x[5:]) for x in [layer1, layer2]]))
+        via_maps = {
+            1: cross_m1m2 if cross_via else m1m2,
+            2: cross_m2m3 if cross_via else m2m3,
+            3: cross_m3m4 if cross_via else m3m4
+        }
+        vias = []
+        via_rotates = []
+        for layer_num in range(layer_nums[0], layer_nums[1]):
+            vias.append(via_maps[layer_num])
+            via_rotates.append(layer_num % 2 == 1)
+        fill_layers = []
+        for layer_num in range(layer_nums[0]+1, layer_nums[1]):
+            fill_layers.append("metal" + str(layer_num))
+        return vias, via_rotates, fill_layers
+
+    @staticmethod
+    def fill_via(self: design.design, via_inst):
+        layer = via_inst.mod.first_layer_name
+        fill_height = via_inst.height
+        fill_height, fill_width = self.calculate_min_m1_area(fill_height, layer=layer)
+        self.add_rect_center(layer, offset=vector(via_inst.cx(), via_inst.cy()), width=fill_width,
+                             height=fill_height)
+
 
 class cross_contact(contact):
     def get_name(*args, **kwargs):
@@ -208,3 +234,4 @@ m3m4 = contact(layer_stack=("metal3", "via3", "metal4"))
 
 cross_m1m2 = cross_contact(layer_stack=m1m2.layer_stack)
 cross_m2m3 = cross_contact(layer_stack=m2m3.layer_stack)
+cross_m3m4 = cross_contact(layer_stack=m3m4.layer_stack)

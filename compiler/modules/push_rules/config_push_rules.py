@@ -121,16 +121,15 @@ sense_trigger_delay = 0.5
 openram_temp = os.path.join(os.environ["SCRATCH"], "openram", "push_rules")
 
 # schematic simulation's positive feedback loop may be hard to break
-right_buffers = [
+buffer_repeater_sizes = [
     ("clk_bar", ["clk_buf", "clk_bar"], [20, 20]),
     ("sense_en", ["sense_en"], [5, 15]),
-    ("write_en", ["write_en_bar", "write_en"], [20, 20]),
+    ("write_en", ["write_en"], [5, 15]),
     # ("sample_en_bar", ["sample_en_bar"], [5, 15]),
-    ("tri_en", ["tri_en_bar", "tri_en"], [10, 10]),
+    ("tri_en", ["tri_en"], [5, 15]),
     ("precharge_en_bar", ["precharge_en_bar"], [10, 20]),
 ]
-right_buffers_x = 124.5
-right_buffers_col_threshold = 128
+buffer_repeaters_col_threshold = 128
 
 
 def configure_sizes(bank, OPTS):

@@ -4,6 +4,7 @@ import os
 import random
 import subprocess
 import time
+from functools import lru_cache
 from importlib import reload
 from typing import List
 
@@ -37,6 +38,7 @@ def floor(decimal):
     return math.floor(decimal * 1 / grid) / (1 / grid)
 
 
+@lru_cache(maxsize=64)
 def round_to_grid(number):
     """
     Rounds an arbitrary number to the grid.
@@ -131,28 +133,38 @@ def get_tap_positions(num_columns):
     if tap_positions[-1] == num_columns:
         tap_positions[-1] = num_columns - cells_per_group  # prevent clash with cells to the right of bitcell array
 
-    # find column corresponding to
-    add_buffers_rails_space = (hasattr(OPTS, "right_buffers_col_threshold") and
-                               num_columns > OPTS.right_buffers_col_threshold and
-                               len(getattr(OPTS, "right_buffers", [])) > 0)
+    preliminary_array_width = num_columns * bitcell.width + len(tap_positions) * tap_width
+    right_buffers_x = OPTS.repeater_x_offset * preliminary_array_width
+
+    # determine whether space needs to be opened up for repeaters and how much space is needed
+    add_repeaters = (OPTS.add_buffer_repeaters and
+                     num_columns > OPTS.buffer_repeaters_col_threshold and
+                     len(OPTS.buffer_repeater_sizes) > 0)
+    add_buffers_rails_space = add_repeaters and OPTS.dedicated_repeater_space
+
+    if add_repeaters and not OPTS.dedicated_repeater_space:
+        OPTS.buffer_repeaters_x_offset = right_buffers_x
 
     rails_num_taps = 0
     if add_buffers_rails_space:
         from base.design import design
-        output_nets = [x[1] for x in OPTS.right_buffers]
+        output_nets = [x[1] for x in OPTS.buffer_repeater_sizes]
         flattened_nets = [x for y in output_nets for x in y]
         num_rails = len(flattened_nets)
         m4_space = design.get_parallel_space("metal4")
-        m4_pitch = design.get_min_layer_width("metal4") + m4_space
+        m4_pitch = max(design.get_min_layer_width("metal4"),
+                       design.get_bus_width()) + m4_space
         rails_num_taps = math.ceil((num_rails * m4_pitch + m4_space) / tap_width)
-        OPTS.right_buffers_num_taps = rails_num_taps
+        OPTS.repeaters_space_num_taps = rails_num_taps
 
     tap_positions = list(sorted(set(tap_positions)))
     x_offset = 0.0
     positions_index = 0
     bitcell_offsets = [None]*num_columns
     tap_offsets = []
-    OPTS.right_buffers_offsets = []
+
+    OPTS.repeaters_array_space_offsets = []
+
     for i in range(num_columns):
         if positions_index < len(tap_positions) and i == tap_positions[positions_index]:
             tap_offsets.append(x_offset)
@@ -161,9 +173,9 @@ def get_tap_positions(num_columns):
         bitcell_offsets[i] = x_offset
         x_offset += bitcell.width
         if add_buffers_rails_space:
-            if x_offset > OPTS.right_buffers_x and (i + 1) % cells_per_group == 0:
-                OPTS.right_buffers_x_actual = x_offset
-                OPTS.right_buffers_offsets = [x_offset + i * tap_width for i in range(rails_num_taps)]
+            if x_offset > right_buffers_x and (i + 1) % cells_per_group == 0:
+                OPTS.buffer_repeaters_x_offset = x_offset
+                OPTS.repeaters_array_space_offsets = [x_offset + i * tap_width for i in range(rails_num_taps)]
                 x_offset += rails_num_taps * tap_width
                 add_buffers_rails_space = False
     return bitcell_offsets, tap_offsets

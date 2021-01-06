@@ -1,7 +1,6 @@
 from base import utils
 from base.contact import m2m3, m1m2, m3m4, contact
 from base.vector import vector
-from modules.baseline_bank import BaselineBank
 from modules.sotfet.cmos.sw_control_buffers import SwControlBuffers
 from modules.sotfet.sf_cam_bank import SfCamBank
 from tech import drc

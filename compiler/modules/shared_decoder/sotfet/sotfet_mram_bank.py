@@ -218,7 +218,7 @@ class SotfetMramBank(CmosBank):
                 self.add_contact(m2m3.layer_stack, offset=via_offset)
                 self.add_contact(m3m4.layer_stack, offset=via_offset)
                 fill_y = sense_pin.uy() - self.fill_height
-                via_extension = drc["min_wide_metal_via_extension"]
+                via_extension = drc["wide_metal_via_extension"]
                 if pin_name == "bl":
                     x_offset = bitcell_pin.lx() - via_extension
                 else:

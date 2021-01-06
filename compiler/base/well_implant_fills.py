@@ -1,5 +1,5 @@
 from base import utils
-from base.design import design, NWELL, NIMP, PIMP, METAL1, PO_DUMMY, POLY
+from base.design import design, NWELL, NIMP, PIMP, METAL1, PO_DUMMY, POLY, DRAWING
 import tech
 from base import contact
 from base.geometry import instance
@@ -68,6 +68,8 @@ def create_wells_and_implants_fills(left_mod: design, right_mod: design,
                                            reference_rect_on_left, reference_rect_on_right)
     """
     default_layers, default_purposes = get_default_fill_layers()
+    if layers is not None and purposes is None:
+        purposes = [DRAWING] * len(layers)
     if layers is None:
         layers = default_layers
     if purposes is None:
@@ -97,10 +99,10 @@ def create_wells_and_implants_fills(left_mod: design, right_mod: design,
                 continue
             # find alignment point. e.g. if alignment is on top, then keep the tops aligned
             if utils.ceil(overlap_rect.uy()) == utils.ceil(left_mod_rect.uy()):
-                rect_top = overlap_rect.uy()
+                rect_top = min(overlap_rect.uy(), left_mod_rect.uy())
                 rect_bottom = max(overlap_rect.by(), left_mod_rect.by())
             else:
-                rect_bottom = overlap_rect.by()
+                rect_bottom = max(overlap_rect.by(), left_mod_rect.by())
                 rect_top = min(overlap_rect.uy(), left_mod_rect.uy())
 
             fill_rect = (layer, rect_bottom, rect_top, left_mod_rect, overlap_rect)

@@ -64,6 +64,36 @@ class BaseDelayStrategy(ABC):
     def scale_delays(d):
         return [1e12 * x for x in d]
 
+    def run_optimizations(self):
+        run_optimizations = hasattr(OPTS, 'run_optimizations') and OPTS.run_optimizations
+        if hasattr(OPTS, 'configure_sizes'):
+            getattr(OPTS, 'configure_sizes')(self, OPTS)
+        if run_optimizations:
+
+            OPTS.clk_buffers = self.get_clk_buffer_sizes()
+
+            OPTS.wordline_buffers = self.get_wordline_driver_sizes()
+
+            wordline_driver = self.bank.create_module('wordline_driver', rows=self.num_rows,
+                                                      buffer_stages=OPTS.wordline_buffers)
+            if wordline_driver:
+                OPTS.wordline_en_buffers = self.get_wordline_en_sizes()
+
+            OPTS.write_buffers = self.get_write_en_sizes()
+
+            OPTS.sense_amp_buffers = self.get_sense_en_sizes()
+
+            precharge_sizes = self.get_precharge_sizes()
+            OPTS.precharge_buffers = precharge_sizes[:-1]
+            OPTS.precharge_size = precharge_sizes[-1]
+
+            predecode_sizes = self.get_predecoder_sizes()
+            OPTS.predecode_sizes = predecode_sizes[1:]
+        else:
+            wordline_driver = self.bank.create_module('wordline_driver', rows=self.num_rows,
+                                                      buffer_stages=OPTS.wordline_buffers)
+        return wordline_driver
+
     @staticmethod
     def print_optimization_result(solution, optimization_spec, net_names, en_en_bar=True):
         initial_guess, _, total_delay, stage_delays = optimization_spec

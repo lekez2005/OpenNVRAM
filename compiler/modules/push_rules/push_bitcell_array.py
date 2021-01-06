@@ -49,6 +49,7 @@ class push_bitcell_array(bitcell_array):
 
         self.create_layout()
         self.add_dummy_instances()
+        self.calculate_repeater_offsets()
 
         add_tech_layers(self)
 
@@ -107,10 +108,21 @@ class push_bitcell_array(bitcell_array):
                 x_offset += self.bitcell.width
         return x_offset, y_offset, mirror
 
+    def calculate_repeater_offsets(self):
+        add_repeaters = (OPTS.add_buffer_repeaters and
+                         self.column_size > OPTS.buffer_repeaters_col_threshold and
+                         len(OPTS.buffer_repeater_sizes) > 0)
+        if not add_repeaters:
+            return
+        OPTS.dedicated_repeater_space = False
+        OPTS.buffer_repeaters_x_offset = OPTS.repeater_x_offset * self.width
+
     def create_layout(self):
-        self.bitcell_offsets, self.tap_offsets, self.dummy_offsets = \
+        self.bitcell_offsets = [(i + 1) * self.bitcell.width for i in range(self.column_size)]
+
+        self.bitcell_y_offsets, self.tap_offsets, self.dummy_offsets = \
             self.get_bitcell_offsets(self.row_size, 2)
-        self.all_y_offsets = ([self.dummy_offsets[0]] + self.bitcell_offsets
+        self.all_y_offsets = ([self.dummy_offsets[0]] + self.bitcell_y_offsets
                               + [self.dummy_offsets[-1]])
         for col in range(self.column_size):
             for row in range(self.row_size):

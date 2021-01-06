@@ -21,13 +21,11 @@ class BankTest(TestBase):
         self.sweep_all(cols=[64], rows=[64], words_per_row=2)
 
     def test_baseline_array(self):
-        import tech
+
         from globals import OPTS
 
         if not OPTS.baseline:
             return
-
-        tech.drc_exceptions["CmosBank"] = tech.drc_exceptions["min_nwell"] + tech.drc_exceptions["latchup"]
 
         self.sweep_all(cols=[64], rows=[64], words_per_row=1)
         # self.sweep_all()
@@ -44,10 +42,14 @@ class BankTest(TestBase):
         return bank_class, {}
 
     def sweep_all(self, rows=None, cols=None, words_per_row=None, default_row=64, default_col=64):
+        import tech
         from base import design
         from globals import OPTS
 
         bank_class, kwargs = self.get_bank_class()
+
+        # tech.drc_exceptions[bank_class.__name__] = tech.drc_exceptions["min_nwell"] + tech.drc_exceptions["latchup"]
+        tech.drc_exceptions[bank_class.__name__] = tech.drc_exceptions["latchup"]
 
         OPTS.run_optimizations = False
 
@@ -82,7 +84,7 @@ class BankTest(TestBase):
                     a = bank_class(word_size=word_size, num_words=num_words, words_per_row=words_per_row_,
                                    name="bank1")
                     self.local_check(a)
-        except ZeroDivisionError as ex:
+        except Exception as ex:
             debug.error("Failed {} for row = {} col = {}: {} ".format(
                 bank_class.__name__, row, col, str(ex)), debug.ERROR_CODE)
             raise ex

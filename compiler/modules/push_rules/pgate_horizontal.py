@@ -377,11 +377,11 @@ class pgate_horizontal(design):
             all_indices = self.get_power_indices(is_nmos=is_nmos)
 
             if is_nmos and self.nmos_fill:
-                fill_x, fill_right, fill_height, fill_width = self.nmos_fill
+                fill_x, _, fill_height, fill_width = self.nmos_fill
             elif is_pmos and self.pmos_fill:
-                fill_x, fill_right, fill_height, fill_width = self.pmos_fill
+                fill_x, _, fill_height, fill_width = self.pmos_fill
             else:
-                fill_x = _ = fill_height = fill_width = None
+                fill_x = fill_height = fill_width = None
 
             active_rect = active_rects[i]
 

@@ -74,7 +74,8 @@ class options(optparse.Values):
     cache_optimization_prefix = ""
 
     # use data from characterizations or dynamically compute
-    use_characterization_data = True  # Require exact match in loading characterization data
+    use_characterization_data = True
+    # Require exact match in loading characterization data or permit interpolation
     interpolate_characterization_data = True
 
     # for delay graph evaluation, if number of driven loads is greater than N,
@@ -126,6 +127,19 @@ class options(optparse.Values):
     column_mux_size = 4
 
     cells_per_group = 1
+
+    # repeaters configuration
+    add_buffer_repeaters = True  # whether to add repeaters
+    # whether to add dedicated space between bitcells or just use space between the bitlines
+    dedicated_repeater_space = False
+    # repeater x offset relative to total array width
+    repeater_x_offset = 0.7
+    # repeaters will be added if num_cols in a bank > this
+    buffer_repeaters_col_threshold = 128
+    # repeater sizes e.g. ("clk_bar", ["clk_buf", "clk_bar"], [10, 15, 20])
+    # takes "clk_bar" output from control buffer, adds inverter chain 10-20
+    # output of 15 goes to clk_bar, output of 20 goes to clk_buf
+    buffer_repeater_sizes = []
 
     predecode_sizes = [1, 2]
     control_flop_buffers = [2]  # buffer for control flop

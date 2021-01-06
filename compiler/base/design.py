@@ -16,6 +16,7 @@ from tech import drc
 from tech import layer as tech_layers
 from tech import purpose as tech_purpose
 
+DRAWING = "drawing"
 POLY = "poly"
 PO_DUMMY = "po_dummy"
 NWELL = "nwell"
@@ -130,7 +131,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.parallel_via_space = drc["parallel_via_space"]
         self.metal1_min_enclosed_area = drc["metal1_min_enclosed_area"]
 
-        self.bus_width = self.medium_m3
+        self.bus_width = self.get_bus_width()
         self.bus_space = drc.get("bus_space", self.get_parallel_space(METAL3))
         self.bus_pitch = self.bus_width + self.bus_space
 
@@ -145,6 +146,10 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
     @classmethod
     def get_medium_layer_width(cls, layer):
         return cls.get_drc_by_layer(layer, "medium_width")
+
+    @classmethod
+    def get_bus_width(cls):
+        return cls.get_medium_layer_width(METAL3)
 
     @classmethod
     def get_space_by_width_and_length(cls, layer, max_width=None, min_width=None,
@@ -307,10 +312,12 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             return self.get_gds_layer_rects(layer, purpose, recursive=recursive)
 
         def filter_match(x):
-            return (x.__class__.__name__ == "rectangle" and x.layerNumber == tech_layers[layer] and
-                    x.layerPurpose == self.get_purpose_number(layer, purpose))
+            return ((x.__class__.__name__ == "pin_layout" and x.layer == layer) or
+                    (x.__class__.__name__ == "rectangle" and x.layerNumber == tech_layers[layer] and
+                    (x.layerPurpose == self.get_purpose_number(layer, purpose))))
 
-        return list(filter(filter_match, self.objs))
+        all_pins = [x for sublist in self.pin_map.values() for x in sublist]
+        return list(filter(filter_match, self.objs + all_pins))
 
     def get_gds_layer_shapes(self, cell, layer, purpose=None, recursive=False):
         purpose_number = self.get_purpose_number(layer, purpose)
@@ -444,9 +451,9 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                         add_fill(offset - instances[-1].width, "right")
                         add_fill(offset + tap_width, "left")
 
-                if hasattr(OPTS, "right_buffers_offsets") and len(OPTS.right_buffers_offsets) > 0:
-                    add_fill(OPTS.right_buffers_offsets[-1] + tap_width, "left")
-                    add_fill(OPTS.right_buffers_offsets[0] - instances[0].width, "right")
+                if hasattr(OPTS, "repeaters_array_space_offsets") and len(OPTS.repeaters_array_space_offsets) > 0:
+                    add_fill(OPTS.repeaters_array_space_offsets[-1] + tap_width, "left")
+                    add_fill(OPTS.repeaters_array_space_offsets[0] - instances[0].width, "right")
 
     def fill_array_layer(self, layer, cell, purpose="drawing"):
         if not (hasattr(self, "tap_offsets") and len(self.tap_offsets) > 0):
@@ -458,7 +465,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
         tap_width = utils.get_body_tap_width()
 
-        right_buffer_x_offsets = getattr(OPTS, "right_buffers_offsets", [])
+        right_buffer_x_offsets = getattr(OPTS, "repeaters_array_space_offsets", [])
 
         tap_offsets = []
         if layer == NWELL:
@@ -505,9 +512,11 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                             total_clearance = top_clearance + bottom_clearance + min_space
                             if total_clearance > wide_space:
                                 continue
-                            # else calculate desired space
-                            widths = [bottom_rect.height, top_rect.height]
-                            heights = [bottom_rect.width, top_rect.width]
+                            # else calculate desired space, note the width/height flip since vertical space is needed
+                            widths = [bottom_rect.rx() - bottom_rect.lx(),
+                                      top_rect.rx() - top_rect.lx()]
+                            heights = [bottom_rect.uy() - bottom_rect.by(),
+                                       top_rect.uy() - top_rect.by()]
 
                             if bottom_rect.width >= bottom_module.width and top_rect.width >= top_module.width:
                                 num_cols = getattr(self, "num_cols", 1)
@@ -522,7 +531,9 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                                                                               min_width=min(widths),
                                                                               run_length=run_length,
                                                                               heights=heights)
-                            min_space = max(min_space, -top_clearance + -bottom_clearance + target_space)
+                            evaluated_space = -top_clearance + -bottom_clearance + target_space
+                            if evaluated_space > min_space:
+                                min_space = evaluated_space
         return min_space
 
     def create_mod_from_str(self, module_name, *args, **kwargs):

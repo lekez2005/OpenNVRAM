@@ -4,11 +4,18 @@ import os
 File containing the process technology parameters for FreePDK 45nm.
 """
 
+
+def add_tech_layers(obj):
+    if "ptx" in obj.__class__.__name__:
+        obj.add_rect(layer="vtg", offset=(0, 0), width=obj.cell_well_width,
+                     height=obj.cell_well_height)
+
 info = {}
 info["name"] = "freepdk45"
 info["body_tie_down"] = 0
 info["has_pwell"] = True
 info["has_nwell"] = True
+info["poly_contact_layer"] = "metal1"
 
 #GDS file info
 GDS = {}
@@ -145,8 +152,6 @@ drc["poly_enclosure_contact"] = 0.005
 drc["poly_extend_contact"] = 0.005
 # CONTACT.6 Minimum spacing of contact and gate
 drc["contact_to_gate"] = 0.0375 #changed from 0.035
-# CONTACT.7 Minimum spacing of contact and poly
-drc["contact_to_poly"] = 0.090
 
 # METAL1.1 Minimum width of metal1
 drc["minwidth_metal1"] = 0.065
@@ -223,6 +228,7 @@ drc["metal4_extend_via4"] = 0.07
 
 # Metal 5-10 are ommitted
 
+drc["rail_height"] = 0.14
 
 
 ###################################################

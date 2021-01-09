@@ -100,38 +100,34 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.m3_space = drc["metal3_to_metal3"]
         self.m4_width = drc["minwidth_metal4"]
         self.m4_space = drc["metal4_to_metal4"]
-        self.m10_space = drc["metal10_to_metal10"]
         self.active_width = drc["minwidth_active"]
         self.min_tx_width = drc["minwidth_tx"]
         self.contact_width = drc["minwidth_contact"]
         self.contact_spacing = drc["contact_to_contact"]
-        self.rail_height = drc["rail_height"]
+        self.rail_height = drc["rail_height"]  # height for inverter/logic gates power
 
         self.poly_to_active = drc["poly_to_active"]
-        self.body_contact_active_height = drc["body_contact_active_height"]
         self.poly_extend_active = drc["poly_extend_active"]
         self.poly_to_field_poly = drc["poly_to_field_poly"]
         self.contact_to_gate = drc["contact_to_gate"]
-        self.well_enclose_active = drc["well_enclosure_active"]
+
+        self.well_enclose_active = drc.get("well_enclosure_active")
+        self.well_enclose_ptx_active = drc.get("ptx_well_enclosure_active", self.well_enclose_active)
+
         self.implant_enclose_active = drc["implant_enclosure_active"]
-        self.implant_enclose_ptx_active = drc["ptx_implant_enclosure_active"]
-        self.implant_enclose_poly = drc["implant_enclosure_poly"]
+        self.implant_enclose_ptx_active = drc.get("ptx_implant_enclosure_active", self.implant_enclose_active)
+        self.implant_enclose_poly = drc.get("implant_enclosure_poly")
         self.implant_width = drc["minwidth_implant"]
         self.implant_space = drc["implant_to_implant"]
-        self.well_enclose_implant = drc["well_enclosure_implant"]
 
-        self.minarea_metal1_contact = drc["minarea_metal1_contact"]
+        self.wide_m1_space = self.get_wide_space(METAL1)
+        self.line_end_space = self.get_line_end_space(METAL1)
+        self.parallel_line_space = self.get_parallel_space(METAL1)
+        _, self.metal1_minwidth_fill = self.calculate_min_area_fill(self.m1_width, layer=METAL1)
+        self.poly_vert_space = drc.get("poly_end_to_end")
+        self.parallel_via_space = self.get_space("via1")
 
-        self.wide_m1_space = self.get_wide_space("metal1")
-        self.line_end_space = self.get_line_end_space("metal1")
-        self.parallel_line_space = self.get_parallel_space("metal1")
-        self.metal1_minwidth_fill = utils.ceil(drc["minarea_metal1_minwidth"] / self.m1_width)
-        self.minarea_metal1_minwidth = drc["minarea_metal1_minwidth"]
-        self.poly_vert_space = drc["poly_end_to_end"]
-        self.parallel_via_space = drc["parallel_via_space"]
-        self.metal1_min_enclosed_area = drc["metal1_min_enclosed_area"]
-
-        self.bus_width = self.get_bus_width()
+        self.bus_width = self.get_bus_width() or self.m3_width
         self.bus_space = drc.get("bus_space", self.get_parallel_space(METAL3))
         self.bus_pitch = self.bus_width + self.bus_space
 
@@ -159,9 +155,9 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         elif cls.is_line_end(layer, heights):
             return cls.get_line_end_space(layer)
         elif cls.is_above_layer_threshold(layer, "wide", max_width, run_length):
-            return cls.get_space(layer, prefix="wide")
+            return cls.get_wide_space(layer)
         elif cls.is_above_layer_threshold(layer, "parallel", max_width, run_length):
-            return cls.get_space(layer, prefix="parallel")
+            return cls.get_parallel_space(layer)
         else:
             return cls.get_space(layer, prefix=None)
 
@@ -197,7 +193,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
     @classmethod
     def get_line_end_space(cls, layer):
-        return cls.get_drc_by_layer(layer, "line_end_space")
+        return cls.get_space(layer, "line_end")
 
     @classmethod
     def get_wide_space(cls, layer):

@@ -33,11 +33,13 @@ def calculate_tx_metal_fill(tx_width, design_mod: design):
     fill_width = utils.round_to_grid(2 * (design_mod.poly_pitch
                                           - 0.5 * design_mod.m1_width - m1_space))
 
-    fill_height = utils.ceil(max(design_mod.minarea_metal1_contact / fill_width,
+    min_area = design_mod.get_min_area(METAL1)
+    fill_height = utils.ceil(max(min_area / fill_width,
                                  test_contact.first_layer_height))
     fill_width = utils.ceil(max(design_mod.m1_width,
-                                design_mod.minarea_metal1_contact / fill_height))
-    y_offset = 0.5 * tx_width - 0.5 * test_contact.first_layer_height
+                                min_area / fill_height))
+    y_offset = 0.5 * tx_width - 0.5 * max(test_contact.second_layer_height,
+                                          contact.m1m2.first_layer_height)
     fill_top = y_offset + fill_height
     return y_offset, fill_top, fill_width, fill_height
 

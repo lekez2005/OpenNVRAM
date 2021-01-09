@@ -62,6 +62,7 @@ def parse_args():
     # Alias SCMOS to AMI 0.5um
     if OPTS.tech_name == "scmos":
         OPTS.tech_name = "scn3me_subm"
+    os.environ["OPENRAM_TECH_NAME"] = OPTS.tech_name
     global DEFAULT_OPTS
     DEFAULT_OPTS = copy.deepcopy(OPTS)
 
@@ -310,14 +311,44 @@ def import_tech():
         debug.error("Nonexistent technology_setup_file: {0}.py".format(filename))
         sys.exit(1)
 
+    standardize_tech_config()
+
+def standardize_tech_config():
+    """Add defaults for properties defined in tech.py """
     import tech
+    from tech import drc
     # Set some default options now based on the technology...
-    if (OPTS.process_corners == ""):
+    if OPTS.process_corners == "":
         OPTS.process_corners = tech.spice["fet_models"].keys()
-    if (OPTS.supply_voltages == ""):
+    if OPTS.supply_voltages == "":
         OPTS.supply_voltages = tech.spice["supply_voltages"]
-    if (OPTS.temperatures == ""):
+    if OPTS.temperatures == "":
         OPTS.temperatures = tech.spice["temperatures"]
+
+    def no_op(_):
+        pass
+
+    if not hasattr(tech, "add_tech_layers"):
+        tech.add_tech_layers = no_op
+
+    if not hasattr(tech, "layer_pin_map"):
+        tech.layer_pin_map = {}
+
+    if not hasattr(tech, "purpose"):
+        tech.purpose = {
+            "drawing": 0
+        }
+
+    if not hasattr(tech, "layer_label_map"):
+        # for when layer/purpose combination is different for labels (not necessarily the same as pins)
+        tech.layer_label_map = {}
+
+    if "ptx_implant_enclosure_active" not in drc:
+        drc["ptx_implant_enclosure_active"] = 0
+
+    if "implant_enclosure_poly" not in drc:
+        drc["implant_enclosure_poly"] = 0
+
 
 def initialize_classes():
     check_lvsdrc = OPTS.check_lvsdrc

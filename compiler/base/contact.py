@@ -23,7 +23,8 @@ class contact(design.design, metaclass=unique_meta.Unique):
     m2m3_layers = ("metal2", "via2", "metal3")
 
     @classmethod
-    def get_name(cls, layer_stack, dimensions=[1,1], implant_type=None, well_type=None):
+    def get_name(cls, layer_stack, dimensions=[1,1], implant_type=None, well_type=None,
+                 area_fill=False):
         if implant_type or well_type:
             name = "{0}_{1}_{2}_{3}x{4}_{5}{6}".format(layer_stack[0],
                                                        layer_stack[1],
@@ -38,9 +39,12 @@ class contact(design.design, metaclass=unique_meta.Unique):
                                                        layer_stack[2],
                                                        dimensions[0],
                                                        dimensions[1])
+        if area_fill:
+            name += "_fill"
         return name
 
-    def __init__(self, layer_stack, dimensions=[1,1], implant_type=None, well_type=None):
+    def __init__(self, layer_stack, dimensions=[1,1], implant_type=None, well_type=None,
+                 area_fill=False):
 
         design.design.__init__(self, self.name)
         debug.info(4, "create contact object {0}".format(self.name))
@@ -49,7 +53,8 @@ class contact(design.design, metaclass=unique_meta.Unique):
         self.dimensions = dimensions
         self.offset = vector(0,0)
         self.implant_type = implant_type
-        self.well_type = well_type        
+        self.well_type = well_type
+        self.area_fill = area_fill
         self.pins = [] # used for matching parm lengths
         self.create_layout()
 
@@ -90,30 +95,35 @@ class contact(design.design, metaclass=unique_meta.Unique):
 
         # DRC rules
         first_layer_minwidth = drc["minwidth_{0}".format(self.first_layer_name)]
-        first_layer_minarea = drc["minarea_{0}".format(self.first_layer_name)]
+        first_layer_minarea = self.get_min_area(self.first_layer_name)
         first_layer_enclosure = drc["{0}_enclosure_{1}".format(self.first_layer_name, self.via_layer_name)]
         first_layer_extend = drc["{0}_extend_{1}".format(self.first_layer_name, self.via_layer_name)]
         second_layer_minwidth = drc["minwidth_{0}".format(self.second_layer_name)]
-        second_layer_minarea = drc["minarea_{0}".format(self.second_layer_name)]
+        second_layer_minarea = self.get_min_area(self.second_layer_name)
         second_layer_enclosure = drc["{0}_enclosure_{1}".format(self.second_layer_name, self.via_layer_name)]
         second_layer_extend = drc["{0}_extend_{1}".format(self.second_layer_name, self.via_layer_name)]
 
         self.first_layer_horizontal_enclosure = max((first_layer_minwidth - self.contact_array_width) / 2,
                                                     first_layer_enclosure)
-        self.first_layer_vertical_enclosure = max(utils.ceil((first_layer_minarea
-                                                              / (self.contact_array_width + 2*self.first_layer_horizontal_enclosure)
-                                                              - self.contact_array_height)/2),
-                                                  (first_layer_minwidth - self.contact_array_height)/2,
+
+        self.first_layer_vertical_enclosure = max((first_layer_minwidth - self.contact_array_height)/2,
                                                   first_layer_extend)
 
-        self.second_layer_horizontal_enclosure = max((second_layer_minwidth - self.contact_array_width)/2,
+        self.second_layer_horizontal_enclosure = max((second_layer_minwidth - self.contact_array_width) / 2,
                                                      second_layer_enclosure)
-        self.second_layer_vertical_enclosure = max(utils.ceil((second_layer_minarea
-                                                               / (self.contact_array_width + 2*self.second_layer_horizontal_enclosure) 
-                                                               - self.contact_array_height)/2),
-                                                   (second_layer_minwidth - self.contact_array_height)/2,
+        self.second_layer_vertical_enclosure = max((second_layer_minwidth - self.contact_array_height)/2,
                                                    second_layer_extend)
-        
+
+        if self.area_fill:
+            first_layer_width = self.contact_array_width + 2 * self.first_layer_horizontal_enclosure
+            enclosure = utils.ceil(first_layer_minarea / first_layer_width) - self.contact_array_height
+            self.first_layer_vertical_enclosure = max(self.first_layer_vertical_enclosure,
+                                                      enclosure / 2)
+            second_layer_width = self.contact_array_width + 2 * self.second_layer_horizontal_enclosure
+            enclosure = utils.ceil((second_layer_minarea / second_layer_width) - self.contact_array_height)
+            self.second_layer_vertical_enclosure = max(self.second_layer_vertical_enclosure,
+                                                       enclosure / 2)
+
     def create_contact_array(self):
         """ Create the contact array at the origin"""
         # offset for the via array

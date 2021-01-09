@@ -411,8 +411,8 @@ class LatchedControlLogic(ControlBuffers):
                 self.add_cross_contact_center(via, vector(x_offset + 0.5 * self.m2_width, rail.cy()),
                                               rotate=via_rotate)
 
-                _, m2_fill = self.calculate_min_m1_area(layer=METAL2)
-                _, m3_fill = self.calculate_min_m1_area(layer=METAL3)
+                _, m2_fill = self.calculate_min_area_fill(layer=METAL2)
+                _, m3_fill = self.calculate_min_area_fill(layer=METAL3)
 
                 m2_height = max(m2_fill, rail.cy() - y_offset)
                 self.add_rect(METAL2, offset=vector(x_offset, y_offset), height=m2_height)

@@ -196,7 +196,7 @@ class contact(design.design, metaclass=unique_meta.Unique):
     def fill_via(self: design.design, via_inst):
         layer = via_inst.mod.first_layer_name
         fill_height = via_inst.height
-        fill_height, fill_width = self.calculate_min_m1_area(fill_height, layer=layer)
+        fill_height, fill_width = self.calculate_min_area_fill(fill_height, layer=layer)
         self.add_rect_center(layer, offset=vector(via_inst.cx(), via_inst.cy()), width=fill_width,
                              height=fill_height)
 

@@ -231,8 +231,8 @@ class HorizontalSram(CmosSram):
                 self.add_contact_center(via.layer_stack, offset=vector(rail.cx(), power_pin.cy()),
                                         size=[1, 2], rotate=90)
         fill_width = self.mid_vdd.width
-        _, fill_height = self.calculate_min_m1_area(fill_width, min_height=self.m3_width,
-                                                    layer=METAL3)
+        _, fill_height = self.calculate_min_area_fill(fill_width, min_height=self.m3_width,
+                                                      layer=METAL3)
 
         wide_space = self.get_wide_space(METAL3)
         via_spacing = wide_space + self.parallel_via_space
@@ -323,7 +323,7 @@ class HorizontalSram(CmosSram):
 
     def route_decoder_outputs(self):
         m3_fill_height = self.bus_width
-        _, m3_fill_width = self.calculate_min_m1_area(m3_fill_height, layer=METAL3)
+        _, m3_fill_width = self.calculate_min_area_fill(m3_fill_height, layer=METAL3)
 
         for row in range(self.num_rows):
             decoder_outs = self.row_decoder_inst.get_pins("decode[{}]".format(row))
@@ -346,7 +346,7 @@ class HorizontalSram(CmosSram):
                           width=right_x - x_offset, height=self.bus_width)
 
             m2_fill_width = m2m3.height
-            _, m2_fill_height = self.calculate_min_m1_area(m2_fill_width, layer=METAL2)
+            _, m2_fill_height = self.calculate_min_area_fill(m2_fill_width, layer=METAL2)
             offset = vector(wl_in.cx(), m3_decoder_out.cy())
 
             self.add_rect_center(METAL2, offset=offset,
@@ -571,7 +571,7 @@ class HorizontalSram(CmosSram):
                 self.col_decoder_outputs.append(self.add_rect(METAL2, offset=vector(x_offset, y_offset),
                                                               width=self.bus_width, height=self.bus_width))
             else:
-                _, fill_height = self.calculate_min_m1_area(self.bus_width, layer=METAL2)
+                _, fill_height = self.calculate_min_area_fill(self.bus_width, layer=METAL2)
                 rail_y = rails_y[i]
                 m2_height = rail_y - y_offset
                 self.add_rect(METAL2, offset=vector(x_offset, y_offset), height=m2_height, width=self.bus_width)

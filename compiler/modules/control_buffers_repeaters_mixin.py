@@ -75,7 +75,7 @@ class ControlBuffersRepeatersMixin:
 
         module_defs = OPTS.buffer_repeater_sizes
 
-        _, min_rail_width = self.calculate_min_m1_area(self.bus_width, layer=METAL3)
+        _, min_rail_width = self.calculate_min_area_fill(self.bus_width, layer=METAL3)
 
         modules_x_offset = OPTS.buffer_repeaters_x_offset - min_rail_width
 
@@ -239,10 +239,10 @@ class ControlBuffersRepeatersMixin:
                                                                  rotate=via_rotate)
                 for layer in fill_layers:
                     if layer == METAL3:
-                        fill_height, fill_width = self.calculate_min_m1_area(
+                        fill_height, fill_width = self.calculate_min_area_fill(
                             dest_pin.height(), layer=METAL3)
                     else:
-                        fill_width, fill_height = self.calculate_min_m1_area(
+                        fill_width, fill_height = self.calculate_min_area_fill(
                             bus_width, layer=METAL3)
                     self.add_rect_center(layer, offset=via_offset, width=fill_width,
                                          height=fill_height)

@@ -243,7 +243,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
 
         # m2 fill width for m1-m3 via
         self.via_m2_fill_height = m1m2.second_layer_height
-        _, self.via_m2_fill_width = self.calculate_min_m1_area(width=self.via_m2_fill_height, layer=METAL2)
+        _, self.via_m2_fill_width = self.calculate_min_area_fill(width=self.via_m2_fill_height, layer=METAL2)
 
         # The central bus is the column address (both polarities), row address
         self.num_addr_lines = self.row_addr_size
@@ -319,7 +319,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         self.mid_vdd_offset = self.mid_gnd_offset - self.wide_m1_space - self.vdd_rail_width
 
         fill_height = m2m3.second_layer_height + self.m2_width
-        (self.fill_height, self.fill_width) = self.calculate_min_m1_area(fill_height, self.m2_width)
+        (self.fill_height, self.fill_width) = self.calculate_min_area_fill(fill_height, self.m2_width)
 
     def get_control_logic_top(self, module_space):
         return self.logic_buffers_bottom + self.control_buffers.height + module_space
@@ -834,7 +834,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
                                                       cross_via=False)
         fill_widths, fill_heights, via_extensions = [], [], []
         for via, fill_layer in zip(vias[1:], fill_layers):
-            fill_height, fill_width = self.calculate_min_m1_area(via.height, layer=fill_layer)
+            fill_height, fill_width = self.calculate_min_area_fill(via.height, layer=fill_layer)
             fill_heights.append(fill_height)
             fill_widths.append(fill_width)
             via_extensions.append(self.get_drc_by_layer(fill_layer, "wide_metal_via_extension"))
@@ -1048,7 +1048,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         if fill_height is None:
             fill_height = m3m4.height
         if min_fill_width is None:
-            fill_height, min_fill_width = self.calculate_min_m1_area(fill_height, layer=METAL3)
+            fill_height, min_fill_width = self.calculate_min_area_fill(fill_height, layer=METAL3)
 
         fill_x = 0.5 * (pin_a.cx() + pin_b.cx())
         fill_width = max(min_fill_width, abs(pin_a.cx() - pin_b.cx()))
@@ -1058,7 +1058,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
     def route_flops(self):
         """Route input pins for mask flops and data flops"""
         fill_height = m3m4.height
-        fill_height, fill_width = self.calculate_min_m1_area(fill_height, layer=METAL3)
+        fill_height, fill_width = self.calculate_min_area_fill(fill_height, layer=METAL3)
 
         self.route_all_instance_power(self.mask_in_flops_inst)
         self.route_all_instance_power(self.data_in_flops_inst)
@@ -1109,7 +1109,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         sense_out_y = self.get_m2_m3_below_instance(self.sense_amp_array_inst, 0)
 
         fill_height = m3m4.height
-        fill_height, fill_width = self.calculate_min_m1_area(fill_height, layer=METAL3)
+        fill_height, fill_width = self.calculate_min_area_fill(fill_height, layer=METAL3)
 
         for word in range(self.word_size):
             tri_in = self.tri_gate_array_inst.get_pin("in[{}]".format(word))
@@ -1165,7 +1165,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         control_pins = ["bank_sel", "read"]
 
         x_offset = self.read_buf_inst.rx() + wide_space
-        _, fill_height = self.calculate_min_m1_area(rail_height, layer=METAL2)
+        _, fill_height = self.calculate_min_area_fill(rail_height, layer=METAL2)
         for i in range(2):
             mid_x = x_offset + 0.5 * rail_height
             control_pin = self.control_buffers_inst.get_pin(control_pins[i])
@@ -1407,8 +1407,8 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
                                                  size=via_size, rotate=via_rotate)
                 fill_width = power_pin.width()
                 min_height = m2_via.height if via_rotate == 0 else m2_via.width
-                _, fill_height = self.calculate_min_m1_area(fill_width, min_height=min_height,
-                                                            layer=METAL2)
+                _, fill_height = self.calculate_min_area_fill(fill_width, min_height=min_height,
+                                                              layer=METAL2)
                 self.add_rect_center(METAL2, offset=vector(power_pin.cx(), pin.cy()),
                                      width=fill_width, height=fill_height)
 
@@ -1444,7 +1444,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         power_groups = {k: list(v) for k, v in itertools.groupby(all_power_pins,
                                                                  key=lambda x: x.name)}
         fill_width = self.mid_gnd.width()
-        fill_width, fill_height = self.calculate_min_m1_area(fill_width, layer=METAL3)
+        fill_width, fill_height = self.calculate_min_area_fill(fill_width, layer=METAL3)
         for rail in [self.mid_vdd, self.right_vdd, self.mid_gnd, self.right_gnd]:
             self.add_layout_pin(rail.name, METAL4, offset=rail.ll(), width=rail.width(),
                                 height=rail.height())
@@ -1596,8 +1596,8 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
                 for via in [m1m2, m2m3, m3m4]:
                     self.add_contact_center(via.layer_stack, offset=offset, rotate=90)
                 for layer in [METAL2, METAL3]:
-                    fill_height, fill_width = self.calculate_min_m1_area(power_pin.height(),
-                                                                         layer=layer)
+                    fill_height, fill_width = self.calculate_min_area_fill(power_pin.height(),
+                                                                           layer=layer)
                     self.add_rect_center(layer, offset=offset, width=fill_width,
                                          height=fill_height)
 

@@ -58,12 +58,12 @@ class wordline_buffer(BufferStage):
         self.add_contact(m1m2.layer_stack, offset=vector(via_x, via_y), rotate=90)
         self.add_contact(m2m3.layer_stack, offset=vector(via_x, via_y), rotate=90)
         fill_width = m2m3.height
-        fill_width, fill_height = self.calculate_min_m1_area(fill_width, self.m2_width)
+        fill_width, fill_height = self.calculate_min_area_fill(fill_width, self.m2_width)
         self.add_rect(METAL2, offset=vector(via_x - fill_width, out_pin.cy() - 0.5 * fill_height),
                       width=fill_width, height=fill_height)
 
         wl_height = push_bitcell_array.bitcell.get_pin("wl").height()
-        _, fill_width = self.calculate_min_m1_area(wl_height, m2m3.height, layer=METAL3)
+        _, fill_width = self.calculate_min_area_fill(wl_height, m2m3.height, layer=METAL3)
         self.add_layout_pin("out", METAL3, offset=vector(out_pin.rx() - fill_width,
                                                          out_pin.cy() - 0.5 * wl_height),
                             width=fill_width, height=wl_height)

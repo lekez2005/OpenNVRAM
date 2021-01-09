@@ -104,6 +104,6 @@ class FlopBufferHorizontal(FlopBuffer):
             self.add_contact_center(m1m2.layer_stack, offset=via_offset)
             self.add_contact_center(m2m3.layer_stack, offset=via_offset)
             fill_height = m2m3.height
-            fill_height, fill_width = self.calculate_min_m1_area(fill_height, layer=METAL2)
+            fill_height, fill_width = self.calculate_min_area_fill(fill_height, layer=METAL2)
             self.add_rect_center(METAL2, offset=via_offset, width=fill_width, height=fill_height)
             self.copy_layout_pin(self.buffer_inst, pin_name)

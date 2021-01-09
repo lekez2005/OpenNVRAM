@@ -87,7 +87,7 @@ class SfBitlineBuffer(design.design):
         x_end = self.mid_x - 0.5 * self.parallel_line_space
         # poly extension past m1
         poly_extension = 0.5 * (poly_contact.first_layer_height - poly_contact.second_layer_height)
-        width, height = self.calculate_min_m1_area(x_end - x_start, poly_contact.second_layer_height + poly_extension)
+        width, height = self.calculate_min_area_fill(x_end - x_start, poly_contact.second_layer_height + poly_extension)
         self.add_rect("metal1", vector(x_end - width, 0), width=width, height=height)
         self.add_rect("metal1", vector(self.mid_x + 0.5 * self.parallel_line_space, 0), width=width, height=height)
         y_offset = height
@@ -106,7 +106,7 @@ class SfBitlineBuffer(design.design):
         gnd_contact_width = self.m1_width
         x_end = self.mid_x - 0.5 * gnd_contact_width - self.m1_space
         drain_contact_width = x_end - x_start
-        (_, drain_contact_height) = self.calculate_min_m1_area(drain_contact_width, 0)
+        (_, drain_contact_height) = self.calculate_min_area_fill(drain_contact_width, 0)
         if 0.5 * (active_height - drain_contact_height) > self.m1_space:
             active_mid_y = y_offset + 0.5 * active_height
         else:
@@ -201,7 +201,7 @@ class SfBitlineBuffer(design.design):
 
         x_start = 0.5 * self.parallel_line_space
         x_end = self.mid_x - 0.5 * self.parallel_line_space
-        fill_width, fill_height = self.calculate_min_m1_area(x_end - x_start, poly_contact.second_layer_height)
+        fill_width, fill_height = self.calculate_min_area_fill(x_end - x_start, poly_contact.second_layer_height)
         fill_y_offset = contact_y_offset + 0.5 * (poly_contact.first_layer_height - poly_contact.second_layer_height)
         self.add_rect("metal1", vector(x_end - fill_width, fill_y_offset), width=fill_width, height=fill_height)
         self.add_rect("metal1", vector(self.mid_x + 0.5 * self.parallel_line_space, fill_y_offset),

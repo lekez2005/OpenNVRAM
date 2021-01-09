@@ -118,7 +118,7 @@ class SwCamBank(SfCamBank):
 
             self.add_rect("metal3", offset=vector(via_x_offset, bitcell_ml.by()), width=bitcell_ml.lx()-via_x_offset)
             m2_fill_height = m2m3.second_layer_height
-            m2_fill_height, m2_fill_width = self.calculate_min_m1_area(m2_fill_height, self.m2_width)
+            m2_fill_height, m2_fill_width = self.calculate_min_area_fill(m2_fill_height, self.m2_width)
 
             y_offset = bitcell_ml.cy() - 0.5*m2_fill_height
             x_offset = via_x_offset - 0.5*(m2m3.second_layer_height + m2_fill_width)

@@ -344,8 +344,8 @@ class HorizontalBank(CmosBank):
             self.copy_layout_pin(self.wordline_driver_inst, "decode[{}]".format(row),
                                  "dec_out[{}]".format(row))
         fill_width = self.mid_vdd.width()
-        fill_width, fill_height = self.calculate_min_m1_area(fill_width, min_height=self.m2_width,
-                                                             layer=METAL2)
+        fill_width, fill_height = self.calculate_min_area_fill(fill_width, min_height=self.m2_width,
+                                                               layer=METAL2)
         rails = [self.mid_vdd, self.mid_gnd]
         pin_names = ["vdd", "gnd"]
         for i in range(2):

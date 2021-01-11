@@ -332,12 +332,15 @@ def standardize_tech_config():
         tech.add_tech_layers = no_op
 
     if not hasattr(tech, "layer_pin_map"):
-        tech.layer_pin_map = {}
+        tech.layer_pin_map = {"text_layers": {}}
 
     if not hasattr(tech, "purpose"):
         tech.purpose = {
             "drawing": 0
         }
+
+    if not hasattr(tech, "drc_exceptions"):
+        tech.drc_exceptions = {}
 
     if not hasattr(tech, "layer_label_map"):
         # for when layer/purpose combination is different for labels (not necessarily the same as pins)

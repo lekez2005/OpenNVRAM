@@ -15,14 +15,35 @@ class Pnand2Test(OpenRamTest):
         from pgates import pnand2
 
         debug.info(2, "Checking 2-input nand gate")
-        tx = pnand2.pnand2(size=1)
+        tx = pnand2.pnand2(size=1, same_line_inputs=False)
         self.local_check(tx)
 
-    def test_bitcell_aligned_pnand2(self):
+    def test_pnand2_same_line_inputs(self):
+        from pgates import pnand2
+
+        debug.info(2, "Checking 2-input nand gate")
+        tx = pnand2.pnand2(size=1, same_line_inputs=True)
+        self.local_check(tx)
+
+    def test_bitcell_aligned_pnand2_tap(self):
+        from globals import OPTS
         from pgates import pnand2
         import tech
         debug.info(2, "Checking 1x size bitcell pitch matched")
-        tech.drc_exceptions["pnand2"] = tech.drc_exceptions["latchup"] + tech.drc_exceptions["min_nwell"]
+        OPTS.use_body_taps = False
+        tech.drc_exceptions["pnand2"] = (tech.drc_exceptions.get("latchup", []) +
+                                         tech.drc_exceptions.get("min_nwell", []))
+        tx = pnand2.pnand2(size=1, align_bitcell=True)
+        self.local_drc_check(tx)
+
+    def test_bitcell_aligned_pnand2_no_tap(self):
+        from globals import OPTS
+        from pgates import pnand2
+        import tech
+        debug.info(2, "Checking 1x size bitcell pitch matched")
+        OPTS.use_body_taps = True
+        tech.drc_exceptions["pnand2"] = (tech.drc_exceptions.get("latchup", []) +
+                                         tech.drc_exceptions.get("min_nwell", []))
         tx = pnand2.pnand2(size=1, align_bitcell=True)
         self.local_drc_check(tx)
 

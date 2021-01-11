@@ -183,7 +183,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             raise ValueError("heights must be iterable of length 2")
         min_height = min(heights)
         line_end_threshold = cls.get_drc_by_layer(layer, "line_end_threshold")
-        return min_height < line_end_threshold
+        return line_end_threshold and min_height < line_end_threshold
 
     @classmethod
     def is_thin_implant(cls, layer, min_width):

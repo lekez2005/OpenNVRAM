@@ -13,15 +13,20 @@ VERTICAL = "vertical"
 HORIZONTAL = "horizontal"
 
 
-def calculate_tx_metal_fill(tx_width, design_mod: design):
+def calculate_tx_metal_fill(tx_width, design_mod: design, contact_if_none=False):
     """Calculate metal fill properties
-    if tx is wide enough to not need to be filled, just return None
+    if tx is wide enough to not need to be filled,
+        just return None unless contact_if_none in which case return dimensions of contact
     design_mod acts as gateway to design class parameters
     """
     num_contacts = design_mod.calculate_num_contacts(tx_width)
     test_contact = contact.contact(contact.well.layer_stack,
                                    dimensions=[1, num_contacts])
     if test_contact.second_layer_height > design_mod.metal1_minwidth_fill:
+        if contact_if_none:
+            fill_height = test_contact.second_layer_height
+            y_offset = 0.5 * tx_width - 0.5 * fill_height
+            return y_offset, y_offset + fill_height, test_contact.second_layer_width, fill_height
         return None
     fill_width = utils.round_to_grid(2 * (design_mod.poly_pitch - 0.5 * design_mod.m1_width
                                           - design_mod.m1_space))

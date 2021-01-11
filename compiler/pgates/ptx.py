@@ -61,8 +61,8 @@ class ptx(design.design):
         min_y = min(rects, key=lambda x: x.by()).by()
         self.height = max(rects, key=lambda x: x.uy()).uy() - min_y
         self.width = self.active_rect.width
-        # self.translate_all(vector(self.active_offset.x, min_y))
-        # self.add_boundary()
+        self.translate_all(vector(self.active_offset.x, min_y))
+        self.add_boundary()
 
         # for run-time, we won't check every transitor DRC independently
         # but this may be uncommented for debug purposes

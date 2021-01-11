@@ -6,9 +6,11 @@ File containing the process technology parameters for FreePDK 45nm.
 
 
 def add_tech_layers(obj):
-    if "ptx" in obj.__class__.__name__:
-        obj.add_rect(layer="vtg", offset=(0, 0), width=obj.cell_well_width,
-                     height=obj.cell_well_height)
+    for layer_ in ["nwell", "pwell"]:
+        for well_rect in obj.get_layer_shapes(layer_):
+            obj.add_rect("vtg", offset=well_rect.ll(), width=well_rect.width,
+                         height=well_rect.height)
+
 
 info = {}
 info["name"] = "freepdk45"
@@ -101,6 +103,8 @@ drc["minwidth_well"] = 0.2
 drc["minwidth_poly"] = 0.05
 # POLY.2 Minimum spacing of poly AND active
 drc["poly_to_poly"] = 0.14
+# space between vertical ends of poly
+drc["poly_end_to_end"] = 0.075
 # POLY.3 Minimum poly extension beyond active
 drc["poly_extend_active"] = 0.055
 # POLY.4 Minimum enclosure of active around gate

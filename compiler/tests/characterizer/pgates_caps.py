@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import json
 import os
+import pathlib
+import re
 
 import numpy as np
 
 from char_test_base import CharTestBase
-from characterization_utils import files_by_beta
+from characterization_utils import beta_regex
 
 ACTION_SINGLE = "single"
 ACTION_SWEEP = "sweep"
@@ -34,7 +36,7 @@ class PgateCaps(CharTestBase):
         cls.parser.add_argument("--max_size",
                                 default=50, type=float, help="Inverter size")
         cls.parser.add_argument("--num_sizes",
-                                default=10, type=float, help="Inverter size")
+                                default=20, type=float, help="Inverter size")
 
     def test_single_sim(self):
         import debug
@@ -65,8 +67,9 @@ class PgateCaps(CharTestBase):
                 sizes = np.linspace(1, self.options.max_size, self.options.num_sizes)
                 pins = ["A"]
             else:
-                sizes = [self.options.size]
-                if gate in [PNOR2, PNOR2]:
+                # sizes = [self.options.size]
+                sizes = [1, 1.5, 2]
+                if gate in [PNAND2, PNOR2]:
                     pins = ["A", "B"]
                 else:
                     pins = ["A", "B", "C"]
@@ -160,42 +163,44 @@ class PgateCaps(CharTestBase):
 
         if not self.options.plot:
             return
-        results_dir = self.get_char_data_file("inverter_cin")
-        sorted_files = files_by_beta(results_dir)
+        results_dir = self.get_char_data_file("")
 
-        fig, subplots = plt.subplots(nrows=2, ncols=1, sharex=True)
+        save_dir = self.get_char_data_file("inverter_cin")
+        if not os.path.exists(save_dir):
+            pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
+
+        valid_files = list(filter(lambda x: x.startswith("pinv"), os.listdir(results_dir)))
+
+        sorted_files = list(sorted(valid_files, key=beta_regex))
 
         for f in sorted_files:
-            beta = float(os.path.basename(f)[5:-5])
-            with open(f, "r") as result_file:
+            beta = beta_regex(f)
+            with open(os.path.join(results_dir, f), "r") as result_file:
                 data = json.load(result_file)
-            keys = list(sorted(list(data.keys()), key=lambda x: float(x)))
+            gate_cap_data = data["A"]
+            # group by properties other than size
+            characterization_groups = {}
+            for key, val in gate_cap_data.items():
+                match = re.search(r"(.*)size_([0-9\.]+)_?(.*)", key)
 
-            cap_normalized = []
-            cap_data = []
-            size_data = []
-            for key in keys:
-                size_data.append(float(key))
-                cap_data.append(data[key]["cap"] * 1e15)
-                cap_normalized.append(data[key]["unit_cap"] * 1e15)
+                other_properties = match.groups()[0] + match.groups()[2]
+                size = float(match.groups()[1])
+                if other_properties not in characterization_groups:
+                    characterization_groups[other_properties] = []
+                characterization_groups[other_properties].append([size, val])
+            for key, val in characterization_groups.items():
+                val = list(sorted(val, key=lambda x: x[0]))
 
-            subplots[0].plot(size_data, cap_data, label=r"$\beta$={:.3g}".format(beta))
-            subplots[1].plot(size_data, cap_normalized, label=r"$\beta$={:.3g}".format(beta))
+                full_legend = r"{}$\beta$={:.3g}".format(key, beta)
+                plt.plot([x[0] for x in val], [x[1]*1e15 for x in val], '-+', label=full_legend)
 
+        plt.grid()
         plt.xlabel("Inverter size")
-        subplots[0].set_ylabel("Cap (fF)")
-        subplots[1].set_ylabel("Normalized Cap (fF)")
+        plt.ylabel("Cap per unit size (fF)")
 
-        titles = ["Total gate cap", "Gate cap per unit size"]
-
-        for i in range(2):
-            subplots[i].set_title(titles[i])
-            subplots[i].legend(fontsize=8)
-            subplots[i].grid()
-
-        fig.tight_layout()
-        plt.savefig(os.path.join(results_dir, "inverter_cin.png"))
-        plt.savefig(os.path.join(results_dir, "inverter_cin.pdf"))
+        plt.tight_layout()
+        plt.savefig(os.path.join(save_dir, "inverter_cin.png"))
+        plt.savefig(os.path.join(save_dir, "inverter_cin.pdf"))
         plt.show()
 
 

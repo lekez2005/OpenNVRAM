@@ -133,3 +133,11 @@ def files_by_beta(directory):
 
     sorted_files = list(sorted(valid_files, key=lambda x: float(x[5:-5])))
     return [os.path.join(directory, x) for x in sorted_files]
+
+
+def beta_regex(file_name):
+    match = (re.search(r"beta_([0-9\.]+)\.json", file_name) or
+             re.search(r"beta_([0-9\.]+)_.*\.json", file_name))
+    if match:
+        return float(match.group(1))
+    return None

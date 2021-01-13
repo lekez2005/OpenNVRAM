@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import numpy as np
 import os
 import pathlib
 from importlib import reload
@@ -13,11 +14,11 @@ from characterization_utils import (TEN_FIFTY_THRESH, TEN_NINETY,
                                     search_meas,
                                     replace_arg)
 
-ACTION_SINGLE = "single"
-ACTION_SWEEP = "sweep"
-ACTION_SWEEP_TX = "sweep_tx"
-ACTION_BETA_SWEEP = "beta_sweep"
-ACTION_BETA_PLOT = "beta_plot"
+ACTION_SINGLE = "single"  # run single simulation using default technology beta, print r_p, r_n
+ACTION_SWEEP = "sweep"  # for each gate (pinv, pnand2/3, pnor2, and sizes from size->max_size, sweep
+ACTION_SWEEP_TX = "sweep_tx"  # sweep but for transistors
+ACTION_BETA_SWEEP = "beta_sweep"  # sweep beta from 'min_beta' to 'max_beta' and save r_p, r_n
+ACTION_BETA_PLOT = "beta_plot"  # plot previous beta sweep
 
 MOS = "mos"
 NMOS = "nmos"
@@ -48,6 +49,8 @@ class MeasureResistance(CharTestBase):
                                 default=50, type=float, help="Inverter size")
         cls.parser.add_argument("--num_sizes",
                                 default=10, type=float, help="Inverter size")
+        cls.parser.add_argument("--min_beta", type=float, default=1.0, help="min beta for beta sweep")
+        cls.parser.add_argument("--max_beta", type=float, default=3.0, help="max beta for beta sweep")
 
     def add_additional_includes(self, stim_file):
         if self.dut_pex:
@@ -90,7 +93,8 @@ class MeasureResistance(CharTestBase):
         buffer = BufferStage(buffer_stages=buffer_stages,
                              height=self.logic_buffers_height)
 
-        buffer_pex = self.run_pex_extraction(buffer, buffer.name, run_drc=False)
+        buffer_pex = self.run_pex_extraction(buffer, buffer.name, run_drc=self.options.run_drc_lvs,
+                                             run_lvs=self.options.run_drc_lvs)
 
         vdd_value = self.corner[1]
 
@@ -235,7 +239,6 @@ class MeasureResistance(CharTestBase):
                                      file_suffixes=[])
 
     def test_sweep(self):
-        import numpy as np
         from pgates_caps import PINV, PNAND2, PNOR2, PNAND3
         if not self.options.action == ACTION_SWEEP:
             return
@@ -285,7 +288,7 @@ class MeasureResistance(CharTestBase):
 
         results_dir = OPTS.openram_temp
 
-        all_beta = [1.1, 1.2, 1.3, 1.4, 1.5, 1.8]
+        all_beta = np.linspace(self.options.min_beta, self.options.max_beta, self.options.num_sizes)
         methods = [TEN_FIFTY_THRESH, TEN_NINETY]
 
         results = {
@@ -313,8 +316,8 @@ class MeasureResistance(CharTestBase):
                 method_r_p.append(r_p)
                 print("    Rn = {:.4g}".format(r_n))
                 print("    Rp = {:.4g}".format(r_p))
-            results["Rn"][self.options.method] = [all_beta, method_r_n]
-            results["Rp"][self.options.method] = [all_beta, method_r_p]
+            results["Rn"][self.options.method] = [all_beta.tolist(), method_r_n]
+            results["Rp"][self.options.method] = [all_beta.tolist(), method_r_p]
 
         results_file_name = os.path.join(results_dir,
                                          "{}_resistance_beta.json".format(self.options.gate))

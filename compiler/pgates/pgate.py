@@ -5,10 +5,11 @@ from base import contact
 from base import design
 from base import utils
 from base.contact import m1m2
-from base.design import METAL1, PO_DUMMY, ACTIVE, PIMP, NIMP, NWELL, METAL2
+from base.design import METAL1, PO_DUMMY, PIMP, NIMP, NWELL, METAL2
 from base.hierarchy_spice import INPUT, OUTPUT
 from base.utils import round_to_grid
 from base.vector import vector
+from base.well_active_contacts import calculate_contact_width
 from base.well_implant_fills import calculate_tx_metal_fill
 from globals import OPTS
 from tech import drc, parameter, info
@@ -130,7 +131,7 @@ class pgate(design.design):
         self.bottom_space = max(self.bottom_space, poly_poly_allowance)
 
         # estimate top and bottom space based on well contacts
-        self.well_contact_active_height = contact.active.first_layer_width
+        self.well_contact_active_height = contact.well.first_layer_width
         self.well_contact_implant_height = max(self.implant_width,
                                                self.well_contact_active_height +
                                                2 * self.implant_enclose_active)
@@ -329,18 +330,10 @@ class pgate(design.design):
         self.active_contact_layers = contact.well.layer_stack
 
     def calculate_body_contacts(self):
-        body_contact = self.calculate_num_contacts(self.width - self.contact_pitch,
-                                                   return_sample=True)
+
+        active_width, body_contact = calculate_contact_width(self, self.width,
+                                                             self.well_contact_active_height)
         self.body_contact = body_contact
-
-        contact_extent = body_contact.first_layer_height
-
-        min_active_area = drc.get("minarea_cont_active_thin", self.get_min_area(ACTIVE))
-        min_active_width = utils.ceil(min_active_area / self.well_contact_active_height)
-        active_width = max(contact_extent, min_active_width)
-
-        # prevent minimum spacing drc
-        active_width = max(active_width, self.width)
 
         self.well_contact_active_width = active_width
 

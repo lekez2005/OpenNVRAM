@@ -94,6 +94,10 @@ drc["layer_map"]=os.environ.get("OPENRAM_TECH")+"/freepdk45/layers.map"
 drc["minwidth_tx"]=0.09
 drc["minlength_channel"] = 0.05
 
+# for metal buses
+drc["medium_width"] = 0.08
+drc["bus_space"] = 0.08
+
 # WELL.1 Minimum spacing of nwell/pwell at different potential
 drc["pwell_to_nwell"] = 0.225
 # WELL.4 Minimum width of nwell/pwell

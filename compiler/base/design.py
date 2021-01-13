@@ -268,22 +268,8 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         """
         Calculates the possible number of source/drain contacts in a finger.
         """
-        from base import contact
-        num_contacts = int(math.ceil(tx_width / (self.contact_width + self.contact_spacing)))
-        while num_contacts > 1:
-            contact_array = contact.contact(layer_stack=("active", "contact", "metal1"),
-                                            dimensions=[1, num_contacts],
-                                            implant_type=None,
-                                            well_type=None)
-            if (contact_array.first_layer_height < tx_width and
-                    contact_array.second_layer_height < tx_width):
-                if return_sample:
-                    return contact_array
-                break
-            num_contacts -= 1
-        if num_contacts == 1 and return_sample:
-            return contact.well
-        return num_contacts
+        from base.well_active_contacts import calculate_num_contacts as calc_func
+        return calc_func(self, tx_width, return_sample)
 
     @staticmethod
     def get_min_area(layer, prefix=None):

@@ -104,7 +104,7 @@ def get_body_tap():
     from modules import body_tap as mod_body_tap
 
     body_tap = mod_body_tap.body_tap
-    return body_tap
+    return body_tap()
 
 def get_tap_positions(num_columns):
     # cells_per_group to accommodate peripherals spanning more than one bitcell.

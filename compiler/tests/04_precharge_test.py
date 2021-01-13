@@ -13,7 +13,7 @@ class PrechargeTest(OpenRamTest):
         from modules import precharge
 
         debug.info(2, "Checking precharge")
-        tx = precharge.precharge(name="precharge_driver", size=1)
+        tx = precharge.precharge(name="precharge", size=1)
         self.local_check(tx)
 
 

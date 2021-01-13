@@ -316,7 +316,7 @@ def import_tech():
 def standardize_tech_config():
     """Add defaults for properties defined in tech.py """
     import tech
-    from tech import drc
+    from tech import drc, info
     # Set some default options now based on the technology...
     if OPTS.process_corners == "":
         OPTS.process_corners = tech.spice["fet_models"].keys()
@@ -327,6 +327,8 @@ def standardize_tech_config():
 
     def no_op(_):
         pass
+
+    info["horizontal_poly"] = info.get("horizontal_poly", True)
 
     if not hasattr(tech, "add_tech_layers"):
         tech.add_tech_layers = no_op

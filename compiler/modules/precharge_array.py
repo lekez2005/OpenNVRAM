@@ -1,7 +1,9 @@
 import debug
 from base import design
 from base import utils
+from base.design import NWELL
 from base.vector import vector
+from globals import OPTS
 from modules.precharge import precharge, precharge_tap
 from tech import drc
 
@@ -30,8 +32,9 @@ class precharge_array(design.design):
         self.pc_cell = precharge(name="precharge", size=self.size)
         self.add_mod(self.pc_cell)
 
-        self.body_tap = precharge_tap(self.pc_cell)
-        self.add_mod(self.body_tap)
+        if OPTS.use_body_taps:
+            self.body_tap = precharge_tap(self.pc_cell)
+            self.add_mod(self.body_tap)
 
     def add_pins(self):
         """Adds pins for spice file"""
@@ -52,7 +55,6 @@ class precharge_array(design.design):
                             offset=en_pin.ll(),
                             width=self.width,
                             height=en_pin.height())
-        
 
     def add_insts(self):
         """Creates a precharge array by horizontally tiling the precharge cell"""
@@ -81,10 +83,9 @@ class precharge_array(design.design):
             self.add_inst(self.body_tap.name, self.body_tap, offset=vector(x_offset, 0))
             self.connect_inst([])
         self.width = inst.rx()
-        layers = ["nwell"]
-        purposes = ["drawing"]
-        for i in range(1):
-            rect = self.pc_cell.get_layer_shapes(layers[i], purposes[i])[0]
-            self.add_rect(layers[i], offset=vector(0, rect.by()),
-                          width=self.width+self.well_enclose_implant, height=rect.height)
 
+        # fill nwell
+        rect = self.pc_cell.get_layer_shapes(NWELL)[0]
+        enclosure = self.well_enclose_ptx_active
+        self.add_rect(NWELL, offset=vector(-enclosure, rect.by()),
+                      width=self.width + 2 * enclosure, height=rect.height)

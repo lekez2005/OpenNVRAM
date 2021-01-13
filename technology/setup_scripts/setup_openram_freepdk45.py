@@ -21,6 +21,7 @@ os.environ["MGC_TMPDIR"] = "/tmp"
 
 layer_map =  os.path.join(os.environ.get("OPENRAM_TECH"), "freepdk45/layers.map")
 export_library_name = "generated"
+import_library_name = "openram"
 pdk_library_name = "NCSU_TechLib_FreePDK45"
 cadence_work_dir = os.path.abspath(os.path.join(PDK_DIR, "..", "cadence"))
 

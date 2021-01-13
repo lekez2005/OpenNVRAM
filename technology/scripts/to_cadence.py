@@ -1,17 +1,18 @@
 #!/bin/env python
 
-import importlib.util
-import os, sys
+import os
 import subprocess
+import sys
+
+sys.path.append(os.path.dirname(__file__))
+try:
+    from script_loader import load_setup
+except (ImportError, ModuleNotFoundError):
+    from .script_loader import load_setup
 
 
 def export_gds(gds):
-    tech_directory = os.environ.get("OPENRAM_TECH")
-    tech_name = os.environ.get("OPENRAM_TECH_NAME")
-    setup_path = "{0}/setup_scripts/setup_openram_{1}.py".format(tech_directory, tech_name)
-    spec = importlib.util.spec_from_file_location("setup", setup_path)
-    setup = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(setup)
+    setup, _ = load_setup()
 
     command = [
         "strmin",

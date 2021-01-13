@@ -264,7 +264,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         inst_map = inst.mod.pin_map
         return inst_map
 
-    def calculate_num_contacts(self, tx_width):
+    def calculate_num_contacts(self, tx_width, return_sample=False):
         """
         Calculates the possible number of source/drain contacts in a finger.
         """
@@ -275,9 +275,14 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                                             dimensions=[1, num_contacts],
                                             implant_type=None,
                                             well_type=None)
-            if contact_array.first_layer_height < tx_width and contact_array.second_layer_height < tx_width:
+            if (contact_array.first_layer_height < tx_width and
+                    contact_array.second_layer_height < tx_width):
+                if return_sample:
+                    return contact_array
                 break
             num_contacts -= 1
+        if num_contacts == 1 and return_sample:
+            return contact.well
         return num_contacts
 
     @staticmethod

@@ -50,7 +50,7 @@ class BufferStage(design.design, metaclass=Unique):
         if not contact_pwell:
             name += "_no_pwell_cont"
         if not height == pinv.bitcell.height:
-            name += "_h_{:.2g}".format(height)
+            name += "_h_{:.4g}".format(height)
         if align_bitcell:
             name += "_align"
 

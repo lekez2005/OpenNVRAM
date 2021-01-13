@@ -1,3 +1,5 @@
+bitcell_mod = "cell_6t_wide_pins"
+use_body_taps = False
 
 logic_buffers_height = 1.35
 tech_name = "freepdk45"

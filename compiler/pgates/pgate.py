@@ -5,7 +5,7 @@ from base import contact
 from base import design
 from base import utils
 from base.contact import m1m2
-from base.design import METAL1, PO_DUMMY, ACTIVE, PIMP, NIMP, NWELL
+from base.design import METAL1, PO_DUMMY, ACTIVE, PIMP, NIMP, NWELL, METAL2
 from base.hierarchy_spice import INPUT, OUTPUT
 from base.utils import round_to_grid
 from base.vector import vector
@@ -311,41 +311,49 @@ class pgate(design.design):
         self.poly_height = (self.middle_space + self.nmos_width + self.pmos_width +
                             2 * self.poly_extend_active)
 
-        self.calulate_body_contacts()
-        implant_area = self.get_min_area(PIMP) or 0
-        self.implant_width = max(self.implant_width,
-                                 utils.ceil(self.well_contact_active_width +
-                                            2 * self.implant_enclose_active),
-                                 utils.ceil(implant_area / self.well_contact_implant_height))
+        self.calculate_body_contacts()
 
         self.nimplant_height = self.mid_y - 0.5 * self.well_contact_implant_height
         self.pimplant_height = self.height - 0.5 * self.well_contact_implant_height - self.mid_y
 
         self.nwell_height = (self.height - self.mid_y + 0.5 * self.well_contact_active_height +
                              self.well_enclose_active)
-        self.nwell_width = max(self.implant_width, self.active_width + 2 * self.well_enclose_ptx_active)
+        self.nwell_width = max(self.implant_width, self.active_width + 2 * self.well_enclose_ptx_active,
+                               self.nwell_width)
+
+        if info["has_pwell"]:  # prevent overlap with adjacent cell's pwell
+            self.nwell_width = self.width
 
         self.pmos_contacts = self.calculate_num_contacts(self.pmos_width)
         self.nmos_contacts = self.calculate_num_contacts(self.nmos_width)
         self.active_contact_layers = contact.well.layer_stack
 
-    def calulate_body_contacts(self):
-        num_contacts = max(self.calculate_num_contacts(self.width - 2 * self.contact_pitch), 1)
-        self.num_body_contacts = num_contacts
+    def calculate_body_contacts(self):
+        body_contact = self.calculate_num_contacts(self.width - self.contact_pitch,
+                                                   return_sample=True)
+        self.body_contact = body_contact
 
-        contact_extent = num_contacts * self.contact_pitch - self.contact_space
-        self.contact_x_start = self.mid_x - 0.5 * contact_extent + 0.5 * self.contact_width
+        contact_extent = body_contact.first_layer_height
 
         min_active_area = drc.get("minarea_cont_active_thin", self.get_min_area(ACTIVE))
         min_active_width = utils.ceil(min_active_area / self.well_contact_active_height)
-        active_width = max(2 * contact.active.first_layer_vertical_enclosure + contact_extent,
-                           min_active_width)
+        active_width = max(contact_extent, min_active_width)
 
         # prevent minimum spacing drc
         active_width = max(active_width, self.width)
 
         self.well_contact_active_width = active_width
-        self.implant_width = max(self.implant_width, active_width + 2 * self.well_enclose_active)
+
+        implant_area = self.get_min_area(PIMP) or 0
+        self.contact_implant_width = max(self.implant_width,
+                                         utils.ceil(self.well_contact_active_width +
+                                                    2 * self.implant_enclose_active),
+                                         utils.ceil(implant_area / self.well_contact_implant_height))
+
+        self.nwell_width = self.contact_nwell_width = max(self.contact_implant_width,
+                                                          self.well_contact_active_width +
+                                                          2 * self.well_enclose_active)
+        self.contact_nwell_height = body_contact.first_layer_width + 2 * self.well_enclose_active
 
     def add_poly(self):
         poly_offsets = []
@@ -433,8 +441,8 @@ class pgate(design.design):
 
     def connect_to_out_pin(self, positions, mid_y, contact_shift):
         min_drain_x = min(positions)
-        offset = vector(positions[0], mid_y - 0.5 * self.m2_width)
-        self.add_rect("metal2", offset=offset, width=self.output_x - min_drain_x)
+        offset = vector(positions[0], mid_y - 0.5 * m1m2.height)
+        self.add_rect(METAL2, offset=offset, width=self.output_x - min_drain_x, height=m1m2.height)
         offset = vector(self.output_x + 0.5 * contact.m1m2.first_layer_width, mid_y + contact_shift)
         self.add_contact_center(layers=m1m2.layer_stack, offset=offset)
 
@@ -528,14 +536,23 @@ class pgate(design.design):
                                             width=self.width, height=self.rail_height)
 
             if (i == 0 and self.contact_pwell) or (i == 1 and self.contact_nwell):
-                self.add_rect_center(implants[i], offset=vector(self.mid_x, y_offset), width=self.implant_width,
+                self.add_rect_center(implants[i], offset=vector(self.mid_x, y_offset),
+                                     width=self.contact_implant_width,
                                      height=self.well_contact_implant_height)
                 self.add_rect_center("active", offset=vector(self.mid_x, y_offset),
                                      width=self.well_contact_active_width,
                                      height=self.well_contact_active_height)
-                for j in range(self.num_body_contacts):
-                    x_offset = self.contact_x_start + j * self.contact_pitch
-                    self.add_rect_center("contact", offset=vector(x_offset, y_offset))
+                self.add_contact_center(self.body_contact.layer_stack, rotate=90,
+                                        offset=vector(self.mid_x, y_offset),
+                                        size=self.body_contact.dimensions)
+
+            # cover with well
+            if info["has_pwell"]:
+                well_layer = "pwell" if i == 0 else "nwell"
+                self.add_rect_center(well_layer, offset=vector(self.mid_x, y_offset),
+                                     width=self.contact_nwell_width, height=self.contact_nwell_height)
+
+
 
     def add_output_pin(self):
         offset = vector(self.output_x, self.active_mid_y_nmos)

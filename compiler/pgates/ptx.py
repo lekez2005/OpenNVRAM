@@ -1,7 +1,7 @@
 import re
 
 import debug
-from base import design
+from base import design, utils
 from base.contact import contact, m1m2, poly as poly_contact
 from base.design import METAL1, METAL2, POLY
 from base.hierarchy_spice import INOUT, INPUT
@@ -29,6 +29,7 @@ class ptx(design.design):
         # will use the last record with a given name. I.e., you will
         # over-write a design in GDS if one has and the other doesn't
         # have poly connected, for example.
+        width = utils.ceil(width)
         name = "{0}_m{1}_w{2:.4g}".format(tx_type, mults, width)
         if connect_active:
             name += "_a"
@@ -282,6 +283,8 @@ class ptx(design.design):
         """
         Connect each contact  up/down to a source or drain pin
         """
+        if self.mults == 1:
+            return
 
         # This is the distance that we must route up or down from the center
         # of the contacts to avoid DRC violations to the other contacts

@@ -1,5 +1,8 @@
-bitcell_mod = "cell_6t_wide_pins"
+bitcell_mod = "cell_6t_4_fingers"
 use_body_taps = False
+
+sense_amp = "latched_sense_amp"
+sense_amp_array = "latched_sense_amp_array"
 
 logic_buffers_height = 1.35
 tech_name = "freepdk45"

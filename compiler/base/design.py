@@ -335,7 +335,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         return [rect(x) for x in boundaries]
 
     def get_poly_fills(self, cell):
-        poly_dummies = self.get_gds_layer_shapes(cell, "po_dummy", "po_dummy", recursive=True)
+        poly_dummies = self.get_gds_layer_shapes(cell, PO_DUMMY, PO_DUMMY, recursive=True)
         poly_rects = self.get_gds_layer_shapes(cell, "poly", recursive=True)
 
         # only polys with active layer interaction need to be filled
@@ -417,6 +417,8 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         return []
 
     def add_dummy_poly(self, cell, instances, words_per_row, from_gds=True):
+        if PO_DUMMY not in tech_layers:
+            return
         instances = list(instances)
         cell_fills = self.get_poly_fills(cell)
 

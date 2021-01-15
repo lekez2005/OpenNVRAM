@@ -236,7 +236,7 @@ drc["metal4_extend_via4"] = 0.07
 
 # Metal 5-10 are ommitted
 
-drc["rail_height"] = 0.14
+drc["rail_height"] = 0.13
 
 
 ###################################################

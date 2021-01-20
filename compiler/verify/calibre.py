@@ -224,7 +224,8 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
         'lvsMaskDBFile': get_temp_file(cell_name + ".maskdb"),
         'cmnFDILayerMapFile': drc["layer_map"],
         'cmnFDIUseLayerMap': 1,
-        'lvsRecognizeGates': 'NONE'
+        # TODO NONE vs SIMPLE vs ALL? None -> Simple change fixes an LVS error
+        'lvsRecognizeGates': 'SIMPLE'
         #'cmnVConnectNamesState' : 'ALL', #connects all nets with the same name
     }
     lvs_runset.update(get_lvs_box_cells())

@@ -104,6 +104,7 @@ class options(optparse.Values):
     precharge_array = "precharge_array"
     column_mux_array = "single_level_column_mux_array"
     write_driver = "write_driver"
+    write_driver_mod = "write_driver"
     write_driver_array = "write_driver_array"
     tri_gate = "tri_gate"
     tri_gate_array = "tri_gate_array"

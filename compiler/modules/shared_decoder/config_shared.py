@@ -9,9 +9,9 @@ mram = ""
 decoder_flops = True
 separate_vdd = False
 
-write_driver = "write_driver_mask"
 write_driver_mod = "write_driver_mask_3x"
-write_driver_tap = "write_driver_mask_3x_tap"
+write_driver_tap = "write_driver_tap"
+write_driver_tap_mod = "write_driver_mask_3x_tap"
 write_driver_array = "write_driver_mask_array"
 wordline_driver = "wordline_driver_array"
 

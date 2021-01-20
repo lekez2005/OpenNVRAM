@@ -90,9 +90,13 @@ class BitcellAlignedArray(design, ABC):
     def create_modules(self):
         """Create child_mod and body tap"""
         self.child_mod = self.create_mod_from_str(self.mod_name)
+        debug.info(1, "Using module {} for {}".format(self.child_mod.name,
+                                                      self.name))
         self.height = self.child_mod.height
         if self.tap_name and OPTS.use_body_taps:
             self.body_tap = self.create_mod_from_str(self.tap_name)
+            debug.info(1, "Using body tap {} for {}".format(self.body_tap.name,
+                                                            self.name))
 
     def create_array(self):
         """Add child instances"""
@@ -203,9 +207,8 @@ class BitcellAlignedArray(design, ABC):
 
         right_buffer_x_offsets = getattr(OPTS, "repeaters_array_space_offsets", [])
 
-        tap_offsets = self.tap_offsets
+        tap_offsets = self.tap_offsets[1:]  # first tap offset doesn't have to be filled
         if layer == NWELL:
-            tap_offsets = self.tap_offsets[1:]  # first tap offset doesn't have to be filled
             if len(right_buffer_x_offsets) > 0:
                 tap_offsets += right_buffer_x_offsets
 
@@ -216,9 +219,6 @@ class BitcellAlignedArray(design, ABC):
                 for tap_offset in tap_offsets:
                     self.add_rect(layer, offset=vector(tap_offset, rect.by()), height=rect.height,
                                   width=tap_width + right_extension)
-                for x_offset in self.bitcell_offsets:
-                    self.add_rect(layer, offset=vector(x_offset + rect.lx(), rect.by()),
-                                  height=rect.height, width=rect.width)
 
     def add_dummy_polys(self):
         """Add dummy poly's at edges"""

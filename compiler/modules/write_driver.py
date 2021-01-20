@@ -1,8 +1,9 @@
-import debug
 from base import design
-from base import utils
-from tech import GDS, layer
+from base.library_import import library_import
+from globals import OPTS
 
+
+@library_import
 class write_driver(design.design):
     """
     Tristate write driver to be active during write operations only.       
@@ -11,15 +12,4 @@ class write_driver(design.design):
     the technology library.
     """
 
-    pin_names = ["din", "bl", "br", "en", "gnd", "vdd"]
-    (width,height) = utils.get_libcell_size("write_driver", GDS["unit"], layer["boundary"])
-    pin_map = utils.get_libcell_pins(pin_names, "write_driver", GDS["unit"], layer["boundary"])
-
-    def __init__(self, name):
-        design.design.__init__(self, name)
-        debug.info(2, "Create write_driver")
-
-        self.width = write_driver.width
-        self.height = write_driver.height
-        self.pin_map = write_driver.pin_map
-
+    lib_name = OPTS.write_driver_mod

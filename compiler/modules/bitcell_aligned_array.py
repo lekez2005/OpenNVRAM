@@ -89,10 +89,16 @@ class BitcellAlignedArray(design, ABC):
 
     def create_modules(self):
         """Create child_mod and body tap"""
+        self.create_child_mod()
+        self.create_body_tap()
+
+    def create_child_mod(self):
         self.child_mod = self.create_mod_from_str(self.mod_name)
         debug.info(1, "Using module {} for {}".format(self.child_mod.name,
                                                       self.name))
         self.height = self.child_mod.height
+
+    def create_body_tap(self):
         if self.tap_name and OPTS.use_body_taps:
             self.body_tap = self.create_mod_from_str(self.tap_name)
             debug.info(1, "Using body tap {} for {}".format(self.body_tap.name,
@@ -138,6 +144,15 @@ class BitcellAlignedArray(design, ABC):
                 connections.append(pin_name)
         return connections
 
+    def add_pin_if_exist(self, pin_name):
+        """Adds a pin if it exists, if pin_name is in bus_pins, then adds as a bus"""
+        if pin_name in self.child_mod.pins:
+            if pin_name in self.bus_pins:
+                for bus_index in range(self.word_size):
+                    self.add_pin(pin_name + "[{}]".format(bus_index))
+            else:
+                self.add_pin(pin_name)
+
     def add_pins(self):
         """Add schematic pins"""
         bus_pins = self.bus_pins
@@ -153,19 +168,28 @@ class BitcellAlignedArray(design, ABC):
     def add_layout_pins(self):
         """Add layout pins. Horizontal pins span entire array
          bus pin names are formatted by column"""
+        schematic_pins = set(self.pins)  # to ensure all pins are exported
         for pin in self.get_horizontal_pins():
             self.add_layout_pin(pin.name, pin.layer,
                                 offset=vector(pin.lx(), pin.by()),
                                 width=(self.width - pin.lx() +
                                        (pin.rx() - self.child_mod.width)),
                                 height=pin.height())
+            schematic_pins.discard(pin.name)
 
         for pin_name in self.bus_pins:
             if pin_name not in self.child_mod.pins:
                 continue
             for bus_index in range(len(self.child_insts)):
                 inst = self.child_insts[bus_index]
-                self.copy_layout_pin(inst, pin_name, pin_name + "[{}]".format(bus_index))
+                new_pin_name = pin_name + "[{}]".format(bus_index)
+                self.copy_layout_pin(inst, pin_name, new_pin_name)
+                schematic_pins.remove(new_pin_name)
+
+        # copy from first instance if pin hasn't been added.
+        # Error will be generated for bus pins and pin name mismatches
+        for pin_name in schematic_pins:
+            self.copy_layout_pin(self.child_insts[0], pin_name)
 
     def fill_implants_and_nwell(self):
         """Fill implants and wells between child instances and body taps"""

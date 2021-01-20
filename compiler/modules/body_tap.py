@@ -1,5 +1,6 @@
 from base.design import design
 from base.library_import import library_import
+from globals import OPTS
 
 
 @library_import
@@ -9,4 +10,4 @@ class body_tap(design):
     """
 
     pin_names = []
-    lib_name = "col_bs_tap"
+    lib_name = OPTS.body_tap

@@ -106,6 +106,7 @@ class options(optparse.Values):
     write_driver = "write_driver"
     write_driver_mod = "write_driver"
     write_driver_array = "write_driver_array"
+    tri_gate_mod = "tri_gate"
     tri_gate = "tri_gate"
     tri_gate_array = "tri_gate_array"
     wordline_driver = "wordline_driver"

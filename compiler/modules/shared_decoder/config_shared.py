@@ -70,7 +70,7 @@ wordline_en_buffers = [1, 3.7, 13.6, 50]
 clk_buffers = [1, 5, 20, 65, 30]  # clk only used by decoders (no latches)
 sampleb_buffers = [1, 3.7, 13.6, 50]
 
-sense_amp = "latched_sense_amp"
+sense_amp_mod = "latched_sense_amp"
 sense_amp_tap = "latched_sense_amp_tap"
 sense_amp_array = "latched_sense_amp_array"
 sense_amp_buffers = [3.56, 12.6, 45]

@@ -19,7 +19,7 @@ br_precharge_array = "sotfet_mram_br_precharge_array"
 precharge_num_fingers = 3
 
 sense_amp_array = "sotfet_mram_sense_amp_array"
-sense_amp = "sotfet_mram_sense_amp"
+sense_amp_mod = "sotfet_mram_sense_amp"
 sense_amp_tap = "sotfet_mram_sense_amp_tap"
 
 decoder = "stacked_hierarchical_decoder"
@@ -39,13 +39,13 @@ def configure_sense_amp(mirror: bool, OPTS):
     OPTS.mirror_sense_amp = mirror
     if mirror:
         OPTS.sense_amp_type = OPTS.MIRROR_SENSE_AMP
-        OPTS.sense_amp = "sense_amp_br_reset"
+        OPTS.sense_amp_mod = "sense_amp_br_reset"
         OPTS.sense_amp_tap = "sense_amp_br_reset_tap"
         OPTS.sense_amp_array = "sense_amp_br_reset_array"
         OPTS.sense_amp_buffers = [3.68, 13.6, 50, 45]
     else:
         OPTS.sense_amp_type = OPTS.LATCHED_SENSE_AMP
-        OPTS.sense_amp = "latched_sense_amp"
+        OPTS.sense_amp_mod = "latched_sense_amp"
         OPTS.sense_amp_tap = "latched_sense_amp_tap"
         OPTS.sense_amp_array = "latched_sense_amp_array"
         OPTS.sense_amp_buffers = [3.56, 12.6, 45]

@@ -453,35 +453,6 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                     add_fill(OPTS.repeaters_array_space_offsets[-1] + tap_width, "left")
                     add_fill(OPTS.repeaters_array_space_offsets[0] - instances[0].width, "right")
 
-    def fill_array_layer(self, layer, cell, purpose="drawing"):
-        if not (hasattr(self, "tap_offsets") and len(self.tap_offsets) > 0):
-            return
-
-        rects = cell.get_layer_shapes(layer, purpose=purpose, recursive=False)
-        if not rects:
-            rects = cell.get_layer_shapes(layer, purpose=purpose, recursive=True)
-
-        tap_width = utils.get_body_tap_width()
-
-        right_buffer_x_offsets = getattr(OPTS, "repeaters_array_space_offsets", [])
-
-        tap_offsets = []
-        if layer == NWELL:
-            tap_offsets = self.tap_offsets[1:]  # first tap offset doesn't have to be filled
-            if len(right_buffer_x_offsets) > 0:
-                tap_offsets += right_buffer_x_offsets
-
-        for rect in rects:
-            # only right hand side  needs to be extended
-            if rect.rx() >= cell.width:
-                right_extension = rect.rx() - cell.width
-                for tap_offset in tap_offsets:
-                    self.add_rect(layer, offset=vector(tap_offset, rect.by()), height=rect.height,
-                                  width=tap_width + right_extension)
-                for x_offset in self.bitcell_offsets:
-                    self.add_rect(layer, offset=vector(x_offset + rect.lx(), rect.by()),
-                                  height=rect.height, width=rect.width)
-
     def evaluate_vertical_module_spacing(self, top_modules: List["design"],
                                          bottom_modules: List["design"], reference_bottom=None,
                                          layers=None):

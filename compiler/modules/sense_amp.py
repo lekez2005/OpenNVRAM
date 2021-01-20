@@ -1,5 +1,6 @@
 from base import design
 from base.library_import import library_import
+from globals import OPTS
 
 
 @library_import
@@ -11,8 +12,7 @@ class sense_amp(design.design):
     Sense amplifier to read a pair of bit-lines.
     """
 
-    pin_names = ["bl", "br", "dout", "en", "en_bar", "vdd", "gnd"]
-    lib_name = "sense_amp"
+    lib_name = OPTS.sense_amp_mod
 
     def analytical_delay(self, slew, load=0.0):
         from tech import spice

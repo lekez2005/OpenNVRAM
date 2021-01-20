@@ -9,6 +9,12 @@ import tech
 from base.vector import vector
 
 
+NO_MIRROR = "R0"
+MIRROR_X_AXIS = "MX"
+MIRROR_Y_AXIS = "MY"
+MIRROR_XY = "XY"
+
+
 class geometry:
     """
     A specific path, shape, or text geometry. Base class for shared
@@ -55,16 +61,16 @@ class geometry:
     def compute_boundary(self,offset=vector(0,0),mirror="",rotate=0):
         """ Transform with offset, mirror and rotation to get the absolute pin location. 
         We must then re-find the ll and ur. The master is the cell instance. """
-        (ll,ur) = [vector(0,0),vector(self.width,self.height)]
-        if mirror=="MX":
-            ll=ll.scale(1,-1)
-            ur=ur.scale(1,-1)
-        elif mirror=="MY":
-            ll=ll.scale(-1,1)
-            ur=ur.scale(-1,1)
-        elif mirror=="XY":
-            ll=ll.scale(-1,-1)
-            ur=ur.scale(-1,-1)
+        (ll, ur) = [vector(0, 0), vector(self.width, self.height)]
+        if mirror == MIRROR_X_AXIS:
+            ll = ll.scale(1, -1)
+            ur = ur.scale(1, -1)
+        elif mirror == MIRROR_Y_AXIS:
+            ll = ll.scale(-1, 1)
+            ur = ur.scale(-1, 1)
+        elif mirror == MIRROR_XY:
+            ll = ll.scale(-1, -1)
+            ur = ur.scale(-1, -1)
             
         if rotate==90:
             ll=ll.rotate_scale(-1,1)
@@ -153,12 +159,12 @@ class instance(geometry):
             angle += math.radians(180.0)
         elif self.mirror == "R270":
             angle += math.radians(270.0)
-        elif self.mirror == "MX":
+        elif self.mirror == MIRROR_X_AXIS:
             mirr = -1
-        elif self.mirror == "MY":
+        elif self.mirror == MIRROR_Y_AXIS:
             mirr = -1
             angle += math.radians(180.0)
-        elif self.mirror == "XY":
+        elif self.mirror == MIRROR_XY:
             mirr = 1
             angle += math.radians(180.0)
         return angle, mirr

@@ -26,7 +26,7 @@ class LatchedSenseAmp(CharTestBase):
 
         OPTS.sense_amp_array = "dual_latched_sense_amp_array"
         OPTS.sense_amp_tap = "dual_latched_sense_amp_tap"
-        OPTS.sense_amp = "dual_latched_sense_amp"
+        OPTS.sense_amp_mod = "dual_latched_sense_amp"
 
         class dut(design):
             def __init__(self, buffer_size, probe_pin="sampleb"):

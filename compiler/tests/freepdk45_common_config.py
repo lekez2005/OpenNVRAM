@@ -4,6 +4,7 @@ use_body_taps = False
 write_driver_mod = "write_driver_no_mask"
 sense_amp_array = "latched_sense_amp_array"
 tri_gate_mod = "tri_state_buf"
+ms_flop_mod = "ms_flop_clk_buf"
 
 logic_buffers_height = 1.35
 tech_name = "freepdk45"

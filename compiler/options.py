@@ -86,6 +86,8 @@ class options(optparse.Values):
     decoder = "hierarchical_decoder"
     col_decoder = "column_decoder"
     ms_flop = "ms_flop"
+    ms_flop_mod = "ms_flop"
+    ms_flop_tap_mod = "ms_flop_tap"
     mask_in_flop = ms_flop
     mask_in_flop_tap = "ms_flop_tap"
     predecoder_flop = "ms_flop_horz_pitch"

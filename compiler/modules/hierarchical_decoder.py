@@ -4,6 +4,8 @@ import debug
 from base import contact
 from base import design
 from base import utils
+from base.contact import m2m3
+from base.design import ACTIVE, PIMP, METAL2, METAL3, METAL1
 from base.vector import vector
 from globals import OPTS
 from modules.hierarchical_predecode2x4 import hierarchical_predecode2x4 as pre2x4
@@ -11,7 +13,7 @@ from modules.hierarchical_predecode3x8 import hierarchical_predecode3x8 as pre3x
 from pgates.pinv import pinv
 from pgates.pnand2 import pnand2
 from pgates.pnand3 import pnand3
-from tech import drc
+from tech import drc, info
 
 
 class hierarchical_decoder(design.design):
@@ -53,11 +55,12 @@ class hierarchical_decoder(design.design):
         self.route_vdd_gnd()
 
     def create_modules(self):
-        self.inv = pinv(align_bitcell=True)
+        kwargs = {"align_bitcell": True, "contact_nwell": False, "contact_pwell": False}
+        self.inv = pinv(**kwargs)
         self.add_mod(self.inv)
-        self.nand2 = pnand2(align_bitcell=True)
+        self.nand2 = pnand2(**kwargs)
         self.add_mod(self.nand2)
-        self.nand3 = pnand3(align_bitcell=True)
+        self.nand3 = pnand3(**kwargs)
         self.add_mod(self.nand3)
 
         self.create_predecoders()
@@ -93,7 +96,8 @@ class hierarchical_decoder(design.design):
 
     def setup_layout_constants(self):
         # Vertical metal rail gap definition
-        self.metal2_pitch = contact.m1m2.second_layer_width + self.parallel_line_space
+        self.metal2_pitch = (max(self.bus_width, contact.m1m2.second_layer_width) +
+                             max(self.get_parallel_space(METAL2), self.bus_space))
 
         self.predec_groups = []  # This array is a 2D array.
 
@@ -175,7 +179,6 @@ class hierarchical_decoder(design.design):
             self.add_pre3x8(i)
         if self.use_flops:
             if len(self.pre2x4_inst) > 0:
-                predecoder = self.pre2x4_inst[0]
                 if len(self.pre3x8_inst) > 0:
                     top_pin = self.pre3x8_inst[0].get_pin("clk")
                     bot_pin = self.pre2x4_inst[-1].get_pin("clk")
@@ -308,6 +311,7 @@ class hierarchical_decoder(design.design):
             self.add_decoder_inv_array()
             self.route_decoder()
             self.add_body_contacts()
+            self.fill_predecoder_to_row_decoder_implants()
 
     def add_decoder_nand_array(self):
         """ Add a column of NAND gates for final decode """
@@ -399,53 +403,47 @@ class hierarchical_decoder(design.design):
                                     "vdd", "gnd"],
                               check=False)
 
+    def fill_predecoder_to_row_decoder_implants(self):
+        """Fill implant and well between predecoder and row decoder
+        Both predecoder top and row decoder bottom have no nwell contact
+            leading to potential min-implant space issues
+        """
+        top_predecoder_inst = (self.pre2x4_inst + self.pre3x8_inst)[-1]
+        predec_module = top_predecoder_inst.mod
+
+        predecoder_inv = predec_module.inv_inst[0].mod
+        row_decoder_nand = self.nand_inst[0].mod
+
+        pre_inv_implant = max(predecoder_inv.get_layer_shapes(PIMP), key=lambda x: x.by())
+        row_nand_implant = min(row_decoder_nand.get_layer_shapes(PIMP), key=lambda x: x.uy())
+        implant_x = min(top_predecoder_inst.lx() +
+                        (predec_module.width - predec_module.inv_inst[0].rx()) +
+                        (predecoder_inv.width - pre_inv_implant.rx()),
+                        self.nand_inst[0].lx() + row_nand_implant.lx())
+        # add extra implant width for cases when this implant overlaps with wordline driver implant
+        # extend to the right of the predecoder
+
+        predecoder_right = top_predecoder_inst.rx() - predec_module.nand_inst[0].lx()
+        row_decoder_right = self.nand_inst[0].rx()
+
+        implant_right = max(predecoder_right, row_decoder_right)
+        implant_height = predecoder_inv.well_contact_implant_height
+        y_offset = top_predecoder_inst.uy() - 0.5 * implant_height
+
+        self.add_rect(PIMP, offset=vector(implant_x, y_offset),
+                      height=implant_height, width=implant_right - implant_x)
 
     def route_decoder(self):
         """ Route the nand to inverter in the decoder and add the pins. """
-        if OPTS.use_body_taps:
-            implant_left = self.nand_inst[0].lx()
-            if len(self.pre3x8_inst) > 0:
-                predec_module = self.pre3_8
-            else:
-                predec_module = self.pre2_4
-            # add extra implant width for cases when this implant overlaps with wordline driver implant
-            # adding even one nand width for safety
-            pre_module_width = predec_module.inv_inst[0].width + predec_module.nand_inst[0].width
-
-            row_decoder_nand = self.nand_inst[0].mod
-            nand_implant = max(row_decoder_nand.get_layer_shapes("pimplant"), key=lambda x: x.uy())
-            implant_extension = nand_implant.uy() - row_decoder_nand.height
-
-            implant_height = drc["minwidth_implant"]
-            y_offset = self.nand_inst[0].by() - implant_extension - implant_height
-
-            row_decoder_width = self.nand_inst[0].width + self.inv_inst[0].width
-
-            implant_width = (max(row_decoder_width, pre_module_width) + self.implant_width + self.implant_space +
-                             0.5*row_decoder_nand.width)
-
-            implant_rect = self.add_rect("pimplant", offset=vector(implant_left, y_offset),
-                                         height=implant_height, width=implant_width)
-            # add nwell to cover the implant
-            x_offset = implant_left + min(row_decoder_width, pre_module_width)
-            nwell_height = self.well_width + self.well_enclose_implant
-            nwell_width = max(self.well_width + self.well_enclose_implant + 0.5*row_decoder_nand.width,
-                              implant_rect.rx() - x_offset)
-            y_offset = self.nand_inst[0].by() - nwell_height
-            self.add_rect("nwell", offset=vector(x_offset, y_offset),
-                          width=nwell_width, height=nwell_height)
-            
 
         for row in range(self.rows):
 
             # route nand output to output inv input
-            zr_pos = self.nand_inst[row].get_pin("Z").rc()
-            al_pos = self.inv_inst[row].get_pin("A").lc()
-            # ensure the bend is in the middle 
-            mid1_pos = vector(0.5*(zr_pos.x+al_pos.x), zr_pos.y)
-            mid2_pos = vector(0.5*(zr_pos.x+al_pos.x), al_pos.y)
-            self.add_path("metal1", [zr_pos, mid1_pos, mid2_pos, al_pos])
-            
+            z_pin = self.nand_inst[row].get_pin("Z")
+            a_pin = self.inv_inst[row].get_pin("A")
+            self.add_rect(METAL1, offset=vector(z_pin.rx(), a_pin.cy() - 0.5 * self.m1_width),
+                          width=a_pin.lx() - z_pin.rx())
+
             z_pin = self.inv_inst[row].get_pin("Z")
             self.add_layout_pin(text="decode[{0}]".format(row),
                                 layer="metal1",
@@ -455,17 +453,35 @@ class hierarchical_decoder(design.design):
 
     def add_body_contacts(self):
         """Add contacts to the left of the nand gates"""
+
         active_height = contact.active.first_layer_width
-        active_width = utils.ceil(drc["minarea_cont_active_thin"] / active_height)
-        implant_height = drc["minwidth_implant"]
-        implant_enclosure = drc["ptx_implant_enclosure_active"]
-        implant_width = max(utils.ceil(active_width + 2*implant_enclosure),
-                            utils.ceil(drc["minarea_implant"]/implant_height))
-        implant_x = self.nand_inst[0].lx() - 0.5*implant_width
+        min_active_area = drc.get("minarea_cont_active_thin", self.get_min_area(ACTIVE))
+        active_width = utils.ceil(min_active_area / active_height) or self.active_width
+        implant_enclosure = self.implant_enclose_active
+
+        min_implant_area = self.get_min_area("implant") or 0.0
+
+        implant_height = max(utils.ceil(active_height + 2 * implant_enclosure),
+                             self.implant_width)
+
+        implant_width = max(utils.ceil(active_width + 2 * implant_enclosure),
+                            utils.ceil(min_implant_area / implant_height),
+                            self.implant_width)
+
+        implant_x = self.nand_inst[0].lx() - 0.5 * implant_width
         num_contacts = self.calculate_num_contacts(active_width)
 
-        nwell_width = implant_width + 2*self.well_enclose_implant
-        nwell_height = implant_height + 2*self.well_enclose_implant
+        min_nwell_width = self.get_min_layer_width("nwell")
+        nwell_width = active_width + 2 * self.well_enclose_active
+        nwell_width += 2 * min_nwell_width  # to prevent min_nwell_width
+        nwell_height = max(min_nwell_width,
+                           active_height + 2 * self.well_enclose_active)
+
+        if info["has_pwell"]:
+            min_pwell_width = self.get_min_layer_width("pwell")
+            pwell_width = active_width + 2 * self.well_enclose_active + 2 * min_pwell_width
+            pwell_height = max(min_pwell_width,
+                               active_height + 2 * self.well_enclose_active)
 
         for row in range(self.rows):
             gnd_pin = self.nand_inst[row].get_pin("gnd")
@@ -473,6 +489,9 @@ class hierarchical_decoder(design.design):
                                     offset=vector(implant_x, gnd_pin.cy()), size=[num_contacts, 1])
             self.add_rect_center("pimplant", offset=vector(implant_x, gnd_pin.cy()),
                                  width=implant_width, height=implant_height)
+            if info["has_pwell"]:
+                self.add_rect_center("pwell", offset=(implant_x, gnd_pin.cy()),
+                                     width=pwell_width, height=pwell_height)
 
             vdd_pin = self.nand_inst[row].get_pin("vdd")
             self.add_contact_center(contact.contact.active_layers,
@@ -480,7 +499,7 @@ class hierarchical_decoder(design.design):
             self.add_rect_center("nimplant", offset=vector(implant_x, vdd_pin.cy()),
                                  width=implant_width, height=implant_height)
             self.add_rect_center("nwell", offset=(implant_x, vdd_pin.cy()),
-                                width=nwell_width, height=nwell_height)
+                                 width=nwell_width, height=nwell_height)
 
     def create_vertical_rail(self):
         """ Creates vertical metal 2 rails to connect predecoder and decoder stages."""
@@ -494,10 +513,10 @@ class hierarchical_decoder(design.design):
                 # The offsets go into the negative x direction
                 # assuming the predecodes are placed at (self.routing_width,0)
                 x_offset = self.metal2_pitch * i
-                self.rail_x_offsets.append(x_offset+0.5*self.m2_width)
+                self.rail_x_offsets.append(x_offset+0.5*self.bus_width)
                 self.add_rect(layer="metal2",
                               offset=vector(x_offset,0),
-                              width=drc["minwidth_metal2"],
+                              width=self.bus_width,
                               height=self.height)
 
     def route_vertical_rail(self):
@@ -554,35 +573,42 @@ class hierarchical_decoder(design.design):
             self.add_path("metal1", [rail_offset, pin.center()])
             self.add_via_center(layers=contact.m1m2.layer_stack, offset=rail_offset, rotate=0)
         else:
-            max_rail = max(self.rail_x_offsets)
-            via_x = max_rail + 2 * self.m1_space + 0.5 * contact.m1m2.first_layer_height
+            rail_x = self.rail_x_offsets[rail_index]
+            y_space = 0.5 * self.m3_width + self.get_parallel_space(METAL3)
             if pin.name == "B":
-                rail_offset = vector(self.rail_x_offsets[rail_index], pin.cy())
-                self.add_via_center(layers=contact.m2m3.layer_stack, offset=rail_offset, rotate=0)
-                via_offset = vector(via_x, pin.cy())
-                self.add_path("metal3", [rail_offset, via_offset])
-                # add metal3 fill , fill up since C pin will be below if applicable
-                min_height = self.metal1_minwidth_fill
-                fill_height = max(0, min_height - via_offset.x - rail_offset.x)
-                self.add_rect("metal3", offset=vector(rail_offset.x - 0.5*self.m3_width,
-                                                      pin.cy() + 0.5*contact.m2m3.second_layer_height),
-                              height=fill_height)
-
-                self.add_via_center(layers=contact.m2m3.layer_stack, offset=via_offset, rotate=90)
-                self.add_path("metal2", [via_offset, pin.center()])
-                self.add_via_center(layers=contact.m1m2.layer_stack, offset=pin.center(), rotate=0)
+                rail_y = pin.cy() + y_space
+                via_offset = vector(rail_x - 0.5 * m2m3.width, rail_y)
             else:
-                rail_y = pin.cy() - 0.5*contact.m2m3.second_layer_height - self.line_end_space - 0.5*self.m3_width
-                rail_offset = vector(self.rail_x_offsets[rail_index], rail_y)
-                self.add_via_center(layers=contact.m2m3.layer_stack, offset=rail_offset, rotate=0)
-                self.add_path("metal3", [rail_offset, vector(pin.rx(), rail_y)])
-                self.add_path("metal3", [vector(pin.cx(), rail_y), pin.center()])
-                self.add_via_center(layers=contact.m1m2.layer_stack, offset=pin.center(), rotate=0)
-                self.add_via_center(layers=contact.m2m3.layer_stack, offset=pin.center(), rotate=0)
-                fill_height = contact.m2m3.second_layer_height
-                fill_width = utils.ceil(drc["minarea_metal1_minwidth"]/fill_height)
-                offset = vector(pin.lx() - 0.5*self.m2_width, pin.cy() - 0.5*fill_height)
-                self.add_rect("metal2", offset=offset, width=fill_width, height=fill_height)
+                rail_y = pin.cy() - 0.5 * m2m3.height - self.get_line_end_space(METAL3) - self.m3_width
+                via_offset = vector(rail_x - 0.5 * m2m3.width, rail_y + self.m3_width - m2m3.height)
+
+            self.add_contact(layers=contact.m2m3.layer_stack, offset=via_offset)
+
+            m1_fill_width = self.nand_inst[0].mod.gate_fill_width
+            m1_fill_height = self.nand_inst[0].mod.gate_fill_height
+            m2_fill_height = m1_fill_height
+            min_area = self.get_min_area(METAL2) or 0.0
+            m2_fill_width = utils.ceil(min_area / m2_fill_height)
+
+            if pin.name == "B":
+                fill_x = pin.cx() + 0.5 * m1_fill_width - m2_fill_width
+                via_x = pin.cx()
+            else:
+                fill_x = pin.lx()
+                via_x = pin.lx() + 0.5 * m1_fill_width
+
+            self.add_rect(METAL3, offset=vector(rail_x, rail_y), width=via_x - rail_x +
+                          0.5 * self.m3_width)
+
+            self.add_rect(METAL3, offset=vector(via_x - 0.5 * self.m3_width, pin.cy()),
+                          height=rail_y - pin.cy())
+            via_offset = vector(via_x, pin.cy())
+            self.add_via_center(layers=contact.m1m2.layer_stack, offset=via_offset)
+            self.add_via_center(layers=contact.m2m3.layer_stack, offset=via_offset)
+
+            fill_offset = vector(fill_x, pin.cy() - 0.5 * m1_fill_height)
+
+            self.add_rect(METAL2, offset=fill_offset, width=m2_fill_width, height=m2_fill_height)
 
     def copy_power_pin(self, pin):
         if hasattr(OPTS, 'separate_vdd') and pin.name == 'vdd':

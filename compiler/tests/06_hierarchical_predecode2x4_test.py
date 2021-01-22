@@ -9,11 +9,18 @@ import debug
 
 class HierarchicalPredecode2x4Test(OpenRamTest):
 
-    def runTest(self):
+    def test_with_flops(self):
         from modules import hierarchical_predecode2x4 as pre
 
-        debug.info(1, "Testing sample for hierarchy_predecode2x4")
-        a = pre.hierarchical_predecode2x4()
+        debug.info(1, "Testing sample for hierarchy_predecode2x4 with flop")
+        a = pre.hierarchical_predecode2x4(use_flops=True)
+        self.local_drc_check(a)
+
+    def test_no_flops(self):
+        from modules import hierarchical_predecode2x4 as pre
+
+        debug.info(1, "Testing sample for hierarchy_predecode2x4 without flop")
+        a = pre.hierarchical_predecode2x4(use_flops=False)
         self.local_drc_check(a)
 
         

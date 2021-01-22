@@ -90,8 +90,10 @@ class options(optparse.Values):
     ms_flop_tap_mod = "ms_flop_tap"
     mask_in_flop = ms_flop
     mask_in_flop_tap = "ms_flop_tap"
+
     predecoder_flop = "ms_flop_horz_pitch"
     predecoder_flop_layout = "h"  # v for side by side, h for one above the other
+
     ms_flop_array = "ms_flop_array"
     ms_flop_array_horizontal = "ms_flop_array_horizontal"
     ms_flop_horz_pitch = "ms_flop_horz_pitch"

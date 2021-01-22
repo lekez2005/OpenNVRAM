@@ -4,6 +4,8 @@ from importlib import reload
 import debug
 from base import contact
 from base import design
+from base.contact import m2m3, m1m2
+from base.design import METAL3, METAL1, METAL2
 from base.vector import vector
 from globals import OPTS
 from pgates.pgate import pgate
@@ -44,17 +46,11 @@ class hierarchical_predecode(design.design):
         self.vertical_flops = OPTS.predecoder_flop_layout == "v" and self.use_flops
         if self.use_flops:
             predecoder_flop = OPTS.predecoder_flop
-
-            c = reload(__import__(predecoder_flop))
-            self.mod_ms_flop = getattr(c, predecoder_flop)
-            self.flop = self.mod_ms_flop()
-            self.add_mod(self.flop)
-
+            self.flop = self.create_mod_from_str(predecoder_flop)
         if self.use_flops and not self.vertical_flops:
             self.module_height = self.flop.height
         else:
-            self.module_height = pgate.get_default_height()
-
+            self.module_height = getattr(OPTS, "logic_buffers_height", self.bitcell_height)
 
     def add_pins(self):
         in_name = "flop_in[{}]" if self.use_flops else "in[{}]"
@@ -93,9 +89,11 @@ class hierarchical_predecode(design.design):
         """ Create the NAND for the predecode input stage """
         nand_size = self.buffer_sizes[0]
         if inputs == 2:
-            nand = pnand2(size=nand_size, contact_nwell=contact_nwell, height=self.module_height)
+            nand = pnand2(size=nand_size, contact_nwell=contact_nwell, height=self.module_height,
+                          same_line_inputs=False)
         elif inputs == 3:
-            nand = pnand3(size=nand_size, contact_nwell=contact_nwell, height=self.module_height)
+            nand = pnand3(size=nand_size, contact_nwell=contact_nwell, height=self.module_height,
+                          same_line_inputs=False)
         else:
             return debug.error("Invalid number of predecode inputs.",-1)
         return nand
@@ -144,7 +142,9 @@ class hierarchical_predecode(design.design):
     def setup_constraints(self):
         # we are going to use horizontal vias, so use the via height
         # use a conservative douple spacing just to get rid of annoying via DRCs
-        self.m1_pitch = self.m2_pitch = self.m3_pitch = contact.m1m2.width + self.parallel_line_space
+        self.m1_pitch = m1m2.first_layer_width + self.get_parallel_space(METAL1)
+        self.m2_pitch = m1m2.second_layer_width + self.get_parallel_space(METAL2)
+        self.m3_pitch = m2m3.second_layer_width + self.get_parallel_space(METAL3)
 
         # The rail offsets are indexed by the label
         self.rails = {}
@@ -170,7 +170,12 @@ class hierarchical_predecode(design.design):
 
 
         # x offset to NAND decoder includes the left rails, mid rails and inverters, plus an extra m2 pitch
-        self.x_off_nand = self.mid_rail_x + (1 + 2*self.number_of_inputs) * self.m2_pitch
+        # give space to A pin
+
+        nand_a_pin = self.nand.get_pin("A")
+        via_space = self.get_line_end_space(METAL1) + m1m2.first_layer_height
+        a_pin_space = max(via_space - nand_a_pin.lx(), 0)
+        self.x_off_nand = self.mid_rail_x + (1 + 2*self.number_of_inputs) * self.m2_pitch + a_pin_space
 
                        
         # x offset to output inverters
@@ -355,13 +360,15 @@ class hierarchical_predecode(design.design):
         """
         Route flip flop inputs and outputs
         """
+        _, m3_min_width = self.calculate_min_area_fill(self.m3_width, layer=METAL3)
         for row in range(self.number_of_inputs):
             # connect din
             din_pin = self.in_inst[row].get_pin("din")
             rail_x = self.rails["flop_in[{}]".format(row)]
             self.add_contact_center(contact.m2m3.layer_stack, offset=vector(rail_x, din_pin.cy()))
             self.add_rect("metal3", offset=vector(rail_x, din_pin.by()), width=din_pin.lx() - rail_x)
-            self.add_contact(contact.m2m3.layer_stack, offset=din_pin.ll(), rotate=90)
+            self.add_contact(contact.m2m3.layer_stack, offset=din_pin.ll() + vector(m2m3.height, 0),
+                             rotate=90)
 
             # connect clk
             if not self.vertical_flops:
@@ -371,22 +378,21 @@ class hierarchical_predecode(design.design):
                 self.add_rect("metal1", offset=vector(rail_x, clk_pin.by()), width=clk_pin.lx() - rail_x)
 
             # route dout
-            m3_min_width = self.metal1_minwidth_fill
-            flop_out = self.in_inst[row].get_pin("dout")
-            out_pin = "A[{}]".format(row)
-            rail_x = self.rails[out_pin]
-            self.add_rect("metal3", offset=vector(flop_out.cx(), flop_out.cy() - 0.5*self.m3_width),
-                          width=max(rail_x - flop_out.cx(), m3_min_width))
-            self.add_contact_center(contact.m2m3.layer_stack, offset=vector(rail_x, flop_out.cy()))
-
-            # route dout_bar
-            rail_x = self.rails["Abar[{}]".format(row)]
-            flop_out_bar = self.in_inst[row].get_pin("dout_bar")
-            self.add_contact(contact.m2m3.layer_stack,
-                             offset=flop_out_bar.lr() + vector(contact.m2m3.second_layer_height, 0),
-                             rotate=90)
-            self.add_rect("metal3", offset=flop_out_bar.lr(), width=max(rail_x - flop_out_bar.rx(), m3_min_width))
-            self.add_contact_center(contact.m2m3.layer_stack, offset=vector(rail_x, flop_out_bar.cy()))
+            pin_names = ["dout", "dout_bar"]
+            out_pin_names = ["A", "Abar"]
+            for i in range(2):
+                flop_pin = self.in_inst[row].get_pin(pin_names[i])
+                out_pin = "{}[{}]".format(out_pin_names[i], row)
+                rail_x = self.rails[out_pin]
+                self.add_contact(contact.m2m3.layer_stack,
+                                 offset=flop_pin.lr() + vector(contact.m2m3.second_layer_height, 0),
+                                 rotate=90)
+                rail_width = max(rail_x - flop_pin.rx(), m3_min_width)
+                # prevent mimimum extension past via problem
+                if 0 < rail_width + flop_pin.rx() - (rail_x + 0.5 * m2m3.second_layer_width) < self.m3_width:
+                    rail_width = rail_x + 0.5 * m2m3.second_layer_width + self.m3_width - flop_pin.rx()
+                self.add_rect("metal3", offset=flop_pin.lr(), width=rail_width)
+                self.add_contact_center(contact.m2m3.layer_stack, offset=vector(rail_x, flop_pin.cy()))
 
     def route_vertical_input_flops(self):
 
@@ -440,26 +446,19 @@ class hierarchical_predecode(design.design):
         """
         Route all conections of the inputs inverters [Inputs, outputs, vdd, gnd] 
         """
-        a_rails = [self.rails[key] for key in self.rails if key.startswith("A")]
-        left_rails = min(a_rails) - 3*self.m1_space
         for inv_num in range(self.number_of_inputs):
             out_pin = "Abar[{}]".format(inv_num)
             in_pin = "in[{}]".format(inv_num)
-            
-            #add output so that it is just below the vdd or gnd rail
-            # since this is where the p/n devices are and there are no
-            # pins in the nand gates.
-            y_offset = (inv_num+1) * self.inv.height - 0.5*self.rail_height - 2*self.m1_space -\
-                       0.5*contact.m1m2.first_layer_height
-            inv_out_pos = self.in_inst[inv_num].get_pin("Z").rc()
-            rail_pos = vector(self.rails[out_pin],y_offset)
-            self.add_path("metal1", [inv_out_pos, vector(left_rails, inv_out_pos.y),
-                                     vector(left_rails, y_offset), rail_pos])
-            self.add_via_center(layers = ("metal1", "via1", "metal2"),
-                                offset=rail_pos,
-                                rotate=0)
 
-            
+            z_pin = self.in_inst[inv_num].get_pin("Z")
+            y_offset = z_pin.uy()
+            rail_pos = vector(self.rails[out_pin], y_offset)
+
+            self.add_contact_center(m2m3.layer_stack, offset=vector(rail_pos.x, y_offset))
+            self.add_contact_center(m2m3.layer_stack, offset=vector(z_pin.cx(), y_offset))
+            self.add_rect(METAL3, offset=vector(z_pin.cx(), y_offset - 0.5 * self.m3_width),
+                          width=rail_pos.x - z_pin.cx())
+
             #route input
             inv_in_pos = self.in_inst[inv_num].get_pin("A").lc()
             in_pos = vector(self.rails[in_pin],inv_in_pos.y)
@@ -483,24 +482,26 @@ class hierarchical_predecode(design.design):
             # this will connect pins A,B or A,B,C
             max_rail = max(self.rails.values())
             layers = ("metal1", "via1", "metal2")
-            via_x = max_rail + 2*self.m1_space + 0.5*contact.m1m2.first_layer_height
+            via_space = self.get_line_end_space(METAL2)
+            via_x = max_rail + 0.5 * self.m2_width + via_space + 0.5*contact.m1m2.first_layer_height
             for rail_pin, gate_pin_name in zip(index_lst,gate_lst):
                 gate_pin = self.nand_inst[k].get_pin(gate_pin_name)
                 pin_pos = gate_pin.lc()
                 rail_pos = vector(self.rails[rail_pin], pin_pos.y)
                 self.add_via_center(layers=layers, offset=rail_pos, rotate=0)
-                self.add_path("metal1", [rail_pos, vector(via_x, rail_pos.y)])
-                via_offset = vector(via_x, rail_pos.y)
-                self.add_via_center(layers=layers, offset=via_offset, rotate=90)
-                self.add_path("metal2", [via_offset, pin_pos])
                 if gate_pin_name == "A":
-                    y_offset = gate_pin.cy()
+                    self.add_rect(METAL1, offset=vector(rail_pos.x, rail_pos.y - 0.5 * self.m1_width),
+                                  width=gate_pin.lx() - rail_pos.x)
                 else:
+                    self.add_path("metal1", [rail_pos, vector(via_x, rail_pos.y)])
+                    via_offset = vector(via_x, rail_pos.y)
+                    self.add_via_center(layers=layers, offset=via_offset, rotate=90)
+                    self.add_path("metal2", [via_offset, pin_pos])
                     if k % 2 == 0:
-                        y_offset = gate_pin.cy() + 0.5*(contact.m1m2.second_layer_height - self.m1_width)
+                        y_offset = rail_pos.y - 0.5 * self.m2_width + 0.5 * m1m2.second_layer_height
                     else:
-                        y_offset = gate_pin.cy() - 0.5*(contact.m1m2.second_layer_height - self.m1_width)
-                self.add_via_center(layers=layers, offset=vector(gate_pin.cx(), y_offset), rotate=0)
+                        y_offset = rail_pos.y + 0.5 * self.m2_width - 0.5 * m1m2.second_layer_height
+                    self.add_via_center(layers=layers, offset=vector(gate_pin.cx(), y_offset), rotate=0)
 
     def route_vdd_gnd(self):
         """ Add a pin for each row of vdd/gnd which are must-connects next level up. """

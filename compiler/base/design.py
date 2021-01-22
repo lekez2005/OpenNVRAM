@@ -20,6 +20,7 @@ DRAWING = "drawing"
 POLY = "poly"
 PO_DUMMY = "po_dummy"
 NWELL = "nwell"
+PWELL = "pwell"
 ACTIVE = "active"
 CONTACT = "contact"
 NIMP = "nimplant"
@@ -135,7 +136,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
     def get_min_layer_width(cls, layer):
         if layer in [PIMP, NIMP]:
             layer = "implant"
-        elif layer == NWELL:
+        elif layer in [NWELL, PWELL]:
             layer = "well"
         return drc["minwidth_{}".format(layer)]
 

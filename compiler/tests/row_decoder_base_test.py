@@ -27,16 +27,17 @@ class RowDecoderBase:
     def run_for_rows(self, num_rows):
         debug.info(1, "Testing {} row sample for hierarchical_decoder".format(num_rows))
         dut, dut_statement = self.instantiate_dut(num_rows)
-        # self.local_check(dut)
-        self.run_sim(dut, dut_statement)
+        self.local_check(dut)
+        # self.run_sim(dut, dut_statement)
 
     @staticmethod
     def instantiate_dut(num_rows):
         import tech
         from modules.hierarchical_decoder import hierarchical_decoder
+        drc_excepts = tech.drc_exceptions
 
-        tech.drc_exceptions["hierarchical_decoder"] = (tech.drc_exceptions["latchup"]
-                                                       + tech.drc_exceptions["min_nwell"])
+        drc_excepts["hierarchical_decoder"] = (drc_excepts.get("latchup", [])
+                                               + drc_excepts.get("min_nwell", []))
 
         dut = hierarchical_decoder(rows=num_rows)
         a_pins = ' '.join(["A[{}]".format(x) for x in range(dut.num_inputs)])

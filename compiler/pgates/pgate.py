@@ -147,8 +147,9 @@ class pgate(design.design):
 
         # middle space
         # first calculate height of tracks (all poly contacts)
+        line_space = max(self.get_line_end_space(METAL1), self.get_line_end_space(METAL2))
         self.gate_rail_pitch = (0.5 * contact.m1m2.second_layer_height +
-                                self.line_end_space + 0.5 * self.m2_width)
+                                line_space + 0.5 * self.m2_width)
 
         if self.same_line_inputs:
             max_fill_width = 2 * self.poly_pitch - 2 * self.m1_space - contact.poly.second_layer_width
@@ -255,7 +256,9 @@ class pgate(design.design):
 
         fill_width = max(self.nmos_fill_width, self.pmos_fill_width)
         fill_right = right_most_contact_mid + 0.5 * fill_width
-        return max(self.get_parallel_space(METAL1), self.get_space("via1")) + fill_right
+        return max(self.get_parallel_space(METAL1) + fill_right,
+                   self.get_space("via1") + 0.5 * m1m2.first_layer_width +
+                   right_most_contact_mid)
 
     def setup_layout_constants(self):
 
@@ -434,8 +437,9 @@ class pgate(design.design):
 
     def connect_to_out_pin(self, positions, mid_y, contact_shift):
         min_drain_x = min(positions)
-        offset = vector(positions[0], mid_y - 0.5 * m1m2.height)
-        self.add_rect(METAL2, offset=offset, width=self.output_x - min_drain_x, height=m1m2.height)
+        offset = vector(positions[0], mid_y - 0.5 * self.m2_width)
+        self.add_rect(METAL2, offset=offset, width=self.output_x - min_drain_x,
+                      height=self.m2_width)
         offset = vector(self.output_x + 0.5 * contact.m1m2.first_layer_width, mid_y + contact_shift)
         self.add_contact_center(layers=m1m2.layer_stack, offset=offset)
 
@@ -472,22 +476,25 @@ class pgate(design.design):
 
     def add_implants(self):
         # implants
+        # nimplant
         poly_y_offset = self.poly_offsets[0].y - 0.5 * self.poly_height
         nimplant_y = self.n_active_rect.by() - self.implant_enclose_ptx_active
-        if not self.contact_pwell:
-            nimplant_y = min(0, nimplant_y)
+
+        if not self.contact_pwell and self.align_bitcell:
             if self.implant_enclose_poly:
                 nimplant_y = min(nimplant_y, poly_y_offset - self.implant_enclose_poly)
+            nimplant_y = min(0, nimplant_y)
         else:
             nimplant_y = 0.5 * self.well_contact_implant_height
         self.nimplant_height = self.mid_y - nimplant_y
 
+        # pimplant
         pimplant_top = self.p_active_rect.uy() + self.implant_enclose_ptx_active
-        if not self.contact_nwell:
-            pimplant_top = max(pimplant_top, self.height)
+        if not self.contact_nwell and self.align_bitcell:
             if self.implant_enclose_poly:
                 pimplant_top = max(pimplant_top, poly_y_offset + self.poly_height +
                                    self.implant_enclose_poly)
+            pimplant_top = max(pimplant_top, self.height)
         else:
             pimplant_top = self.height - 0.5 * self.well_contact_implant_height
         self.pimplant_height = pimplant_top - self.mid_y
@@ -544,8 +551,6 @@ class pgate(design.design):
                 well_layer = "pwell" if i == 0 else "nwell"
                 self.add_rect_center(well_layer, offset=vector(self.mid_x, y_offset),
                                      width=self.contact_nwell_width, height=self.contact_nwell_height)
-
-
 
     def add_output_pin(self):
         offset = vector(self.output_x, self.active_mid_y_nmos)

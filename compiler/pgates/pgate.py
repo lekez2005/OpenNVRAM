@@ -273,7 +273,6 @@ class pgate(design.design):
 
         actual_bottom_space = self.bottom_space + utils.floor(0.5 * extra_space)
         actual_top_space = self.top_space + utils.floor(0.5 * extra_space)
-        actual_middle_space = non_active_height - (actual_top_space + actual_bottom_space)
 
         self.active_mid_y_pmos = self.height - actual_top_space - 0.5 * self.pmos_width
         self.active_mid_y_nmos = actual_bottom_space + 0.5 * self.nmos_width

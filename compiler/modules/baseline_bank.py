@@ -480,7 +480,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
     def get_mask_flops_y_offset(self):
         # above tri gate array
         top_modules = [self.msf_mask_in.ms, self.msf_mask_in.body_tap]
-        bottom_modules = [self.tri_gate_array.tri, self.tri_gate_array.body_tap]
+        bottom_modules = [self.tri_gate_array.child_mod, self.tri_gate_array.body_tap]
 
         y_space = self.evaluate_vertical_module_spacing(top_modules=top_modules,
                                                         bottom_modules=bottom_modules)
@@ -1127,7 +1127,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
                           height=sense_out_y - y_offset + m3m4.height,
                           width=bl_pin.width())
             # sense_out_y to sense amp out
-            sense_out = self.sense_amp_array_inst.get_pin("data[{}]".format(word))
+            sense_out = self.sense_amp_array_inst.get_pin("dout[{}]".format(word))
             via_y = sense_out_y + 0.5 * m3m4.height
             cont = self.add_contact_center(m3m4.layer_stack, offset=vector(bl_pin.cx(), via_y))
             self.join_pins_with_m3(cont, sense_out, cont.cy(), fill_width, fill_height)

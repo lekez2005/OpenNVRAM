@@ -1,11 +1,13 @@
 import debug
-from base import contact
+from base import contact, utils
 from base import design
+from base.contact import m1m2
+from base.design import METAL2, ACTIVE, METAL1, POLY, NIMP, PWELL
+from base.geometry import MIRROR_X_AXIS
 from base.vector import vector
 from globals import OPTS
-from pgates.ptx_spice import ptx_spice
-from tech import drc
-from tech import layer as tech_layers
+from pgates.ptx import ptx
+from tech import drc, info
 
 
 class single_level_column_mux(design.design):
@@ -15,14 +17,12 @@ class single_level_column_mux(design.design):
     """
 
     def __init__(self, tx_size):
-        name="single_level_column_mux_{}".format(tx_size)
+        name = "single_level_column_mux_{}".format(tx_size)
         design.design.__init__(self, name)
         debug.info(2, "create single column mux cell: {0}".format(name))
 
-        c = __import__(OPTS.bitcell)
-        self.mod_bitcell = getattr(c, OPTS.bitcell)
-        self.bitcell = self.mod_bitcell()
-        
+        self.bitcell = self.create_mod_from_str(OPTS.bitcell)
+
         self.ptx_width = tx_size * drc["minwidth_tx"]
         self.tx_mults = 2
         self.add_pin_list(["bl", "br", "bl_out", "br_out", "sel", "gnd"])
@@ -31,168 +31,204 @@ class single_level_column_mux(design.design):
     def create_layout(self):
 
         self.width = self.bitcell.width
+        self.determine_tx_mults()
+        self.create_ptx()
         self.add_ptx()
-
         self.connect_gates()
+        self.add_bitline_fills()
         self.add_bitline_pins()
+        self.add_well_implants()
+        self.add_boundary()
 
-    def calculate_top_space(self):
-        """Calculate space for body contact above transistor"""
-        # calculate bitcell extension
-        top_nwell = self.bitcell.get_top_rect("nwell")
-        self.nwell_extension = top_nwell - self.bitcell.height
-        self.body_contact_active_space = self.well_enclose_active
+    def determine_tx_mults(self):
+        # Need M2 bitlines on both sides of transistors
+        m2_space = self.get_parallel_space(METAL2)
+        m1_m2_extension = 0.5 * (contact.m1m2.second_layer_width - contact.well.second_layer_width)
+        total_side_space = 2 * (0.5 * m2_space + self.m2_width + m2_space + m1_m2_extension)
+        available_active_width = self.bitcell.width - total_side_space
+        tx_mults = 1
+        while True:
+            sample_ptx = ptx(mults=tx_mults, tx_type="nmos")
+            active_rect = max(sample_ptx.get_layer_shapes(ACTIVE), key=lambda x: x.width)
+            if active_rect.width > available_active_width:
+                tx_mults -= 1
+                break
+            tx_mults += 1
+        self.tx_mults = tx_mults
 
-        prelim_top_space = (self.nwell_extension + self.body_contact_active_space + self.body_contact_active_height +
-                          self.poly_to_active + self.poly_extend_active)
-
-        self.pimplant_height = max(prelim_top_space - self.nwell_extension - self.implant_enclose_ptx_active,
-                                   self.implant_width)
-        self.top_space = max(prelim_top_space, self.nwell_extension + self.pimplant_height)
-
+    def create_ptx(self):
+        self.tx = ptx(width=self.ptx_width / self.tx_mults, mults=self.tx_mults,
+                      tx_type="nmos")
+        self.add_mod(self.tx)
 
     def add_ptx(self):
         """ Create the two pass gate NMOS transistors to switch the bitlines"""
 
-        gate_contact_height = contact.poly.second_layer_height
-        middle_space = gate_contact_height + 2*self.line_end_space
+        poly_rect = max(self.tx.get_layer_shapes(POLY), key=lambda x: x.height)
+        poly_to_cont_mid = poly_rect.height - 0.5 * contact.poly.first_layer_height
 
-        self.calculate_top_space()
-        extra_bottom_space = 0.5*self.m2_space  # to give room for sel pin
-        bottom_space = self.poly_extend_active + self.implant_enclose_poly + extra_bottom_space
+        source_pin = self.tx.get_pins("S")[0]
 
-        self.height = self.top_space + bottom_space + middle_space + 2*self.ptx_width
-        self.poly_height = middle_space + 2*(self.ptx_width + self.poly_extend_active)
-        self.mid_y = bottom_space + 0.5*middle_space + self.ptx_width
-        self.mid_x = 0.5 * self.width
+        # position of bottom via
+        drain_via_y = source_pin.uy() - m1m2.height
+        source_via_y = min(source_pin.by(), drain_via_y - self.get_line_end_space(METAL2) - self.m2_width)
 
-        # add active
-        active_enclose_contact = drc["active_enclosure_contact"]
-        self.poly_pitch = self.poly_width + self.poly_space
-        self.end_to_poly = active_enclose_contact + self.contact_width + self.contact_to_gate
-        self.active_width = 2 * self.end_to_poly + self.tx_mults * self.poly_pitch - self.poly_space
+        # bottom fill
+        all_source_drain = list(sorted(self.tx.get_pins("D") + self.tx.get_pins("S"),
+                                       key=lambda x: x.lx()))
+        available_m1 = all_source_drain[-1].rx() - all_source_drain[0].lx()
+        fill_space = self.get_parallel_space(METAL1)
+        self.fill_width = max(self.m1_width,
+                              utils.floor((available_m1 - (self.tx_mults * fill_space)) /
+                                          (self.tx_mults + 1)))
+        _, self.fill_height = self.calculate_min_area_fill(source_pin.width(), layer=METAL1)
+        if self.fill_height <= source_pin.height():
+            self.fill_width = source_pin.width()
 
-        self.active_mid_y_top = self.mid_y + 0.5 * (middle_space + self.ptx_width)
-        self.active_mid_y_bot = self.mid_y - 0.5 * (middle_space + self.ptx_width)
+        required_space = contact.m1m2.second_layer_height + self.get_line_end_space(METAL2)
+        min_m1_y = min(source_via_y, source_pin.uy() - self.fill_height)
+        self.fill_height = source_pin.uy() - min_m1_y
+        bottom_space = required_space - min_m1_y
 
-        self.add_rect_center("active", offset=vector(self.mid_x, self.active_mid_y_top), width=self.active_width,
-                             height=self.ptx_width)
-        self.add_rect_center("active", offset=vector(self.mid_x, self.active_mid_y_bot), width=self.active_width,
-                             height=self.ptx_width)
-
-        # add poly
-        real_poly_start = self.mid_x - 0.5*self.active_width + self.end_to_poly
-        if "po_dummy" in tech_layers:
-            self.no_dummy_poly = 4
-            self.poly_x_start = real_poly_start - 2*self.poly_pitch
-            poly_layers = 2 * ["po_dummy"] + self.tx_mults * ["poly"] + 2 * ["po_dummy"]
-            self.total_poly = self.tx_mults + 4
-        else:
-            poly_layers = self.tx_mults * ["poly"]
-            self.poly_x_start = real_poly_start
-            self.total_poly = self.tx_mults
-
-        for i in range(self.total_poly):
-            offset = vector(self.poly_x_start + i*self.poly_pitch + 0.5*self.poly_width, self.mid_y)
-            self.add_rect_center(poly_layers[i], offset=offset, width=self.poly_width, height=self.poly_height)
-
-        # add nimplant
-        self.nimplant_height = self.active_mid_y_top + 0.5*self.ptx_width + self.implant_enclose_ptx_active
-        self.add_rect("nimplant", offset=vector(0, 0), width=self.width, height=self.nimplant_height)
-
-        no_contacts = self.calculate_num_contacts(self.ptx_width)
-        self.drain_x = [self.mid_x]
-        self.source_x = [self.mid_x - self.poly_pitch, self.mid_x + self.poly_pitch]
-
-        for y_offset in [self.active_mid_y_top, self.active_mid_y_bot]:
-            for x_offset in self.drain_x + self.source_x:
-                offset = vector(x_offset, y_offset)
-                self.add_rect_center("metal1", offset=offset, width=self.m1_width, height=self.ptx_width)
-                self.add_contact_center(layers=contact.contact.active_layers, size=[1, no_contacts], offset=offset)
-            via_y = y_offset + 0.5*self.ptx_width - 0.5*contact.m1m2.first_layer_height
-            self.add_contact_center(layers=contact.contact.m1m2_layers, offset=vector(self.drain_x[0], via_y))
-            via_y = y_offset - 0.5*self.ptx_width + 0.5*contact.m1m2.first_layer_height
-            for x_offset in self.source_x:
-                self.add_contact_center(layers=contact.contact.m1m2_layers, offset=vector(x_offset, via_y))
-
-        
-        # Adds nmos1,nmos2 to the module
-        self.nmos = ptx_spice(width=self.ptx_width, mults=2, tx_type="nmos")
-        self.add_mod(self.nmos)
-
-
-        self.nmos1=self.add_inst(name="mux_tx1",
-                                 mod=self.nmos,
-                                 offset=vector(0, 0))
-        self.connect_inst(["bl", "sel", "bl_out", "gnd"])
-
-        self.nmos2=self.add_inst(name="mux_tx2",
-                                 mod=self.nmos,
-                                 offset=vector(0, 0))
+        # add transistors
+        x_offset = 0.5 * self.width - 0.5 * self.tx.width
+        self.br_inst = self.add_inst("br_mux", mod=self.tx, offset=vector(x_offset, bottom_space))
         self.connect_inst(["br", "sel", "br_out", "gnd"])
 
+        # align mid contacts of bl and br muxes
+        contact_mid_y = poly_rect.by() + poly_to_cont_mid
+        bl_y_offset = bottom_space + 2 * contact_mid_y
+        self.bl_inst = self.add_inst("bl_mux", mod=self.tx, offset=vector(x_offset, bl_y_offset),
+                                     mirror=MIRROR_X_AXIS)
+        self.connect_inst(["bl", "sel", "bl_out", "gnd"])
+
+        self.contact_mid_y = contact_mid_y + bottom_space
+        self.mid_x = 0.5 * self.width
+        implant_rect = max(self.tx.get_layer_shapes(NIMP), key=lambda x: x.uy())
+        self.height = self.bl_inst.uy() + max(0, implant_rect.uy() - self.tx.height)
 
     def connect_gates(self):
         """ Connect the poly gate of the two pass transistors """
 
-        if "po_dummy" in tech_layers:
-            poly_x_start = self.poly_x_start + 2*self.poly_pitch
-        else:
-            poly_x_start = self.poly_x_start
-        for i in range(self.tx_mults):
-            x_offset = poly_x_start + 0.5*self.poly_width + i*self.poly_pitch
-            self.add_contact_center(layers=contact.contact.poly_layers, offset=vector(x_offset, self.mid_y))
+        rail_x = -0.5 * self.m1_width
+        gate_pins = self.bl_inst.get_pins("G")
 
-        rail_x = self.source_x[0] - 0.5*self.m1_width - self.parallel_line_space - self.m1_width
+        gate_right = max(gate_pins, key=lambda x: x.rx()).rx()
 
-        gate_right = self.mid_x + 0.5*self.poly_pitch
+        self.add_rect("metal1", offset=vector(rail_x, gate_pins[0].cy() - 0.5 * self.m1_width),
+                      width=gate_right - rail_x)
 
-        self.add_rect("metal1", offset=vector(rail_x, self.mid_y-0.5*self.m1_width), width=gate_right-rail_x)
+        bend_y = m1m2.height - self.m1_width
+        self.add_rect("metal1", offset=vector(rail_x, bend_y),
+                      height=gate_pins[0].cy() - bend_y)
+        self.add_rect("metal1", offset=vector(rail_x, bend_y), width=self.mid_x - rail_x)
+        self.add_via(layers=contact.contact.m1m2_layers, offset=vector(self.mid_x - 0.5 * m1m2.width, 0))
 
-        via_y = self.active_mid_y_bot - 0.5*self.ptx_width - self.line_end_space - contact.m1m2.first_layer_width
-        self.add_rect("metal1", offset=vector(rail_x, via_y), height=self.mid_y-via_y)
-        self.add_rect("metal1", offset=vector(rail_x, via_y), width=self.mid_x-rail_x)
-        self.add_via(layers=contact.contact.m1m2_layers, offset=vector(self.mid_x, via_y), rotate=90)
-        self.add_layout_pin(text="sel", layer="metal2", offset=vector(self.mid_x-0.5*self.m1_width, 0),
-                            height=via_y+contact.m1m2.first_layer_width)
+        _, pin_height = self.calculate_min_area_fill(self.m2_width, layer=METAL2)
+        pin_height = max(pin_height, m1m2.second_layer_height)
 
+        self.add_layout_pin(text="sel", layer="metal2",
+                            offset=vector(self.mid_x - 0.5 * self.m1_width, m1m2.height - pin_height),
+                            height=pin_height)
+
+    def add_bitline_fills(self):
+        """Add fills to sources and drains to prevent min area issues or m1m2 space issue"""
+        gate_pin = self.bl_inst.get_pins("G")[0]
+        # Add fills
+        for inst in [self.bl_inst, self.br_inst]:
+            pins = list(sorted(inst.get_pins("D") + inst.get_pins("S"), key=lambda x: x.lx()))
+            for i in range(self.tx_mults + 1):
+                pin = pins[i]
+                if i == 0:
+                    x_offset = pin.lx()
+                elif i == self.tx_mults:
+                    x_offset = pin.rx() - self.fill_width
+                else:
+                    x_offset = pin.cx() - 0.5 * self.fill_width
+
+                if pin.cy() > gate_pin.cy():
+                    y_offset = pin.by()
+                else:
+                    y_offset = pin.uy() - self.fill_height
+
+                self.add_rect(METAL1, offset=vector(x_offset, y_offset),
+                              width=self.fill_width, height=self.fill_height)
 
     def add_bitline_pins(self):
         """ Add the top and bottom pins to this cell """
 
-        bl_x = self.bitcell.get_pin("BL").lx()
-        br_x = self.bitcell.get_pin("BR").lx()
+        active_rect = max(self.tx.get_layer_shapes(ACTIVE), key=lambda x: x.width)
+        gate_pin = self.bl_inst.get_pins("G")[0]
 
-        # bl and bl_out
-        via_y = self.active_mid_y_top + 0.5*self.ptx_width - 0.5*contact.m1m2.second_layer_height
-        offset = vector(bl_x, via_y)
-        self.add_layout_pin(text="bl",
-                            layer="metal2",
-                            offset=offset,
-                            height=self.height-via_y)
-        self.add_rect("metal2", offset=offset-vector(0, 0.5*self.m2_width), width=self.drain_x[0]-bl_x)
+        x_offsets = [active_rect.lx() - self.get_parallel_space(METAL2) - self.m2_width,
+                     active_rect.rx() + self.get_parallel_space(METAL2)]
+        x_offsets = [x + self.bl_inst.lx() for x in x_offsets]
 
-        via_y = self.active_mid_y_top - 0.5 * self.ptx_width + 0.5 * contact.m1m2.second_layer_height
-        self.add_layout_pin(text="bl_out",
-                            layer="metal2",
-                            offset=vector(bl_x, 0),
-                            height=via_y)
-        self.add_rect("metal2", offset=vector(bl_x, via_y - 0.5 * self.m2_width), width=self.source_x[1] - bl_x)
+        insts = [self.bl_inst, self.br_inst]
+        pin_names = ["bl", "br"]
 
-        # br and br_out
-        via_y = self.active_mid_y_bot + 0.5 * self.ptx_width - 0.5 * contact.m1m2.second_layer_height
-        offset = vector(br_x, via_y)
-        self.add_layout_pin(text="br",
-                            layer="metal2",
-                            offset=offset,
-                            height=self.height - via_y)
-        self.add_rect("metal2", offset=vector(self.drain_x[0], via_y-0.5 * self.m2_width),
-                      width=br_x - self.drain_x[0] + self.m2_width)
+        self.top_m1_rail_y = self.bl_inst.get_pins("S")[0].by() + self.fill_height - self.m1_width
 
-        via_y = self.active_mid_y_bot - 0.5 * self.ptx_width + 0.5 * contact.m1m2.second_layer_height
-        self.add_layout_pin(text="br_out",
-                            layer="metal2",
-                            offset=vector(br_x, 0),
-                            height=via_y)
-        self.add_rect("metal2", offset=vector(self.source_x[0], via_y - 0.5 * self.m2_width),
-                      width=br_x - self.source_x[0]+self.m2_width)
+        for i in range(2):
+            x_offset = x_offsets[i]
+            source_pins = insts[i].get_pins("S")
+            drain_pins = insts[i].get_pins("D")
+            reference_pin = source_pins[0]
+            bitcell_pin = self.bitcell.get_pin(pin_names[i])
+
+            if reference_pin.cy() > gate_pin.cy():
+                in_via_y = reference_pin.by() + self.fill_height - m1m2.height
+                out_via_y = reference_pin.by()
+                target_in_pin = source_pins[-1]
+                target_out_pin = drain_pins[0]
+            else:
+                in_via_y = reference_pin.uy() - m1m2.height
+                out_via_y = reference_pin.uy() - self.fill_height
+                target_in_pin = source_pins[0]
+                target_out_pin = drain_pins[-1]
+            y_offset = in_via_y + m1m2.second_layer_height - self.m2_width
+
+            y_bend = self.top_m1_rail_y + self.m2_width + self.get_line_end_space(METAL2)
+
+            self.add_rect(METAL2, offset=vector(x_offset, y_offset),
+                          height=y_bend - y_offset + self.m2_width)
+            self.add_rect(METAL2, offset=vector(x_offset, y_bend), width=bitcell_pin.cx() - x_offset)
+
+            self.add_layout_pin(pin_names[i], METAL2, offset=vector(bitcell_pin.lx(), y_bend),
+                                width=bitcell_pin.width(),
+                                height=max(self.height - y_bend, 2 * self.m2_width))
+
+            self.add_rect(METAL2, offset=vector(x_offset, y_offset), width=target_in_pin.cx() - x_offset)
+            for source_pin in source_pins:
+                self.add_contact_center(m1m2.layer_stack, offset=vector(source_pin.cx(),
+                                                                        in_via_y + 0.5 * m1m2.height))
+
+            for drain_pin in drain_pins:
+                self.add_contact_center(m1m2.layer_stack, offset=vector(drain_pin.cx(),
+                                                                        out_via_y + 0.5 * m1m2.height))
+            self.add_rect(METAL2, offset=vector(x_offset, out_via_y), width=target_out_pin.cx() - x_offset)
+
+            y_bend = min(self.m2_width, out_via_y - self.get_line_end_space(METAL2) - self.m2_width)
+            self.add_rect(METAL2, offset=vector(x_offset, y_bend),
+                          height=out_via_y - y_bend + self.m2_width)
+            self.add_rect(METAL2, offset=vector(x_offset, y_bend), width=bitcell_pin.cx() - x_offset)
+            self.add_layout_pin(pin_names[i] + "_out", METAL2,
+                                offset=vector(bitcell_pin.lx(), y_bend - self.m2_width),
+                                width=bitcell_pin.width(),
+                                height=2 * self.m2_width)
+
+            self.height = max(self.height, self.get_pin("bl").uy())
+
+    def add_well_implants(self):
+        layers = [NIMP]
+        if info["has_pwell"]:
+            layers.append(PWELL)
+        for layer in layers:
+            tx_rect = max(self.tx.get_layer_shapes(layer), key=lambda x: x.width * x.height)
+            x_offset = min(0, tx_rect.lx() + self.bl_inst.lx())
+            x_right = max(self.width, tx_rect.rx() + self.bl_inst.lx())
+            y_offset = self.br_inst.by() + tx_rect.by()
+            y_top = self.bl_inst.by() + self.tx.height - tx_rect.by()
+
+            self.add_rect(layer, offset=vector(x_offset, y_offset), width=x_right - x_offset,
+                          height=y_top - y_offset)

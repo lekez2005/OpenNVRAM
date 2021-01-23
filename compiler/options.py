@@ -131,7 +131,7 @@ class options(optparse.Values):
         "clk": [2, 6, 12, 24, 24]
     }
     precharge_size = 2
-    column_mux_size = 4
+    column_mux_size = 8
 
     cells_per_group = 1
 

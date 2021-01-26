@@ -205,14 +205,18 @@ class pgate_horizontal(design):
             # inverter
             poly_x_offset = 0.5 * self.poly_to_field_poly
             gate_contact_x = poly_x_offset + poly_to_mid_contact - 0.5 * self.contact_width
-            pin_right_x = gate_contact_x + 0.5 * self.contact_width + 0.5 * self.m1_width
+            pin_right_x = (gate_contact_x + 0.5 * self.contact_width +
+                           0.5 * max(self.m1_width, self.m2_width))
         else:
             input_x_offset = self.get_parallel_space(METAL1)
+            pitch = max(self.m1_width + self.get_parallel_space(METAL1),
+                        self.m2_width + self.get_parallel_space(METAL2))
 
             for _ in range(self.num_poly_contacts - 1):
-                input_x_offset += self.m1_width + self.get_parallel_space(METAL1)
+                input_x_offset += pitch
             # for nand and nor, A pin is wide enough to prevent line end space drc issue
-            self.nand_nor_a_width = self.get_drc_by_layer(METAL1, "line_end_threshold")
+            self.nand_nor_a_width = max(self.get_drc_by_layer(METAL1, "line_end_threshold"),
+                                        self.m2_width)
             pin_right_x = input_x_offset + self.nand_nor_a_width
             m1_poly_x_extension = 0.5 * (self.m1_width - self.contact_width)
             gate_contact_x = pin_right_x - self.nand_nor_a_width + m1_poly_x_extension
@@ -223,7 +227,11 @@ class pgate_horizontal(design):
 
         self.poly_x_offset = poly_x_offset
 
-        active_x = pin_right_x + self.get_line_end_space(METAL1)
+        m1_extension = max(0, 0.5 * (m1m2.first_layer_height - min(active_widths)))
+        m2_extension = max(0, 0.5 * (m1m2.second_layer_height - min(active_widths)))
+
+        active_x = max(pin_right_x + m1_extension + self.get_line_end_space(METAL1),
+                       pin_right_x + m2_extension + self.get_parallel_space(METAL2))
 
         all_poly_y_offsets = [nmos_poly_offsets, pmos_poly_offsets]
 

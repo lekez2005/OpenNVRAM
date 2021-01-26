@@ -6,7 +6,7 @@ sense_amp_array = "latched_sense_amp_array"
 tri_gate_mod = "tri_state_buf"
 ms_flop_mod = "ms_flop_clk_buf"
 
-logic_buffers_height = 1.35
+logic_buffers_height = 1.4
 tech_name = "freepdk45"
 process_corners = ["TT"]
 supply_voltages = [1.0]

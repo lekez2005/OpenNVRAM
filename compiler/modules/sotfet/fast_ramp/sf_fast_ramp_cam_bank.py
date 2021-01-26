@@ -2,8 +2,8 @@ from base import utils
 from base.contact import m2m3, m1m2
 from base.design import METAL1, METAL3, METAL2
 from base.vector import vector
+from globals import OPTS
 from modules.sotfet.cmos.sw_control_buffers import SwControlBuffers
-from modules.sotfet.fast_ramp.fast_ramp_control_buffers import FastRampControlBuffers
 from modules.sotfet.sf_cam_bank import SfCamBank
 
 
@@ -25,11 +25,12 @@ class SfFastRampCamBank(SfCamBank):
 
     def create_control_buffers(self):
         if self.num_cols <= 40:
-            self.control_buffers = FastRampControlBuffers()
+            OPTS.control_buffers_num_rows = 2
             self.double_control_buffer = True
         else:
-            self.control_buffers = SwControlBuffers()
+            OPTS.control_buffers_num_rows = 1
             self.double_control_buffer = False
+        self.control_buffers = SwControlBuffers()
         self.add_mod(self.control_buffers)
 
     def get_control_rails_destinations(self):

@@ -208,7 +208,8 @@ class pgate_horizontal(design):
             pin_right_x = (gate_contact_x + 0.5 * self.contact_width +
                            0.5 * max(self.m1_width, self.m2_width))
         else:
-            input_x_offset = self.get_parallel_space(METAL1)
+            input_x_offset = max(self.get_parallel_space(METAL1),
+                                 self.get_via_space(m1m2))
             pitch = max(self.m1_width + self.get_parallel_space(METAL1),
                         self.m2_width + self.get_parallel_space(METAL2))
 

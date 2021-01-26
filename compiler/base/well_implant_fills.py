@@ -58,7 +58,7 @@ def get_default_fill_layers():
     if hasattr(tech, "default_fill_purposes"):
         purposes = tech.default_fill_purposes
     else:
-        purposes = ["drawing", "drawing", "drawing"]
+        purposes = ["drawing"] * len(layers)
     assert len(layers) == len(purposes), "Number of layers and purposes specified not equal"
     return layers, purposes
 

@@ -254,6 +254,10 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             return max(space_for_prefix, layer_to_layer_space)
         return layer_to_layer_space
 
+    @classmethod
+    def get_via_space(cls, via):
+        return cls.get_space(via.via_layer_name)
+
     def get_layout_pins(self, inst):
         """ Return a map of pin locations of the instance offset """
         # find the instance

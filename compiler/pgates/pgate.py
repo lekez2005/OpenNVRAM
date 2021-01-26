@@ -53,7 +53,7 @@ class pgate(design.design):
         return name
 
     def __init__(self, name, height, size=1, beta=None, contact_pwell=True, contact_nwell=True,
-                 align_bitcell=False, same_line_inputs=True):
+                 align_bitcell=False, same_line_inputs=False):
         """ Creates a generic cell """
         design.design.__init__(self, name)
         height, height_suffix = self.get_height(height, align_bitcell)
@@ -136,7 +136,7 @@ class pgate(design.design):
                                                self.well_contact_active_height +
                                                2 * self.implant_enclose_active)
 
-        poly_to_active = max(drc.get("poly_dummy_to_active", self.poly_to_active), self.poly_to_active)
+        poly_to_active = max(drc.get("poly_dummy_to_vert_active", self.poly_to_active), self.poly_to_active)
         active_contact_space = self.poly_extend_active + poly_to_active + 0.5 * self.well_contact_active_height
         implant_active_space = self.implant_enclose_ptx_active + 0.5 * self.well_contact_implant_height
 

@@ -21,7 +21,7 @@ class pnand2(pgate.pgate, metaclass=unique_meta.Unique):
         return "pnand2"
 
     def __init__(self, size=1, height=None, contact_pwell=True, contact_nwell=True,
-                 align_bitcell=False, same_line_inputs=True):
+                 align_bitcell=False, same_line_inputs=False):
         """ Creates a cell for a simple 2 input nand """
         pgate.pgate.__init__(self, self.name, height, size=size,
                              contact_pwell=contact_pwell, contact_nwell=contact_nwell,

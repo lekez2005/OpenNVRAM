@@ -66,6 +66,9 @@ layer["metal10"] = 29
 layer["text"]    = 239
 layer["boundary"]= 239
 
+
+default_fill_layers = ["nwell", "nimplant", "pimplant", "pwell"]
+
 ###################################################
 ##END GDS Layer Map
 ###################################################

@@ -130,6 +130,8 @@ class options(optparse.Values):
         "default": [2, 4, 8],
         "clk": [2, 6, 12, 24, 24]
     }
+    control_buffers_num_rows = 1
+
     precharge_size = 2
     column_mux_size = 8
 

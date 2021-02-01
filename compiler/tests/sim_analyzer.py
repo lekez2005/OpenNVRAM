@@ -165,8 +165,9 @@ def verify_write_event(write_time, write_address, write_period, write_duty, nega
     settling_time = write_period
     actual_data = get_address_data(write_address, write_time + settling_time)
 
-    debug_error("Write failure: At time {:.3g} address {}".format(write_time, write_address),
-                expected_data, actual_data)
+    correct = debug_error("Write failure: At time {:.3g} address {}".format(write_time, write_address),
+                          expected_data, actual_data)
+    return correct
 
 
 def verify_read_event(read_time, read_address, read_period, read_duty, negate=False):
@@ -179,7 +180,9 @@ def verify_read_event(read_time, read_address, read_period, read_duty, negate=Fa
     if negate:
         actual_data = [int(not x) for x in actual_data]
 
-    debug_error("Read failure: At time {:.3g} address {}".format(read_time, read_address), expected_data, actual_data)
+    correct = debug_error("Read failure: At time {:.3g} address {}".format(read_time, read_address),
+                          expected_data, actual_data)
+    return correct
 
 
 def measure_read_delays(read_time, read_duty):
@@ -209,6 +212,7 @@ def debug_error(comment, expected_data, actual_data):
                   format(print_comments[i],
                          " ".join([str_formats[j].format(print_data[i][j]) for j in
                                    range(len(actual_data))])))
+    return np.all(equal_vec)
 
 
 def vector_to_int(vec):

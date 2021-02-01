@@ -215,21 +215,25 @@ if __name__ == "__main__":
     if push:
         max_decoder_delay, max_clk_to_decoder_in = max_clk_to_decoder_in, max_decoder_delay
 
-
     # Analyze Reads
 
     print("----------------Read Analysis---------------")
+    max_read_event = None
     for read_event in all_read_events:
         print("Read at time: {:.4g} n".format(read_event[0] * 1e9))
-        sim_analyzer.verify_read_event(read_event[0], read_event[1],
-                                       read_event[2] + read_settling_time,
-                                       read_event[3], negate=not cmos)
+        correct = sim_analyzer.verify_read_event(read_event[0], read_event[1],
+                                                 read_event[2] + read_settling_time,
+                                                 read_event[3], negate=not cmos)
+        if not correct:
+            max_read_event = read_event
 
     max_dout = 0
-    max_read_event = all_read_events[-1] if all_read_events else all_write_events[-1]
+
     max_read_bit_delays = [0] * word_size
     if options.analysis_op_index is not None:
         analysis_events = all_read_events[options.analysis_op_index:options.analysis_op_index + 1]
+    elif max_read_event is not None:
+        analysis_events = [max_read_event]
     else:
         analysis_events = all_read_events
     for read_event in analysis_events:
@@ -256,11 +260,14 @@ if __name__ == "__main__":
     # analyze writes
     print("----------------Write Analysis---------------")
 
+    max_write_event = None
     for write_event_ in all_write_events:
         print("Write at time: {:.4g} n".format(write_event_[0] * 1e9))
-        sim_analyzer.verify_write_event(write_event_[0], write_event_[1],
-                                        write_event_[2] + write_settling_time,
-                                        write_event_[3], negate=not cmos)
+        correct = sim_analyzer.verify_write_event(write_event_[0], write_event_[1],
+                                                  write_event_[2] + write_settling_time,
+                                                  write_event_[3], negate=not cmos)
+        if not correct:
+            max_write_event = write_event_
 
     write_energies = [sim_analyzer.measure_energy((x[0], x[2] + x[0])) for x in all_write_events]
     if not write_energies:
@@ -268,11 +275,12 @@ if __name__ == "__main__":
 
     # Write delay
     max_q_delay = 0
-    max_write_event = all_write_events[1] if all_write_events else all_read_events[-1]
     max_write_bit_delays = [0] * word_size
 
     if options.analysis_op_index is not None:
         analysis_events = all_write_events[options.analysis_op_index:options.analysis_op_index + 1]
+    elif max_write_event is not None:
+        analysis_events = [max_write_event]
     else:
         analysis_events = all_write_events
 
@@ -286,7 +294,7 @@ if __name__ == "__main__":
             max_q_delay = max_q_
             max_write_event = write_event
             max_write_bit_delays = q_delays
-    max_write_event = all_write_events[0]
+    # max_write_event = all_write_events[0]
 
     print("Q state delay = {:.3g} ps, address = {}, t = {:.3g} ns".
           format(max_q_delay / 1e-12, max_write_event[1], max_write_event[0] * 1e9))
@@ -313,7 +321,7 @@ if __name__ == "__main__":
 
         def print_max_delay(desc, val):
             if val > 0:
-                print("{} delay = {:.3g}p".format(desc, val * 1e12))
+                print("{} delay = {:.4g}p".format(desc, val * 1e12))
 
 
         def plot_sig(signal_name, from_t, to_t, label):
@@ -419,7 +427,7 @@ if __name__ == "__main__":
         print_max_delay("BR", br_delay)
 
         if push:
-            sense_bit = int(max_read_bit/2)
+            sense_bit = int(max_read_bit / 2)
         else:
             sense_bit = max_read_bit
 

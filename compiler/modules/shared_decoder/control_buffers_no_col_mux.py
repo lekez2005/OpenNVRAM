@@ -14,7 +14,7 @@ class LatchedControlBuffers(BaseLatchedControlBuffers):
     def create_schematic_connections(self):
         connections = super().create_schematic_connections()
         precharge_in = "precharge_trig" if self.use_precharge_trigger else "clk"
-        precharge_conn = ["read", "bank_sel", precharge_in, "precharge_en", "precharge_en_bar"]
+        precharge_conn = ["read", "bank_sel", precharge_in, "precharge_en_bar", "precharge_en"]
         self.replace_connection("precharge_buf", precharge_conn, connections)
         return connections
 

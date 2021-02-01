@@ -98,21 +98,21 @@ class LatchedControlLogic(ControlBuffers):
 
     def create_schematic_connections(self):
         connections = [
-            ("clk_buf", self.clk_buf, ["bank_sel", "clk", "clk_buf", "clk_bar"]),
+            ("clk_buf", self.clk_buf, ["bank_sel", "clk", "clk_bar", "clk_buf"]),
             ("precharge_buf", self.precharge_buf,
-             ["bank_sel", "precharge_trig", "precharge_en", "precharge_en_bar"]),
+             ["bank_sel", "precharge_trig", "precharge_en_bar", "precharge_en"]),
             ("sel_trig", self.nand2, ["bank_sel", "sense_trig", "sel_trig_bar"]),
             ("clk_bar_int", self.inv, ["clk", "clk_bar_int"]),
             ("bank_sel_cbar_inst", self.nand2, ["bank_sel", "clk_bar_int", "bank_sel_cbar"])
         ]
         if not self.is_left_bank:
             connections.append(("wordline_buf", self.wordline_buf,
-                                ["sense_trig", "bank_sel_cbar", "wordline_en_bar", "wordline_en"]))
+                                ["sense_trig", "bank_sel_cbar", "wordline_en", "wordline_en_bar"]))
         connections.extend([
-            ("write_buf", self.write_buf, ["read", "bank_sel_cbar", "write_en_bar", "write_en"]),
+            ("write_buf", self.write_buf, ["read", "bank_sel_cbar", "write_en", "write_en_bar"]),
             ("sel_cbar_trig", self.nor2, ["sense_trig", "bank_sel_cbar", "sel_cbar_trig"]),
             ("sample_bar", self.sample_bar,
-             ["read", "sel_cbar_trig", "sample_en_buf", "sample_bar"]),
+             ["read", "sel_cbar_trig", "sample_bar", "sample_en_buf"]),
             ("sense_amp_buf", self.sense_amp_buf, ["sel_trig_bar", "sense_en", "sense_en_bar"]),
             ("tri_en_buf", self.tri_en_buf, ["sel_trig_bar", "tri_en", "tri_en_bar"]),
         ])

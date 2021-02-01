@@ -45,16 +45,16 @@ class LatchedControlBuffers(ControlBuffers):
         precharge_in = "precharge_trig" if self.use_precharge_trigger else "clk"
         connections = [
             ("precharge_buf", self.precharge_buf,
-             ["bank_sel", precharge_in, "precharge_en", "precharge_en_bar"]),
+             ["bank_sel", precharge_in, "precharge_en_bar", "precharge_en"]),
             ("clk_buf", self.clk_buf,
-             ["bank_sel", "clk", "clk_buf", "clk_bar"]),
+             ["bank_sel", "clk", "clk_bar", "clk_buf"]),
             ("clk_bar", self.inv, ["clk", "clk_bar_int"]),
             ("bank_sel_cbar", self.nand_x2,
              ["bank_sel", "clk_bar_int", "bank_sel_cbar"]),
             ("wordline_buf", self.wordline_buf,
-             ["sense_trig", "bank_sel_cbar", "wordline_en_bar", "wordline_en"]),
+             ["sense_trig", "bank_sel_cbar", "wordline_en", "wordline_en_bar"]),
             ("write_buf", self.write_buf,
-             ["read", "bank_sel_cbar", "write_en_bar", "write_en"]),
+             ["read", "bank_sel_cbar", "write_en", "write_en_bar"]),
             ("sel_clk_sense", self.nor,
              ["sense_trig", "bank_sel_cbar", "sel_clk_sense"]),
             ("sample_bar_int", self.nand_x2,
@@ -62,9 +62,9 @@ class LatchedControlBuffers(ControlBuffers):
             ("sample_bar", self.sample_bar,
              ["sample_bar_int", "sample_en_buf", "sample_en_bar"]),
             ("sense_amp_buf", self.sense_amp_buf,
-             ["sample_bar_int", "sense_trig", "bank_sel", "sense_en", "sense_en_bar"]),
+             ["sample_bar_int", "sense_trig", "bank_sel", "sense_en_bar", "sense_en"]),
             ("tri_en_buf", self.tri_en_buf,
-             ["sample_bar_int", "sense_trig", "bank_sel", "tri_en", "tri_en_bar"])
+             ["sample_bar_int", "sense_trig", "bank_sel", "tri_en_bar", "tri_en"])
         ]
         return connections
 

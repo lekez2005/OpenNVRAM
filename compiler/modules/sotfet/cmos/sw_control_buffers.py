@@ -41,13 +41,13 @@ class SwControlBuffers(SfControlBuffers):
             ("clk_buf", self.clk_buf, ["clk_sel_bar", "clk_buf", "clk_bar"]),
             ("clk_bar_int", self.inv2, ["clk", "clk_bar_int"]),
             ("bitline_en", self.bitline_en,
-             ["bank_sel", "clk_bar_int", "bitline_en", "bitline_en_bar"]),
+             ["bank_sel", "clk_bar_int", "bitline_en_bar", "bitline_en"]),
             ("sense_amp_buf", self.sense_amp_buf,
-             ["bank_sel", "search", "clk_bar_int", "sense_amp_en", "sense_amp_bar"]),
+             ["bank_sel", "search", "clk_bar_int", "sense_amp_bar", "sense_amp_en"]),
             ("search_bar", self.inv, ["search", "search_bar"]),
             ("wordline_en", self.wordline_buf,
-             ["bank_sel", "search_bar", "clk_bar_int", "wordline_en", "wordline_bar"]),
+             ["bank_sel", "search_bar", "clk_bar_int", "wordline_bar", "wordline_en"]),
             ("chb", self.chb_buf,
-             ["search_bar", "clk_sel_bar", "precharge_en_bar", "precharge_en"])
+             ["search_bar", "clk_sel_bar", "precharge_en", "precharge_en_bar"])
         ]
         return connections

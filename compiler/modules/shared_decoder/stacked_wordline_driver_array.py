@@ -77,13 +77,8 @@ class stacked_wordline_driver_array(wordline_driver_array):
             # add logic buffer
             buffer_inst = self.add_inst("driver{}".format(row), mod=self.logic_buffer,
                                         offset=vector(x_offset, y_offset), mirror=mirror)
-            if len(self.buffer_stages) > 1:
-                self.connect_inst(
-                    ["en", "in[{}]".format(row), "wl[{}]".format(row),
-                     "wl_bar[{}]".format(row), "vdd", "gnd"])
-            else:
-                self.connect_inst(["en", "in[{}]".format(row), "wl[{}]".format(row), "vdd",
-                                   "gnd"])
+            self.connect_inst(["en", "in[{}]".format(row), "wl_bar[{}]".format(row),
+                               "wl[{}]".format(row), "vdd", "gnd"])
 
             m3_clearance = 0.5 * self.rail_height + self.get_parallel_space(METAL3)
             m3_pitch = self.m3_width + self.get_parallel_space(METAL3)

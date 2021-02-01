@@ -68,29 +68,29 @@ class SotfetMramControlBuffers(BaseLatchedControlBuffers):
 
     def create_schematic_connections(self):
         if OPTS.mirror_sense_amp:
-            sense_conns = ["read", "sense_trig", "bank_sel", "sense_en", "sense_en_bar"]
+            sense_conns = ["read", "sense_trig", "bank_sel", "sense_en_bar", "sense_en"]
         else:
             sense_conns = ["sample_en_bar", "sense_trig", "bank_sel",
-                           "sense_en", "sense_en_bar"]
+                           "sense_en_bar", "sense_en"]
         connections = [
             ("nor_trig_clk", self.nor, ["sense_trig", "clk", "nor_trig_clk"]),
             ("rwl_buf", self.rwl_en, ["nor_trig_clk", "read", "bank_sel", "rwl_en", "rwl_en_bar"]),
-            ("precharge_buf", self.precharge_buf, ["bank_sel", "clk", "precharge_en",
-                                                   "precharge_en_bar"]),
+            ("precharge_buf", self.precharge_buf, ["bank_sel", "clk", "precharge_en_bar",
+                                                   "precharge_en"]),
             ("read_bar", self.inv, ["read", "read_bar"]),
             ("br_precharge_buf", self.br_precharge_buf,
-             ["read_bar", "bank_sel", "clk", "br_precharge_en", "br_precharge_en_bar"]),
+             ["read_bar", "bank_sel", "clk", "br_precharge_en_bar", "br_precharge_en"]),
             ("nor_read_clk", self.nor, ["read", "clk", "nor_read_clk"]),
             ("wwl_en_int_bar", self.nand, ["nor_read_clk", "bank_sel", "wwl_en_int_bar"]),
             ("wwl_en", self.wwl_en, ["wwl_en_int_bar", "wwl_en", "wwl_en_bar"]),
-            ("clk_buf", self.clk_buf, ["bank_sel", "clk", "clk_buf", "clk_bar"]),
-            ("write_buf", self.write_buf, ["wwl_en_int_bar", "write_en", "write_en_bar"]),
+            ("clk_buf", self.clk_buf, ["bank_sel", "clk", "clk_bar", "clk_buf"]),
+            ("write_buf", self.write_buf, ["wwl_en_int_bar", "write_en_bar", "write_en"]),
             ("sense_trig_bar", self.inv, ["sense_trig", "sense_trig_bar"]),
             ("sample_bar", self.sample_bar, ["sense_trig_bar", "bank_sel", "read",
-                                             "br_reset", "sample_en_bar"]),
+                                             "sample_en_bar", "br_reset"]),
             ("sense_amp_buf", self.sense_amp_buf, sense_conns),
             ("tri_en_buf", self.tri_en_buf, ["sample_en_bar", "sense_trig", "bank_sel",
-                                             "tri_en", "tri_en_bar"])
+                                             "tri_en_bar", "tri_en"])
         ]
         return connections
 

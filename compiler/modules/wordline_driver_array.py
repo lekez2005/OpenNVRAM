@@ -87,12 +87,8 @@ class wordline_driver_array(design.design):
             # add logic buffer
             buffer_inst = self.add_inst("driver{}".format(row), mod=self.logic_buffer,
                                         offset=vector(x_offset, y_offset), mirror=mirror)
-            if len(self.buffer_stages) > 1:
-                self.connect_inst(["en", "in[{}]".format(row), "wl[{}]".format(row), "wl_bar[{}]".format(row),  "vdd",
-                                   "gnd"])
-            else:
-                self.connect_inst(["en", "in[{}]".format(row), "wl[{}]".format(row), "vdd",
-                                   "gnd"])
+            self.connect_inst(["en", "in[{}]".format(row), "wl_bar[{}]".format(row), "wl[{}]".format(row),  "vdd",
+                               "gnd"])
             self.buffer_insts.append(buffer_inst)
 
             # route en input pin
@@ -111,7 +107,7 @@ class wordline_driver_array(design.design):
             self.copy_layout_pin(buffer_inst, "B", "in[{}]".format(row))
 
             # output each WL on the right
-            self.copy_layout_pin(buffer_inst, "out_inv", "wl[{0}]".format(row))
+            self.copy_layout_pin(buffer_inst, "out", "wl[{0}]".format(row))
 
             # Extend vdd and gnd of wordline_driver
             y_offset = (row + 1) * self.logic_buffer.height - 0.5 * self.rail_height

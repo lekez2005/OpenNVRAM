@@ -327,7 +327,11 @@ class layout(lef.lef):
         """Adds a text label on the given layer,offset, and zoom level"""
         # negative layers indicate "unused" layers in a given technology
         debug.info(5,"add label " + str(text) + " " + layer + " " + str(offset))
-        layer_num, purpose = layer_label_map[layer]
+        if layer in layer_label_map:
+            layer_num, purpose = layer_label_map[layer]
+        else:
+            layer_num = techlayer[layer]
+            purpose = 0
         if layer_num >= 0:
             # FIXME fix by adding mapping for text purpose
             #self.objs.append(geometry.label(text, layer_num, offset, zoom, layerPurpose=get_purpose(layer)))

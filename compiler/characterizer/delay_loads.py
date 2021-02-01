@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 
 from globals import OPTS
-from tech import delay_params_class
 
 
 class Load(ABC):
@@ -12,6 +11,7 @@ class Load(ABC):
 
     @classmethod
     def initialize_class(cls):
+        from tech import delay_params_class
         if not cls.initialized:
             cls.delay_params = delay_params_class()()
 

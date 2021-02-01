@@ -9,7 +9,6 @@ import debug
 from characterizer.delay_loads import DistributedLoad, WireLoad, NandLoad
 from characterizer.delay_optimizer import LoadOptimizer
 from globals import OPTS
-from modules.bank import bank as bank_class
 from modules.logic_buffer import LogicBuffer
 from pgates.pinv import pinv
 
@@ -21,7 +20,7 @@ class BaseDelayStrategy(ABC):
     MIN_DELAY = 'min_delay'  # minimize the size given a maximum delay
     FIXED = 'fixed'
 
-    def __init__(self, bank: bank_class):
+    def __init__(self, bank):
         self.bank = bank
 
         self.num_cols = bank.num_cols

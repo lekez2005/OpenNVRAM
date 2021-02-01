@@ -22,9 +22,11 @@ class SramProbe(object):
         else:
             self.pex_file = pex_file
 
-        self.q_pin = utils.get_libcell_pins(["Q"], "cell_6t", tech.GDS["unit"], tech.layer["boundary"]).get("q")[0]
+        self.q_pin = utils.get_libcell_pins(["Q"], OPTS.bitcell_mod,
+                                            tech.GDS["unit"], tech.layer["boundary"]).get("q")[0]
         self.qbar_pin = \
-        utils.get_libcell_pins(["QBAR"], "cell_6t", tech.GDS["unit"], tech.layer["boundary"]).get("qbar")[0]
+        utils.get_libcell_pins(["QBAR"], OPTS.bitcell_mod, tech.GDS["unit"],
+                               tech.layer["boundary"]).get("qbar")[0]
 
         self.bitcell_probes = {}
         self.br_probes = {}

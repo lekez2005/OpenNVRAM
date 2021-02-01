@@ -86,21 +86,24 @@ class LogicBuffer(design.design, metaclass=Unique):
 
     def create_modules(self):
         if self.logic == "pnand2":
-            self.logic_mod = pnand2(size=1, height=self.height, contact_nwell=self.contact_nwell,
-                                    contact_pwell=self.contact_pwell, align_bitcell=self.align_bitcell)
+            logic_class = pnand2
         elif self.logic == "pnor2":
-            self.logic_mod = pnor2(size=1, height=self.height, contact_nwell=self.contact_nwell,
-                                   contact_pwell=self.contact_pwell)
+            logic_class = pnor2
         elif self.logic == self.PNAND_3:
-            self.logic_mod = pnand3(size=1, height=self.height, contact_nwell=self.contact_nwell,
-                                    contact_pwell=self.contact_pwell, align_bitcell=self.align_bitcell)
+            logic_class = pnand3
         else:
             raise Exception("Invalid logic selected")
+        self.logic_mod = logic_class(size=1, height=self.height, contact_nwell=self.contact_nwell,
+                                     same_line_inputs=self.align_bitcell,
+                                     contact_pwell=self.contact_pwell,
+                                     align_bitcell=self.align_bitcell)
 
         self.add_mod(self.logic_mod)
 
-        self.buffer_mod = BufferStage(self.buffer_stages, height=self.height, route_outputs=self.route_outputs,
-                                      contact_pwell=self.contact_pwell, contact_nwell=self.contact_nwell,
+        self.buffer_mod = BufferStage(self.buffer_stages, height=self.height,
+                                      route_outputs=self.route_outputs,
+                                      contact_pwell=self.contact_pwell,
+                                      contact_nwell=self.contact_nwell,
                                       align_bitcell=self.align_bitcell)
         self.add_mod(self.buffer_mod)
 

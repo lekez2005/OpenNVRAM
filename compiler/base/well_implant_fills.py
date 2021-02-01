@@ -1,5 +1,8 @@
+from typing import List
+
 from base import utils
-from base.design import design, NWELL, NIMP, PIMP, METAL1, PO_DUMMY, POLY, DRAWING
+from base.contact import m2m3, m3m4
+from base.design import design, NWELL, NIMP, PIMP, METAL1, PO_DUMMY, POLY, DRAWING, METAL2, PWELL, METAL3, METAL4
 import tech
 from base import contact
 from base.geometry import instance
@@ -237,3 +240,134 @@ def fill_horizontal_poly(self: design, reference_inst: instance, direction=TOP):
         x_offset = reference_inst.lx() + fill_x
         self.add_rect(PO_DUMMY, offset=vector(x_offset, y_offset),
                       width=fill_width, height=self.poly_width)
+
+
+def evaluate_vertical_metal_spacing(top_module: design, bottom_module: design,
+                                    num_rails=0, layers=None, vias=None, via_space=False):
+    """
+    Evaluate minimum spacing between top and bottom module
+    :param top_module:
+    :param bottom_module:
+    :param num_rails: number of parallel rails that will pass between top and bottom modules
+    :param layers: Which layers to check min space for, M2, M3 by default
+    :param vias: via heights to us. m2m3 by default
+    :param via_space: whether to use only reserve space for one via fitting below the top mod,
+                        num_rails is ignored in this case
+    :return:
+    """
+    if layers is None:
+        layers = [METAL2, METAL3, METAL4]
+    if not vias:
+        vias = [m2m3, m3m4]
+    via_height = max(vias, key=lambda x: x.height).height
+    metal_space = max(top_module.get_line_end_space(METAL2),
+                      top_module.get_line_end_space(METAL3))
+    if num_rails >= 2:
+        metal_space = max(metal_space, top_module.get_line_end_space(METAL4))
+
+    space = -top_module.height
+    for layer in layers:
+        top_rects = top_module.get_layer_shapes(layer)
+        bottom_rects = bottom_module.get_layer_shapes(layer)
+        if not top_rects or not bottom_rects:
+            continue
+
+        top_rect = min(top_rects, key=lambda x: x.by())
+        bottom_rect = max(bottom_rects, key=lambda x: x.uy())
+
+        top_rect_y = top_rect.by() + bottom_module.height
+        bottom_rect_top = bottom_rect.uy()
+        min_space = metal_space + (bottom_rect_top - top_rect_y)
+        if via_space:
+            min_space += via_height
+        else:
+            min_space += (via_height + metal_space) * num_rails
+        space = max(space, min_space)
+    return space
+
+
+def evaluate_vertical_module_spacing(top_modules: List[design],
+                                     bottom_modules: List[design],
+                                     reference_bottom: design = None,
+                                     layers=None, min_space=None, num_cols=64):
+    """
+    Evaluate spacing between two modules vertically arranged
+    :param top_modules: The modules placed on top (e.g. main module and its body tap)
+    :param bottom_modules: The modules placed below
+    :param reference_bottom:
+    :param layers: Layers to compare
+    :param min_space: minimum space, uses complete overlap as starting space if not specified
+    :param num_cols: number of columns, used in evaluating run length for parallel space calculation
+    :return: minimum space
+    """
+    if layers is None:
+        layers = [METAL1, POLY, NIMP, PIMP]
+
+    if reference_bottom is None:
+        reference_bottom = bottom_modules[0]
+    if min_space is None:
+        min_space = - top_modules[0].height  # start with overlap
+    for top_module in top_modules:
+        for bottom_module in bottom_modules:
+            for layer in layers:
+                top_rects = top_module.get_layer_shapes(layer, recursive=True)
+                top_rects = list(sorted(top_rects, key=lambda x: x.by()))
+                bottom_rects = bottom_module.get_layer_shapes(layer, recursive=True)
+                bottom_rects = list(sorted(bottom_rects, key=lambda x: x.uy(), reverse=True))
+                if not (top_rects or bottom_rects):  # layer does not exist
+                    continue
+                wide_space = reference_bottom.get_wide_space(layer)
+                for bottom_rect in bottom_rects:
+                    bottom_clearance = reference_bottom.height - bottom_rect.uy()
+                    for top_rect in top_rects:
+                        # don't bother if spacing is greater than wide spacing
+                        top_clearance = top_rect.by()
+                        total_clearance = top_clearance + bottom_clearance + min_space
+                        if total_clearance > wide_space:
+                            continue
+                        # else calculate desired space, note the width/height flip since vertical space is needed
+                        widths = [bottom_rect.rx() - bottom_rect.lx(),
+                                  top_rect.rx() - top_rect.lx()]
+                        heights = [bottom_rect.uy() - bottom_rect.by(),
+                                   top_rect.uy() - top_rect.by()]
+
+                        if ((bottom_rect.rx() - bottom_rect.lx()) >= bottom_module.width and
+                                (top_rect.rx() - top_rect.lx()) >= top_module.width):
+                            run_length = num_cols * bottom_module.width
+                        else:
+                            right_most = max([top_rect, bottom_rect], key=lambda x: x.lx())
+                            left_most = min([top_rect, bottom_rect], key=lambda x: x.lx())
+                            run_length = min(right_most.rx(), left_most.rx()) - right_most.lx()
+
+                        target_space = reference_bottom. \
+                            get_space_by_width_and_length(layer,
+                                                          max_width=max(widths),
+                                                          min_width=min(widths),
+                                                          run_length=run_length,
+                                                          heights=heights)
+                        evaluated_space = -top_clearance + -bottom_clearance + target_space
+                        if evaluated_space > min_space:
+                            min_space = evaluated_space
+    min_space = utils.round_to_grid(min_space)
+    # evaluate well spacing to prevent nwell pwell overlap
+    if tech.info["has_pwell"]:
+        well_spacing = tech.drc["pwell_to_nwell"]
+        top_module = top_modules[0]
+        bottom_module = bottom_modules[0]
+        layer_pairs = [(NWELL, PWELL), (PWELL, NWELL)]
+        for top_layer, bottom_layer in layer_pairs:
+            top_rects = top_module.get_layer_shapes(top_layer, recursive=True)
+            bottom_rects = bottom_module.get_layer_shapes(bottom_layer, recursive=True)
+            if not top_rects or not bottom_rects:
+                continue
+            top_rect = min(top_rects, key=lambda x: x.by())
+            bottom_rect = max(bottom_rects, key=lambda x: x.uy())
+
+            top_rect_y = top_rect.by() + bottom_module.height + min_space
+            bottom_rect_y = bottom_rect.uy()
+
+            if top_rect_y < bottom_rect_y:  # zero spacing
+                min_space = bottom_rect_y - (top_rect.by() + bottom_module.height)
+            elif top_rect_y - bottom_rect_y < well_spacing:  # use well spacing
+                min_space = bottom_rect_y + well_spacing - (top_rect.by() + bottom_module.height)
+    return min_space

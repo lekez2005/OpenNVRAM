@@ -193,6 +193,7 @@ class HorizontalBank(CmosBank):
                               width=width, height=height + y_space)
 
     def fill_modules(self):
+        """Fill horizontal space between instances in an array"""
         debug.info(1, "Filling space between modules")
 
         def fill_dual_mirror(bottom_inst, top_inst):

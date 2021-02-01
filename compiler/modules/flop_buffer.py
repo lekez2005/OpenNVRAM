@@ -2,9 +2,10 @@ from importlib import reload
 
 import debug
 from base.contact import m1m2
-from base.design import design
+from base.design import design, ACTIVE
 from base.unique_meta import Unique
 from base.vector import vector
+from base.well_implant_fills import get_default_fill_layers
 from modules.buffer_stage import BufferStage
 
 
@@ -56,10 +57,13 @@ class FlopBuffer(design, metaclass=Unique):
         self.flop_inst = self.add_inst("flop", mod=self.flop, offset=vector(0, 0))
         self.connect_inst(["din", "flop_out", "flop_out_bar", "clk", "vdd", "gnd"])
 
-        poly_dummies = self.flop.get_gds_layer_rects("po_dummy", "po_dummy", recursive=True)
-        right_most = max(poly_dummies, key=lambda x: x.rx())
-        center_poly = 0.5*(right_most.lx() + right_most.rx())
-        x_space = center_poly - self.flop.width
+        if self.has_dummy:
+            poly_dummies = self.flop.get_gds_layer_rects("po_dummy", "po_dummy", recursive=True)
+            right_most = max(poly_dummies, key=lambda x: x.rx())
+            center_poly = 0.5*(right_most.lx() + right_most.rx())
+            x_space = center_poly - self.flop.width
+        else:
+            x_space = 0
 
         self.buffer_inst = self.add_inst("buffer", mod=self.buffer, offset=self.flop_inst.lr() + vector(x_space, 0))
 
@@ -84,10 +88,11 @@ class FlopBuffer(design, metaclass=Unique):
 
     def fill_layers(self):
         inverter = self.buffer.module_insts[0].mod
-        layers = ["nwell", "nimplant", "pimplant"]
-        purposes = ["drawing", "drawing", "drawing"]
+        layers, purposes = get_default_fill_layers()
         for i in range(len(layers)):
             layer = layers[i]
+            if layer == ACTIVE:
+                continue
             inv_layer = inverter.get_layer_shapes(layer, purposes[i])[0]
             flop_layers = self.flop.get_gds_layer_rects(layer, purposes[i],
                                                         recursive=True)

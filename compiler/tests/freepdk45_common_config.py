@@ -1,10 +1,15 @@
 bitcell_mod = "cell_6t_4_fingers"
 use_body_taps = False
 
-write_driver_mod = "write_driver_no_mask"
-sense_amp_array = "latched_sense_amp_array"
+write_driver_mod = "write_driver_mask"
+sense_amp_array = "sense_amp_array"
+column_mux_array = "single_level_column_mux_array"
+
 tri_gate_mod = "tri_state_buf"
 ms_flop_mod = "ms_flop_clk_buf"
+run_optimizations = False
+
+control_buffers_num_rows = 1
 
 logic_buffers_height = 1.4
 tech_name = "freepdk45"

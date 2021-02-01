@@ -1,3 +1,4 @@
+from globals import OPTS
 from modules.control_buffers import ControlBuffers
 
 
@@ -26,6 +27,10 @@ class LatchedControlBuffers(ControlBuffers):
         tri_en_bar: sense_en_bar
     """
 
+    def __init__(self, contact_nwell=True, contact_pwell=True):
+        self.use_precharge_trigger = OPTS.use_precharge_trigger
+        super().__init__(contact_nwell, contact_pwell)
+
     def create_modules(self):
         self.create_common_modules()
         self.create_clk_buf()
@@ -37,9 +42,10 @@ class LatchedControlBuffers(ControlBuffers):
         self.create_tri_en_buf()
 
     def create_schematic_connections(self):
+        precharge_in = "precharge_trig" if self.use_precharge_trigger else "clk"
         connections = [
             ("precharge_buf", self.precharge_buf,
-             ["bank_sel", "clk", "precharge_en", "precharge_en_bar"]),
+             ["bank_sel", precharge_in, "precharge_en", "precharge_en_bar"]),
             ("clk_buf", self.clk_buf,
              ["bank_sel", "clk", "clk_buf", "clk_bar"]),
             ("clk_bar", self.inv, ["clk", "clk_bar_int"]),
@@ -63,7 +69,8 @@ class LatchedControlBuffers(ControlBuffers):
         return connections
 
     def get_schematic_pins(self):
-        return (["bank_sel", "read", "clk", "sense_trig"],
+        precharge_trigger = ["precharge_trig"] * self.use_precharge_trigger
+        return (["bank_sel", "read", "clk", "sense_trig"] + precharge_trigger,
                 ["clk_buf", "clk_bar", "wordline_en", "precharge_en_bar",
                  "write_en", "write_en_bar", "sense_en", "tri_en",
                  "tri_en_bar", "sample_en_bar"])

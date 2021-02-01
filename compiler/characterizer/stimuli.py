@@ -268,10 +268,14 @@ usim_opt  rcr_fmax=20G
             self.sf.write(".probe v(*) depth=1 \n")  # save top level signals
         else:
             self.sf.write("simulatorOptions options reltol=1e-3 vabstol=1e-6 iabstol=1e-12 temp={0} try_fast_op=no "
-                          "gmin={1} rforce=10m maxnotes=10 maxwarns=10 "
+                          "rforce=10m maxnotes=10 maxwarns=10 "
                           " preservenode=all topcheck=fixall "
-                          "digits=5 cols=80 dc_pivot_check=yes pivrel=1e-3 {2} "
-                          " \n".format(self.temperature, tech.spice["gmin"], OPTS.spectre_simulator_options))
+                          "digits=5 cols=80 dc_pivot_check=yes pivrel=1e-3 {1} "
+                          " \n".format(self.temperature, OPTS.spectre_simulator_options))
+            if "gmin" in tech.spice:
+                self.sf.write("simulatorOptions options gmin={0}\n".
+                              format(tech.spice["gmin"]))
+
             self.sf.write('dcOp dc write="spectre.dc" readns="spectre.dc" maxiters=150 maxsteps=10000 annotate=status\n')
             tran_options = OPTS.tran_options if hasattr(OPTS, "tran_options") else ""
             self.sf.write('tran tran step={} stop={}n ic={} write=spectre.dc'

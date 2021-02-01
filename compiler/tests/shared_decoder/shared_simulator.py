@@ -36,6 +36,8 @@ class SharedDecoderSimulator(TestBase):
         OPTS.run_optimizations = not options.fixed_buffers
         OPTS.energy = options.energy
 
+        setattr(OPTS, "push", getattr(OPTS, "push", False))
+
         two_bank_push = OPTS.push and options.num_banks == 2
 
         if options.energy:
@@ -81,79 +83,8 @@ class SharedDecoderSimulator(TestBase):
 
         OPTS.probe_cols = list(sorted(set(cols)))
 
-        OPTS.sense_trigger_setup = 0.2  # enough time to sample on the output flop before sense amp is disabled
-
-        num_rows = self.sram.bank.num_rows
-        num_cols = self.sram.bank.num_cols
-
-        if OPTS.baseline:
-            first_read = first_write = 0.3
-            second_read = 0.45
-            second_write = 0.5
-
-            OPTS.sense_trigger_delay = 0.35
-            if num_rows == 256:
-                first_read = 0.4
-                second_read = 0.55
-                OPTS.sense_trigger_delay = 0.45
-
-                first_write = 0.4
-                second_write = 0.75
-            elif num_rows == 64:
-                first_read = first_write = 0.25
-                second_write = 0.35
-                second_read = 0.4
-                OPTS.sense_trigger_delay = 0.25
-                OPTS.sense_trigger_setup = 0.2
-        elif OPTS.push:
-            OPTS.sense_trigger_setup = 0.15
-            if num_rows == 64:
-                if OPTS.num_banks == 1:
-                    OPTS.sense_trigger_delay = 0.15
-                    OPTS.precharge_trigger_delay = 0.175
-                    second_read = 0.25
-                else:
-                    OPTS.sense_trigger_delay = 0.15
-                    OPTS.precharge_trigger_delay = 0.2
-                    second_read = 0.25
-                first_read = first_write = 0.15
-
-                second_write = 0.25
-            else:
-                if OPTS.num_banks == 1:
-                    OPTS.sense_trigger_delay = 0.325
-                    OPTS.sense_trigger_setup = 0.1
-                    OPTS.precharge_trigger_delay = 0.65
-                    first_read = first_write = 0.4
-                    second_read = 0.5
-                    second_write = 0.5
-                else:
-                    OPTS.sense_trigger_delay = 0.3
-                    OPTS.sense_trigger_setup = 0.1
-                    OPTS.precharge_trigger_delay = 0.35
-                    first_read = first_write = 0.15
-                    second_read = 0.4
-                    second_write = 0.4
-        else:
-
-            if num_rows == 64:
-                first_read = 0.3
-                second_read = 0.85
-                OPTS.sense_trigger_delay = 0.6
-                first_write = 0.3
-                second_write = 0.95
-            elif num_rows == 128:
-                first_read = 0.4
-                second_read = 1
-                OPTS.sense_trigger_delay = 0.85
-                first_write = 0.35
-                second_write = 1.45
-            else:
-                first_read = 0.5
-                second_read = 1.65
-                OPTS.sense_trigger_delay = 1.5
-                first_write = 0.4
-                second_write = 2.5
+        first_read, first_write, second_read, second_write = OPTS.configure_timing(options, self.sram,
+                                                                                   OPTS)
 
         delay.write_period = first_write + second_write
         delay.write_duty_cycle = first_write / delay.write_period
@@ -255,6 +186,7 @@ def create_arg_parser():
     parser.add_argument("-C", "--num_cols", default=64, type=int)
     parser.add_argument("-W", "--word_size", default=DEFAULT_WORD_SIZE, type=int)
     parser.add_argument("-B", "--num_banks", default=1, choices=[1, 2], type=int)
+    parser.add_argument("-t", "--tech", dest="tech_name", help="Technology name", default="freepdk45")
     parser.add_argument("--fixed_buffers", action="store_true")
     parser.add_argument("--latched", action="store_true")
     parser.add_argument("--small", action="store_true")
@@ -278,7 +210,7 @@ def parse_options(parser):
     assert mode_ in [CMOS_MODE, SOT_MODE, SOTFET_MODE, PUSH_MODE]
 
     options_, other_args = parser.parse_known_args()
-    sys.argv = other_args
+    sys.argv = other_args + ["-t", options_.tech_name]
 
     if options_.small:
         options_.num_rows = 64
@@ -307,7 +239,9 @@ def get_sim_directory(options_, mode_):
     sim_directory = "{}_r_{}_c_{}{}{}{}{}{}".format(mode_, options_.num_rows, options_.num_cols,
                                                     word_size_suffix, bank_suffix, latched_suffix,
                                                     schem_suffix, energy_suffix)
-    openram_temp_ = os.path.join(os.environ["SCRATCH"], "openram", "shared_dec", sim_directory)
+    openram_temp_ = os.path.join(os.environ["SCRATCH"], "openram", "shared_dec",
+                                 options_.tech_name,
+                                 sim_directory)
     return openram_temp_
 
 

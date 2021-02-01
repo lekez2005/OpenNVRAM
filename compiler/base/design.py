@@ -12,7 +12,7 @@ from base import utils
 from base.geometry import rectangle
 from base.vector import vector
 from globals import OPTS
-from tech import drc
+from tech import drc, info
 from tech import layer as tech_layers
 from tech import purpose as tech_purpose
 
@@ -39,6 +39,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
     """
     name_map = []
     has_dummy = PO_DUMMY in tech_layers
+    has_pwell = info["has_pwell"]
 
     def __init__(self, name):
         self.gds_file = os.path.join(OPTS.openram_tech, "gds_lib", name + ".gds")
@@ -151,6 +152,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
     @classmethod
     def get_space_by_width_and_length(cls, layer, max_width=None, min_width=None,
                                       run_length=None, heights=None):
+        # TODO more robust lookup table
         if cls.is_thin_implant(layer, min_width):
             return cls.get_space(layer, prefix="thin")
         elif cls.is_line_end(layer, heights):
@@ -460,55 +462,10 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
     def evaluate_vertical_module_spacing(self, top_modules: List["design"],
                                          bottom_modules: List["design"], reference_bottom=None,
-                                         layers=None):
-        if layers is None:
-            layers = [METAL1, METAL2, POLY, NIMP, PIMP]
-
-        if reference_bottom is None:
-            reference_bottom = bottom_modules[0]
-
-        min_space = - top_modules[0].height  # start with overlap
-        for top_module in top_modules:
-            for bottom_module in bottom_modules:
-                for layer in layers:
-                    top_rects = top_module.get_layer_shapes(layer, recursive=True)
-                    top_rects = list(sorted(top_rects, key=lambda x: x.by()))
-                    bottom_rects = bottom_module.get_layer_shapes(layer, recursive=True)
-                    bottom_rects = list(sorted(bottom_rects, key=lambda x: x.uy(), reverse=True))
-                    if not (top_rects or bottom_rects):  # layer does not exist
-                        continue
-                    wide_space = self.get_wide_space(layer)
-                    for bottom_rect in bottom_rects:
-                        bottom_clearance = reference_bottom.height - bottom_rect.uy()
-                        for top_rect in top_rects:
-                            # don't bother if spacing is greater than wide spacing
-                            top_clearance = top_rect.by()
-                            total_clearance = top_clearance + bottom_clearance + min_space
-                            if total_clearance > wide_space:
-                                continue
-                            # else calculate desired space, note the width/height flip since vertical space is needed
-                            widths = [bottom_rect.rx() - bottom_rect.lx(),
-                                      top_rect.rx() - top_rect.lx()]
-                            heights = [bottom_rect.uy() - bottom_rect.by(),
-                                       top_rect.uy() - top_rect.by()]
-
-                            if bottom_rect.width >= bottom_module.width and top_rect.width >= top_module.width:
-                                num_cols = getattr(self, "num_cols", 1)
-                                run_length = num_cols * bottom_module.width
-                            else:
-                                right_most = max([top_rect, bottom_rect], key=lambda x: x.lx())
-                                left_most = min([top_rect, bottom_rect], key=lambda x: x.lx())
-                                run_length = min(right_most.rx(), left_most.rx()) - right_most.lx()
-
-                            target_space = self.get_space_by_width_and_length(layer,
-                                                                              max_width=max(widths),
-                                                                              min_width=min(widths),
-                                                                              run_length=run_length,
-                                                                              heights=heights)
-                            evaluated_space = -top_clearance + -bottom_clearance + target_space
-                            if evaluated_space > min_space:
-                                min_space = evaluated_space
-        return min_space
+                                         layers=None, min_space=None):
+        from base.well_implant_fills import evaluate_vertical_module_spacing as eval_func
+        return eval_func(top_modules, bottom_modules, reference_bottom, layers, min_space,
+                         num_cols=getattr(self, "num_cols", 1))
 
     def create_mod_from_str(self, module_name, *args, **kwargs):
         """Helper method to create modules from string specification

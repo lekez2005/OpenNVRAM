@@ -31,7 +31,7 @@ class SimStepsGenerator(SequentialDelay):
             self.bus_sigs.append("mask[{}]".format(i))
 
         self.control_sigs = ["read", "acc_en", "acc_en_inv", "sense_trig", "bank_sel"]
-        if OPTS.push:
+        if "precharge_trig" in self.sram.pins:
             self.control_sigs.append("precharge_trig")
 
         self.words_per_row = self.sram.words_per_row

@@ -117,16 +117,11 @@ class wordline_driver_array(design.design):
             y_offset = (row + 1) * self.logic_buffer.height - 0.5 * self.rail_height
             if (row % 2) == 0:
                 pin_name = "gnd"
-                # add nimplant fill ground ground pin
-                nimplants = self.logic_buffer.logic_mod.get_layer_shapes("nimplant")[0]
-                self.add_rect_center("nimplant", offset=vector(buffer_inst.lx()+0.5*buffer_inst.width,
-                                                               buffer_inst.uy()),
-                                     width=buffer_inst.width, height=2*nimplants.by())
-
             else:
                 pin_name = "vdd"
 
-            self.add_layout_pin(text=pin_name, layer="metal1", offset=[0, y_offset], width=buffer_inst.rx(),
+            self.add_layout_pin(text=pin_name, layer="metal1", offset=[0, y_offset],
+                                width=buffer_inst.rx(),
                                 height=self.rail_height)
         # add vdd for row zero
         self.add_layout_pin(text="vdd", layer="metal1",

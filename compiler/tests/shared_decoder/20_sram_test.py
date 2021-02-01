@@ -26,7 +26,7 @@ class SramTest(TestBase):
         else:
             sram_class = CmosSram
         import tech
-        tech.drc_exceptions["CmosSram"] = tech.drc_exceptions["active_density"]
+        tech.drc_exceptions[sram_class.__name__] = tech.drc_exceptions.get("active_density", [])
         return sram_class
 
     def sweep_all(self, rows=None, cols=None, words_per_row=None, default_row=64,

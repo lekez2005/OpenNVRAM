@@ -242,10 +242,10 @@ class pgate(design.design):
         # mismatch errors when fingers are not a grid length and get rounded in the offset geometry.
         self.nmos_width = round_to_grid(self.nmos_width / self.tx_mults)
         debug.check(self.nmos_width >= self.min_tx_width,
-                    "Cannot finger NMOS transistors to fit cell height.")
+                    "{}: Cannot finger NMOS transistors to fit cell height.".format(self.name))
         self.pmos_width = round_to_grid(self.pmos_width / self.tx_mults)
         debug.check(self.pmos_width >= self.min_tx_width,
-                    "Cannot finger PMOS transistors to fit cell height.")
+                    "{}: Cannot finger PMOS transistors to fit cell height.".format(self.name))
 
         return True
 

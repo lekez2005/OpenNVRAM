@@ -4,7 +4,7 @@ import debug
 from base import contact
 from base import design
 from base import utils
-from base.contact import m2m3
+from base.contact import m2m3, cross_m2m3
 from base.design import ACTIVE, PIMP, METAL2, METAL3, METAL1
 from base.vector import vector
 from globals import OPTS
@@ -55,7 +55,8 @@ class hierarchical_decoder(design.design):
         self.route_vdd_gnd()
 
     def create_modules(self):
-        kwargs = {"align_bitcell": True, "contact_nwell": False, "contact_pwell": False}
+        kwargs = {"align_bitcell": True, "contact_nwell": False, "contact_pwell": False,
+                  "same_line_inputs": True}
         self.inv = pinv(**kwargs)
         self.add_mod(self.inv)
         self.nand2 = pnand2(**kwargs)
@@ -575,14 +576,14 @@ class hierarchical_decoder(design.design):
         else:
             rail_x = self.rail_x_offsets[rail_index]
             y_space = 0.5 * self.m3_width + self.get_parallel_space(METAL3)
+
             if pin.name == "B":
                 rail_y = pin.cy() + y_space
-                via_offset = vector(rail_x - 0.5 * m2m3.width, rail_y)
             else:
                 rail_y = pin.cy() - 0.5 * m2m3.height - self.get_line_end_space(METAL3) - self.m3_width
-                via_offset = vector(rail_x - 0.5 * m2m3.width, rail_y + self.m3_width - m2m3.height)
 
-            self.add_contact(layers=contact.m2m3.layer_stack, offset=via_offset)
+            via_offset = vector(rail_x, rail_y + 0.5 * self.m3_width)
+            self.add_cross_contact_center(cross_m2m3, offset=via_offset)
 
             m1_fill_width = self.nand_inst[0].mod.gate_fill_width
             m1_fill_height = self.nand_inst[0].mod.gate_fill_height

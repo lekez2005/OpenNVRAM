@@ -49,7 +49,7 @@ class BankTest(TestBase):
         bank_class, kwargs = self.get_bank_class()
 
         # tech.drc_exceptions[bank_class.__name__] = tech.drc_exceptions["min_nwell"] + tech.drc_exceptions["latchup"]
-        tech.drc_exceptions[bank_class.__name__] = tech.drc_exceptions["latchup"]
+        tech.drc_exceptions[bank_class.__name__] = tech.drc_exceptions.get("latchup", [])
 
         OPTS.run_optimizations = False
 
@@ -86,7 +86,7 @@ class BankTest(TestBase):
                     self.local_check(a)
         except Exception as ex:
             debug.error("Failed {} for row = {} col = {}: {} ".format(
-                bank_class.__name__, row, col, str(ex)), debug.ERROR_CODE)
+                bank_class.__name__, row, col, str(ex)), 0)
             raise ex
 
 

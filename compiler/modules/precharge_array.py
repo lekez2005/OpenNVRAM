@@ -65,18 +65,8 @@ class precharge_array(design.design):
             inst=self.add_inst(name=name,
                           mod=self.pc_cell,
                           offset=offset)
-            bl_pin = inst.get_pin("bl")
-            self.add_layout_pin(text="bl[{0}]".format(i),
-                                layer="metal2",
-                                offset=bl_pin.ll(),
-                                width=drc["minwidth_metal2"],
-                                height=bl_pin.height())
-            br_pin = inst.get_pin("br") 
-            self.add_layout_pin(text="br[{0}]".format(i),
-                                layer="metal2",
-                                offset=br_pin.ll(),
-                                width=drc["minwidth_metal2"],
-                                height=bl_pin.height())
+            self.copy_layout_pin(inst, "bl", "bl[{0}]".format(i))
+            self.copy_layout_pin(inst, "br", "br[{0}]".format(i))
             self.connect_inst(["bl[{0}]".format(i), "br[{0}]".format(i),
                                "en", "vdd"])
         for x_offset in self.tap_offsets:

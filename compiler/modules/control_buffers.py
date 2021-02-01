@@ -795,6 +795,14 @@ class ControlBuffers(design, ABC):
                                             height=out_pin.by())
                     break
 
+    def get_output_pin_names(self):
+        _, output_pins = self.get_schematic_pins()
+        return output_pins
+
+    def get_input_pin_names(self):
+        input_pins, _ = self.get_schematic_pins()
+        return input_pins
+
     def add_power_pins(self):
         """Add vdd and gnd pins"""
         insts = self.top_insts[:1] + self.bottom_insts[:1]

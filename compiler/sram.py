@@ -54,8 +54,9 @@ class sram(design.design, sram_power_grid.Mixin):
         self.bank_to_bus_distance = 5*self.m3_width
         
         self.compute_sizes()
-        self.add_pins()
+
         self.create_layout()
+        self.add_pins()
         
         # Can remove the following, but it helps for debug!
         self.add_lvs_correspondence_points()

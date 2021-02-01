@@ -130,9 +130,12 @@ class options(optparse.Values):
         "default": [2, 4, 8],
         "clk": [2, 6, 12, 24, 24]
     }
-    control_buffers_num_rows = 1
+    control_buffers_num_rows = 2
+    # Whether external precharge trigger signal is supplied.
+    # If no precharge_trigger, precharge uses the clock edges
+    use_precharge_trigger = False
 
-    precharge_size = 2
+    precharge_size = 4
     column_mux_size = 8
 
     cells_per_group = 1

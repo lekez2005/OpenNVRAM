@@ -89,14 +89,18 @@ class hierarchical_predecode(design.design):
         """ Create the NAND for the predecode input stage """
         nand_size = self.buffer_sizes[0]
         if inputs == 2:
-            nand = pnand2(size=nand_size, contact_nwell=contact_nwell, height=self.module_height,
-                          same_line_inputs=False)
+            nand_class = pnand2
         elif inputs == 3:
-            nand = pnand3(size=nand_size, contact_nwell=contact_nwell, height=self.module_height,
-                          same_line_inputs=False)
+            nand_class = pnand3
         else:
-            return debug.error("Invalid number of predecode inputs.",-1)
-        return nand
+            return debug.error("Invalid number of predecode inputs.", -1)
+        while nand_size > 1:
+            try:
+                nand = nand_class(size=nand_size, contact_nwell=contact_nwell,
+                                  height=self.module_height, same_line_inputs=False)
+                return nand
+            except AssertionError:
+                nand_size *= 0.98
 
     def setup_flop_offsets(self):
         x_offset = 0

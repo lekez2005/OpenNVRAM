@@ -203,6 +203,9 @@ class InternalDecoderBank(BaselineBank):
     def get_mask_flops_y_offset(self):
         return self.tri_gate_array_inst.uy()
 
+    def get_precharge_mirror(self):
+        return "MX"
+
     def get_data_flops_y_offset(self):
         gnd_pins = self.msf_mask_in.get_pins("gnd")
         top_mask_gnd_pin = max(gnd_pins, key=lambda x: x.uy())

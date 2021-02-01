@@ -390,8 +390,6 @@ class VlsiLayout(metaclass=UniqueMeta):
         """
         Method to add a box to a layout
         """
-        if width == 0 or height == 0:
-            m = 5
         offsetInLayoutUnits = (self.userUnits(offsetInMicrons[0]),self.userUnits(offsetInMicrons[1]))
         #print("addBox:offsetInLayoutUnits",offsetInLayoutUnits)
         widthInLayoutUnits = self.userUnits(width)

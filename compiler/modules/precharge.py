@@ -188,13 +188,18 @@ class precharge(design.design):
                     0.5 * m1m2.second_layer_width)
 
         self.add_contact_center(m1m2.layer_stack, offset=vector(offset.x, via_y), rotate=90)
+        _, fill_width = self.calculate_min_area_fill(self.en_rail_height, layer=METAL2)
+        if fill_width:
+            self.add_rect_center(METAL2, offset=vector(offset.x, via_y), width=fill_width,
+                                 height=self.en_rail_height)
+        self.add_contact_center(m2m3.layer_stack, offset=vector(offset.x, via_y), rotate=90)
 
         m1_poly_extension = 0.5 * contact.poly.second_layer_height
         en_m1_width = 2 * m1_poly_extension + gate_pos[2] - gate_pos[0]
         self.en_m1_rect = self.add_rect_center(METAL1, offset=offset, width=en_m1_width)
 
         y_offset = self.active_rect.uy() + self.get_line_end_space(METAL2)
-        self.add_layout_pin("en", "metal2", offset=vector(0, y_offset),
+        self.add_layout_pin("en", METAL3, offset=vector(0, y_offset),
                             width=self.width, height=self.en_rail_height)
 
     def calculate_body_contacts(self):
@@ -222,14 +227,42 @@ class precharge(design.design):
                       width=self.width, height=pin_height)
 
         # m3 pin
-        m3_vdd_y = self.active_top + self.active_to_enable_top + self.get_parallel_space(METAL2)
+        m3_space = max(self.get_parallel_space(METAL3), self.get_line_end_space(METAL3))
+
+        m3_vdd_y = self.active_top + self.active_to_enable_top + m3_space
+        pin_height = self.height - m3_vdd_y
+        if pin_height > self.bus_width:
+            # extra space since it runs along en pin
+            new_m3_space = utils.ceil(1.2 * m3_space)
+            pin_height = max(self.bus_width, pin_height + utils.floor(m3_space - new_m3_space))
+            m3_vdd_y = self.height - pin_height
+
         for layer in [METAL1, METAL3]:
             vdd_pin = self.add_layout_pin("vdd", layer, offset=vector(0, m3_vdd_y),
-                                          width=self.width, height=self.height - m3_vdd_y)
+                                          width=self.width,
+                                          height=pin_height)
+
+        bl_br_space = self.bitcell.get_pin("br").lx() - self.bitcell.get_pin("bl").rx()
+        max_via_width = bl_br_space - 2 * self.get_line_end_space(METAL2)
+        num_vias = 1
+        while True:
+            sample_via = contact.contact(m1m2.layer_stack, dimensions=[1, num_vias])
+            if sample_via.first_layer_height < max_via_width:
+                num_vias += 1
+            else:
+                num_vias -= 1
+                break
+        debug.check(num_vias >= 1, "At least one via is required")
+        fill_width = sample_via.width
+        _, fill_height = self.calculate_min_area_fill(fill_width, layer=METAL2)
+        if fill_height > sample_via.first_layer_width:
+            self.add_rect_center(METAL2, offset=vector(self.mid_x, vdd_pin.cy()),
+                                 width=fill_width, height=fill_height)
+
         self.add_contact_center(m1m2.layer_stack, offset=vector(self.mid_x, vdd_pin.cy()),
-                                size=[1, 3], rotate=90)
+                                size=[1, num_vias], rotate=90)
         self.add_contact_center(m2m3.layer_stack, offset=vector(self.mid_x, vdd_pin.cy()),
-                                size=[1, 3], rotate=90)
+                                size=[1, num_vias], rotate=90)
 
         self.add_rect_center("active", offset=vector(self.mid_x, self.contact_y),
                              width=self.well_contact_active_width,
@@ -280,23 +313,14 @@ class precharge(design.design):
 
     def connect_bitlines(self):
 
-        bl_x = self.bitcell.get_pin("BL").lx()
-        br_x = self.bitcell.get_pin("BR").lx()
-
-        bottom_connection_y = self.active_bot_y - self.line_end_space
-
-        for i in [1, 2]:
-            x_offset = self.source_drain_pos[i] - 0.5 * self.m2_width
-            self.add_rect("metal2", offset=vector(x_offset, bottom_connection_y),
-                          height=self.active_mid_y - bottom_connection_y)
-
-        offset = vector(bl_x, bottom_connection_y - self.m2_width)
-        self.add_rect("metal2", offset=offset, width=self.source_drain_pos[1] + 0.5 * self.m2_width - bl_x)
-        offset = vector(self.source_drain_pos[2] - 0.5 * self.m2_width, bottom_connection_y - self.m2_width)
-        self.add_rect("metal2", offset=offset, width=br_x - offset.x)
-
-        self.add_layout_pin("bl", "metal2", offset=vector(bl_x, 0), height=bottom_connection_y)
-        self.add_layout_pin("br", "metal2", offset=vector(br_x, 0), height=bottom_connection_y)
+        pin_names = ["bl", "br"]
+        x_offsets = [self.source_drain_pos[1], self.source_drain_pos[2]]
+        for i in range(2):
+            bitcell_pin = self.bitcell.get_pin(pin_names[i])
+            pin = self.add_layout_pin(pin_names[i], METAL2, offset=vector(bitcell_pin.lx(), 0),
+                                      height=self.height, width=bitcell_pin.width())
+            self.add_rect(METAL2, offset=vector(pin.cx(), self.active_mid_y - 0.5 * self.m2_width),
+                          width=x_offsets[i] - pin.cx())
 
     def add_ptx_inst(self):
         """Adds both the upper_pmos and lower_pmos to the module"""

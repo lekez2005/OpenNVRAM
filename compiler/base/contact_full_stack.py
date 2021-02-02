@@ -1,10 +1,8 @@
-import copy
-import math
-
+import tech
 from base import design, utils
-from base.vector import vector
-from tech import full_stack_vias
 from base import unique_meta
+from base.contact import contact
+from base.vector import vector
 
 
 class ContactFullStack(design.design, metaclass=unique_meta.Unique):
@@ -29,111 +27,116 @@ class ContactFullStack(design.design, metaclass=unique_meta.Unique):
     @classmethod
     def get_name(cls, start_layer=0, stop_layer=-1, centralize=True, dimensions=None, max_width=None):
 
-        dim_str = "_".join([str(item) for sublist in dimensions for item in sublist]) if dimensions else ""
+        start_layer, stop_layer = cls.normalize_layers(start_layer, stop_layer)
+
+        dim_str = "_" + "_".join([str(dim) for dim in dimensions]) if dimensions else ""
         width_suffix = "" if not max_width else "_w{:.5g}".format(max_width).replace(".", "__")
         alignment = "c" if centralize else "l"
-        metal_layers, layer_numbers = utils.get_sorted_metal_layers()
-        stop_layer_name = metal_layers[stop_layer]
-        start_layer_name = metal_layers[start_layer]
-        name = "full_stack_via_{}_{}_{}_{}{}".format(start_layer_name, stop_layer_name, alignment,
-                                                     dim_str, width_suffix)
+        name = "via_M{0}_M{1}_{2}{3}{4}".format(start_layer, stop_layer, alignment,
+                                                dim_str, width_suffix)
         return name
 
-    def __init__(self, start_layer=0, stop_layer=-1, centralize=True, dimensions=None, max_width=None):
+    @staticmethod
+    def normalize_layers(start_layer, stop_layer):
+        metal_layers, layer_numbers = utils.get_sorted_metal_layers()
+
+        if isinstance(start_layer, str):
+            start_layer = metal_layers.index(start_layer)
+        if isinstance(stop_layer, str):
+            stop_layer = metal_layers.index(stop_layer)
+
+        real_start_layer = layer_numbers[start_layer]
+        real_stop_layer = layer_numbers[stop_layer]
+        return real_start_layer, real_stop_layer
+
+    def __init__(self, start_layer=0, stop_layer=-1, centralize=True, dimensions=None,
+                 max_width=None):
         dimensions = dimensions if dimensions else []
         design.design.__init__(self, self.name)
 
-        via_defs = copy.deepcopy(full_stack_vias)
-        for i in range(len(dimensions)):
-            via_defs[i]["dimensions"] = dimensions[i]
+        self.start_layer, self.stop_layer = self.normalize_layers(start_layer, stop_layer)
 
-        metal_layers, layer_numbers = utils.get_sorted_metal_layers()
-        real_start_layer = layer_numbers[start_layer] - 1
-        real_stop_layer = layer_numbers[stop_layer] - 1
+        self.max_width = max_width
+        self.dimensions = dimensions
+        self.centralize = centralize
 
-        # Remove unused layers and vias
-        for via_def in via_defs:
-            new_vias = []
-            new_layers = []
-            last_layer = None
-            for i in range(len(via_def["vias"])):
-                bottom_layer_num = int(via_def["layers"][i][5:])
-                if real_start_layer < bottom_layer_num <= real_stop_layer:
-                    new_vias.append(via_def["vias"][i])
-                    new_layers.append(via_def["layers"][i])
-                    last_layer = via_def["layers"][i + 1]
-            if last_layer is not None:
-                new_layers.append(last_layer)
-            via_def["vias"] = new_vias
-            via_def["layers"] = new_layers
+        self.via_insts = []
 
-        via_defs = [via_def for via_def in via_defs if len(via_def["vias"]) > 0]
-        assert len(via_defs) > 0, "Invalid start and stop layers: {}, {}".format(start_layer, stop_layer)
-        if max_width is not None:
-            bottom_via_def = via_defs[0]
-            via_pitch = bottom_via_def["width"] + bottom_via_def["spacing"]
-            total_enclosure = 2 * bottom_via_def["enclosure"][0] + bottom_via_def["width"]
-            num_vias = 1 + math.floor((max_width - total_enclosure) / via_pitch)
-            bottom_via_def["dimensions"] = [num_vias, bottom_via_def["dimensions"][1]]
+        self.calculate_dimensions()
+        self.create_stack()
 
-        max_height = max(map(self.get_height, via_defs))
+    @staticmethod
+    def get_via_layers(layer):
+        return ("metal{}".format(layer),
+                "via{}".format(layer),
+                "metal{}".format(layer + 1))
 
-        for i in range(len(via_defs)):
-            temp_start_layer = 0
-            temp_stop_layer = -1
+    def calculate_dimensions(self):
+        top_via_stack = self.get_via_layers(self.stop_layer - 1)
+        if self.max_width is None:
+            power_grid_num_vias = getattr(tech, "power_grid_num_vias", 1)
+            if not self.dimensions:
+                self.dimensions = [1, power_grid_num_vias]
 
-            width, height = self.create_stack(via_defs[i], max_height, centralize, temp_start_layer, temp_stop_layer)
-            if i == 0:
-                self.first_layer_height = height
-                self.first_layer_width = width
-            if i == len(via_defs) - 1:
-                self.second_layer_height = height
-                self.second_layer_width = width
-        self.height = max_height
-        self.width = max(self.first_layer_width, self.second_layer_width)
-
-    def get_height(self, params):
-        return 2 * params["enclosure"][1] + max(0, params["dimensions"][1] - 1) * params["spacing"] + params["dimensions"][1] * params["width"]
-
-    def create_stack(self, params, height, centralize, start_layer=0, stop_layer=-1):
-        """min_width and min_height prevent insufficient overlap in the intermediate layer between two stacks"""
-        layers = params["layers"]
-        if stop_layer < 0:
-            stop_layer = len(layers) - 1
-
-        # retrieve parameters
-        h_enc = params["enclosure"][0]
-        spacing = params["spacing"]
-        via_width = params["width"]
-        dimensions = params["dimensions"]
-
-        # calculate dimensions
-
-        width = 2*h_enc + max(0, dimensions[0]-1)*spacing + dimensions[0]*via_width
-
-        # create layer rects
-
-        for i in range(start_layer, stop_layer + 1):
-            x_offset = -0.5*width if centralize else 0
-            self.add_rect(layers[i], vector(x_offset, 0), width=width, height=height)
-
-        # create via layers
-        via_left_to_right = max(0, dimensions[0] - 1) * spacing + dimensions[0] * via_width
-        via_top_to_bottom = max(0, dimensions[1] - 1) * spacing + dimensions[1] * via_width
-
-        full_v_enc = height - via_top_to_bottom
-        if centralize:
-            origin = vector(-via_left_to_right * 0.5, 0.5 * full_v_enc)
+            sample_contact = contact(layer_stack=top_via_stack, dimensions=self.dimensions)
+            self.width = sample_contact.height
         else:
-            origin = vector((width-via_left_to_right)*0.5, 0.5 * full_v_enc)
+            self.width = self.max_width
+            num_cols = self.calculate_num_cols(self.stop_layer - 1, self.max_width)
+            self.dimensions = [1, num_cols]
+        self.top_via = contact(layer_stack=top_via_stack, dimensions=self.dimensions)
+        self.height = self.top_via.width
 
-        via_pitch = spacing + via_width
-        for i in range(start_layer, stop_layer):
-            layer = params["vias"][i]
-            for row in range(dimensions[1]):
-                for col in range(dimensions[0]):
-                    offset = origin + (col*via_pitch, row*via_pitch)
-                    self.add_rect(layer, offset, width=via_width, height=via_width)
+    def create_stack(self):
+        bottom_via = None
+        for layer_num in range(self.start_layer, self.stop_layer):
+            via_stack = self.get_via_layers(layer_num)
+            num_cols = self.calculate_num_cols(layer_num, self.width)
+            num_rows = self.calculate_num_rows(layer_num, self.height)
+            via = contact(via_stack, dimensions=[num_rows, num_cols])
+            self.place_via(via, bottom_via)
+            bottom_via = via
 
-        return width, height
+    def place_via(self, via, bottom_via):
+        y_offset = utils.round_to_grid(0.5 * (self.height - via.width))
+        if self.centralize:
+            x_offset = 0.5 * via.height
+        else:
+            x_offset = 0.5 * self.width + 0.5 * via.height
+        via_inst = self.add_inst(via.name, via, vector(x_offset, y_offset), rotate=90)
+        self.connect_inst([])
+        self.via_insts.append(via_inst)
+        if bottom_via is not None:
+            mid_layer_width = max(bottom_via.second_layer_height, via.first_layer_height)
+            mid_layer_height = max(bottom_via.second_layer_width, via.first_layer_width)
+            if self.centralize:
+                x_offset = -0.5 * mid_layer_width
+            else:
+                x_offset = 0.5 * self.width - 0.5 * mid_layer_width
+            y_offset = 0.5 * self.height - 0.5 * mid_layer_height
+            self.add_rect(via.first_layer_name, offset=vector(x_offset, y_offset),
+                          width=mid_layer_width, height=mid_layer_height)
 
+    def calculate_num_cols(self, layer_num, max_width):
+        via_stack = self.get_via_layers(layer_num)
+        num_cols = 1
+        while num_cols >= 1:
+            sample_contact = contact(layer_stack=via_stack, dimensions=[1, num_cols])
+            if sample_contact.height <= max_width:
+                num_cols += 1
+            else:
+                num_cols -= 1
+                break
+        return num_cols
+
+    def calculate_num_rows(self, layer_num, max_height):
+        via_stack = self.get_via_layers(layer_num)
+        num_rows = 1
+        while num_rows >= 1:
+            sample_contact = contact(layer_stack=via_stack, dimensions=[num_rows, 1])
+            if sample_contact.width <= max_height:
+                num_rows += 1
+            else:
+                num_rows -= 1
+                break
+        return num_rows

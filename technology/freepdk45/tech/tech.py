@@ -69,6 +69,9 @@ layer["boundary"]= 239
 
 default_fill_layers = ["nwell", "nimplant", "pimplant", "pwell"]
 
+power_grid_layers = ["metal5", "metal6"]
+power_grid_num_vias = 2
+
 ###################################################
 ##END GDS Layer Map
 ###################################################
@@ -222,20 +225,94 @@ drc["minarea_metal3"] = 0
 # VIA2-3.1 Minimum width of Via[2-3]
 drc["minwidth_via3"] = 0.065
 # VIA2-3.2 Minimum spacing of Via[2-3]
-drc["via3_to_via3"] = 0.07
+drc["via3_to_via3"] = 0.075
 
 # METALSMG.1 Minimum width of semi-global metal
 drc["minwidth_metal4"] = 0.14
 # METALSMG.2 Minimum spacing of semi-global metal
 drc["metal4_to_metal4"] = 0.14
 # METALSMG.3 Minimum enclosure around via[3-6] on two opposite sides
-drc["metal4_extend_via3"] = 0.07
+drc["metal4_extend_via3"] = 0.035
 # Reserved for asymmetric enclosure
-drc["metal4_enclosure_via3"] = 0
+drc["metal4_enclosure_via3"] = 0.0025
 # METALSMG.3 Minimum enclosure around via[3-6] on two opposite sides
 drc["metal4_enclosure_via4"] = 0
 # Reserved for asymmetric enclosure
-drc["metal4_extend_via4"] = 0.07
+drc["metal4_extend_via4"] = 0
+
+
+drc["minwidth_via4"] = 0.14
+drc["via4_to_via4"] = 0.14
+
+drc["minwidth_metal5"] = 0.14
+drc["metal5_to_metal5"] = 0.14
+drc["metal5_extend_via4"] = 0.0025
+drc["metal5_enclosure_via4"] = 0.0025
+drc["metal5_enclosure_via5"] = 0.0025
+drc["metal5_extend_via5"] = 0.0025
+
+drc["minwidth_via5"] = 0.14
+drc["via5_to_via5"] = 0.14
+
+drc["minwidth_metal6"] = 0.14
+drc["metal6_to_metal6"] = 0.14
+drc["metal6_extend_via5"] = 0.0025
+drc["metal6_enclosure_via5"] = 0.0025
+drc["metal6_enclosure_via6"] = 0.0025
+drc["metal6_extend_via6"] = 0.0025
+
+drc["minwidth_via6"] = 0.14
+drc["via6_to_via6"] = 0.14
+
+drc["minwidth_metal7"] = 0.4
+drc["metal7_to_metal7"] = 0.4
+drc["metal7_extend_via6"] = 0.0025
+drc["metal7_enclosure_via6"] = 0.0025
+drc["metal7_enclosure_via7"] = 0.0025
+drc["metal7_extend_via7"] = 0.0025
+
+drc["minwidth_via7"] = 0.4
+drc["via7_to_via7"] = 0.44
+
+drc["minwidth_metal8"] = 0.4
+drc["metal8_to_metal8"] = 0.4
+drc["metal8_extend_via7"] = 0.0025
+drc["metal8_enclosure_via7"] = 0.0025
+drc["metal8_enclosure_via8"] = 0.0025
+drc["metal8_extend_via8"] = 0.0025
+
+drc["minwidth_via8"] = 0.4
+drc["via8_to_via8"] = 0.44
+
+drc["minwidth_metal9"] = 0.8
+drc["metal9_to_metal9"] = 0.8
+drc["metal9_extend_via8"] = 0.0025
+drc["metal9_enclosure_via8"] = 0.0025
+drc["metal9_enclosure_via9"] = 0.0025
+drc["metal9_extend_via9"] = 0.0025
+
+drc["minwidth_via9"] = 0.8
+drc["via9_to_via9"] = 0.88
+
+drc["minwidth_metal10"] = 0.8
+drc["metal10_to_metal10"] = 0.8
+drc["metal10_extend_via9"] = 0.0025
+drc["metal10_enclosure_via9"] = 0.0025
+
+#TODO lookup table DRC spacing rules needed
+
+drc["wide_line_space_metal1"] = 0.09
+drc["wide_length_threshold_metal1"] = 0.3
+drc["wide_width_threshold_metal1"] = 0.09
+
+drc["wide_line_space_metal2"] = 0.27
+drc["wide_length_threshold_metal2"] = 0.27
+drc["wide_width_threshold_metal2"] = 0.27
+
+drc["line_end_threshold_metal3"] = 0.09
+drc["line_end_line_space_metal3"] = 0.09
+
+drc["wide_line_space_metal10"] = 1.5
 
 # Metal 5-10 are ommitted
 
@@ -252,6 +329,7 @@ drc["rail_height"] = 0.135
 
 #spice info
 spice = {}
+spice["gmin"] = 1e-13
 spice["nmos"] = "nmos_vtg"
 spice["pmos"] = "pmos_vtg"
 # This is a map of corners to model files

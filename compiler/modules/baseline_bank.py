@@ -12,7 +12,8 @@ from base.contact import m2m3, m1m2, m3m4, contact, cross_m2m3, cross_m1m2
 from base.design import design, METAL2, METAL3, METAL1, METAL4, DRAWING, NWELL, PWELL
 from base.geometry import NO_MIRROR
 from base.vector import vector
-from base.well_implant_fills import create_wells_and_implants_fills, evaluate_vertical_metal_spacing
+from base.well_implant_fills import create_wells_and_implants_fills, evaluate_vertical_metal_spacing, \
+    join_vertical_adjacent_module_wells, evaluate_vertical_module_spacing
 from globals import OPTS
 from modules.control_buffers_repeaters_mixin import ControlBuffersRepeatersMixin
 from tech import delay_strategy_class
@@ -120,6 +121,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         self.add_column_mux_array()
         self.add_precharge_array()
         self.add_bitcell_array()
+        self.fill_vertical_module_spaces()
         self.add_wordline_driver()
         self.add_control_rails()
 
@@ -419,14 +421,17 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         # place to the left of bottom rail
 
         # ensure no clash with rails above control_buffer
-        top_rails = [getattr(self, x + "_rail") for x in self.top_control_rails +
-                     self.bottom_control_rails]
+        top_rails = [getattr(self, x + "_rail") for x in self.top_control_rails]
+        bottom_rails = [getattr(self, x + "_rail") for x in self.bottom_control_rails]
         control_top = y_offset + 2 * self.control_flop.height + row_decoder_flop_space
-        rails_below_control_flops = [x for x in top_rails if x.by() < control_top]
+        rails_below_control_flops = [x for x in top_rails + top_rails if x.by() < control_top]
         if rails_below_control_flops:
             leftmost_top_rail_x = min(rails_below_control_flops, key=lambda x: x.lx()).lx()
         else:
-            leftmost_top_rail_x = self.mid_vdd_offset
+            if self.bottom_control_rails:
+                leftmost_top_rail_x = min(bottom_rails, key=lambda x: x.lx()).lx()
+            else:
+                leftmost_top_rail_x = self.mid_vdd_offset
 
         num_control_inputs = len(self.get_non_flop_control_inputs())
         num_flop_inputs = 2
@@ -447,8 +452,8 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         self.tri_gate_array_inst = self.add_inst(name="tri_gate_array", mod=self.tri_gate_array,
                                                  offset=vector(0, y_offset))
 
-        replacements = [("in_bar[", "sense_out_bar["), ("in[", "sense_out["),
-                        ("out[", "DATA["),
+        replacements = [("out[", "DATA["),
+                        ("in_bar[", "sense_out_bar["), ("in[", "sense_out["),
                         ("en", "tri_en", EXACT), ("en_bar", "tri_en_bar", EXACT)]
         connections = self.connections_from_mod(self.tri_gate_array, replacements)
         self.connect_inst(connections)
@@ -481,9 +486,9 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
                 getattr(bottom_module, "body_tap", None)):
             top_modules.append(top_module.body_tap)
             bottom_modules.append(bottom_module.body_tap)
-        return self.evaluate_vertical_module_spacing(top_modules=top_modules,
-                                                     bottom_modules=bottom_modules,
-                                                     min_space=min_space)
+        return evaluate_vertical_module_spacing(top_modules=top_modules,
+                                                bottom_modules=bottom_modules,
+                                                min_space=min_space)
 
     def get_mask_flops_y_offset(self, flop=None, flop_tap=None):
         y_space = self.calculate_bitcell_aligned_spacing(self.msf_mask_in,
@@ -580,9 +585,6 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         self.connect_inst(connections)
 
     def get_column_mux_array_y(self):
-        mux_arr = self.column_mux_array
-        if not hasattr(mux_arr, "child_mod"):
-            setattr(self.column_mux_array, "child_mod", self.column_mux_array)
         y_space = self.calculate_bitcell_aligned_spacing(self.column_mux_array,
                                                          self.sense_amp_array, num_rails=0)
         return self.sense_amp_array_inst.uy() + y_space
@@ -629,7 +631,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
             y_space = evaluate_vertical_metal_spacing(self.precharge_array.child_mod,
                                                       bottom_mod.child_mod,
                                                       num_rails=0, layers=layers,
-                                                      vias=vias, via_space=True)
+                                                      vias=vias, via_space=False)
         else:
             y_space = -bottom_mod.height
         y_space = self.calculate_bitcell_aligned_spacing(self.precharge_array,
@@ -709,7 +711,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
                 if net in self.conns[i]:
                     pin_index = self.conns[i].index(net)
                     inst = self.insts[i]
-                    if inst.name == "control_buffers":
+                    if inst.name == "control_buffers" or inst.name.startswith("right_buffer"):
                         continue
                     pin_name = inst.mod.pins[pin_index]
                     destinations.extend(inst.get_pins(pin_name))
@@ -1311,7 +1313,19 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
 
     def route_control_flops_power(self):
         """connect bank_sel and read flops power pins to control_buffers and/or tri-state power pins"""
-        # destination ground pins
+        # check if direct power connection is possible
+        if (self.read_buf_inst.uy() + self.rail_height +
+                self.get_parallel_space(METAL1) < self.control_buffers_inst.by()):
+            for i in range(2):
+                pin_name, rail = ["vdd", "gnd"][i], [self.mid_vdd, self.mid_gnd][i]
+                pins = self.read_buf_inst.get_pins(pin_name) + self.bank_sel_buf_inst.get_pins(pin_name)
+                for pin in pins:
+                    self.add_rect(pin.layer, pin.lr(), width=rail.cx() - pin.rx(), height=pin.height())
+            self.route_all_instance_power(self.read_buf_inst)
+            self.route_all_instance_power(self.bank_sel_buf_inst)
+            return
+
+            # destination ground pins
         control_buffers_gnd = self.control_buffers_inst.get_pins("gnd")
         if len(control_buffers_gnd) == 1:
             bottom_gnd = control_buffers_gnd[0]
@@ -1748,6 +1762,18 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
                                                 offset=vector(new_pin.cx(), power_pin.cy()),
                                                 rotate=90)
                 self.connect_control_buffers_power_to_grid(new_pin)
+
+    def fill_vertical_module_spaces(self):
+        stack = [self.tri_gate_array_inst]
+        if getattr(self, "mask_in_flops_inst", None):
+            stack.append(self.mask_in_flops_inst)
+        stack.extend([self.data_in_flops_inst, self.write_driver_array_inst,
+                      self.sense_amp_array_inst])
+        if getattr(self, "col_mux_array_inst", None):
+            stack.append(self.col_mux_array_inst)
+        stack.append(self.precharge_array_inst)
+        for bottom_inst, top_inst in zip(stack[:-1], stack[1:]):
+            join_vertical_adjacent_module_wells(self, bottom_inst, top_inst)
 
     def add_lvs_correspondence_points(self):
         # Add the bitline names

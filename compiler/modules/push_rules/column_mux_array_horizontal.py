@@ -29,7 +29,7 @@ class ColumnMuxArrayHorizontal(single_level_column_mux_array):
         self.bitcell_offsets = [(1 + x) * self.mux.width for x in range(self.columns)]
 
     def create_array(self):
-        self.mux_inst = []
+        self.child_insts = []
         bitcell_width = self.mux.width
         for col_num in range(self.columns):
             name = "MUX{0}".format(col_num)
@@ -39,21 +39,15 @@ class ColumnMuxArrayHorizontal(single_level_column_mux_array):
             else:
                 x_offset = (2 + col_num) * bitcell_width
                 mirror = "MY"
-            self.mux_inst.append(self.add_inst(name, mod=self.mux,
-                                               offset=vector(x_offset, self.route_height),
-                                               mirror=mirror))
+            self.child_insts.append(self.add_inst(name, mod=self.mux,
+                                                  offset=vector(x_offset, self.route_height),
+                                                  mirror=mirror))
             self.connect_inst("bl[{0}] bl_out[{1}] br[{0}] br_out[{1}] gnd sel[{2}] vdd"
                               .format(col_num, int(col_num / self.words_per_row),
                                       col_num % self.words_per_row).split())
 
-    def add_body_contacts(self):
-        for pin_name in ["vdd", "gnd"]:
-            for pin in self.mux_inst[0].get_pins(pin_name):
-                self.add_layout_pin(pin_name, pin.layer, offset=vector(0, pin.by()),
-                                    height=pin.height(), width=self.mux_inst[-1].rx())
-
     def get_output_bitlines(self, col):
-        bl_out, br_out = self.mux_inst[col].get_pin("bl_out"), self.mux_inst[col].get_pin("br_out")
+        bl_out, br_out = self.child_insts[col].get_pin("bl_out"), self.child_insts[col].get_pin("br_out")
         if col % 2 == 0:
             return bl_out, br_out
         else:
@@ -61,10 +55,15 @@ class ColumnMuxArrayHorizontal(single_level_column_mux_array):
 
     def add_layout_pins(self):
         for col_num in range(self.columns):
-            mux_inst = self.mux_inst[col_num]
+            child_insts = self.child_insts[col_num]
             if col_num % 2 == 0:
                 bl_pin, br_pin = "bl", "br"
             else:
                 bl_pin, br_pin = "br", "bl"
-            self.copy_layout_pin(mux_inst, bl_pin, "bl[{}]".format(col_num))
-            self.copy_layout_pin(mux_inst, br_pin, "br[{}]".format(col_num))
+            self.copy_layout_pin(child_insts, bl_pin, "bl[{}]".format(col_num))
+            self.copy_layout_pin(child_insts, br_pin, "br[{}]".format(col_num))
+
+        for pin_name in ["vdd", "gnd"]:
+            for pin in self.child_insts[0].get_pins(pin_name):
+                self.add_layout_pin(pin_name, pin.layer, offset=vector(0, pin.by()),
+                                    height=pin.height(), width=self.child_insts[-1].rx())

@@ -120,7 +120,7 @@ class BitcellAlignedArray(design, ABC):
             self.child_insts.append(self.add_inst(name, self.child_mod, offset,
                                                   mirror=mirror))
             self.connect_inst(self.get_instance_connections(word))
-        self.width = self.child_insts[-1].rx()
+        self.width = self.bitcell_offsets[-1] + self.child_mod.width
 
     def add_body_taps(self):
         """Add body taps"""

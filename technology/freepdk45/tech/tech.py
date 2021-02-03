@@ -106,6 +106,8 @@ drc["bus_space"] = 0.08
 
 # WELL.1 Minimum spacing of nwell/pwell at different potential
 drc["pwell_to_nwell"] = 0.225
+drc["nwell_to_nwell"] = 0.0
+drc["pwell_to_pwell"] = 0.0
 # WELL.4 Minimum width of nwell/pwell
 drc["minwidth_well"] = 0.2
 

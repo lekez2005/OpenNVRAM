@@ -1,10 +1,11 @@
 from typing import List
 
+import debug
+import tech
+from base import contact
 from base import utils
 from base.contact import m2m3, m3m4
 from base.design import design, NWELL, NIMP, PIMP, METAL1, PO_DUMMY, POLY, DRAWING, METAL2, PWELL, METAL3, METAL4
-import tech
-from base import contact
 from base.geometry import instance
 from base.hierarchy_layout import GDS_ROT_270, GDS_ROT_90
 from base.rotation_wrapper import RotationWrapper
@@ -288,13 +289,11 @@ def evaluate_vertical_metal_spacing(top_module: design, bottom_module: design,
 
 def evaluate_vertical_module_spacing(top_modules: List[design],
                                      bottom_modules: List[design],
-                                     reference_bottom: design = None,
                                      layers=None, min_space=None, num_cols=64):
     """
     Evaluate spacing between two modules vertically arranged
     :param top_modules: The modules placed on top (e.g. main module and its body tap)
     :param bottom_modules: The modules placed below
-    :param reference_bottom:
     :param layers: Layers to compare
     :param min_space: minimum space, uses complete overlap as starting space if not specified
     :param num_cols: number of columns, used in evaluating run length for parallel space calculation
@@ -303,27 +302,35 @@ def evaluate_vertical_module_spacing(top_modules: List[design],
     if layers is None:
         layers = [METAL1, POLY, NIMP, PIMP]
 
-    if reference_bottom is None:
-        reference_bottom = bottom_modules[0]
     if min_space is None:
         min_space = - top_modules[0].height  # start with overlap
     for top_module in top_modules:
         for bottom_module in bottom_modules:
             for layer in layers:
+
+                wide_space = design.get_wide_space(layer)
+
                 top_rects = top_module.get_layer_shapes(layer, recursive=True)
+                top_rects = [x for x in top_rects if x.by() < wide_space]
                 top_rects = list(sorted(top_rects, key=lambda x: x.by()))
+
                 bottom_rects = bottom_module.get_layer_shapes(layer, recursive=True)
+                bottom_rects = [x for x in bottom_rects
+                                if x.uy() > bottom_module.height - wide_space]
                 bottom_rects = list(sorted(bottom_rects, key=lambda x: x.uy(), reverse=True))
                 if not (top_rects or bottom_rects):  # layer does not exist
                     continue
-                wide_space = reference_bottom.get_wide_space(layer)
+
                 for bottom_rect in bottom_rects:
-                    bottom_clearance = reference_bottom.height - bottom_rect.uy()
+                    bottom_clearance = bottom_module.height - bottom_rect.uy()
                     for top_rect in top_rects:
                         # don't bother if spacing is greater than wide spacing
                         top_clearance = top_rect.by()
                         total_clearance = top_clearance + bottom_clearance + min_space
                         if total_clearance > wide_space:
+                            continue
+                        # permit overlaps for implants
+                        if layer in [NIMP, PIMP] and total_clearance <= 0:
                             continue
                         # else calculate desired space, note the width/height flip since vertical space is needed
                         widths = [bottom_rect.rx() - bottom_rect.lx(),
@@ -339,7 +346,7 @@ def evaluate_vertical_module_spacing(top_modules: List[design],
                             left_most = min([top_rect, bottom_rect], key=lambda x: x.lx())
                             run_length = min(right_most.rx(), left_most.rx()) - right_most.lx()
 
-                        target_space = reference_bottom. \
+                        target_space = design. \
                             get_space_by_width_and_length(layer,
                                                           max_width=max(widths),
                                                           min_width=min(widths),
@@ -351,7 +358,6 @@ def evaluate_vertical_module_spacing(top_modules: List[design],
     min_space = utils.round_to_grid(min_space)
     # evaluate well spacing to prevent nwell pwell overlap
     if tech.info["has_pwell"]:
-        well_spacing = tech.drc["pwell_to_nwell"]
         top_module = top_modules[0]
         bottom_module = bottom_modules[0]
         layer_pairs = [(NWELL, PWELL), (PWELL, NWELL)]
@@ -368,6 +374,56 @@ def evaluate_vertical_module_spacing(top_modules: List[design],
 
             if top_rect_y < bottom_rect_y:  # zero spacing
                 min_space = bottom_rect_y - (top_rect.by() + bottom_module.height)
-            elif top_rect_y - bottom_rect_y < well_spacing:  # use well spacing
-                min_space = bottom_rect_y + well_spacing - (top_rect.by() + bottom_module.height)
+
     return min_space
+
+
+def get_layer_space(obj: design, layer_1, layer_2):
+    if layer_1 == layer_2:
+        layer_space = obj.get_wide_space(layer_1)
+        if layer_space is not None:
+            return layer_space
+    else:
+        for prefix in ["wide_", ""]:
+            for src, dest in [(layer_1, layer_2), (layer_2, layer_1)]:
+                drc_key = "{}{}_to_{}".format(prefix, src, dest)
+                if drc_key in tech.drc:
+                    return tech.drc[drc_key]
+    debug.check(False, "Layer space not defined for {} and {}".format(layer_1, layer_2))
+
+
+def join_vertical_adjacent_module_wells(bank: design, bottom_inst, top_inst):
+    layers = [(NWELL, NWELL)]
+    if tech.info["has_pwell"]:
+        layers.append((PWELL, PWELL))
+        layers.append((NWELL, PWELL))
+        layers.append((PWELL, NWELL))
+    if hasattr(tech, "vertical_mod_fill_layers"):
+        layers.extend(tech.vertical_mod_fill_layers)
+
+    top_mod = top_inst.mod.child_mod  # type: design
+    bottom_mod = bottom_inst.mod.child_mod  # type: design
+
+    for top_layer, bottom_layer in layers:
+        layer_space = get_layer_space(bank, top_layer, bottom_layer)
+        top_rects = top_mod.get_layer_shapes(top_layer, recursive=True)
+        bottom_rects = bottom_mod.get_layer_shapes(bottom_layer, recursive=True)
+        if not top_rects or not bottom_rects:
+            continue
+        top_rect = min(top_rects, key=lambda x: x.by())
+        bottom_rect = max(bottom_rects, key=lambda x: x.uy())
+
+        bottom_y = utils.round_to_grid(bottom_inst.by() +
+                                       bottom_inst.mod.child_insts[0].by() +
+                                       bottom_rect.uy())
+        top_y = utils.round_to_grid(top_inst.by() +
+                                    top_inst.mod.child_insts[0].by() +
+                                    top_rect.by())
+        if top_y > bottom_y and top_y - bottom_y < layer_space:
+            x_offset = (bottom_inst.lx() + max(bottom_rect.lx(), top_rect.lx()))
+
+            rect_right = min(bottom_rect.rx(), top_rect.rx())
+            rect_right_extension = rect_right - bottom_mod.width
+            right_x = bottom_inst.rx() + rect_right_extension
+            bank.add_rect(bottom_layer, vector(x_offset, bottom_y),
+                          width=right_x - x_offset, height=top_y - bottom_y)

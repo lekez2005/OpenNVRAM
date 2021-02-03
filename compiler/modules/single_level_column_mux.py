@@ -2,9 +2,10 @@ import debug
 from base import contact, utils
 from base import design
 from base.contact import m1m2
-from base.design import METAL2, ACTIVE, METAL1, POLY, NIMP, PWELL
+from base.design import METAL2, ACTIVE, METAL1, POLY, NIMP, PWELL, PIMP
 from base.geometry import MIRROR_X_AXIS
 from base.vector import vector
+from base.well_active_contacts import calculate_contact_width
 from globals import OPTS
 from pgates.ptx import ptx
 from tech import drc, info
@@ -37,6 +38,7 @@ class single_level_column_mux(design.design):
         self.connect_gates()
         self.add_bitline_fills()
         self.add_bitline_pins()
+        self.add_body_contacts()
         self.add_well_implants()
         self.add_boundary()
 
@@ -104,8 +106,6 @@ class single_level_column_mux(design.design):
 
         self.contact_mid_y = contact_mid_y + bottom_space
         self.mid_x = 0.5 * self.width
-        implant_rect = max(self.tx.get_layer_shapes(NIMP), key=lambda x: x.uy())
-        self.height = self.bl_inst.uy() + max(0, implant_rect.uy() - self.tx.height)
 
     def connect_gates(self):
         """ Connect the poly gate of the two pass transistors """
@@ -169,6 +169,8 @@ class single_level_column_mux(design.design):
 
         self.top_m1_rail_y = self.bl_inst.get_pins("S")[0].by() + self.fill_height - self.m1_width
 
+        self.calculate_body_contacts()
+
         for i in range(2):
             x_offset = x_offsets[i]
             source_pins = insts[i].get_pins("S")
@@ -228,7 +230,69 @@ class single_level_column_mux(design.design):
             x_offset = min(0, tx_rect.lx() + self.bl_inst.lx())
             x_right = max(self.width, tx_rect.rx() + self.bl_inst.lx())
             y_offset = self.br_inst.by() + tx_rect.by()
-            y_top = self.bl_inst.by() + self.tx.height - tx_rect.by()
+            if layer == PWELL:
+                y_top = self.contact_well_top
+            else:
+                y_top = self.bl_inst.by() + self.tx.height - tx_rect.by()
 
             self.add_rect(layer, offset=vector(x_offset, y_offset), width=x_right - x_offset,
                           height=y_top - y_offset)
+
+    def calculate_body_contacts(self):
+        # calculate number of contacts
+        self.contact_pitch = self.contact_width + self.contact_spacing
+        active_height = contact.well.first_layer_width
+
+        pimplant_height = max(self.implant_width,
+                              active_height + 2 * self.implant_enclose_active)
+        self.body_contact_pimplant_height = pimplant_height
+
+        nimplant_rect = min(self.tx.get_layer_shapes(NIMP), key=lambda x: x.by())
+        self.nimplant_top = nimplant_top = self.bl_inst.by() + self.tx.height - nimplant_rect.by()
+
+        # based on M1's
+        top_m1_rail_y = self.top_m1_rail_y
+        min_gnd_pin_y = top_m1_rail_y + self.m2_width + self.get_line_end_space(METAL1)
+        # based on actives space
+        active_rect = min(self.tx.get_layer_shapes(ACTIVE), key=lambda x: x.by())
+        active_top = self.bl_inst.by() + self.tx.height - active_rect.by()
+        active_space = drc.get("active_to_body_active", drc.get("active_to_active"))
+        contact_mid_y = active_top + active_space + 0.5 * active_height
+
+        # based on poly to active
+        contact_mid_y = max(contact_mid_y, active_top + self.poly_extend_active +
+                            self.poly_to_active + 0.5 * active_height)
+
+        contact_mid_y = max(contact_mid_y,
+                            min_gnd_pin_y + 0.5 * self.rail_height,
+                            nimplant_top + 0.5 * pimplant_height)
+        self.contact_mid_y = contact_mid_y
+        self.height = self.contact_mid_y + 0.5 * self.rail_height
+
+    def add_body_contacts(self):
+        active_height = contact.well.first_layer_width
+        active_width, body_contact = calculate_contact_width(self, self.width, active_height)
+        contact_mid_y = self.contact_mid_y
+        pimplant_height = self.body_contact_pimplant_height
+
+        # pimplant
+        pimplant_y = self.nimplant_top
+        pimplant_height = max(pimplant_height,
+                              contact_mid_y + 0.5 * active_height +
+                              self.implant_enclose_active - pimplant_y)
+        pimplant_width = active_width + 2 * self.implant_enclose_active
+
+        self.add_rect_center(PIMP, offset=vector(self.mid_x, pimplant_y + 0.5 * pimplant_height),
+                             height=pimplant_height, width=pimplant_width)
+        # contact
+        self.add_contact_center(body_contact.layer_stack, rotate=90,
+                                offset=vector(self.mid_x, contact_mid_y), size=body_contact.dimensions)
+        # active
+        self.add_rect_center(ACTIVE, vector(self.mid_x, contact_mid_y), width=active_width, height=active_height)
+
+        # gnd pin
+        pin_y_offset = contact_mid_y - 0.5 * self.rail_height
+        pin_width = max(self.width, body_contact.second_layer_height)
+        self.add_layout_pin("gnd", "metal1", offset=vector(0, pin_y_offset), width=pin_width, height=self.rail_height)
+
+        self.contact_well_top = contact_mid_y + 0.5 * active_height + self.well_enclose_active

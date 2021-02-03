@@ -3,11 +3,11 @@ from base import contact
 from base import design
 from base import utils
 from base.contact import m1m2, cross_m1m2
-from base.design import METAL2, PIMP, METAL1, NIMP, PWELL, ACTIVE
+from base.design import METAL2, PWELL, ACTIVE
 from base.vector import vector
 from globals import OPTS
 from modules.single_level_column_mux import single_level_column_mux
-from tech import drc, info
+from tech import info
 
 
 class single_level_column_mux_array(design.design):
@@ -41,17 +41,17 @@ class single_level_column_mux_array(design.design):
         self.add_modules()
         self.setup_layout_constants()
         self.create_array()
-        self.add_body_contacts()
         self.add_routing()
         # Find the highest shapes to determine height before adding well
         highest = self.find_highest_coords()
         self.height = highest.y
-        self.width = self.mux_inst[-1].rx()
+        self.width = self.child_insts[-1].rx()
         self.add_layout_pins()
         self.add_boundary()
 
     def add_modules(self):
         self.mux = single_level_column_mux(tx_size=OPTS.column_mux_size)
+        self.child_mod = self.mux
         self.add_mod(self.mux)
 
     def setup_layout_constants(self):
@@ -62,7 +62,7 @@ class single_level_column_mux_array(design.design):
         self.route_height = (self.words_per_row + 4) * self.bus_pitch
 
     def create_array(self):
-        self.mux_inst = []
+        self.child_insts = []
 
         (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
 
@@ -70,9 +70,7 @@ class single_level_column_mux_array(design.design):
         for col_num in range(self.columns):
             name = "MUX{0}".format(col_num)
             x_off = vector(self.bitcell_offsets[col_num], self.route_height)
-            self.mux_inst.append(self.add_inst(name=name,
-                                               mod=self.mux,
-                                               offset=x_off))
+            self.child_insts.append(self.add_inst(name=name, mod=self.mux, offset=x_off))
 
             self.connect_inst(["bl[{}]".format(col_num),
                                "br[{}]".format(col_num),
@@ -85,82 +83,14 @@ class single_level_column_mux_array(design.design):
         """ Add the pins after we determine the height. """
         # For every column, add a pass gate
         for col_num in range(self.columns):
-            mux_inst = self.mux_inst[col_num]
-            self.copy_layout_pin(mux_inst, "bl", "bl[{}]".format(col_num))
-            self.copy_layout_pin(mux_inst, "br", "br[{}]".format(col_num))
+            child_insts = self.child_insts[col_num]
+            self.copy_layout_pin(child_insts, "bl", "bl[{}]".format(col_num))
+            self.copy_layout_pin(child_insts, "br", "br[{}]".format(col_num))
 
-    def add_body_contacts(self):
-
-        active_height = contact.well.first_layer_width
-        pimplant_height = max(self.implant_width,
-                              active_height + 2 * self.implant_enclose_active)
-
-        nimplant_rect = min(self.mux.tx.get_layer_shapes(NIMP), key=lambda x: x.by())
-        nimplant_top = self.mux.bl_inst.by() + self.mux.tx.height - nimplant_rect.by()
-        nimplant_top += self.mux_inst[0].by()
-
-        # based on M1's
-        top_m1_rail_y = self.mux_inst[0].by() + self.mux.top_m1_rail_y
-        min_gnd_pin_y = top_m1_rail_y + self.m2_width + self.get_line_end_space(METAL1)
-        # based on actives space
-        active_rect = min(self.mux.tx.get_layer_shapes(ACTIVE), key=lambda x: x.by())
-        active_top = (self.mux_inst[0].by() + self.mux.bl_inst.by() +
-                      self.mux.tx.height - active_rect.by())
-        active_space = drc.get("active_to_body_active", drc.get("active_to_active"))
-        contact_mid_y = active_top + active_space + 0.5 * active_height
-
-        # based on poly to active
-        contact_mid_y = max(contact_mid_y, active_top + self.poly_extend_active +
-                            self.poly_to_active + 0.5 * active_height)
-
-        contact_mid_y = max(contact_mid_y,
-                            min_gnd_pin_y + 0.5 * self.rail_height,
-                            nimplant_top + 0.5 * pimplant_height)
-
-        # pimplant
-        pimplant_y = nimplant_top
-        pimplant_height = max(pimplant_height,
-                              contact_mid_y + 0.5 * active_height +
-                              self.implant_enclose_active - pimplant_y)
-
-        bl_inst = self.mux.bl_inst
-        pimplant_x = self.mux_inst[0].lx() + bl_inst.lx() + nimplant_rect.lx()
-        implant_end = self.mux_inst[-1].lx() + bl_inst.lx() + nimplant_rect.rx()
-
-        self.add_rect(PIMP, offset=vector(pimplant_x, pimplant_y),
-                      height=pimplant_height,
-                      width=implant_end - pimplant_x)
-        # active
-        active_start = pimplant_x + self.implant_enclose_active
-        active_end = implant_end - self.implant_enclose_active
-        self.add_rect(ACTIVE,
-                      offset=vector(active_start, contact_mid_y - 0.5 * active_height),
-                      height=active_height, width=active_end - active_start)
-
-        # contact layer
-        active_enclosure = 0.5 * (contact.well.first_layer_height -
-                                  contact.well.contact_width)
-        contact_x = active_start + active_enclosure
-        contact_y_offset = contact_mid_y - 0.5 * contact.well.contact_width
-        while contact_x + self.contact_width + active_enclosure < active_end:
-            self.add_rect("contact", offset=vector(contact_x, contact_y_offset),
-                          width=self.contact_width,
-                          height=self.contact_width)
-            contact_x += self.contact_spacing + self.contact_width
-
-        # gnd pin
-        pin_y_offset = contact_mid_y - 0.5 * self.rail_height
-        pin_width = self.mux_inst[-1].rx()
-        self.add_layout_pin("gnd", "metal1", offset=vector(0, pin_y_offset), width=pin_width, height=self.rail_height)
-
-        if info["has_pwell"]:
-            well_top = pimplant_y + pimplant_height
-            mux_rect = max(self.mux.get_layer_shapes(PWELL), key=lambda x: x.uy())
-            well_start = self.mux_inst[0].lx() + mux_rect.lx()
-            well_end = self.mux_inst[-1].rx() + mux_rect.lx()
-            well_bottom = self.mux_inst[0].by() + mux_rect.by()
-            self.add_rect(PWELL, offset=vector(well_start, well_bottom),
-                          width=well_end - well_start, height=well_top - well_bottom)
+        cell_gnd_pin = self.child_insts[0].get_pin("gnd")
+        self.add_layout_pin("gnd", "metal1", offset=cell_gnd_pin.ll(),
+                            width=self.width - cell_gnd_pin.lx(),
+                            height=cell_gnd_pin.height())
 
     def add_routing(self):
         self.add_horizontal_input_rail()
@@ -174,7 +104,7 @@ class single_level_column_mux_array(design.design):
             self.add_layout_pin(text="sel[{}]".format(j),
                                 layer="metal1",
                                 offset=offset,
-                                width=self.mux_inst[-1].get_pin("sel").rx() + 0.5 * m1m2.height,
+                                width=self.child_insts[-1].get_pin("sel").rx() + 0.5 * m1m2.height,
                                 height=self.bus_width)
 
     def add_vertical_gate_rail(self):
@@ -186,7 +116,7 @@ class single_level_column_mux_array(design.design):
             sel_index = col % self.words_per_row
             # Add the column x offset to find the right select bit
 
-            gate_pin = self.mux_inst[col].get_pin("sel")
+            gate_pin = self.child_insts[col].get_pin("sel")
 
             sel_pos = vector(gate_pin.lx(), self.get_pin("sel[{}]".format(sel_index)).cy())
 
@@ -196,7 +126,7 @@ class single_level_column_mux_array(design.design):
                                           rotate=True)
 
     def get_output_bitlines(self, col):
-        return self.mux_inst[col].get_pin("bl_out"), self.mux_inst[col].get_pin("br_out")
+        return self.child_insts[col].get_pin("bl_out"), self.child_insts[col].get_pin("br_out")
 
     def route_bitlines(self):
         """  Connect the output bit-lines to form the appropriate width mux """

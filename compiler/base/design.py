@@ -289,18 +289,18 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
          set height to min_height and re-adjust width"""
         min_area = design.get_min_area(layer) or 0.0
         min_side = design.get_drc_by_layer(layer, "minside_contact")
-        if min_height is None:
-            if min_side is not None:
-                min_height = min_side
-            else:
-                min_height = 0.0
-        if width is None:
-            width = design.get_min_layer_width(layer)
-        height = max(utils.ceil(min_area / width), min_height)
+        min_layer_width = design.get_min_layer_width(layer)
 
-        if height < min_height:
-            height = min_height
-            width = utils.ceil(min_area / height)
+        if width is None:
+            width = min_layer_width
+
+        if min_height is None:
+            min_height = min_layer_width
+
+        height = max(utils.ceil(min_area / width), min_height)
+        if min_side and height < min_side and width < min_side:
+            height = min_side
+
         return width, height
 
     @staticmethod
@@ -459,13 +459,6 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                 if hasattr(OPTS, "repeaters_array_space_offsets") and len(OPTS.repeaters_array_space_offsets) > 0:
                     add_fill(OPTS.repeaters_array_space_offsets[-1] + tap_width, "left")
                     add_fill(OPTS.repeaters_array_space_offsets[0] - instances[0].width, "right")
-
-    def evaluate_vertical_module_spacing(self, top_modules: List["design"],
-                                         bottom_modules: List["design"], reference_bottom=None,
-                                         layers=None, min_space=None):
-        from base.well_implant_fills import evaluate_vertical_module_spacing as eval_func
-        return eval_func(top_modules, bottom_modules, reference_bottom, layers, min_space,
-                         num_cols=getattr(self, "num_cols", 1))
 
     def create_mod_from_str(self, module_name, *args, **kwargs):
         """Helper method to create modules from string specification

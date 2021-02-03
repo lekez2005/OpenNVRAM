@@ -3,7 +3,7 @@ from base import contact
 from base import design
 from base import utils
 from base.contact import m1m2, m2m3, m3m4
-from base.design import METAL2, METAL1, METAL3
+from base.design import METAL2, METAL1, METAL3, NIMP
 from base.vector import vector
 from base.well_active_contacts import calculate_contact_width
 from globals import OPTS
@@ -21,9 +21,7 @@ class precharge(design.design):
         design.design.__init__(self, name)
         debug.info(2, "create single precharge cell: {0}".format(name))
 
-        c = __import__(OPTS.bitcell)
-        self.mod_bitcell = getattr(c, OPTS.bitcell)
-        self.bitcell = self.mod_bitcell()
+        self.bitcell = self.create_mod_from_str(OPTS.bitcell)
 
         self.beta = parameter["beta"]
         self.ptx_width = utils.round_to_grid(size * self.beta * parameter["min_tx_size"])
@@ -76,7 +74,7 @@ class precharge(design.design):
         self.en_rail_height = self.bus_width
         # space based on M2 enable pin
         self.active_to_enable_top = self.get_line_end_space(METAL2) + self.en_rail_height
-        en_rail_top_space = (self.active_to_enable_top + self.get_parallel_space(METAL2) +
+        en_rail_top_space = (self.active_to_enable_top + self.get_line_end_space(METAL2) +
                              m2m3.height)
 
         # space based on enable M1 contact to power rail
@@ -251,9 +249,10 @@ class precharge(design.design):
                 num_vias += 1
             else:
                 num_vias -= 1
+                sample_via = contact.contact(m1m2.layer_stack, dimensions=[1, num_vias])
                 break
         debug.check(num_vias >= 1, "At least one via is required")
-        fill_width = sample_via.width
+        fill_width = sample_via.height
         _, fill_height = self.calculate_min_area_fill(fill_width, layer=METAL2)
         if fill_height > sample_via.first_layer_width:
             self.add_rect_center(METAL2, offset=vector(self.mid_x, vdd_pin.cy()),
@@ -369,6 +368,7 @@ class precharge_tap(design.design):
         self.precharge_cell = precharge_cell
 
         self.create_layout()
+        add_tech_layers(self)
 
     def create_layout(self):
         body_tap = utils.get_body_tap()
@@ -401,3 +401,9 @@ class precharge_tap(design.design):
         fill_height, fill_width = self.calculate_min_area_fill(m1m2_cont.height, layer=METAL2)
         self.add_rect(METAL2, offset=vector(vdd_rail.cx() - 0.5 * fill_width, via_offset.y),
                       width=fill_width, height=fill_height)
+
+        # tap nimplant
+        nimp_rect = max(self.precharge_cell.get_layer_shapes(NIMP), key=lambda x: x.uy())
+        self.add_rect(NIMP, offset=vector(nimp_rect.lx(), nimp_rect.by()),
+                      width=self.width + (nimp_rect.rx() - self.precharge_cell.width) -
+                            nimp_rect.lx(), height=nimp_rect.height)

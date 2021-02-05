@@ -196,7 +196,8 @@ class pgate(design.design):
                                                               min_width=min_width,
                                                               run_length=fill_width,
                                                               heights=[fill_width, fill_width])
-        rail_extent = 0.5 * self.rail_height + power_rail_space
+        via_extension = max(0, 0.5 * (m1m2.height - tx_width_))
+        rail_extent = 0.5 * self.rail_height + power_rail_space + via_extension
         return rail_extent, fill_width, fill_height
 
     def determine_tx_mults(self):

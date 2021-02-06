@@ -1,5 +1,6 @@
 from globals import OPTS
 from modules.control_buffers import ControlBuffers
+from modules.logic_buffer import LogicBuffer
 
 
 class LatchedControlBuffers(ControlBuffers):
@@ -27,12 +28,22 @@ class LatchedControlBuffers(ControlBuffers):
         tri_en_bar: sense_en_bar
     """
 
-    def __init__(self, contact_nwell=True, contact_pwell=True):
+    def __init__(self, bank):
         self.use_precharge_trigger = OPTS.use_precharge_trigger
-        super().__init__(contact_nwell, contact_pwell)
+        self.bank = bank
+        self.is_left_bank = self.bank.is_left_bank
+        if self.is_left_bank:
+            self.name += "_left"
+
+        self.use_chip_sel = not self.is_left_bank and OPTS.num_banks == 2 and OPTS.independent_banks
+        self.use_decoder_clk = (OPTS.create_decoder_clk and not self.is_left_bank) or self.use_chip_sel
+
+        super().__init__(contact_nwell=True, contact_pwell=True)
 
     def create_modules(self):
         self.create_common_modules()
+        self.create_decoder_clk()
+        self.create_bank_sel()
         self.create_clk_buf()
         self.create_wordline_en()
         self.create_write_buf()
@@ -42,10 +53,7 @@ class LatchedControlBuffers(ControlBuffers):
         self.create_tri_en_buf()
 
     def create_schematic_connections(self):
-        precharge_in = "precharge_trig" if self.use_precharge_trigger else "clk"
         connections = [
-            ("precharge_buf", self.precharge_buf,
-             ["bank_sel", precharge_in, "precharge_en_bar", "precharge_en"]),
             ("clk_buf", self.clk_buf,
              ["bank_sel", "clk", "clk_bar", "clk_buf"]),
             ("clk_bar", self.inv, ["clk", "clk_bar_int"]),
@@ -66,11 +74,59 @@ class LatchedControlBuffers(ControlBuffers):
             ("tri_en_buf", self.tri_en_buf,
              ["sample_bar_int", "sense_trig", "bank_sel", "tri_en_bar", "tri_en"])
         ]
+        self.add_precharge_buf_connections(connections)
+        self.add_decoder_clk_connections(connections)
+        self.add_chip_sel_connections(connections)
         return connections
+
+    def create_decoder_clk(self):
+        if self.use_decoder_clk:
+            assert len(OPTS.decoder_clk_stages) % 2 == 1, "Number of decoder clk stages should be odd"
+            self.decoder_clk = self.create_mod(LogicBuffer, buffer_stages=OPTS.decoder_clk_stages,
+                                               logic="pnand2")
+
+    def add_decoder_clk_connections(self, connections):
+        if not self.use_decoder_clk:
+            return
+
+        sel_net = "chip_sel" if self.use_chip_sel else "bank_sel"
+        connection = ("decoder_clk", self.decoder_clk, [sel_net, "clk", "decoder_clk_bar", "decoder_clk"])
+        connections.insert(0, connection)
+
+    def create_bank_sel(self):
+        if self.use_chip_sel:
+            assert len(OPTS.bank_sel_stages) % 2 == 1, "Number of bank sel stages should be odd"
+            self.bank_sel_buf = self.create_mod(LogicBuffer, buffer_stages=OPTS.bank_sel_stages,
+                                                logic="pnand2")
+
+    def create_precharge_buffers(self):
+        assert len(OPTS.precharge_buffers) % 2 == 0, "Number of precharge buffers should be even"
+        logic = "pnand3" if self.bank.words_per_row == 1 else "pnand2"
+        self.precharge_buf = self.create_mod(LogicBuffer, buffer_stages=OPTS.precharge_buffers,
+                                             logic=logic)
+
+    def add_precharge_buf_connections(self, connections):
+        precharge_in = "precharge_trig" if self.use_precharge_trigger else "clk"
+        read_conn = ["read"] * (self.bank.words_per_row == 1)
+        nets = read_conn + [precharge_in, "bank_sel", "precharge_en_bar", "precharge_en"]
+        connections.insert(0, ("precharge_buf", self.precharge_buf, nets))
+
+    def add_chip_sel_connections(self, connections):
+        if not self.use_chip_sel:
+            return
+        for _, _, nets in connections:
+            for index, item in enumerate(nets):
+                if item == "bank_sel":
+                    nets[index] = "bank_sel_buf"
+        connection = ("bank_sel_buf", self.bank_sel_buf,
+                      ["bank_sel", "chip_sel", "bank_sel_bar", "bank_sel_buf"])
+        connections.insert(0, connection)
 
     def get_schematic_pins(self):
         precharge_trigger = ["precharge_trig"] * self.use_precharge_trigger
-        return (["bank_sel", "read", "clk", "sense_trig"] + precharge_trigger,
-                ["clk_buf", "clk_bar", "wordline_en", "precharge_en_bar",
-                 "write_en", "write_en_bar", "sense_en", "tri_en",
-                 "tri_en_bar", "sample_en_bar"])
+        chip_sel = ["chip_sel"] * self.use_chip_sel
+        decoder_clk = ["decoder_clk"] * self.use_decoder_clk
+        return (chip_sel + ["bank_sel", "read", "clk", "sense_trig"] + precharge_trigger,
+                decoder_clk + ["clk_buf", "clk_bar", "wordline_en", "precharge_en_bar",
+                               "write_en", "write_en_bar", "sense_en", "tri_en",
+                               "tri_en_bar", "sample_en_bar"])

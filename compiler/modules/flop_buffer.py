@@ -14,12 +14,14 @@ class FlopBuffer(design, metaclass=Unique):
     Flop a signal and buffer given input buffer sizes
     """
     @classmethod
-    def get_name(cls, _, buffer_stages):
+    def get_name(cls, _, buffer_stages, negate=False):
         name = "flop_buffer_{}".format("_".join(
             ["{:.3g}".format(x).replace(".", "_") for x in buffer_stages]))
+        if negate:
+            name += "_neg"
         return name
 
-    def __init__(self, flop_module_name, buffer_stages):
+    def __init__(self, flop_module_name, buffer_stages, negate=False):
 
         if buffer_stages is None or len(buffer_stages) < 1:
             debug.error("There should be at least one buffer stage", 1)
@@ -27,6 +29,7 @@ class FlopBuffer(design, metaclass=Unique):
         self.buffer_stages = buffer_stages
 
         self.flop_module_name = flop_module_name
+        self.negate = negate
 
         super().__init__(name=self.name)
 
@@ -67,12 +70,19 @@ class FlopBuffer(design, metaclass=Unique):
 
         self.buffer_inst = self.add_inst("buffer", mod=self.buffer, offset=self.flop_inst.lr() + vector(x_space, 0))
 
-        if len(self.buffer_stages) % 2 == 0:
-            nets = ["flop_out", "dout_bar", "dout"]
+        if ((len(self.buffer_stages) % 2 == 0 and not self.negate) or
+                (len(self.buffer_stages) % 2 == 1 and self.negate)):
+            if self.negate:
+                nets = ["flop_out", "dout", "dout_bar"]
+            else:
+                nets = ["flop_out", "dout_bar", "dout"]
             flop_out = self.flop_inst.get_pin("dout")
             path_start = vector(flop_out.rx(), flop_out.uy() - 0.5 * self.m2_width)
         else:
-            nets = ["flop_out_bar", "dout", "dout_bar"]
+            if self.negate:
+                nets = ["flop_out_bar", "dout_bar", "dout"]
+            else:
+                nets = ["flop_out_bar", "dout", "dout_bar"]
             flop_out = self.flop_inst.get_pin("dout_bar")
             path_start = vector(flop_out.rx(), flop_out.uy() - 0.5 * self.m2_width)
 
@@ -135,7 +145,7 @@ class FlopBuffer(design, metaclass=Unique):
                                 height=y_top - y_offset)
         self.copy_layout_pin(self.flop_inst, "clk", "clk")
         self.copy_layout_pin(self.flop_inst, "din", "din")
-        if len(self.buffer_stages) == 1:
+        if len(self.buffer_stages) % 2 == 1:
             flop_out = "out_inv"
         else:
             flop_out = "out"

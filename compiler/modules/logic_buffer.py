@@ -105,8 +105,8 @@ class LogicBuffer(design.design, metaclass=Unique):
         self.logic_inst = self.add_inst("logic", mod=self.logic_mod, offset=vector(0, 0))
         connections = [x for x in self.logic_mod.pins]
         if len(self.buffer_stages) == 1:
-            intermediate_net = "out"
-            buffer_conns = ["out", "out_inv"]
+            intermediate_net = "out_inv"
+            buffer_conns = ["out_inv", "out", "out_inv"]
         else:
             intermediate_net = "logic_out"
             buffer_conns = [intermediate_net, "out", "out_inv"]
@@ -148,10 +148,10 @@ class LogicBuffer(design.design, metaclass=Unique):
 
     def route_out_pins(self):
         if len(self.buffer_stages) == 1:
-            self.copy_layout_pin(self.logic_inst, "Z", "out")
+            self.copy_layout_pin(self.logic_inst, "Z", "out_inv")
         else:
-            self.copy_layout_pin(self.buffer_inst, "out_inv", "out")
-        self.copy_layout_pin(self.buffer_inst, "out", "out_inv")
+            self.copy_layout_pin(self.buffer_inst, "out", "out_inv")
+        self.copy_layout_pin(self.buffer_inst, "out_inv", "out")
 
     def route_power_pins(self):
         pin_names = ["vdd", "gnd"]

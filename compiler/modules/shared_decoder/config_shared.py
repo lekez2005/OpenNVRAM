@@ -27,7 +27,7 @@ data_in_flop_tap = "ms_flop_clk_buf_tap"
 control_flop = "ms_flop_horz_pitch"
 
 column_mux_array = "tgate_column_mux_array"
-control_flop_buffers = [6]
+control_flop_buffers = [4]
 
 run_optimizations = True
 

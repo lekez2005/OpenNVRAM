@@ -9,7 +9,7 @@ tri_gate_mod = "tri_state_buf"
 ms_flop_mod = "ms_flop_clk_buf"
 run_optimizations = False
 
-control_buffers_num_rows = 1
+control_buffers_num_rows = 2
 
 logic_buffers_height = 1.4
 tech_name = "freepdk45"

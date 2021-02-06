@@ -4,13 +4,14 @@ from abc import ABC
 from copy import copy
 from importlib import reload
 from math import log
+from typing import List, Union
 
 import debug
 import tech
 from base import utils
 from base.contact import m2m3, m1m2, m3m4, contact, cross_m2m3, cross_m1m2
 from base.design import design, METAL2, METAL3, METAL1, METAL4, DRAWING, NWELL, PWELL
-from base.geometry import NO_MIRROR
+from base.geometry import NO_MIRROR, MIRROR_X_AXIS
 from base.vector import vector
 from base.well_implant_fills import create_wells_and_implants_fills, evaluate_vertical_metal_spacing, \
     join_vertical_adjacent_module_wells, evaluate_vertical_module_spacing
@@ -54,8 +55,12 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         self.mirror_sense_amp = OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP
 
         self.compute_sizes()
+
         debug.info(1, "Create modules")
         self.create_modules()
+        control_inputs = self.control_buffers.get_input_pin_names()
+        self.use_chip_sel = "chip_sel" in control_inputs
+
         debug.info(1, "Calculate rail offsets")
         self.calculate_rail_offsets()
         debug.info(1, "Add modules")
@@ -103,8 +108,18 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         for i in range(self.num_rows):
             self.add_pin("dec_out[{}]".format(i))
 
-        self.add_pin_list(self.control_buffers.get_input_pin_names() +
-                          ["clk_buf", "clk_bar", "vdd", "gnd"])
+        control_inputs = self.control_buffers.get_input_pin_names()
+
+        control_pins = self.connections_from_mod(control_inputs, [("bank_sel", "Csb"),
+                                                                  ("chip_sel", "addr_msb")])
+
+        control_outputs = self.control_buffers.get_output_pin_names()
+        if "decoder_clk" in control_outputs:
+            control_pins.append("decoder_clk")
+        elif not self.is_left_bank:
+            control_pins.append("clk_buf")
+
+        self.add_pin_list(control_pins + ["vdd", "gnd"])
 
     def calculate_dimensions(self):
         """Calculate bank width and height"""
@@ -168,14 +183,14 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
 
     def create_left_bank_modules(self):
         """Copies modules from the specified adjacent bank"""
-        for module_name in self.get_module_list() + ["control_flop", "msf_mask_in",
-                                                     "msf_data_in"]:
+        for module_name in self.get_module_list() + ["msf_mask_in", "msf_data_in"]:
             if not hasattr(self.adjacent_bank, module_name):
                 continue
             adjacent_mod = getattr(self.adjacent_bank, module_name)
             setattr(self, module_name, adjacent_mod)
             self.add_mod(adjacent_mod)
         self.create_control_buffers()
+        self.create_control_flop()
 
     def create_modules(self):
         """Create modules that will be added to bank"""
@@ -271,7 +286,31 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
 
     def create_control_flop(self):
         self.control_flop = self.create_module("flop_buffer", OPTS.control_flop,
-                                               OPTS.control_flop_buffers)
+                                               OPTS.control_flop_buffers, negate=False)
+        self.control_flop_neg = self.create_module("flop_buffer", OPTS.control_flop,
+                                                   OPTS.control_flop_buffers, negate=True)
+
+    def get_control_flop_connections(self):
+        """When single bank or dependent 2 banks: Csb -> bank_sel
+           When two banks and independent banks: Csb -> chip_sel
+                                                 addr_msb -> bank_sel (0 for right bank, 1 for left bank)
+        """
+        if self.use_chip_sel:
+            bank_sel_in = "addr_msb"
+            if self.is_left_bank:
+                bank_sel_mod = self.control_flop
+            else:
+                bank_sel_mod = self.control_flop_neg
+        else:
+            bank_sel_in = "Csb"
+            bank_sel_mod = self.control_flop_neg
+        connections = {
+            "read_buf": ("read", "read_buf", self.control_flop),
+            "bank_sel_buf": (bank_sel_in, "bank_sel_buf", bank_sel_mod),
+        }
+        if self.use_chip_sel:
+            connections["chip_sel_buf"] = ("Csb", "chip_sel_buf", self.control_flop_neg)
+        return connections
 
     def get_control_names(self):
         """Get outputs of control logic buffers"""
@@ -332,9 +371,18 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
     def connect_control_buffers(self):
         connections = self.connections_from_mod(self.control_buffers, [
             ("bank_sel", "bank_sel_buf"),
-            ("read", "read_buf")
+            ("read", "read_buf"),
+            ("chip_sel", "chip_sel_buf")
         ])
         self.connect_inst(connections)
+
+    def get_control_buffer_net_pin(self, net):
+        """Get control buffer pin given the net it is connected to in this bank"""
+        inst_index = next(i for i in range(len(self.insts))
+                          if self.insts[i].name == self.control_buffers_inst.name)
+        conn = self.conns[inst_index]
+        pin_index = conn.index(net)
+        return self.control_buffers_inst.get_pin(self.control_buffers_inst.mod.pins[pin_index])
 
     def add_control_buffers(self):
         """Add control logic buffers"""
@@ -344,18 +392,42 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         self.connect_control_buffers()
 
     def add_control_flops(self):
-        x_offset, y_offset = self.get_control_flops_offset()
 
-        self.bank_sel_buf_inst = self.add_inst("bank_sel_buf", mod=self.control_flop,
-                                               offset=vector(x_offset, y_offset))
-        self.connect_inst(["bank_sel", "clk", "bank_sel_buf", "vdd", "gnd"])
+        flop_connections = [(inst_name, *vals)
+                            for inst_name, vals in self.get_control_flop_connections().items()]
 
-        offset = self.bank_sel_buf_inst.ul() + vector(0, self.control_flop.height)
-        self.read_buf_inst = self.add_inst("read_buf", mod=self.control_flop, offset=offset, mirror="MX")
-        self.connect_inst(["read", "clk", "read_buf", "vdd", "gnd"])
+        # sort by pin y_offset
+        flop_connections = list(sorted(flop_connections,
+                                       key=lambda x: self.get_control_buffer_net_pin(x[2]).by()))
 
-        y_offset = (self.bank_sel_buf_inst.by() - self.get_wide_space(METAL2)
-                    - self.bus_pitch)
+        x_offset, y_base = self.get_control_flops_offset()
+        y_offset = y_base
+
+        self.control_flop_insts = []
+
+        for i in range(len(flop_connections)):
+            inst_name, net_in, net_out, flop_mod = flop_connections[i]
+            if i % 2 == 0:
+                offset = vector(x_offset, y_offset)
+                mirror = NO_MIRROR
+            else:
+                offset = vector(x_offset, y_offset + flop_mod.height)
+                mirror = MIRROR_X_AXIS
+            inst = self.add_inst(inst_name, mod=flop_mod, offset=offset, mirror=mirror)
+            conn = [net_in, "clk", net_out, "vdd", "gnd"]
+            self.connect_inst(conn)
+            if inst_name == "read_buf":
+                self.read_buf_inst = inst
+            elif inst_name == "bank_sel_buf":
+                self.bank_sel_buf_inst = inst
+            elif inst_name == "chip_sel_buf":
+                self.chip_sel_buf_inst = inst
+            else:
+                raise ValueError("Invalid instance name: {}".format(inst_name))
+            self.control_flop_insts.append((net_in, net_out, inst))
+            y_offset += flop_mod.height
+
+        y_offset = y_base - self.get_wide_space(METAL2) - self.bus_pitch
         self.cross_clk_rail_y = min(y_offset, self.control_buffers_inst.by() - self.bus_pitch)
         self.min_point = min(self.min_point, self.cross_clk_rail_y)
 
@@ -369,6 +441,8 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         return flop_vdd.height() + self.get_wide_space(flop_vdd.layer)
 
     def get_control_flops_offset(self):
+        num_control_flops = len(self.get_control_flop_connections())
+        total_flop_height = num_control_flops * self.control_flop.height
         wide_space = self.get_wide_space(METAL2)
         # place below predecoder
         flop_vdd = self.control_flop.get_pins("vdd")[0]
@@ -378,11 +452,11 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
 
         # y offset based on control buffer
         y_offset_control_buffer = max(self.control_buffers_inst.by() + row_decoder_flop_space,
-                                      self.control_buffers_inst.cy() - self.control_flop.height)
+                                      self.control_buffers_inst.cy() - 0.5 * total_flop_height)
 
         row_decoder_y = self.bitcell_array_inst.uy() - self.decoder.height - self.bitcell.height
         y_offset = min(y_offset_control_buffer,
-                       row_decoder_y - row_decoder_flop_space - 2 * self.control_flop.height)
+                       row_decoder_y - row_decoder_flop_space - total_flop_height)
 
         # check if we can squeeze column decoder between predecoder and control flops
         self.col_decoder_is_left = False
@@ -397,23 +471,23 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
             rail_space_above_controls = row_decoder_flop_space + (1 + self.words_per_row) * self.bus_pitch
 
             if row_decoder_y - row_decoder_col_decoder_space - col_decoder_height - row_decoder_col_decoder_space > \
-                    y_offset_control_buffer + 2 * self.control_flop.height:
+                    y_offset_control_buffer + total_flop_height:
                 # predecoder is above control flops
                 y_offset = y_offset_control_buffer
                 self.col_decoder_y = row_decoder_y - row_decoder_col_decoder_space - col_decoder_height
             elif row_decoder_y - row_decoder_col_decoder_space - col_decoder_height > \
-                    (y_offset_control_buffer + 2 * self.control_flop.height + rail_space_above_controls):
+                    (y_offset_control_buffer + total_flop_height + rail_space_above_controls):
                 # predecoder is still above control flops but move control flops down
                 # if predecoder had been moved left, the rails above the control flops would have still
                 # required moving control flops down anyway
                 y_offset = (row_decoder_y - row_decoder_col_decoder_space - col_decoder_height -
-                            rail_space_above_controls - 2 * self.control_flop.height)
-                self.col_decoder_y = y_offset + 2 * self.control_flop.height + rail_space_above_controls
+                            rail_space_above_controls - total_flop_height)
+                self.col_decoder_y = y_offset + total_flop_height + rail_space_above_controls
             else:
                 # predecoder will be moved left
                 self.col_decoder_is_left = True
                 y_offset = (row_decoder_y - row_decoder_flop_space - rail_space_above_controls
-                            - 2 * self.control_flop.height)
+                            - total_flop_height)
                 self.col_decoder_y = row_decoder_y - row_decoder_col_decoder_space - col_decoder_height
                 self.rail_space_above_controls = rail_space_above_controls
             self.min_point = min(self.min_point, self.col_decoder_y - self.rail_height)
@@ -423,7 +497,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         # ensure no clash with rails above control_buffer
         top_rails = [getattr(self, x + "_rail") for x in self.top_control_rails]
         bottom_rails = [getattr(self, x + "_rail") for x in self.bottom_control_rails]
-        control_top = y_offset + 2 * self.control_flop.height + row_decoder_flop_space
+        control_top = y_offset + total_flop_height + row_decoder_flop_space
         rails_below_control_flops = [x for x in top_rails + top_rails if x.by() < control_top]
         if rails_below_control_flops:
             leftmost_top_rail_x = min(rails_below_control_flops, key=lambda x: x.lx()).lx()
@@ -434,8 +508,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
                 leftmost_top_rail_x = self.mid_vdd_offset
 
         num_control_inputs = len(self.get_non_flop_control_inputs())
-        num_flop_inputs = 2
-        num_inputs = num_control_inputs + num_flop_inputs + 1
+        num_inputs = num_control_inputs + num_control_flops + 1
 
         bank_sel_out_rail_x = (leftmost_top_rail_x - wide_space - num_inputs * self.bus_pitch
                                + self.bus_space)
@@ -459,8 +532,11 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         self.connect_inst(connections)
 
     @staticmethod
-    def connections_from_mod(mod: design, replacements=None):
-        connections = copy(mod.pins)
+    def connections_from_mod(mod: Union[design, List[str]], replacements=None):
+        if isinstance(mod, list):
+            connections = mod
+        else:
+            connections = copy(mod.pins)
         if not replacements:
             return connections
         for pairs in replacements:
@@ -705,6 +781,9 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         for net in control_outputs:
             if net == "wordline_en":
                 destination_pins[net] = self.precharge_array_inst.get_pins("en")
+                continue
+            elif net == "decoder_clk":
+                destination_pins[net] = []
                 continue
             destinations = []
             for i in range(len(self.conns)):
@@ -1244,31 +1323,22 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
             self.join_pins_with_m3(cont, data_pin, cont.cy(), fill_width, fill_height)
             self.add_contact_center(m3m4.layer_stack, offset=vector(data_pin.cx(), via_y))
 
-    def route_control_buffers(self):
-        """Route output of control flops to control logic buffers.
-         Also route non-flop inputs to control logic buffers"""
-        # copy vdd, gnd and clk outputs
-        self.copy_layout_pin(self.control_buffers_inst, "clk_buf")
-        self.copy_layout_pin(self.control_buffers_inst, "clk_bar")
-
-        for vdd_pin in self.control_buffers_inst.get_pins("vdd"):
-            self.route_vdd_pin(vdd_pin)
-        for gnd_pin in self.control_buffers_inst.get_pins("gnd"):
-            self.route_gnd_pin(gnd_pin)
+    def route_control_flop_outputs(self):
 
         wide_space = self.get_wide_space(METAL1)
-
-        # outputs of control flops for read and bank_sel to control buffers inputs
         rail_height = self.bus_width
-        instances = [self.bank_sel_buf_inst, self.read_buf_inst]
-        control_pins = ["bank_sel", "read"]
-
-        x_offset = self.read_buf_inst.rx() + wide_space
         _, fill_height = self.calculate_min_area_fill(rail_height, layer=METAL2)
-        for i in range(2):
+
+        control_flop_insts = self.control_flop_insts
+
+        x_offset = control_flop_insts[0][2].rx() + wide_space
+
+        for i in range(len(control_flop_insts)):
+            net_in, net_out, inst = control_flop_insts[i]
+            control_pin = self.get_control_buffer_net_pin(net_out)
+            flop_pin = inst.get_pin("dout")
+
             mid_x = x_offset + 0.5 * rail_height
-            control_pin = self.control_buffers_inst.get_pin(control_pins[i])
-            flop_pin = instances[i].get_pin("dout")
 
             if flop_pin.by() + 0.5 * rail_height <= control_pin.cy() <= \
                     flop_pin.uy() - 0.5 * rail_height:
@@ -1296,7 +1366,30 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
                           height=m3_height, width=control_pin.lx() - x_offset)
 
             x_offset += self.bus_pitch
+        return x_offset
 
+    def route_control_buffers(self):
+        """Route output of control flops to control logic buffers.
+         Also route non-flop inputs to control logic buffers"""
+        # copy vdd, gnd
+
+        for vdd_pin in self.control_buffers_inst.get_pins("vdd"):
+            self.route_vdd_pin(vdd_pin)
+        for gnd_pin in self.control_buffers_inst.get_pins("gnd"):
+            self.route_gnd_pin(gnd_pin)
+
+        self.route_control_flop_outputs()
+
+        self.copy_layout_pin(self.control_buffers_inst, "clk_buf")
+        rail_name = "decoder_clk" if "decoder_clk" in self.control_buffers.pins else "clk_buf"
+        rail = getattr(self, rail_name + "_rail")
+        self.add_layout_pin(rail_name, METAL3, offset=rail.ll(), height=rail.height,
+                            width=rail.width)
+
+        rail_height = self.bus_width
+        x_offset = self.route_control_flop_outputs()
+
+        # non flop inputs
         control_pins = [self.control_buffers_inst.get_pin(x) for x in
                         self.get_non_flop_control_inputs()]
         control_pins = list(sorted(control_pins, key=lambda x: x.by()))
@@ -1313,108 +1406,112 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
 
     def route_control_flops_power(self):
         """connect bank_sel and read flops power pins to control_buffers and/or tri-state power pins"""
-        # check if direct power connection is possible
-        if (self.read_buf_inst.uy() + self.rail_height +
-                self.get_parallel_space(METAL1) < self.control_buffers_inst.by()):
-            for i in range(2):
-                pin_name, rail = ["vdd", "gnd"][i], [self.mid_vdd, self.mid_gnd][i]
-                pins = self.read_buf_inst.get_pins(pin_name) + self.bank_sel_buf_inst.get_pins(pin_name)
-                for pin in pins:
-                    self.add_rect(pin.layer, pin.lr(), width=rail.cx() - pin.rx(), height=pin.height())
-            self.route_all_instance_power(self.read_buf_inst)
-            self.route_all_instance_power(self.bank_sel_buf_inst)
-            return
 
-            # destination ground pins
-        control_buffers_gnd = self.control_buffers_inst.get_pins("gnd")
-        if len(control_buffers_gnd) == 1:
-            bottom_gnd = control_buffers_gnd[0]
-            top_gnd = min(self.tri_gate_array_inst.get_pins("gnd"), key=lambda x: x.cy())
-        else:
-            bottom_gnd, top_gnd = sorted(control_buffers_gnd, key=lambda x: x.cy())
+        def get_power_pins(insts_):
+            power_pins_ = []
+            for inst_ in insts_:
+                power_pins_.extend(inst_.get_pins("vdd") + inst_.get_pins("gnd"))
+            return power_pins_
 
-        control_vdd_pins = self.control_buffers_inst.get_pins("vdd")
-        if len(control_vdd_pins) == 1:
-            mid_vdd = control_vdd_pins[0].cy()
-        else:
-            mid_vdd = 0.5 * (bottom_gnd.cy() + top_gnd.cy())
+        wide_space = self.get_wide_space(METAL1)
+        # find power pins
+        control_power_pins = get_power_pins([x[2] for x in self.control_flop_insts])
+        top_pin = max(control_power_pins, key=lambda x: x.uy())
 
-        y_offsets = [top_gnd.cy(), mid_vdd, bottom_gnd.cy()]
-        # destination pins
-        destination_pins = [self.mid_gnd, self.mid_vdd, self.mid_gnd]
-        pins = [self.read_buf_inst.get_pin("gnd"),
-                self.bank_sel_buf_inst.get_pin("vdd"),
-                self.bank_sel_buf_inst.get_pin("gnd")]
+        # find pins that can potentially clash with control flop pins
+        pin_instances = [self.control_buffers_inst, self.tri_gate_array_inst, self.data_in_flops_inst]
+        if self.has_mask_in:
+            pin_instances.append(self.mask_in_flops_inst)
+        candidate_power_pins = get_power_pins(pin_instances)
+        candidate_power_pins = [x for x in candidate_power_pins if x.by() < top_pin.uy() + wide_space]
 
         non_flop_input_pins = [self.get_pin(x) for x in self.get_non_flop_control_inputs()]
-        x_start = max(non_flop_input_pins, key=lambda x: x.lx()).lx()
-        pitch = bottom_gnd.height() + self.get_wide_space(METAL1)
+        x_offset = max(non_flop_input_pins, key=lambda x: x.lx()).lx() + wide_space
 
-        if y_offsets[1] >= pins[1].cy():  # going up
-            indices = range(3)
-        else:
-            indices = reversed(range(3))
+        y_offsets = []
 
-        x_offset = x_start
-
-        for i in indices:
-            start_pin = pins[i]
-            destination_y = y_offsets[i]
-            self.add_rect(METAL1, offset=start_pin.lr(),
-                          width=x_offset - start_pin.rx() + start_pin.height(),
-                          height=start_pin.height())
-            if abs(destination_y - start_pin.cy()) > self.m1_width:
-                self.add_rect(METAL1, offset=vector(x_offset, start_pin.cy()),
-                              width=start_pin.height(), height=destination_y - start_pin.cy())
-            destination_pin = destination_pins[i]
-            rect = self.add_rect(METAL1, offset=vector(x_offset,
-                                                       destination_y - 0.5 * start_pin.height()),
-                                 width=destination_pin.rx() - x_offset,
-                                 height=start_pin.height())
-            if len(control_vdd_pins) == 2 and i == 1:
-                self.add_power_via(rect, self.mid_vdd)
-            x_offset += pitch
+        for power_pin in control_power_pins:
+            if power_pin.cy() in y_offsets:
+                continue
+            y_offsets.append(power_pin.cy())
+            # find closest pin
+            closest_pin = min(candidate_power_pins, key=lambda x: abs(x.cy() - power_pin.cy()))
+            if closest_pin.cy() >= power_pin.cy():
+                rect_y = closest_pin.by() - wide_space - power_pin.height()
+                if rect_y > power_pin.by():
+                    direct = True
+                    rect_y = power_pin.by()
+                else:
+                    direct = False
+            else:
+                rect_y = closest_pin.uy() + wide_space
+                if rect_y < power_pin.by():
+                    direct = True
+                    rect_y = power_pin.by()
+                else:
+                    direct = False
+            if not direct:
+                self.add_rect(METAL1, offset=power_pin.lr(),
+                              width=x_offset + power_pin.height() - power_pin.rx(), height=power_pin.height())
+                self.add_rect(METAL1, offset=vector(x_offset, power_pin.cy()),
+                              height=rect_y - power_pin.cy(), width=power_pin.height())
+            rect_x = power_pin.rx() if direct else x_offset
+            rail = self.mid_vdd if power_pin.name == "vdd" else self.mid_gnd
+            self.add_rect(METAL1, offset=vector(rect_x, rect_y), width=rail.rx() - rect_x,
+                          height=power_pin.height())
+            self.add_contact_center(m1m2.layer_stack, offset=vector(rail.cx(),
+                                                                    rect_y + 0.5 * power_pin.height()),
+                                    size=[1, 2], rotate=90)
 
     def route_control_flops(self):
         """Route control flop inputs (clk, din) and connect clk to control logic buffers"""
         debug.info(1, "Route control flops")
         self.route_control_flops_power()
-        # clk, read, bank_sel
-        instances = ([self.bank_sel_buf_inst], [self.read_buf_inst],
-                     [self.bank_sel_buf_inst, self.read_buf_inst])
-        pin_names = ["bank_sel", "read", "clk"]
-        input_pin_names = ["din", "din", "clk"]
-        x_base = (self.bank_sel_buf_inst.lx() - self.get_wide_space(METAL2)
-                  - 3 * self.bus_pitch + self.bus_space)
-        for i in range(3):
+
+        control_flop_insts = self.control_flop_insts
+
+        x_base = (control_flop_insts[0][2].lx() - self.get_wide_space(METAL2)
+                  - (1 + len(control_flop_insts)) * self.bus_pitch + self.bus_space)
+        clk_x_offset = x_base + len(control_flop_insts) * self.bus_pitch
+
+        top_clk_pin = max([x[2].get_pin("clk") for x in control_flop_insts], key=lambda x: x.uy())
+
+        clk_pin = self.add_layout_pin("clk", METAL2, vector(clk_x_offset, self.min_point),
+                                      width=self.bus_width,
+                                      height=top_clk_pin.cy() - self.min_point)
+
+        for i in range(len(control_flop_insts)):
+            net_in, net_out, inst = control_flop_insts[i]
+            # connect din and clk
             x_offset = x_base + i * self.bus_pitch
-            in_pin_name = input_pin_names[i]
-            input_pins = [x.get_pin(in_pin_name) for x in instances[i]]
-            top_pin = max(input_pins, key=lambda x: x.cy())
-            self.add_layout_pin(pin_names[i], METAL2, offset=vector(x_offset, self.min_point),
+            input_pin = inst.get_pin("din")
+            clk_in_pin = inst.get_pin("clk")
+            self.add_layout_pin(net_in, METAL2, vector(x_offset, self.min_point),
                                 width=self.bus_width,
-                                height=top_pin.cy() - self.min_point)
-            for input_pin in input_pins:
-                if in_pin_name == "clk":
-                    layer = METAL2
+                                height=input_pin.cy() - self.min_point)
+
+            x_offsets = [x_offset, clk_pin.lx()]
+            pins = [input_pin, clk_in_pin]
+            for j in range(2):
+                pin = pins[j]
+                if pin.layer == METAL1:
+                    layer = METAL1
+                    via = cross_m1m2
+                    via_rotate = True
                 else:
                     layer = METAL3
+                    via = cross_m2m3
+                    via_rotate = False
                     self.add_cross_contact_center(cross_m2m3,
-                                                  offset=vector(x_offset + 0.5 * self.bus_width,
-                                                                input_pin.cy()))
-                    self.add_contact(m2m3.layer_stack, offset=input_pin.ll(), rotate=90)
-                height = self.get_min_layer_width(layer)
-                self.add_rect(layer, offset=vector(x_offset, input_pin.cy() - 0.5 * height),
-                              width=input_pin.lx() - x_offset, height=height)
-
-                if input_pin.layer == METAL1:
-                    self.add_contact(m1m2.layer_stack,
-                                     offset=vector(input_pin.lx(),
-                                                   input_pin.cy() - 0.5 * m1m2.width),
-                                     rotate=90)
+                                                  offset=vector(pin.lx() - 0.5 * self.bus_width,
+                                                                pin.cy()))
+                height = min(self.bus_width, pin.height())
+                self.add_rect(layer, offset=vector(x_offsets[j], pin.cy() - 0.5 * height),
+                              width=input_pin.lx() - x_offsets[j], height=height)
+                self.add_cross_contact_center(via, offset=vector(x_offsets[j] + 0.5 * self.bus_width,
+                                                                 pin.cy()), rotate=via_rotate)
 
         # clk to control_buffer
-        clk_pin = self.get_pin("clk")
         non_flop_pins = [self.get_pin(x) for x in self.get_non_flop_control_inputs()]
         right_most_pin = max(non_flop_pins, key=lambda x: x.rx())
         rail_x = right_most_pin.lx() + self.bus_pitch

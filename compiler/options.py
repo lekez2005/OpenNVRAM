@@ -130,6 +130,13 @@ class options(optparse.Values):
         "default": [2, 4, 8],
         "clk": [2, 6, 12, 24, 24]
     }
+    # For num_banks == 2, whether to spread word across the two banks or make them independent
+    independent_banks = True
+    # Create separate buffered clock for decoders or use clk_buf (shared with flops)
+    create_decoder_clk = True
+    decoder_clk_stages = [4]
+    bank_sel_stages = [4]
+
     control_buffers_num_rows = 2
     # Whether external precharge trigger signal is supplied.
     # If no precharge_trigger, precharge uses the clock edges

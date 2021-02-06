@@ -50,7 +50,7 @@ tri_gate_array = "tri_gate_array_horizontal.TriGateArray"
 control_flop = "ms_flop_horz_push_rot.ms_flop_horz_push"
 flop_buffer = "flop_buffer_horizontal.FlopBufferHorizontal"
 
-control_flop_buffers = [6]
+control_flop_buffers = [4]
 
 run_optimizations = False
 

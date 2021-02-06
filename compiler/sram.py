@@ -86,7 +86,7 @@ class sram(design.design, sram_power_grid.Mixin):
 
         # Estimate the words per row given the height of the bitcell and the square side length
         if self.words_per_row is not None:
-            self.tentative_num_cols = self.words_per_row
+            self.tentative_num_cols = self.words_per_row * self.word_size
         else:
             self.tentative_num_cols = int(self.bank_side_length/self.bitcell.width)
             self.words_per_row = self.estimate_words_per_row(self.tentative_num_cols, self.word_size)

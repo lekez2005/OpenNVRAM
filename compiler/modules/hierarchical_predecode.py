@@ -79,13 +79,13 @@ class hierarchical_predecode(design.design):
         if not self.route_top_rail:
             self.top_inv = pinv(size=inverter_size, contact_nwell=False, height=self.module_height)
             self.add_mod(self.top_inv)
-            self.top_nand = self.create_nand(self.number_of_inputs, contact_nwell=False)
+            self.top_nand = self.create_nand(self.number_of_inputs)
             self.add_mod(self.top_nand)
         else:
             self.top_inv = self.inv
             self.top_nand = self.nand
 
-    def create_nand(self, inputs, contact_nwell=True):
+    def create_nand(self, inputs):
         """ Create the NAND for the predecode input stage """
         nand_size = self.buffer_sizes[0]
         if inputs == 2:
@@ -96,7 +96,9 @@ class hierarchical_predecode(design.design):
             return debug.error("Invalid number of predecode inputs.", -1)
         while nand_size > 1:
             try:
-                nand = nand_class(size=nand_size, contact_nwell=contact_nwell,
+                # adjacent inverter will have body taps
+                nand = nand_class(size=nand_size, contact_nwell=False,
+                                  contact_pwell=False,
                                   height=self.module_height, same_line_inputs=False)
                 return nand
             except AssertionError:

@@ -124,11 +124,16 @@ class contact(design.design, metaclass=unique_meta.Unique):
             self.second_layer_vertical_enclosure = max(self.second_layer_vertical_enclosure,
                                                        enclosure / 2)
 
+    def get_base_contact_offset(self):
+        return vector(max(self.first_layer_horizontal_enclosure,
+                          self.second_layer_horizontal_enclosure),
+                      max(self.first_layer_vertical_enclosure,
+                          self.second_layer_vertical_enclosure))
+
     def create_contact_array(self):
         """ Create the contact array at the origin"""
         # offset for the via array
-        self.via_layer_position =vector(max(self.first_layer_horizontal_enclosure,self.second_layer_horizontal_enclosure),
-                                        max(self.first_layer_vertical_enclosure,self.second_layer_vertical_enclosure))
+        self.via_layer_position = self.get_base_contact_offset()
 
         for i in range(self.dimensions[1]):
             offset = self.via_layer_position + vector(0, self.contact_pitch * i)
@@ -215,6 +220,28 @@ class cross_contact(contact):
     def get_name(*args, **kwargs):
         name = contact.get_name(*args, **kwargs)
         return "cross_" + name
+
+    def create_layout(self):
+        super().create_layout()
+        self.offset_all_coordinates()
+        highest_offset = self.find_highest_coords()
+        self.width = highest_offset.x
+        self.height = highest_offset.y
+
+    def get_base_contact_offset(self):
+        return vector(self.first_layer_horizontal_enclosure,
+                      self.first_layer_vertical_enclosure)
+
+    def create_first_layer_enclosure(self):
+        # this is if the first and second layers are different
+        self.first_layer_position = vector(0, 0)
+
+        self.first_layer_width = self.contact_array_width + 2*self.first_layer_horizontal_enclosure
+        self.first_layer_height = self.contact_array_height + 2*self.first_layer_vertical_enclosure
+        self.add_rect(layer=self.first_layer_name,
+                      offset=self.first_layer_position,
+                      width=self.first_layer_width,
+                      height=self.first_layer_height)
 
     def create_second_layer_enclosure(self):
         self.second_layer_width = self.contact_array_width + \

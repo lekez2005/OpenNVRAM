@@ -452,13 +452,13 @@ class layout(lef.lef):
 
     def add_cross_contact_center(self, cont, offset, rotate=False):
         if rotate:
-            via_x = offset.x + 0.5 * cont.second_layer_width
-            via_y = offset.y - 0.5 * cont.second_layer_height
+            via_x = offset.x + 0.5 * cont.height
+            via_y = offset.y - 0.5 * cont.width
             rotate = 90
         else:
-            via_x = offset.x - 0.5 * cont.first_layer_width
+            via_x = offset.x - 0.5 * cont.width
             rotate = 0
-            via_y = offset.y - 0.5 * cont.first_layer_height
+            via_y = offset.y - 0.5 * cont.height
         self.add_inst(cont.name, cont, offset=vector(via_x, via_y), rotate=rotate)
         self.connect_inst([])
 

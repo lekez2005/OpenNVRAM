@@ -477,12 +477,13 @@ class ControlBuffers(design, ABC):
 
             self.rails[net] = Rail(net, min_x, max_x)
 
-    def derive_rails(self):
-        """Derive number of rails, rail extents and y indices"""
-        self.derive_rail_max_min_offsets(self.input_nets)
-        sorted_rails = list(sorted(self.rails.values(), key=lambda x: (x.min_x, x.max_x)))
-
-        space_allowance = m2m3.second_layer_height + self.get_line_end_space(METAL3)
+    @staticmethod
+    def evaluate_no_overlap_rail_indices(rails):
+        if not rails:
+            return -1
+        sorted_rails = list(sorted(rails, key=lambda x: (x.min_x, x.max_x)))
+        space_allowance = (m2m3.second_layer_height +
+                           ControlBuffers.get_line_end_space(METAL3))
 
         for rail in sorted_rails:
             rail.index = -1
@@ -506,6 +507,12 @@ class ControlBuffers(design, ABC):
                     break
 
         max_index = max([x.index for x in sorted_rails])
+        return max_index
+
+    def derive_rails(self):
+        """Derive number of rails, rail extents and y indices"""
+        self.derive_rail_max_min_offsets(self.input_nets)
+        max_index = self.evaluate_no_overlap_rail_indices(self.rails.values())
         self.num_rails = max_index + 1
 
     def add_rails(self):

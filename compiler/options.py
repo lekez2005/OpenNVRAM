@@ -147,6 +147,13 @@ class options(optparse.Values):
 
     cells_per_group = 1
 
+    # control signals routing configuration
+    # whether to route rails to the left of the peripherals array
+    route_control_signals_left = False
+    # whether to connect to array closest to the buffer or closer to the middle of the array
+    # applies when not 'route_control_signals_left'
+    centralize_control_signals = False
+
     # repeaters configuration
     add_buffer_repeaters = True  # whether to add repeaters
     # whether to add dedicated space between bitcells or just use space between the bitlines

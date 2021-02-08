@@ -16,6 +16,7 @@ from base.vector import vector
 from base.well_implant_fills import create_wells_and_implants_fills, evaluate_vertical_metal_spacing, \
     join_vertical_adjacent_module_wells, evaluate_vertical_module_spacing
 from globals import OPTS
+from modules.bank_control_signals_mixin import ControlSignalsMixin
 from modules.control_buffers_repeaters_mixin import ControlBuffersRepeatersMixin
 from tech import delay_strategy_class
 
@@ -29,7 +30,7 @@ JOIN_BOT_ALIGN = "bottom"
 EXACT = "exact"
 
 
-class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
+class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, ABC):
     control_buffers = None
 
     def __init__(self, word_size, num_words, words_per_row, num_banks=1, name="", adjacent_bank=None):
@@ -48,6 +49,9 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         self.words_per_row = words_per_row
         self.num_banks = num_banks
 
+        # to keep track of offsets used for repeaters or inter-array power
+        self.occupied_m4_bitcell_indices = []
+
         # The local control signals are gated when we have bank select logic,
         # so this prefix will be added to all of the input signals.
         self.prefix = "gated_"
@@ -60,6 +64,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         self.create_modules()
         control_inputs = self.control_buffers.get_input_pin_names()
         self.use_chip_sel = "chip_sel" in control_inputs
+        self.use_decoder_clk = "decoder_clk" in self.control_buffers.pins
 
         debug.info(1, "Calculate rail offsets")
         self.calculate_rail_offsets()
@@ -71,7 +76,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         self.calculate_dimensions()
         self.add_lvs_correspondence_points()
         debug.info(1, "Offset bank coordinates to origin")
-        self.offset_all_coordinates()
+        # self.offset_all_coordinates()
 
     def set_modules(self, mod_list):
         """
@@ -165,9 +170,6 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         self.route_flops()
         self.route_tri_gate()
         self.route_wordline_driver()
-
-        # to keep track of offsets used for repeaters or inter-array power
-        self.occupied_m4_bitcell_indices = []
 
         if hasattr(OPTS, "buffer_repeaters_x_offset"):
             self.create_control_buffer_repeaters()
@@ -315,55 +317,6 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
     def get_control_names(self):
         """Get outputs of control logic buffers"""
         return self.control_buffers.get_output_pin_names()
-
-    def calculate_rail_offsets(self):
-        """Calculate control rails y_offsets, triate_y, control_logic_y, mid_vdd, mid_gnd"""
-        self.control_rail_pitch = self.bus_pitch
-
-        self.control_names = self.get_control_names()
-        control_outputs = [x for x in self.control_names if x in self.control_buffers.pins]
-
-        control_outputs = list(sorted(control_outputs,
-                                      key=lambda x: self.control_buffers.get_pin(x).lx()))
-        # separate into top and bottom pins
-        top_pins, bottom_pins = [], []
-        for pin_name in control_outputs:
-            pin = self.control_buffers.get_pin(pin_name)
-            if pin.cy() > 0.5 * self.control_buffers.height:
-                top_pins.append(pin_name)
-            else:
-                bottom_pins.append(pin_name)
-
-        control_vdd = self.control_buffers.get_pins("vdd")[0]
-        module_space = 0.5 * control_vdd.height() + self.get_parallel_space(METAL3)
-
-        if len(bottom_pins) > 0:
-            self.logic_buffers_bottom = ((len(bottom_pins) * self.bus_pitch)
-                                         - self.bus_space + module_space)
-        else:
-            self.logic_buffers_bottom = 0
-
-        control_logic_top = self.get_control_logic_top(module_space)
-
-        self.trigate_y = (control_logic_top + (len(top_pins) * self.bus_pitch)) + self.get_line_end_space(METAL2)
-        self.control_rail_offsets = {}
-
-        for i in range(len(top_pins)):
-            self.control_rail_offsets[top_pins[i]] = control_logic_top + i * self.bus_pitch
-
-        y_offset = 0
-        for i in reversed(range(len(bottom_pins))):
-            self.control_rail_offsets[bottom_pins[i]] = y_offset
-            y_offset += self.bus_pitch
-
-        self.top_control_rails, self.bottom_control_rails = top_pins, bottom_pins
-        # mid power rails
-        self.wide_power_space = self.get_wide_space(METAL2)
-        self.mid_gnd_offset = self.get_mid_gnd_offset()
-        self.mid_vdd_offset = self.mid_gnd_offset - self.wide_power_space - self.vdd_rail_width
-
-        fill_height = m2m3.second_layer_height + self.m2_width
-        (self.fill_height, self.fill_width) = self.calculate_min_area_fill(fill_height, self.m2_width)
 
     def get_control_logic_top(self, module_space):
         return self.logic_buffers_bottom + self.control_buffers.height + module_space
@@ -520,7 +473,10 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
     def add_tri_gate_array(self):
         """ data tri gate to drive the data bus """
 
-        y_offset = self.trigate_y
+        y_space = evaluate_vertical_module_spacing(
+            top_modules=[self.tri_gate_array.child_mod],
+            bottom_modules=[self.control_buffers.inv], min_space=0)
+        y_offset = max(self.trigate_y, self.control_buffers_inst.uy() + y_space)
 
         self.tri_gate_array_inst = self.add_inst(name="tri_gate_array", mod=self.tri_gate_array,
                                                  offset=vector(0, y_offset))
@@ -771,9 +727,6 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
                                                   offset=vector(x_offset, self.bitcell_array_inst.by()))
         self.connect_inst(self.get_wordline_driver_connections())
 
-    def get_decoder_clk(self):
-        return "clk_buf"
-
     def get_control_rails_destinations(self):
         """Map control logic buffers output pins to peripheral pins"""
         control_outputs = self.control_buffers.get_output_pin_names()
@@ -806,87 +759,6 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         super().add_cross_contact_center(cont, offset, rotate)
         if fill:
             self.add_cross_contact_center_fill(cont, offset, rotate, rail_width)
-
-    def add_control_rail(self, rail_name, dest_pins, x_offset, y_offset):
-        """Routes the rail from control logic buffer pin with name 'rail_name' to the destinations 'dest_pins'.
-           x_offset is the x_offset of the vertical rail.
-           y_offset is the y_offset of the horizontal rail from the control logic buffer pin
-         """
-        control_pin = self.control_buffers_inst.get_pin(rail_name)
-        self.add_rect(METAL2, offset=control_pin.ul(), height=y_offset - control_pin.uy())
-
-        self.add_rect(METAL3, offset=vector(x_offset, y_offset),
-                      width=control_pin.rx() - x_offset, height=self.bus_width)
-
-        self.add_cross_contact_center(cross_m2m3, offset=vector(control_pin.cx(),
-                                                                y_offset + 0.5 * self.bus_width))
-
-        if not dest_pins:
-            rail = self.add_rect(METAL3, offset=vector(x_offset, y_offset), height=m2m3.height,
-                                 width=self.bus_width)
-        else:
-            via_offset = vector(x_offset + 0.5 * self.bus_width, y_offset + 0.5 * self.bus_width)
-
-            self.add_cross_contact_center(cross_m2m3, offset=via_offset)
-            top_pin = max(dest_pins, key=lambda x: x.uy())
-            rail = self.add_rect(METAL2, offset=vector(x_offset, y_offset),
-                                 height=top_pin.cy() - y_offset,
-                                 width=self.bus_width)
-        setattr(self, rail_name + "_rail", rail)
-        if rail_name == "wordline_en":
-            return
-
-        for dest_pin in dest_pins:
-            rail_height = min(self.bus_width, dest_pin.height())
-            rail_y = dest_pin.cy() - 0.5 * rail_height
-
-            if dest_pin.layer in [METAL2, METAL3]:
-                via = cross_m2m3
-                via_rotate = False
-            elif dest_pin.layer == METAL1:
-                via = cross_m1m2
-                via_rotate = True
-            else:
-                debug.error("Invalid layer", 1)
-                break
-
-            rail_layer = METAL3 if dest_pin.layer == METAL2 else dest_pin.layer
-            via_x = x_offset + 0.5 * self.bus_width
-            via_y = dest_pin.cy()
-            self.add_rect(rail_layer, offset=vector(x_offset, rail_y),
-                          width=dest_pin.lx() - x_offset, height=rail_height)
-            self.add_cross_contact_center(via, offset=vector(via_x, via_y), rotate=via_rotate)
-            if dest_pin.layer == METAL2:
-                self.add_contact_center(m2m3.layer_stack,
-                                        offset=vector(dest_pin.lx() + 0.5 * m2m3.height, dest_pin.cy()),
-                                        rotate=90)
-                self.add_rect(METAL3, offset=vector(dest_pin.lx(), rail_y),
-                              width=m2m3.height, height=rail_height)
-
-    def add_control_rails(self):
-        """Add rails from control logic buffers to appropriate peripherals"""
-
-        def get_top_destination_pin_y(rail_name_):
-            if not destination_pins[rail_name_]:
-                return self.bitcell_array_inst.by()  # will be rightmost
-            else:
-                return max(destination_pins[rail_name_], key=lambda x: x.cy()).cy()
-
-        destination_pins = self.get_control_rails_destinations()
-        num_rails = len(destination_pins.keys())
-        x_offset = (self.mid_vdd_offset - (num_rails * self.control_rail_pitch)
-                    - (self.wide_m1_space - self.line_end_space))
-        rail_names = list(sorted(destination_pins.keys(),
-                                 key=lambda x: (-self.control_buffers_inst.get_pin(x).uy(),
-                                                get_top_destination_pin_y(x)),
-                                 reverse=False))
-        self.rail_names = rail_names
-        for rail_name in rail_names:
-            self.add_control_rail(rail_name, destination_pins[rail_name],
-                                  x_offset, self.control_rail_offsets[rail_name])
-            x_offset += self.control_rail_pitch
-
-        self.leftmost_rail = getattr(self, rail_names[0] + "_rail")
 
     def get_right_vdd_offset(self):
         """x offset for right vdd rail"""
@@ -1411,19 +1283,18 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
             power_pins_ = []
             for inst_ in insts_:
                 power_pins_.extend(inst_.get_pins("vdd") + inst_.get_pins("gnd"))
+            power_pins_ = list(sorted(power_pins_, key=lambda x: x.by()))
             return power_pins_
 
         wide_space = self.get_wide_space(METAL1)
         # find power pins
         control_power_pins = get_power_pins([x[2] for x in self.control_flop_insts])
-        top_pin = max(control_power_pins, key=lambda x: x.uy())
 
         # find pins that can potentially clash with control flop pins
         pin_instances = [self.control_buffers_inst, self.tri_gate_array_inst, self.data_in_flops_inst]
         if self.has_mask_in:
             pin_instances.append(self.mask_in_flops_inst)
-        candidate_power_pins = get_power_pins(pin_instances)
-        candidate_power_pins = [x for x in candidate_power_pins if x.by() < top_pin.uy() + wide_space]
+        adjacent_power_pins = get_power_pins(pin_instances)
 
         non_flop_input_pins = [self.get_pin(x) for x in self.get_non_flop_control_inputs()]
         x_offset = max(non_flop_input_pins, key=lambda x: x.lx()).lx() + wide_space
@@ -1433,23 +1304,26 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
         for power_pin in control_power_pins:
             if power_pin.cy() in y_offsets:
                 continue
+
             y_offsets.append(power_pin.cy())
-            # find closest pin
-            closest_pin = min(candidate_power_pins, key=lambda x: abs(x.cy() - power_pin.cy()))
-            if closest_pin.cy() >= power_pin.cy():
-                rect_y = closest_pin.by() - wide_space - power_pin.height()
-                if rect_y > power_pin.by():
-                    direct = True
-                    rect_y = power_pin.by()
-                else:
+            candidate_power_pins = []
+            for candidate_pin in adjacent_power_pins:
+                if power_pin.name == "vdd" and candidate_pin.name == "gnd":
+                    # gnd rail is to the right so no classes possible
+                    continue
+                if candidate_pin.by() < power_pin.uy() + wide_space:
+                    candidate_power_pins.append(candidate_pin)
+
+            direct = True
+            rect_y = power_pin.by()
+            for candidate_pin in reversed(candidate_power_pins):
+                # check if within "sphere" of influence
+                if ((candidate_pin.by() <= rect_y < candidate_pin.uy() + wide_space) or
+                        (candidate_pin.by() - wide_space < rect_y + power_pin.height() <=
+                         candidate_pin.uy())):
                     direct = False
-            else:
-                rect_y = closest_pin.uy() + wide_space
-                if rect_y < power_pin.by():
-                    direct = True
-                    rect_y = power_pin.by()
-                else:
-                    direct = False
+                    rect_y = candidate_pin.by() - wide_space - power_pin.height()
+
             if not direct:
                 self.add_rect(METAL1, offset=power_pin.lr(),
                               width=x_offset + power_pin.height() - power_pin.rx(), height=power_pin.height())
@@ -1712,6 +1586,15 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
             return None
         return unoccupied[min(range(len(unoccupied)), key=lambda i: abs(unoccupied[i] - index))]
 
+    def find_closest_unoccupied_mid_x(self, x_offset):
+        bitcell_offsets = self.bitcell_array.bitcell_offsets
+        valid_indices = [i for i, offset in enumerate(bitcell_offsets)
+                         if offset + self.get_m4_rail_x() > x_offset]
+        if not valid_indices:  # control buffers width may exceed bitcell array width
+            return None
+        bitcell_index = self.find_closest_unoccupied_index(valid_indices[0] - 1)
+        return bitcell_index, bitcell_offsets[bitcell_index] + self.get_m4_rail_x()
+
     def route_body_tap_supplies(self):
         if not OPTS.use_body_taps:
             return
@@ -1861,7 +1744,9 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ABC):
                 self.connect_control_buffers_power_to_grid(new_pin)
 
     def fill_vertical_module_spaces(self):
-        stack = [self.tri_gate_array_inst]
+        self.control_buffers.child_mod = self.control_buffers.inv
+        self.control_buffers.child_insts = self.control_buffers.top_insts
+        stack = [self.control_buffers_inst, self.tri_gate_array_inst]
         if getattr(self, "mask_in_flops_inst", None):
             stack.append(self.mask_in_flops_inst)
         stack.extend([self.data_in_flops_inst, self.write_driver_array_inst,

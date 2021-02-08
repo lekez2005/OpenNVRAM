@@ -27,8 +27,8 @@ class BankTest(TestBase):
         if not OPTS.baseline:
             return
 
-        self.sweep_all(cols=[64], rows=[64], words_per_row=1)
-        # self.sweep_all()
+        # self.sweep_all(cols=[], rows=[64], words_per_row=1, default_col=256)
+        self.sweep_all()
 
     @staticmethod
     def get_bank_class():
@@ -88,6 +88,66 @@ class BankTest(TestBase):
             debug.error("Failed {} for row = {} col = {}: {} ".format(
                 bank_class.__name__, row, col, str(ex)), 0)
             raise ex
+
+    def test_chip_sel(self):
+        """Test for chip sel: Two independent banks"""
+        from globals import OPTS
+        bank_class, kwargs = self.get_bank_class()
+        OPTS.route_control_signals_left = True
+        OPTS.independent_banks = True
+        OPTS.num_banks = 2
+        a = bank_class(word_size=64, num_words=64, words_per_row=1,
+                       name="bank1", **kwargs)
+        self.local_check(a)
+
+    def test_left_control_signals_rails(self):
+        """Control rails routed to the left of the peripherals arrays"""
+        from globals import OPTS
+        bank_class, kwargs = self.get_bank_class()
+        OPTS.route_control_signals_left = True
+        OPTS.num_banks = 1
+
+        a = bank_class(word_size=64, num_words=64, words_per_row=1,
+                       name="bank1", **kwargs)
+
+        self.local_check(a)
+
+    def test_intra_array_control_signals_rails(self):
+        """Test for control rails within peripherals arrays but not centralized
+            (closest to driver pin)"""
+        from globals import OPTS
+        bank_class, kwargs = self.get_bank_class()
+        OPTS.route_control_signals_left = False
+        OPTS.num_banks = 1
+        OPTS.centralize_control_signals = False
+        a = bank_class(word_size=64, num_words=64, words_per_row=1,
+                       name="bank1", **kwargs)
+        self.local_check(a)
+
+    def test_intra_array_centralize_control_signals_rails(self):
+        """Test for when control rails are centralized in between bitcell array"""
+        from globals import OPTS
+        bank_class, kwargs = self.get_bank_class()
+        OPTS.route_control_signals_left = False
+        OPTS.num_banks = 1
+        OPTS.centralize_control_signals = True
+        a = bank_class(word_size=64, num_words=64, words_per_row=1,
+                       name="bank1", **kwargs)
+        self.local_check(a)
+
+    def test_intra_array_wide_control_buffers(self):
+        """Test for when control buffers width is greater than bitcell array width"""
+        from globals import OPTS
+        bank_class, kwargs = self.get_bank_class()
+        OPTS.route_control_signals_left = False
+        OPTS.num_banks = 1
+        OPTS.control_buffers_num_rows = 1
+        OPTS.centralize_control_signals = False
+        a = bank_class(word_size=16, num_words=64, words_per_row=1,
+                       name="bank1", **kwargs)
+        self.assertTrue(a.control_buffers.width > a.bitcell_array.width,
+                        "Adjust word size such that control buffers is wider than bitcell array")
+        self.local_check(a)
 
 
 TestBase.run_tests(__name__)

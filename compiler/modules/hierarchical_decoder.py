@@ -366,13 +366,9 @@ class hierarchical_decoder(design.design):
                                                 offset=[self.routing_width, y_off],
                                                 mirror=mirror))
 
-            
-
     def add_decoder_inv_array(self):
         """Add a column of INV gates for the decoder above the predecoders
         and to the right of the NAND decoders."""
-        
-        z_pin = self.inv.get_pin("Z")
         
         if (self.num_inputs == 4 or self.num_inputs == 5):
             x_off = self.routing_width + self.nand2.width

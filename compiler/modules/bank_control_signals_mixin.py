@@ -78,7 +78,7 @@ class ControlSignalsMixin:
         left_rails = ["wordline_en"]
         if self.use_decoder_clk:
             left_rails.append("decoder_clk")
-        else:
+        elif not self.is_left_bank:
             left_rails.append("clk_buf")
         self.left_control_rails = left_rails
         num_mid_rails = len(control_outputs) - len(left_rails)
@@ -176,7 +176,8 @@ class ControlSignalsMixin:
                 self.add_mid_array_control_rail(rail_name, self.control_buffers_inst,
                                                 destination_pins[rail_name])
 
-        self.leftmost_rail = getattr(self, rail_names[0] + "_rail")
+        self.leftmost_rail = min([getattr(self, x + "_rail") for x in rail_names],
+                                 key=lambda x: x.lx())
 
     def add_left_control_rail(self, rail_name, dest_pins, x_offset, y_offset):
         """Routes the rail from control logic buffer pin with name 'rail_name' to the destinations 'dest_pins'.

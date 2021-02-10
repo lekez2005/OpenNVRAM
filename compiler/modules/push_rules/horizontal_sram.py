@@ -33,7 +33,6 @@ class HorizontalSram(CmosSram):
         super().route_layout()
         debug.info(1, "Route sram decoder enable bank")
         self.route_decoder_enable()
-        self.fill_decoder_wordline_space()
 
     def create_bank(self):
         debug.info(1, "Creating right bank")

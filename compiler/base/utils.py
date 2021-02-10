@@ -22,11 +22,21 @@ except ImportError:
 
 OPTS = globals.OPTS
 
+
 def ceil(decimal):
     """
     Performs a ceiling function on the decimal place specified by the DRC grid.
     """
     grid = tech.drc["grid"]
+    return math.ceil(decimal * 1 / grid) / (1 / grid)
+
+
+def ceil_2x_grid(decimal):
+    """
+    Performs a ceiling function on the decimal place specified by the DRC grid.
+    Such that it remains on grid when divided by 2
+    """
+    grid = tech.drc["grid"] * 2
     return math.ceil(decimal * 1 / grid) / (1 / grid)
 
 

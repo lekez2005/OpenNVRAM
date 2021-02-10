@@ -35,8 +35,9 @@ class LatchedControlBuffers(ControlBuffers):
         if self.is_left_bank:
             self.name += "_left"
 
-        self.use_chip_sel = not self.is_left_bank and OPTS.num_banks == 2 and OPTS.independent_banks
-        self.use_decoder_clk = (OPTS.create_decoder_clk and not self.is_left_bank) or self.use_chip_sel
+        self.use_chip_sel = OPTS.num_banks == 2 and OPTS.independent_banks
+        self.use_decoder_clk = ((not self.is_left_bank) and
+                                (OPTS.create_decoder_clk or self.use_chip_sel))
 
         super().__init__(contact_nwell=True, contact_pwell=True)
 

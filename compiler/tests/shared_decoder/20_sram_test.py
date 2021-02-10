@@ -13,11 +13,10 @@ class SramTest(TestBase):
         if not OPTS.baseline:
             return
 
-        # self.sweep_all(cols=None, rows=None, words_per_row=None, default_col=64, num_banks=2)
-        self.sweep_all(cols=[], rows=[64], words_per_row=[1], default_col=256, num_banks=1)
-        #self.sweep_all()
+        self.sweep_all(cols=[], rows=[128], words_per_row=2, default_col=64, num_banks=1)
+        self.sweep_all(rows=[128, 256])
 
-    def test_sotfet_array(self):
+    def get_sram_class(self):
         from globals import OPTS
         from modules.shared_decoder.cmos_sram import CmosSram
         from modules.shared_decoder.sotfet.sotfet_mram import SotfetMram
@@ -64,9 +63,21 @@ class SramTest(TestBase):
         word_size = int(num_cols / words_per_row)
         num_words = num_rows * words_per_row * num_banks
         a = sram_class(word_size=word_size, num_words=num_words, words_per_row=words_per_row,
-                       num_banks=num_banks, name="sram1")
+                       num_banks=num_banks, name="sram1", add_power_grid=True)
 
         self.local_check(a)
+
+    def test_two_dependent_banks(self):
+        from globals import OPTS
+        OPTS.independent_banks = False
+        sram_class = self.get_sram_class()
+        self.create_and_test_sram(sram_class, 64, 64, words_per_row=1, num_banks=2)
+
+    def test_two_independent_banks(self):
+        from globals import OPTS
+        OPTS.independent_banks = True
+        sram_class = self.get_sram_class()
+        self.create_and_test_sram(sram_class, 64, 64, words_per_row=1, num_banks=2)
 
 
 TestBase.run_tests(__name__)

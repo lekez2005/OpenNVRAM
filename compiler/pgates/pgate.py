@@ -5,7 +5,7 @@ from base import contact
 from base import design
 from base import utils
 from base.contact import m1m2
-from base.design import METAL1, PO_DUMMY, PIMP, NIMP, NWELL, METAL2
+from base.design import METAL1, PO_DUMMY, PIMP, NIMP, NWELL, METAL2, POLY
 from base.hierarchy_spice import INPUT, OUTPUT
 from base.utils import round_to_grid
 from base.vector import vector
@@ -69,6 +69,7 @@ class pgate(design.design):
         if self.align_bitcell and OPTS.use_body_taps:
             self.contact_pwell = self.contact_nwell = False
         self.same_line_inputs = same_line_inputs
+        self.implant_to_channel = drc["implant_to_channel"]
 
     @staticmethod
     def get_height(height, align_bitcell):
@@ -180,7 +181,7 @@ class pgate(design.design):
 
         self.middle_space = max(track_extent + 2 * self.line_end_space +
                                 self.nmos_fill_extension + self.pmos_fill_extension,
-                                2 * drc["implant_to_channel"])
+                                2 * self.implant_to_channel)
 
         return self.top_space + self.middle_space + self.bottom_space
 
@@ -344,7 +345,8 @@ class pgate(design.design):
         self.contact_implant_width = max(self.implant_width,
                                          utils.ceil(self.well_contact_active_width +
                                                     2 * self.implant_enclose_active),
-                                         utils.ceil(implant_area / self.well_contact_implant_height))
+                                         utils.ceil_2x_grid(implant_area /
+                                                            self.well_contact_implant_height))
 
         self.nwell_width = self.contact_nwell_width = max(self.contact_implant_width,
                                                           self.well_contact_active_width +
@@ -354,9 +356,10 @@ class pgate(design.design):
     def add_poly(self):
         poly_offsets = []
         half_dummy = int(0.5 * self.num_dummy_poly)
-        poly_layers = half_dummy * ["po_dummy"] + self.tx_mults * ["poly"] + half_dummy * ["po_dummy"]
+        poly_layers = half_dummy * [PO_DUMMY] + self.tx_mults * [POLY] + half_dummy * [PO_DUMMY]
 
         poly_y_offset = self.active_mid_y_nmos - 0.5 * self.nmos_width - self.poly_extend_active
+        self.poly_rects = []
 
         for i in range(len(poly_layers)):
             mid_offset = vector(self.poly_x_start + i * self.poly_pitch,
@@ -364,8 +367,10 @@ class pgate(design.design):
             poly_offsets.append(mid_offset)
             offset = mid_offset - vector(0.5 * self.poly_width,
                                          0.5 * self.poly_height)
-            self.add_rect(poly_layers[i], offset=offset, width=self.poly_width,
-                          height=self.poly_height)
+            rect = self.add_rect(poly_layers[i], offset=offset, width=self.poly_width,
+                                 height=self.poly_height)
+            if poly_layers[i] == POLY:
+                self.poly_rects.append(rect)
         if half_dummy > 0:
             self.poly_offsets = poly_offsets[half_dummy: -half_dummy]
         else:
@@ -478,25 +483,24 @@ class pgate(design.design):
         # implants
         # nimplant
         poly_y_offset = self.poly_offsets[0].y - 0.5 * self.poly_height
-        nimplant_y = self.n_active_rect.by() - self.implant_enclose_ptx_active
-
+        nimplant_y = min(self.n_active_rect.by() - self.implant_to_channel,
+                         0.5 * self.well_contact_implant_height)
         if not self.contact_pwell and self.align_bitcell:
+            # Vertical neighbors have same size
+            # and implants can be vertically overlapped with above/below neighbor
             if self.implant_enclose_poly:
                 nimplant_y = min(nimplant_y, poly_y_offset - self.implant_enclose_poly)
             nimplant_y = min(0, nimplant_y)
-        else:
-            nimplant_y = 0.5 * self.well_contact_implant_height
         self.nimplant_height = self.mid_y - nimplant_y
 
         # pimplant
-        pimplant_top = self.p_active_rect.uy() + self.implant_enclose_ptx_active
+        pimplant_top = max(self.p_active_rect.uy() + self.implant_to_channel,
+                           self.height - 0.5 * self.well_contact_implant_height)
         if not self.contact_nwell and self.align_bitcell:
             if self.implant_enclose_poly:
                 pimplant_top = max(pimplant_top, poly_y_offset + self.poly_height +
                                    self.implant_enclose_poly)
             pimplant_top = max(pimplant_top, self.height)
-        else:
-            pimplant_top = self.height - 0.5 * self.well_contact_implant_height
         self.pimplant_height = pimplant_top - self.mid_y
 
         implant_x = 0.5 * (self.width - self.implant_width)

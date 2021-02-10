@@ -25,15 +25,17 @@ class ContactFullStack(design.design, metaclass=unique_meta.Unique):
         return cls._m2_stack
 
     @classmethod
-    def get_name(cls, start_layer=0, stop_layer=-1, centralize=True, dimensions=None, max_width=None):
+    def get_name(cls, start_layer=0, stop_layer=-1, centralize=True, dimensions=None, max_width=None,
+                 max_height=None):
 
         start_layer, stop_layer = cls.normalize_layers(start_layer, stop_layer)
 
         dim_str = "_" + "_".join([str(dim) for dim in dimensions]) if dimensions else ""
         width_suffix = "" if not max_width else "_w{:.5g}".format(max_width).replace(".", "__")
+        height_suffix = "" if not max_height else "_h{:.5g}".format(max_height).replace(".", "__")
         alignment = "c" if centralize else "l"
-        name = "via_M{0}_M{1}_{2}{3}{4}".format(start_layer, stop_layer, alignment,
-                                                dim_str, width_suffix)
+        name = "via_M{0}_M{1}_{2}{3}{4}{5}".format(start_layer, stop_layer, alignment,
+                                                   dim_str, width_suffix, height_suffix)
         return name
 
     @staticmethod
@@ -50,13 +52,14 @@ class ContactFullStack(design.design, metaclass=unique_meta.Unique):
         return real_start_layer, real_stop_layer
 
     def __init__(self, start_layer=0, stop_layer=-1, centralize=True, dimensions=None,
-                 max_width=None):
+                 max_width=None, max_height=None):
         dimensions = dimensions if dimensions else []
         design.design.__init__(self, self.name)
 
         self.start_layer, self.stop_layer = self.normalize_layers(start_layer, stop_layer)
 
         self.max_width = max_width
+        self.max_height = max_height
         self.dimensions = dimensions
         self.centralize = centralize
 
@@ -84,6 +87,9 @@ class ContactFullStack(design.design, metaclass=unique_meta.Unique):
             self.width = self.max_width
             num_cols = self.calculate_num_cols(self.stop_layer - 1, self.max_width)
             self.dimensions = [1, num_cols]
+        if self.max_height is not None:
+            num_rows = self.calculate_num_rows(self.stop_layer - 1, self.max_height)
+            self.dimensions = [max(1, num_rows), self.dimensions[1]]
         self.top_via = contact(layer_stack=top_via_stack, dimensions=self.dimensions)
         self.height = self.top_via.width
 

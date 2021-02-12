@@ -1,9 +1,10 @@
 import tech
 from base import contact, utils
-from base.contact import m1m2
-from base.design import METAL1, PO_DUMMY, ACTIVE, POLY, PIMP, NIMP, NWELL, CONTACT, METAL2
+from base.contact import m1m2, m2m3
+from base.design import METAL1, PO_DUMMY, ACTIVE, POLY, PIMP, NIMP, NWELL, CONTACT, METAL2, METAL3
 from base.hierarchy_layout import GDS_ROT_270
 from base.vector import vector
+from base.well_active_contacts import get_max_contact
 from base.well_implant_fills import calculate_tx_metal_fill
 from modules.precharge import precharge
 from modules.push_rules.push_bitcell_array import push_bitcell_array
@@ -55,6 +56,7 @@ class precharge_horizontal(precharge):
         else:
             self.poly_right_x = max(self.width, self.active_right + self.poly_extend_active)
             self.gate_contact_x = -0.5 * self.contact_width
+        self.has_poly_space = has_poly_space
 
         self.implant_x = min(0, self.poly_x_offset - self.implant_enclose_poly)
         self.implant_right = max(self.width, self.poly_right_x + self.implant_enclose_poly)
@@ -130,23 +132,39 @@ class precharge_horizontal(precharge):
             tech.add_tech_layers(self)
 
     def connect_input_gates(self):
-        pin_height = push_bitcell_array.bitcell.get_pin("wl").height()
-        pin_x = min(0, self.gate_contact_x + 0.5 * self.contact_width - 0.5 * m1m2.height)
-        en_pin = self.add_layout_pin("en", METAL2, offset=vector(pin_x, 0),
+        # add en pin
+        pin_height = self.bus_width
+        pin_x = - 0.5 * m2m3.second_layer_width
+        en_pin = self.add_layout_pin("en", METAL3, offset=vector(pin_x, 0),
                                      width=self.width - pin_x, height=pin_height)
+        # add vias to M3 and fill m2
+        bl_pin = self.bitcell.get_pin("bl")
+        fill_width = min(m2m3.height, 2 * (bl_pin.lx() - self.get_parallel_space(METAL2)))
+        _, fill_height = self.calculate_min_area_fill(fill_width, layer=METAL2)
+        if fill_height:
+            self.add_rect(METAL2, offset=vector(-0.5 * fill_width, 0), width=fill_width,
+                          height=fill_height)
+        via_offset = vector(0, 0.5 * m2m3.height)
+        for via in [m1m2, m2m3]:
+            self.add_contact_center(via.layer_stack, offset=via_offset)
+        # connect poly with M1
         poly_contact_y = 0
         for i in range(3):
             poly_contact_y = (self.poly_y + i * self.poly_pitch + 0.5 * self.poly_width
                               - 0.5 * self.contact_width)
             self.add_rect(CONTACT, offset=vector(self.gate_contact_x, poly_contact_y))
-        via_x = self.gate_contact_x + 0.5 * self.contact_width
-        self.add_contact_center(m1m2.layer_stack, offset=vector(via_x, en_pin.cy()),
-                                rotate=90)
         m1_extension = utils.round_to_grid(0.5 * (contact.poly.second_layer_height
                                                   - contact.poly.contact_width))
+
+        x_offset = self.gate_contact_x + 0.5 * self.contact_width - 0.5 * self.m1_width
+        y_offset = self.poly_y + 0.5 * self.contact_width - 0.5 * contact.poly.second_layer_height
         y_top = poly_contact_y + self.contact_width + m1_extension
-        self.add_rect(METAL1, offset=vector(via_x - 0.5 * self.m1_width, en_pin.cy()),
-                      height=y_top - en_pin.cy())
+        self.add_rect(METAL1, offset=vector(x_offset, y_offset),
+                      height=y_top - y_offset)
+        self.add_rect(METAL1, offset=vector(-0.5 * self.m1_width, y_offset),
+                      width=x_offset - (-0.5 * self.m1_width), height=self.m1_width)
+        self.add_rect(METAL1, offset=vector(-0.5 * self.m1_width, 0), height=y_offset,
+                      width=self.m1_width)
 
     def add_nwell_contacts(self):
         num_contacts = self.calculate_num_contacts(self.width - self.contact_spacing)
@@ -173,52 +191,102 @@ class precharge_horizontal(precharge):
         return base_y + source_drain_index * self.poly_pitch + 0.5 * self.contact_width
 
     def add_active_contacts(self):
-        self.num_contacts = self.calculate_num_contacts(self.ptx_width)
+        tx_width = self.ptx_width
+        if not self.has_poly_space:
+            space = self.get_line_end_space(METAL1)
+            # leave space for poly_m1 on the left and and vdd on the right
+            tx_width = min(tx_width, self.width - 2 * (0.5 * self.m1_width + space))
+        sample_contact = self.calculate_num_contacts(tx_width, return_sample=True)
+        self.sample_contact = sample_contact
 
-        fill = calculate_tx_metal_fill(self.ptx_width, self)
+        # calculate fill
+        _, fill_width = self.calculate_min_area_fill(sample_contact.second_layer_width, layer=METAL1)
+        if fill_width > sample_contact.second_layer_height:
+            # fill height based on adjacent vdd (min width fill)
+            parallel_space = self.get_parallel_space(METAL1)
+            fill_top = self.poly_pitch - parallel_space - 0.5 * sample_contact.second_layer_width
+            # fill height based on adjacent bl br fills
+            fill_bottom = 0.5 * (self.poly_pitch - parallel_space)
+            _, fill_width = self.calculate_min_area_fill(fill_top + fill_bottom, layer=METAL1)
+            fill_width = max(fill_width, sample_contact.second_layer_height)
+        else:
+            fill_width = fill_top = fill_bottom = None
 
-        vdd_rail_x = self.width - 0.5 * self.m1_width
+        vdd_rail_x = max(self.width - 0.5 * self.bus_width,
+                         self.active_rect.cx() + 0.5 * sample_contact.second_layer_height +
+                         self.get_line_end_space(METAL1))
+
+        self.fill_rects = []
 
         for i in range(4):
             y_offset = self.get_mid_contact_y(i)
-            contact_inst = self.add_contact_center(layers=contact.contact.active_layers,
-                                                   size=[1, self.num_contacts],
-                                                   offset=vector(self.active_rect.cx(), y_offset),
-                                                   rotate=90)
+            self.add_contact_center(layers=sample_contact.layer_stack,
+                                    size=sample_contact.dimensions,
+                                    offset=vector(self.active_rect.cx(), y_offset),
+                                    rotate=90)
             if i in [0, 3]:
-                self.add_rect(METAL1, offset=vector(self.mid_x, y_offset - 0.5 * self.m1_width),
-                              width=vdd_rail_x - self.mid_x)
+                if i == 0:
+                    rail_y = y_offset + 0.5 * sample_contact.second_layer_width - self.bus_width
+                else:
+                    rail_y = y_offset - 0.5 * sample_contact.second_layer_width
+                rail_x = self.active_rect.cx() - 0.5 * sample_contact.second_layer_height
+                self.add_rect(METAL1, offset=vector(rail_x, rail_y), height=self.bus_width,
+                              width=vdd_rail_x - rail_x)
             else:
-                if not fill:
-                    continue
-                fill_x, _, fill_height, fill_width = fill
-                real_fill_x = fill_x + self.active_x
-                fill_y = y_offset - 0.5 * fill_height
-                self.add_rect(METAL1, offset=vector(real_fill_x, fill_y),
-                              width=fill_width, height=fill_height)
+                fill_x = self.active_rect.cx() - 0.5 * sample_contact.height
+                if fill_width:
+                    if i == 1:
+                        fill_y = y_offset - fill_top
+                    else:
+                        fill_y = y_offset - fill_bottom
+                    fill_height = fill_top + fill_bottom
+                else:
+                    fill_height = sample_contact.second_layer_width
+                    fill_y = y_offset - 0.5 * fill_height
+                rect = self.add_rect(METAL1, offset=vector(fill_x, fill_y),
+                                     width=fill_width, height=fill_height)
+                self.fill_rects.append(rect)
 
-        rail_y = self.get_mid_contact_y(0) - 0.5 * self.m1_width
-        self.add_rect(METAL1, offset=vector(vdd_rail_x, rail_y), height=self.height - rail_y)
+        rail_y = self.get_mid_contact_y(0) + 0.5 * sample_contact.second_layer_width - self.bus_width
+        rail_width = 2 * (self.width - vdd_rail_x)
+        self.add_rect(METAL1, offset=vector(vdd_rail_x, rail_y), height=self.height - rail_y,
+                      width=rail_width)
 
     def connect_bitlines(self):
         drain_indices = [1, 2]
         pin_names = ["BL", "BR"]
-        active_mid = self.active_rect.cx()
+        adjacent_names = ["BR", "BL"]
         for i in range(2):
             bitcell_pin = self.bitcell.get_pin(pin_names[i])
-            y_offset = self.get_mid_contact_y(drain_indices[i])
+            adjacent_pin = self.bitcell.get_pin(adjacent_names[i])
             if i == 0:
-                via_x = max(active_mid, self.active_rect.lx() + 0.5 * m1m2.height)
+                max_x = adjacent_pin.lx() - self.get_line_end_space(METAL2)
+                min_x = max(bitcell_pin.lx(), self.active_rect.lx())
             else:
-                via_x = active_mid + 0.5 * m1m2.height
-            self.add_contact_center(m1m2.layer_stack, offset=vector(via_x, y_offset),
-                                    rotate=90)
+                min_x = adjacent_pin.rx() + self.get_line_end_space(METAL2)
+                max_x = min(bitcell_pin.rx(), self.active_rect.rx())
+
+            y_offset = self.get_mid_contact_y(drain_indices[i])
+            cont = get_max_contact(m1m2.layer_stack, max_x - min_x)
+            cont_inst = self.add_contact_center(m1m2.layer_stack,
+                                                size=cont.dimensions,
+                                                offset=vector(0.5 * (min_x + max_x), y_offset),
+                                                rotate=90)
+            fill_rect = self.fill_rects[i]
+            if i == 0:
+                self.add_rect(METAL1, vector(self.active_rect.cx(), fill_rect.by()),
+                              height=fill_rect.height,
+                              width=cont_inst.rx() - self.active_rect.cx())
+            else:
+                self.add_rect(METAL1, vector(cont_inst.lx(), fill_rect.by()), height=fill_rect.height,
+                              width=self.active_rect.cx() - cont_inst.lx())
+
             self.add_rect(METAL2, offset=vector(bitcell_pin.lx(), y_offset - 0.5 * self.m2_width),
                           width=self.mid_x - bitcell_pin.lx())
-            pin_y = y_offset - 0.5 * self.m2_width
-            self.add_layout_pin(pin_names[i].lower(), METAL2, offset=vector(bitcell_pin.lx(), pin_y),
+
+            self.add_layout_pin(pin_names[i].lower(), METAL2, offset=vector(bitcell_pin.lx(), 0),
                                 width=bitcell_pin.width(),
-                                height=self.height - pin_y)
+                                height=self.height)
 
     def drc_fill(self):
         pass

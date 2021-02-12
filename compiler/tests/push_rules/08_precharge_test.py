@@ -31,7 +31,7 @@ class PrechargeTest(TestBase):
 
         debug.info(2, "Checking small precharge array")
 
-        dut = PrechargeArray(columns=32)
+        dut = PrechargeArray(columns=32, size=3)
         self.local_check(dut)
 
     def test_large_precharge_array(self):

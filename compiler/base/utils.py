@@ -264,7 +264,7 @@ def get_libcell_pins(pin_list, name, units=None, layer=None):
     return cell
 
 
-def get_clearances(cell, layer, purpose="drawing"):
+def get_clearances(cell, layer, purpose=None):
     all_rects = list(sorted(cell.get_gds_layer_rects(layer, purpose),
                             key=lambda x: x.height))  # type: List[rectangle]
 

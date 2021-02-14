@@ -30,10 +30,10 @@ class RotationWrapper(design):
         self.child_mod = child_mod
         self.child_inst = child_inst
 
-    def get_gds_layer_rects(self, layer, purpose="drawing", recursive=False):
+    def get_gds_layer_rects(self, layer, purpose=None, recursive=False):
         return self.get_layer_shapes(layer, purpose, recursive)
 
-    def get_layer_shapes(self, layer, purpose="drawing", recursive=False):
+    def get_layer_shapes(self, layer, purpose=None, recursive=False):
         rects = self.child_mod.get_layer_shapes(layer, purpose, recursive)
         results = []
         if self.child_inst.rotate == GDS_ROT_90:

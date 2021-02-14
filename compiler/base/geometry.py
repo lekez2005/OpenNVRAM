@@ -231,7 +231,7 @@ class instance(geometry):
             new_pins.append(p)
         return new_pins
 
-    def get_layer_shapes(self, layer, purpose="drawing", recursive=False):
+    def get_layer_shapes(self, layer, purpose=None, recursive=False):
         angle, mirr = self.get_angle_mirror()
         rects = self.mod.get_layer_shapes(layer, purpose, recursive)
         results = []
@@ -383,8 +383,8 @@ class rectangle(geometry):
 
     def __str__(self):
         """ override print function output """
-        return "rect: @" + str(self.offset) + " " + str(self.width) + "x" + str(self.height) + " layer=" +str(self.layerNumber)
+        return "rect: @" + str(self.boundary[0]) + " " + str(self.width) + "x" + str(self.height) + " layer=" +str(self.layerNumber)
 
     def __repr__(self):
         """ override print function output """
-        return "( rect: @" + str(self.offset) + " " + str(self.width) + "x" + str(self.height) + " layer=" + str(self.layerNumber) + " )"
+        return "( rect: @" + str(self.boundary[0]) + " " + str(self.width) + "x" + str(self.height) + " layer=" + str(self.layerNumber) + " )"

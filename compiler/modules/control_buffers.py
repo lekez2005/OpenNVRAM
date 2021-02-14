@@ -458,6 +458,8 @@ class ControlBuffers(design, ABC):
         """Get min and max x offsets for rails"""
         self.rails = {}
 
+        _, min_m3_width = self.calculate_min_area_fill(self.bus_width, layer=METAL3)
+
         # derive min and max x offsets based on center of source/destination pins
         for net in input_nets:
             if net in self.input_pins:
@@ -474,6 +476,7 @@ class ControlBuffers(design, ABC):
                 x_offset = input_connection.x_offset
                 min_x = min(min_x, x_offset + 0.5 * self.m2_width)
                 max_x = max(max_x, x_offset + 0.5 * self.m2_width)
+            max_x = max(max_x, min_x + min_m3_width)
 
             self.rails[net] = Rail(net, min_x, max_x)
 

@@ -4,18 +4,23 @@ from base.design import METAL2
 from base.geometry import NO_MIRROR, MIRROR_XY
 from base.hierarchy_layout import GDS_ROT_270
 from base.vector import vector
-from globals import OPTS
-from modules.control_buffers import ControlBuffers, ModOffset
+from modules.baseline_latched_control_buffers import LatchedControlBuffers
+from modules.buffer_stage import BufferStage
+from modules.control_buffers import ModOffset
+from modules.logic_buffer import LogicBuffer
 from modules.push_rules.buffer_stages_horizontal import BufferStagesHorizontal
 from modules.push_rules.logic_buffer_horizontal import LogicBufferHorizontal
 from modules.push_rules.pgate_horizontal_tap import pgate_horizontal_tap
 from modules.push_rules.pinv_horizontal import pinv_horizontal
 from modules.push_rules.pnand2_horizontal import pnand2_horizontal
 from modules.push_rules.pnor2_horizontal import pnor2_horizontal
+from pgates.pinv import pinv
+from pgates.pnand2 import pnand2
+from pgates.pnor2 import pnor2
 from tech import drc
 
 
-class LatchedControlLogic(ControlBuffers):
+class LatchedControlLogic(LatchedControlBuffers):
     """
     Generate and buffer control signals using bank_sel, clk and read, sense_trig and precharge_trig
     Assumes
@@ -40,83 +45,39 @@ class LatchedControlLogic(ControlBuffers):
     """
     rotation_for_drc = GDS_ROT_270
 
-    def __init__(self, is_left_bank=False):
-        self.is_left_bank = is_left_bank
-        if is_left_bank:
-            self.name += "_left"
-        super().__init__()
-
     def get_schematic_pins(self):
-        wordline = [] if self.is_left_bank else ["wordline_en"]
-        return (
-            ["bank_sel", "read", "clk", "sense_trig", "precharge_trig"],
-            (["clk_buf", "clk_bar"] + wordline +
-             ["precharge_en_bar", "write_en", "sense_en", "tri_en", "sample_bar"])
-        )
-
-    def create_modules(self):
-        self.inv = pinv_horizontal(size=1)
-        self.add_mod(self.inv)
-
-        self.body_tap = pgate_horizontal_tap(self.inv)
-
-        self.logic_heights = self.inv.height
-
-        self.nand2 = pnand2_horizontal(size=1)
-        self.add_mod(self.nand2)
-
-        self.nor2 = pnor2_horizontal(size=1)
-        self.add_mod(self.nor2)
-
-        self.clk_buf = LogicBufferHorizontal(buffer_stages=OPTS.clk_buffers, logic="pnand2")
-        self.add_mod(self.clk_buf)
-
-        assert len(OPTS.precharge_buffers) % 2 == 0, "Number of precharge buffers should be even"
-        self.precharge_buf = LogicBufferHorizontal(OPTS.precharge_buffers, "pnand2")
-        self.add_mod(self.precharge_buf)
-
-        if not self.is_left_bank:
-            assert len(OPTS.wordline_en_buffers) % 2 == 0, "Number of wordline buffers should be even"
-            self.wordline_buf = LogicBufferHorizontal(OPTS.wordline_en_buffers, "pnor2")
-            self.add_mod(self.wordline_buf)
-
-        assert len(OPTS.write_buffers) % 2 == 0, "Number of write buffers should be even"
-        self.write_buf = LogicBufferHorizontal(OPTS.write_buffers, "pnor2")
-        self.add_mod(self.write_buf)
-
-        assert len(OPTS.sampleb_buffers) % 2 == 0, "Number of sampleb buffers should be even"
-        self.sample_bar = LogicBufferHorizontal(OPTS.sampleb_buffers, "pnand2")
-        self.add_mod(self.sample_bar)
-
-        assert len(OPTS.sense_amp_buffers) % 2 == 1, "Number of sense_en buffers should be odd"
-        self.sense_amp_buf = BufferStagesHorizontal(OPTS.sense_amp_buffers)
-        self.add_mod(self.sense_amp_buf)
-
-        assert len(OPTS.tri_en_buffers) % 2 == 1, "Number of tri_en buffers should be odd"
-        self.tri_en_buf = BufferStagesHorizontal(OPTS.tri_en_buffers)
-        self.add_mod(self.tri_en_buf)
+        pins = super().get_schematic_pins()
+        if self.is_left_bank:
+            pins[1].remove("wordline_en")
+        pins[1].remove("write_en_bar")
+        pins[1].remove("tri_en_bar")
+        return pins
 
     def create_schematic_connections(self):
-        connections = [
-            ("clk_buf", self.clk_buf, ["bank_sel", "clk", "clk_bar", "clk_buf"]),
-            ("precharge_buf", self.precharge_buf,
-             ["bank_sel", "precharge_trig", "precharge_en_bar", "precharge_en"]),
-            ("sel_trig", self.nand2, ["bank_sel", "sense_trig", "sel_trig_bar"]),
-            ("clk_bar_int", self.inv, ["clk", "clk_bar_int"]),
-            ("bank_sel_cbar_inst", self.nand2, ["bank_sel", "clk_bar_int", "bank_sel_cbar"])
-        ]
-        if not self.is_left_bank:
-            connections.append(("wordline_buf", self.wordline_buf,
-                                ["sense_trig", "bank_sel_cbar", "wordline_en", "wordline_en_bar"]))
-        connections.extend([
-            ("write_buf", self.write_buf, ["read", "bank_sel_cbar", "write_en", "write_en_bar"]),
-            ("sel_cbar_trig", self.nor2, ["sense_trig", "bank_sel_cbar", "sel_cbar_trig"]),
-            ("sample_bar", self.sample_bar,
-             ["read", "sel_cbar_trig", "sample_bar", "sample_en_buf"]),
-            ("sense_amp_buf", self.sense_amp_buf, ["sel_trig_bar", "sense_en", "sense_en_bar"]),
-            ("tri_en_buf", self.tri_en_buf, ["sel_trig_bar", "tri_en", "tri_en_bar"]),
-        ])
+        connections = super().create_schematic_connections()
+        if self.is_left_bank:
+            self.replace_connection("wordline_buf", None, connections)
+        connections = [x for x in connections if x[2] is not None]
         return connections
+
+    def get_class_args(self, mod_class):
+        return {}
+
+    def create_mod(self, mod_class, **kwargs):
+        class_map = {
+            pnand2: pnand2_horizontal,
+            pnor2: pnor2_horizontal,
+            pinv: pinv_horizontal,
+            LogicBuffer: LogicBufferHorizontal,
+            BufferStage: BufferStagesHorizontal
+        }
+        mod_class = class_map.get(mod_class, mod_class)
+        return super().create_mod(mod_class, **kwargs)
+
+    def create_modules(self):
+        super().create_modules()
+        self.logic_heights = self.inv.height
+        self.body_tap = self.create_mod(pgate_horizontal_tap, pgate_mod=self.inv)
 
     def get_module_spacing(self, _):
         return 0
@@ -164,7 +125,8 @@ class LatchedControlLogic(ControlBuffers):
     def derive_single_row_offsets(self):
         self.module_offsets = {}
         module_groups = self.evaluate_module_groups(scramble=False)
-        module_offsets, tap_offsets, width = self.create_module_group_offsets(module_groups)
+        module_offsets, tap_offsets, width = self.create_module_group_offsets(
+            module_groups)
         self.top_tap_offsets = tap_offsets
         self.module_offsets = module_offsets
         self.bottom_tap_offsets = []

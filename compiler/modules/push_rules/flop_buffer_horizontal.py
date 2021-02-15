@@ -11,20 +11,19 @@ class FlopBufferHorizontal(FlopBuffer):
     rotation_for_drc = GDS_ROT_270
 
     @classmethod
-    def get_name(cls, flop_module_name, buffer_stages, dummy_indices=None):
-        name = "flop_buffer_{}".format("_".join(
-            ["{:.3g}".format(x).replace(".", "_") for x in buffer_stages]))
+    def get_name(cls, flop_module_name, buffer_stages, dummy_indices=None,
+                 negate=False):
+        name = super().get_name(flop_module_name, buffer_stages, negate)
         if cls.has_dummy and dummy_indices is not None:
             name += "_d" + "".join(map(str, dummy_indices))
         return name
 
-    def __init__(self, flop_module_name, buffer_stages, dummy_indices=None):
+    def __init__(self, flop_module_name, buffer_stages, dummy_indices=None, negate=False):
         self.dummy_indices = dummy_indices
-        super().__init__(flop_module_name, buffer_stages)
+        super().__init__(flop_module_name, buffer_stages, negate)
 
     def create_modules(self):
         self.flop = self.create_mod_from_str(self.flop_module_name, rotation=GDS_ROT_270)
-
         self.buffer = BufferStagesHorizontal(self.buffer_stages)
         self.add_mod(self.buffer)
         self.body_tap = pgate_horizontal_tap(self.buffer.buffer_invs[0])
@@ -41,20 +40,13 @@ class FlopBufferHorizontal(FlopBuffer):
         implant_space = self.get_wide_space(NIMP)
         x_offset = (self.flop_inst.rx() + (flop_implant.rx() - self.flop_inst.width) -
                     buffer_implant.lx() + implant_space)
-        self.tap_inst = self.add_inst(self.body_tap.name, self.body_tap, offset=vector(x_offset, 0))
+        self.tap_inst = self.add_inst(self.body_tap.name, self.body_tap,
+                                      offset=vector(x_offset, 0))
         self.connect_inst([])
         # add buffer
         self.buffer_inst = self.add_inst("buffer", mod=self.buffer,
                                          offset=self.tap_inst.lr())
-
-        if len(self.buffer_stages) % 2 == 0:
-            nets = ["flop_out", "dout_bar", "dout"]
-            flop_out = self.flop_inst.get_pin("dout")
-        else:
-            nets = ["flop_out_bar", "dout", "dout_bar"]
-            flop_out = self.flop_inst.get_pin("dout_bar")
-        self.connect_inst(nets + ["vdd", "gnd"])
-
+        flop_out = self.connect_buffer()
         # connect flop out to buffer in
         buffer_in = self.buffer_inst.get_pin("in")
         via_y = min(max(flop_out.cy() - 0.5 * m1m2.height, buffer_in.by()),
@@ -87,11 +79,7 @@ class FlopBufferHorizontal(FlopBuffer):
             self.add_rect(PO_DUMMY, offset=vector(x_offset, y_offset), width=width,
                           height=self.poly_width)
 
-    def add_layout_pins(self):
-        self.copy_layout_pin(self.flop_inst, "clk", "clk")
-        self.copy_layout_pin(self.flop_inst, "din", "din")
-        flop_out = "out_inv" if len(self.buffer_stages) == 1 else "out"
-        self.copy_layout_pin(self.buffer_inst, flop_out, "dout")
+    def add_power_layout_pins(self):
         for pin_name in ["vdd", "gnd"]:
             buffer_pin = self.buffer_inst.get_pin(pin_name)
             flop_pin = self.flop_inst.get_pin(pin_name)
@@ -104,6 +92,8 @@ class FlopBufferHorizontal(FlopBuffer):
             self.add_contact_center(m1m2.layer_stack, offset=via_offset)
             self.add_contact_center(m2m3.layer_stack, offset=via_offset)
             fill_height = m2m3.height
-            fill_height, fill_width = self.calculate_min_area_fill(fill_height, layer=METAL2)
-            self.add_rect_center(METAL2, offset=via_offset, width=fill_width, height=fill_height)
+            fill_height, fill_width = self.calculate_min_area_fill(fill_height,
+                                                                   layer=METAL2)
+            self.add_rect_center(METAL2, offset=via_offset, width=fill_width,
+                                 height=fill_height)
             self.copy_layout_pin(self.buffer_inst, pin_name)

@@ -56,9 +56,29 @@ class FlopBuffer(design, metaclass=Unique):
                                   contact_pwell=False, contact_nwell=False, align_bitcell=False)
         self.add_mod(self.buffer)
 
+    def connect_flop(self):
+        self.connect_inst(["din", "flop_out", "flop_out_bar", "clk", "vdd", "gnd"])
+
+    def connect_buffer(self):
+        if ((len(self.buffer_stages) % 2 == 0 and not self.negate) or
+                (len(self.buffer_stages) % 2 == 1 and self.negate)):
+            if self.negate:
+                nets = ["flop_out", "dout", "dout_bar"]
+            else:
+                nets = ["flop_out", "dout_bar", "dout"]
+            flop_out = self.flop_inst.get_pin("dout")
+        else:
+            if self.negate:
+                nets = ["flop_out_bar", "dout_bar", "dout"]
+            else:
+                nets = ["flop_out_bar", "dout", "dout_bar"]
+            flop_out = self.flop_inst.get_pin("dout_bar")
+        self.connect_inst(nets + ["vdd", "gnd"])
+        return flop_out
+
     def add_modules(self):
         self.flop_inst = self.add_inst("flop", mod=self.flop, offset=vector(0, 0))
-        self.connect_inst(["din", "flop_out", "flop_out_bar", "clk", "vdd", "gnd"])
+        self.connect_flop()
 
         if self.has_dummy:
             poly_dummies = self.flop.get_gds_layer_rects("po_dummy", "po_dummy", recursive=True)
@@ -70,23 +90,8 @@ class FlopBuffer(design, metaclass=Unique):
 
         self.buffer_inst = self.add_inst("buffer", mod=self.buffer, offset=self.flop_inst.lr() + vector(x_space, 0))
 
-        if ((len(self.buffer_stages) % 2 == 0 and not self.negate) or
-                (len(self.buffer_stages) % 2 == 1 and self.negate)):
-            if self.negate:
-                nets = ["flop_out", "dout", "dout_bar"]
-            else:
-                nets = ["flop_out", "dout_bar", "dout"]
-            flop_out = self.flop_inst.get_pin("dout")
-            path_start = vector(flop_out.rx(), flop_out.uy() - 0.5 * self.m2_width)
-        else:
-            if self.negate:
-                nets = ["flop_out_bar", "dout_bar", "dout"]
-            else:
-                nets = ["flop_out_bar", "dout", "dout_bar"]
-            flop_out = self.flop_inst.get_pin("dout_bar")
-            path_start = vector(flop_out.rx(), flop_out.uy() - 0.5 * self.m2_width)
-
-        self.connect_inst(nets + ["vdd", "gnd"])
+        flop_out = self.connect_buffer()
+        path_start = vector(flop_out.rx(), flop_out.uy() - 0.5 * self.m2_width)
 
         buffer_in = self.buffer_inst.get_pin("in")
         mid_x = 0.5*(buffer_in.lx() + flop_out.rx())
@@ -132,6 +137,16 @@ class FlopBuffer(design, metaclass=Unique):
                               height=top - bottom)
 
     def add_layout_pins(self):
+        self.copy_layout_pin(self.flop_inst, "clk", "clk")
+        self.copy_layout_pin(self.flop_inst, "din", "din")
+        if len(self.buffer_stages) % 2 == 1:
+            flop_out = "out_inv"
+        else:
+            flop_out = "out"
+        self.copy_layout_pin(self.buffer_inst, flop_out, "dout")
+        self.add_power_layout_pins()
+
+    def add_power_layout_pins(self):
         for pin_name in ["vdd", "gnd"]:
             buffer_pin = self.buffer_inst.get_pin(pin_name)
             flop_pin = self.flop_inst.get_pin(pin_name)
@@ -143,10 +158,3 @@ class FlopBuffer(design, metaclass=Unique):
                 y_top = min(buffer_pin.uy(), flop_pin.uy())
             self.add_layout_pin(pin_name, buffer_pin.layer, offset=vector(0, y_offset), width=self.width,
                                 height=y_top - y_offset)
-        self.copy_layout_pin(self.flop_inst, "clk", "clk")
-        self.copy_layout_pin(self.flop_inst, "din", "din")
-        if len(self.buffer_stages) % 2 == 1:
-            flop_out = "out_inv"
-        else:
-            flop_out = "out"
-        self.copy_layout_pin(self.buffer_inst, flop_out, "dout")

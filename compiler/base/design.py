@@ -244,6 +244,9 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         :return: parallel space
         """
 
+        if layer == PO_DUMMY:
+            layer = POLY
+
         if "implant" in layer:
             layer_to_layer_space = drc["implant_to_implant"]
         else:

@@ -300,7 +300,9 @@ def evaluate_vertical_module_spacing(top_modules: List[design],
     :return: minimum space
     """
     if layers is None:
-        layers = [METAL1, POLY, NIMP, PIMP]
+        layers = [METAL1, POLY, PO_DUMMY, NIMP, PIMP]
+    if not top_modules[0].has_dummy:
+        layers.remove(PO_DUMMY)
 
     if min_space is None:
         min_space = - top_modules[0].height  # start with overlap
@@ -352,6 +354,12 @@ def evaluate_vertical_module_spacing(top_modules: List[design],
                                                           min_width=min(widths),
                                                           run_length=run_length,
                                                           heights=heights)
+                        # TODO look up table POLY DRC rules
+                        if layer in [POLY, PO_DUMMY]:
+                            if top_rect.width > top_rect.height:
+                                target_space = bottom_module.poly_space
+                            else:
+                                target_space = bottom_module.poly_vert_space
                         evaluated_space = -top_clearance + -bottom_clearance + target_space
                         if evaluated_space > min_space:
                             min_space = evaluated_space
@@ -425,5 +433,8 @@ def join_vertical_adjacent_module_wells(bank: design, bottom_inst, top_inst):
             rect_right = min(bottom_rect.rx(), top_rect.rx())
             rect_right_extension = rect_right - bottom_mod.width
             right_x = bottom_inst.rx() + rect_right_extension
+            height = top_y - bottom_y
+            if top_layer == bottom_layer:
+                height = max(height, bank.get_min_layer_width(bottom_layer))
             bank.add_rect(bottom_layer, vector(x_offset, bottom_y),
-                          width=right_x - x_offset, height=top_y - bottom_y)
+                          width=right_x - x_offset, height=height)

@@ -178,6 +178,8 @@ class ControlSignalsMixin:
 
         self.leftmost_rail = min([getattr(self, x + "_rail") for x in rail_names],
                                  key=lambda x: x.lx())
+        self.rightmost_rail = max([getattr(self, x + "_rail") for x in rail_names],
+                                  key=lambda x: x.rx())
 
     def add_left_control_rail(self, rail_name, dest_pins, x_offset, y_offset):
         """Routes the rail from control logic buffer pin with name 'rail_name' to the destinations 'dest_pins'.
@@ -203,6 +205,7 @@ class ControlSignalsMixin:
             rail = self.add_rect(METAL2, offset=vector(x_offset, y_offset),
                                  height=top_pin.cy() - y_offset,
                                  width=self.bus_width)
+            self.m2_rails.append(rail)
         setattr(self, rail_name + "_rail", rail)
         if rail_name == "wordline_en":
             return

@@ -1,7 +1,7 @@
 import re
 
 from base import well_implant_fills, utils
-from base.contact import m2m3, cross_m2m3, m1m2
+from base.contact import cross_m2m3, m1m2
 from base.design import METAL1, PO_DUMMY, METAL3, METAL2
 from base.hierarchy_layout import GDS_ROT_270
 from base.vector import vector
@@ -142,10 +142,8 @@ class row_decoder_horizontal(hierarchical_decoder):
                       height=en_pin.by() - y_offset)
         self.add_layout_pin("en", METAL3, offset=vector(en_pin.lx(), y_offset),
                             height=pin_height, width=self.width - en_pin.lx())
-        x_offset = en_pin.lx() + 0.5 * (m2m3.height - self.m3_width)
-        y_offset = y_offset
-        self.add_inst(cross_m2m3.name, cross_m2m3, offset=vector(x_offset, y_offset))
-        self.connect_inst([])
+        self.add_cross_contact_center(cross_m2m3, offset=vector(en_pin.lx() + 0.5 * cross_m2m3.width,
+                                                                y_offset + 0.5 * cross_m2m3.height))
 
     def connect_rails_to_decoder(self):
         row_index = 0
@@ -165,13 +163,13 @@ class row_decoder_horizontal(hierarchical_decoder):
 
     def connect_rail_m2(self, rail_index, pin):
         rail_offset = vector(self.rail_x_offsets[rail_index], pin.cy())
-        via_x = rail_offset.x - 0.5 * self.m2_width
-        via_y = pin.cy() - 0.5 * cross_m2m3.height
-        self.add_inst(cross_m2m3.name, cross_m2m3, offset=vector(via_x, via_y))
-        self.connect_inst([])
+        self.add_cross_contact_center(cross_m2m3, offset=rail_offset)
 
         self.add_rect(METAL3, offset=vector(rail_offset.x, rail_offset.y - 0.5 * self.m3_width),
                       width=pin.lx() - rail_offset.x)
+
+    def fill_predecoder_to_row_decoder_implants(self):
+        pass
 
     def route_vdd_gnd(self):
         # ground pin below en pin
@@ -185,10 +183,9 @@ class row_decoder_horizontal(hierarchical_decoder):
                             height=pin_height, width=self.width - pin_x)
         # AND gates gnd to bottom gnd
         for pin in gnd_pins:
-            x_offset = pin.lx() + 0.5 * (m2m3.height - self.m3_width)
             y_offset = y_offset
-            self.add_inst(cross_m2m3.name, cross_m2m3, offset=vector(x_offset, y_offset))
-            self.connect_inst([])
+            self.add_cross_contact_center(cross_m2m3,
+                                          offset=vector(pin.cx(), y_offset + 0.5 * cross_m2m3.height))
             self.add_rect(METAL2, offset=vector(pin.lx(), y_offset), width=pin.width(),
                           height=pin.by() - y_offset)
         # AND gates vdd to predecoder vdd

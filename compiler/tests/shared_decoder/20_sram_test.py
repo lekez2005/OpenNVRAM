@@ -13,8 +13,8 @@ class SramTest(TestBase):
         if not OPTS.baseline:
             return
 
-        self.sweep_all(cols=[], rows=[128], words_per_row=2, default_col=64, num_banks=1)
-        self.sweep_all(rows=[128, 256])
+        # self.sweep_all(cols=[], rows=[128], words_per_row=2, default_col=64, num_banks=1)
+        self.sweep_all()
 
     def get_sram_class(self):
         from globals import OPTS
@@ -71,13 +71,15 @@ class SramTest(TestBase):
         from globals import OPTS
         OPTS.independent_banks = False
         sram_class = self.get_sram_class()
-        self.create_and_test_sram(sram_class, 64, 64, words_per_row=1, num_banks=2)
+        for words_per_row in [1, 2, 4, 8]:
+            self.create_and_test_sram(sram_class, 64, 64, words_per_row=words_per_row, num_banks=2)
 
     def test_two_independent_banks(self):
         from globals import OPTS
         OPTS.independent_banks = True
         sram_class = self.get_sram_class()
-        self.create_and_test_sram(sram_class, 64, 64, words_per_row=1, num_banks=2)
+        for words_per_row in [1, 2, 4, 8]:
+            self.create_and_test_sram(sram_class, 64, 64, words_per_row=words_per_row, num_banks=2)
 
 
 TestBase.run_tests(__name__)

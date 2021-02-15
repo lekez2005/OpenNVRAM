@@ -253,6 +253,8 @@ class precharge_horizontal(precharge):
                       width=rail_width)
 
     def connect_bitlines(self):
+        en_pin = self.get_pin("en")
+        bitline_y = en_pin.uy() + self.get_line_end_space(METAL3)
         drain_indices = [1, 2]
         pin_names = ["BL", "BR"]
         adjacent_names = ["BR", "BL"]
@@ -274,19 +276,21 @@ class precharge_horizontal(precharge):
                                                 rotate=90)
             fill_rect = self.fill_rects[i]
             if i == 0:
-                self.add_rect(METAL1, vector(self.active_rect.cx(), fill_rect.by()),
+                x_offset = min(self.active_rect.cx(), cont_inst.lx())
+                self.add_rect(METAL1, vector(x_offset, fill_rect.by()),
                               height=fill_rect.height,
-                              width=cont_inst.rx() - self.active_rect.cx())
+                              width=cont_inst.rx() - x_offset)
             else:
+                right_x = max(self.active_rect.cx(), cont_inst.rx())
                 self.add_rect(METAL1, vector(cont_inst.lx(), fill_rect.by()), height=fill_rect.height,
-                              width=self.active_rect.cx() - cont_inst.lx())
+                              width=right_x - cont_inst.lx())
 
             self.add_rect(METAL2, offset=vector(bitcell_pin.lx(), y_offset - 0.5 * self.m2_width),
                           width=self.mid_x - bitcell_pin.lx())
 
-            self.add_layout_pin(pin_names[i].lower(), METAL2, offset=vector(bitcell_pin.lx(), 0),
+            self.add_layout_pin(pin_names[i].lower(), METAL2, offset=vector(bitcell_pin.lx(), bitline_y),
                                 width=bitcell_pin.width(),
-                                height=self.height)
+                                height=self.height - bitline_y)
 
     def drc_fill(self):
         pass

@@ -51,6 +51,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
 
         # to keep track of offsets used for repeaters or inter-array power
         self.occupied_m4_bitcell_indices = []
+        self.m2_rails = []
 
         # The local control signals are gated when we have bank select logic,
         # so this prefix will be added to all of the input signals.
@@ -452,18 +453,18 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         # place to the left of bottom rail
 
         # ensure no clash with rails above control_buffer
-        top_rails = [getattr(self, x + "_rail") for x in self.top_control_rails]
-        bottom_rails = [getattr(self, x + "_rail") for x in self.bottom_control_rails]
-        control_top = y_offset + total_flop_height + row_decoder_flop_space
-        rails_below_control_flops = [x for x in top_rails + top_rails if x.by() < control_top]
+        control_top = self.control_buffers_inst.uy()
+        rails = self.m2_rails
+        decoder_clk_rail = getattr(self, "decoder_clk_rail", None)
+        if decoder_clk_rail:
+            rails.append(decoder_clk_rail)
+
+        rails_below_control_flops = [x for x in rails if x.by() < control_top]
+
         if rails_below_control_flops:
             leftmost_top_rail_x = min(rails_below_control_flops, key=lambda x: x.lx()).lx()
         else:
-            if self.bottom_control_rails:
-                leftmost_top_rail_x = min(min(bottom_rails, key=lambda x: x.lx()).lx(),
-                                          self.mid_vdd_offset)
-            else:
-                leftmost_top_rail_x = self.mid_vdd_offset
+            leftmost_top_rail_x = self.mid_vdd_offset
 
         num_control_inputs = len(self.get_non_flop_control_inputs())
         num_inputs = num_control_inputs + num_control_flops + 1
@@ -482,6 +483,9 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
             top_modules=[self.tri_gate_array.child_mod],
             bottom_modules=[self.control_buffers.inv], min_space=0)
         y_offset = max(self.trigate_y, self.control_buffers_inst.uy() + y_space)
+
+        if self.is_left_bank:
+            y_offset = max(y_offset, self.adjacent_bank.tri_gate_array_inst.by())
 
         self.tri_gate_array_inst = self.add_inst(name="tri_gate_array", mod=self.tri_gate_array,
                                                  offset=vector(0, y_offset))
@@ -510,11 +514,11 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         return connections
 
     def calculate_bitcell_aligned_spacing(self, top_module, bottom_module,
-                                          num_rails=0, min_space=None):
+                                          num_rails=0, min_space=None, layers=None):
 
         m2_m3_space = evaluate_vertical_metal_spacing(top_module.child_mod,
                                                       bottom_module.child_mod,
-                                                      num_rails)
+                                                      num_rails, layers=layers)
         min_space = max(m2_m3_space, min_space or -bottom_module.height)
 
         top_modules = [top_module.child_mod]
@@ -612,6 +616,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         self.sense_amp_array_inst = self.add_inst(name="sense_amp_array", mod=self.sense_amp_array,
                                                   offset=self.sense_amp_array_offset)
         replacements = [("dout[", "sense_out["), ("dout_bar[", "sense_out_bar["),
+                        ("data[", "sense_out["), ("data_bar[", "sense_out_bar["),
                         ("sampleb", "sample_en_bar"), ("chb", "precharge_en_bar"),
                         ("preb", "precharge_en_bar"), ("en", "sense_en", EXACT),
                         ("en_bar", "sense_en_bar", EXACT)]
@@ -767,7 +772,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
 
     def get_right_vdd_offset(self):
         """x offset for right vdd rail"""
-        return max(self.bitcell_array_inst.rx(),
+        return max(self.bitcell_array_inst.rx(), self.rightmost_rail.rx(),
                    self.control_buffers_inst.rx()) + self.wide_power_space
 
     def get_mid_gnd_offset(self):
@@ -840,7 +845,8 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                                   or 0.0)
 
         for bottom_rect, top_rect in zip(bottom_rects, top_rects):
-            if top_rect.by() + y_shift > bottom_rect.uy():
+            additional_height = vias[0].height if vias else 0
+            if top_rect.by() + y_shift + additional_height >= bottom_rect.uy():
                 if rect_align == JOIN_BOT_ALIGN:
                     rect_width = bottom_rect.rx() - bottom_rect.lx()
                     x_offset = bottom_rect.lx()
@@ -849,9 +855,8 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                                      top_rect.rx() - top_rect.lx())
                     x_offset = top_rect.cx() - 0.5 * rect_width
 
-                height = top_rect.by() - bottom_rect.uy() + y_shift
-                if vias:
-                    height += vias[0].height
+                height = top_rect.by() - bottom_rect.uy() + y_shift + additional_height
+
                 self.add_rect(bottom_layer, offset=vector(x_offset,
                                                           bottom_rect.uy()),
                               width=rect_width, height=height)
@@ -1155,10 +1160,12 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         else:
             top_inst = self.data_in_flops_inst
 
-        if "in_bar" in self.tri_gate_array.child_mod.pins:
-            sense_pin_name, tri_pin_name = "dout_bar[{}]", "in_bar[{}]"
+        data_template = "dout" if "dout[0]" in self.sense_amp_array.pins else "data"
+
+        if "in_bar[0]" in self.tri_gate_array.pins:
+            sense_pin_name, tri_pin_name = data_template + "_bar[{}]", "in_bar[{}]"
         else:
-            sense_pin_name, tri_pin_name = "dout[{}]", "in[{}]"
+            sense_pin_name, tri_pin_name = data_template + "[{}]", "in[{}]"
 
         tri_in_via_y = self.get_m2_m3_below_instance(top_inst, 0)
         sense_out_y = self.get_m2_m3_below_instance(self.sense_amp_array_inst, 0)
@@ -1246,6 +1253,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
 
             x_offset += self.bus_pitch
 
+        self.m2_rails.extend(flop_output_rails)
         self.leftmost_rail = min([self.leftmost_rail] + flop_output_rails,
                                  key=lambda x: x.lx())
         return x_offset
@@ -1279,8 +1287,9 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                         self.get_non_flop_control_inputs()]
         control_pins = list(sorted(control_pins, key=lambda x: x.by()))
         for pin in control_pins:
-            self.add_layout_pin(pin.name, METAL2, offset=vector(x_offset, self.min_point),
-                                width=rail_height, height=pin.cy() - self.min_point)
+            new_pin = self.add_layout_pin(pin.name, METAL2, offset=vector(x_offset, self.min_point),
+                                          width=rail_height, height=pin.cy() - self.min_point)
+            self.m2_rails.append(new_pin)
             self.add_cross_contact_center(cross_m2m3,
                                           offset=vector(x_offset + 0.5 * rail_height,
                                                         pin.cy()))

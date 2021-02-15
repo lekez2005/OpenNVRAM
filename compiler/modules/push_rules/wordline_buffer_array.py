@@ -110,9 +110,10 @@ class buffer_tap(design, metaclass=Unique):
 class wordline_buffer_array(design):
     rotation_for_drc = GDS_ROT_270
 
-    def __init__(self, rows):
+    def __init__(self, rows, buffer_stages):
         super().__init__("wordline_buffer_array")
         self.rows = rows
+        self.buffer_stages = buffer_stages
         self.buffer_insts = []
         self.add_pins()
         self.create_layout()
@@ -147,7 +148,7 @@ class wordline_buffer_array(design):
                             bottom_y=self.buffer_insts[0].by())
 
     def create_modules(self):
-        self.buffer = wordline_buffer(buffer_stages=OPTS.wordline_buffers)
+        self.buffer = wordline_buffer(buffer_stages=self.buffer_stages)
         self.add_mod(self.buffer)
 
         self.tap = buffer_tap(self.buffer)

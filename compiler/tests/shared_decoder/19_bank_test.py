@@ -7,26 +7,7 @@ import debug
 
 class BankTest(TestBase):
 
-    def test_sotfet_mram_array(self):
-        from globals import OPTS
-        import tech
-
-        if not OPTS.mram == "sotfet":
-            return
-
-        tech.drc_exceptions["SotfetMramBank"] = (tech.drc_exceptions["min_nwell"] +
-                                                 tech.drc_exceptions["latchup"])
-
-        # self.sweep_all()
-        self.sweep_all(cols=[64], rows=[64], words_per_row=2)
-
     def test_baseline_array(self):
-
-        from globals import OPTS
-
-        if not OPTS.baseline:
-            return
-
         # self.sweep_all(cols=[], rows=[64], words_per_row=1, default_col=256)
         self.sweep_all()
 

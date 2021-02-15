@@ -228,8 +228,12 @@ class horizontal_predecode(hierarchical_predecode, ABC):
                 self.add_layout_pin(pin_name, pin.layer, offset=pin.ll(),
                                     height=pin.height(), width=self.width - pin.lx())
         # flop power to nand power
-        for i in range(len(self.in_inst)):
-            for pin_name in ["vdd", "gnd"]:
+        for pin_name in ["vdd", "gnd"]:
+            fill_height = self.nand_inst[0].get_pin(pin_name).height()
+            _, fill_width = self.calculate_min_area_fill(fill_height, layer=METAL1)
+            fill_width = max(fill_width, m1m2.height)
+            for i in range(len(self.in_inst)):
+
                 flop_pin = self.in_inst[i].get_pin(pin_name)
                 nand_pin = self.nand_inst[i].get_pin(pin_name)
                 self.add_rect(METAL3, offset=flop_pin.lr(), height=flop_pin.height(),
@@ -238,12 +242,11 @@ class horizontal_predecode(hierarchical_predecode, ABC):
                 self.add_contact_center(m1m2.layer_stack, offset=via_offset, rotate=90)
 
                 self.add_contact_center(m2m3.layer_stack, offset=via_offset, rotate=90)
-
-                fill_height = nand_pin.height()
-                fill_width = max(utils.ceil(self.minarea_metal1_contact / fill_height),
-                                 m1m2.height)
                 self.add_rect_center(METAL2, offset=via_offset, width=fill_width,
                                      height=fill_height)
+
+    def join_inverter_nand_implants(self, row):
+        pass
 
     def get_nand_connections(self):
         raise NotImplementedError

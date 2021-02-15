@@ -39,7 +39,7 @@ decoder_flops = True
 separate_vdd = False
 
 bitcell_array = "push_bitcell_array"
-wordline_buffer = "wordline_buffer_array"
+wordline_driver = "wordline_buffer_array"
 decoder = "row_decoder_horizontal"
 ms_flop_array = "flop_array_horizontal.FlopArray"
 sense_amp_array = "sense_amp_array_horizontal.SenseAmpArray"

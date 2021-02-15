@@ -27,6 +27,21 @@ def calculate_num_contacts(design_obj: design, tx_width, return_sample=False):
     return num_contacts
 
 
+def get_max_contact(layer_stack, height):
+    """Get contact that can fit the given height"""
+    from base.contact import contact
+    num_contacts = 1
+    prev_contact = None
+    while True:
+        sample_contact = contact(layer_stack, dimensions=[1, num_contacts])
+        if num_contacts == 1:
+            prev_contact = sample_contact
+        if sample_contact.height > height:
+            return prev_contact
+        prev_contact = sample_contact
+        num_contacts += 1
+
+
 def calculate_contact_width(design_obj: design, width, well_contact_active_height):
     body_contact = calculate_num_contacts(design_obj, width - design_obj.contact_pitch,
                                           return_sample=True)

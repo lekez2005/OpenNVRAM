@@ -695,8 +695,11 @@ class ControlBuffers(design, ABC):
         original_rail = self.rails[net].rect
 
         if inst_name not in self.indirect_m3_connections:
-            rail_y = (self.min_rail_y + 0.5 * self.bus_width - 0.5 * m2m3.contact_width -
-                      self.get_space("via2") - m2m3.contact_width)
+            rail_y = min(self.min_rail_y + 0.5 * self.bus_width - 0.5 * m2m3.contact_width -
+                         self.get_space("via2") - m2m3.contact_width,
+                         self.min_rail_y + 0.5 * self.bus_width - 0.5 * m2m3.height -  # to bottom via
+                         self.get_line_end_space(METAL2) - # to top via
+                         0.5 * m2m3.height - 0.5 * self.m3_width)
             self.indirect_m3_connections[inst_name] = [rail_y]
         else:
             rail_pitch = self.get_line_end_space(METAL2) + cross_m2m3.first_layer_height

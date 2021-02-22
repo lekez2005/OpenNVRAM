@@ -34,6 +34,9 @@ class precharge(design.design):
     def add_pins(self):
         self.add_pin_list(["bl", "br", "en", "vdd"])
 
+    def get_char_data_file_suffixes(self, **kwargs):
+        return [("beta", parameter["beta"])]
+
     def create_layout(self):
         self.set_layout_constants()
         self.create_ptx()

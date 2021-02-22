@@ -526,3 +526,6 @@ class pgate_horizontal(design):
         for i in range(2):
             self.add_layout_pin(pin_names[i], layer, offset=vector(0, y_offsets[i]),
                                 width=self.width, height=self.rail_height)
+
+    def get_char_data_file_suffixes(self, **kwargs):
+        return [("beta", parameter["beta"])]

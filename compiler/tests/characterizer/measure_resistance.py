@@ -128,7 +128,9 @@ class MeasureResistance(CharTestBase):
             # add buffer stages to shape the input slew, "d" is the equivalent "out_bar"
             dut_instance = "X1 a d out vdd gnd        {}".format(buffer.name)
             pin_name = "A"  # A pin is always farthest from output
-            mod, module_args, terminals = PgateCaps.get_pgate_params(gate, pin_name, size)
+            mod, module_args, terminals = PgateCaps.get_pgate_params(gate, pin_name, size,
+                                                                     height=self.logic_buffers_height,
+                                                                     options=self.options)
             # pgate output is always third to the last
             dut = mod(**module_args)
             self.dut_pex = self.run_pex_extraction(dut, dut.name)
@@ -219,10 +221,12 @@ class MeasureResistance(CharTestBase):
         from tech import drc
         self.options.gate = MOS
 
-        for num_fingers in [1, 2, 3, 4]:
+        for num_fingers in [1, 2, 3, 4, 5, 6, 10, 20, 40]:
             print("  fingers: {}".format(num_fingers))
             self.options.num_fingers = num_fingers
-            for size in [1, 1.1, 1.2, 1.3, 1.5, 2, 3, 5, 10]:
+            max_log = np.log10(10)
+            sizes = [1, 1.25, 1.5, 1.75, 2, 2.5, 3, 5, 10]
+            for size in sizes:
                 self.options.size = size
                 self.options.tx_width = size * drc["minwidth_tx"]
                 r_n, r_p, _, _, _ = self.run_simulation()
@@ -265,6 +269,8 @@ class MeasureResistance(CharTestBase):
                     raise ex
 
                 file_suffixes = [("beta", self.options.beta)]
+                if not self.options.horizontal:
+                    file_suffixes.append(("contacts", int(not self.options.no_contacts)))
                 size_suffixes = [("height", self.logic_buffers_height)]
 
                 print("    Rn = {:.4g}".format(r_n))

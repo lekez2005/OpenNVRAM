@@ -145,20 +145,20 @@ class BaseDelayStrategy(ABC):
     # strategies
 
     def get_clk_strategy(self):
-        return self.MIN_DELAY, OPTS.max_clk_buf_size
+        return self.MIN_DELAY, OPTS.max_clk_buffers
         # return self.MIN_SIZE, OPTS.max_clk_buffer_delay
 
     def get_wordline_en_strategy(self):
-        return self.MIN_DELAY, OPTS.max_wordline_en_size
+        return self.MIN_DELAY, OPTS.max_wordline_en_buffers
 
     def get_wordline_driver_strategy(self):
-        return self.MIN_DELAY, OPTS.max_wordline_en_size
+        return self.MIN_DELAY, OPTS.max_wordline_en_buffers
 
     def get_write_en_strategy(self):
-        return self.MIN_DELAY, OPTS.max_write_en_size
+        return self.MIN_DELAY, OPTS.max_write_buffers
 
     def get_sense_en_strategy(self):
-        return self.MIN_DELAY, OPTS.max_write_en_size
+        return self.MIN_DELAY, OPTS.max_write_buffers
 
     def get_precharge_strategy(self):
         return self.MIN_DELAY, OPTS.max_precharge_en_size

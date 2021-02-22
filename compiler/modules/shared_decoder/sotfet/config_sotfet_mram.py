@@ -61,19 +61,19 @@ def configure_sizes(bank, OPTS):
         OPTS.precharge_size = 5
 
     if num_rows > 127:
-        OPTS.max_wordline_en_size = 60
+        OPTS.max_wordline_en_buffers = 60
     else:
-        OPTS.max_wordline_en_size = 30
+        OPTS.max_wordline_en_buffers = 30
 
     if num_cols < 100:
         OPTS.num_clk_buf_stages = 4
         OPTS.num_write_en_stages = 3
-        OPTS.max_clk_buf_size = 40
-        OPTS.max_write_en_size = 40
+        OPTS.max_clk_buffers = 40
+        OPTS.max_write_buffers = 40
         # OPTS.tri_en_buffers = [, 11.7, 40, 40]
     else:
         OPTS.num_clk_buf_stages = 5
         OPTS.num_write_en_stages = 5
-        OPTS.max_clk_buf_size = 60
-        OPTS.max_write_en_size = 60
+        OPTS.max_clk_buffers = 60
+        OPTS.max_write_buffers = 60
         OPTS.tri_en_buffers = [3.42, 11.7, 40, 40]

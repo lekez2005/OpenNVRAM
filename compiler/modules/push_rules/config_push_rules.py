@@ -61,13 +61,13 @@ num_buffers = 5
 max_buf_size = 60
 
 num_clk_buf_stages = 5
-max_clk_buf_size = max_buf_size
+max_clk_buffers = max_buf_size
 
 num_wordline_en_stages = 4
-max_wordline_en_size = max_buf_size
+max_wordline_en_buffers = max_buf_size
 
 num_write_en_stages = 5
-max_write_en_size = max_buf_size
+max_write_buffers = max_buf_size
 
 num_sense_en_stages = 3
 max_sense_en_size = max_buf_size
@@ -76,7 +76,7 @@ num_precharge_stages = 4
 max_precharge_en_size = max_buf_size
 
 num_wordline_driver_stages = 3
-max_wordline_driver_size = 20
+max_wordline_buffers = 20
 
 num_predecoder_stages = 1
 max_predecoder_inv_size = 20
@@ -136,22 +136,22 @@ def configure_sizes(bank, OPTS):
     num_rows = bank.num_rows
     num_cols = bank.num_cols
     if num_rows > 127:
-        OPTS.max_wordline_en_size = 60
+        OPTS.max_wordline_en_buffers = 60
     else:
-        OPTS.max_wordline_en_size = 30
+        OPTS.max_wordline_en_buffers = 30
 
     if num_cols < 100:
         OPTS.num_clk_buf_stages = 4
         OPTS.num_write_en_stages = 4
-        OPTS.max_clk_buf_size = 40
-        OPTS.max_write_en_size = 40
+        OPTS.max_clk_buffers = 40
+        OPTS.max_write_buffers = 40
         OPTS.precharge_size = 1.5
         # OPTS.tri_en_buffers = [, 11.7, 40, 40]
     else:
         OPTS.num_clk_buf_stages = 5
         OPTS.num_write_en_stages = 5
-        OPTS.max_clk_buf_size = 60
-        OPTS.max_write_en_size = 60
+        OPTS.max_clk_buffers = 60
+        OPTS.max_write_buffers = 60
         if OPTS.num_banks == 2:
             OPTS.precharge_size = 1.75
         else:

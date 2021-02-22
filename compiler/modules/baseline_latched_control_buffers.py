@@ -83,7 +83,7 @@ class LatchedControlBuffers(ControlBuffers):
     def create_decoder_clk(self):
         if self.use_decoder_clk:
             assert len(OPTS.decoder_clk_stages) % 2 == 1, "Number of decoder clk stages should be odd"
-            self.decoder_clk = self.create_mod(LogicBuffer, buffer_stages=OPTS.decoder_clk_stages,
+            self.decoder_clk = self.create_mod(LogicBuffer, buffer_stages="decoder_clk_stages",
                                                logic="pnand2")
 
     def add_decoder_clk_connections(self, connections):
@@ -97,13 +97,13 @@ class LatchedControlBuffers(ControlBuffers):
     def create_bank_sel(self):
         if self.use_chip_sel:
             assert len(OPTS.bank_sel_stages) % 2 == 1, "Number of bank sel stages should be odd"
-            self.bank_sel_buf = self.create_mod(LogicBuffer, buffer_stages=OPTS.bank_sel_stages,
+            self.bank_sel_buf = self.create_mod(LogicBuffer, buffer_stages="bank_sel_stages",
                                                 logic="pnand2")
 
     def create_precharge_buffers(self):
         assert len(OPTS.precharge_buffers) % 2 == 0, "Number of precharge buffers should be even"
         logic = "pnand3" if self.bank.words_per_row == 1 else "pnand2"
-        self.precharge_buf = self.create_mod(LogicBuffer, buffer_stages=OPTS.precharge_buffers,
+        self.precharge_buf = self.create_mod(LogicBuffer, buffer_stages="precharge_buffers",
                                              logic=logic)
 
     def add_precharge_buf_connections(self, connections):

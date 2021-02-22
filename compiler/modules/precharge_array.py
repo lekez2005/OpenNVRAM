@@ -16,7 +16,7 @@ class precharge_array(design.design):
 
     def __init__(self, columns, size=1):
         design.design.__init__(self, "precharge_array")
-        debug.info(1, "Creating {0}".format(self.name))
+        debug.info(1, "Creating {0} with precharge size {1:.3g}".format(self.name, size))
 
         self.columns = columns
         self.size = size

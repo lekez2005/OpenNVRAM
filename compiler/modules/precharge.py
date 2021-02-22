@@ -25,6 +25,7 @@ class precharge(design.design):
 
         self.beta = parameter["beta"]
         self.ptx_width = utils.round_to_grid(size * self.beta * parameter["min_tx_size"])
+        self.size = self.ptx_width / (self.beta * parameter["min_tx_size"])
         self.width = self.bitcell.width
 
         self.add_pins()

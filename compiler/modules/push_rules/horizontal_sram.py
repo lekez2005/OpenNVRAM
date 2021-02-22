@@ -20,15 +20,17 @@ class HorizontalSram(CmosSram):
         super().create_modules()
         self.row_decoder_y -= self.bank.bitcell.height
 
-    def create_column_decoder_modules(self):
+    @staticmethod
+    def create_column_decoder_modules(words_per_row):
         buffer_sizes = [OPTS.predecode_sizes[0]] + OPTS.column_decoder_buffers[1:]
-        if self.words_per_row == 2:
-            self.column_decoder = FlopBufferHorizontal(OPTS.control_flop, OPTS.column_decoder_buffers,
-                                                       dummy_indices=[0, 2])
-        elif self.words_per_row == 4:
-            self.column_decoder = predecode2x4_horizontal(use_flops=True, buffer_sizes=buffer_sizes)
+        if words_per_row == 2:
+            column_decoder = FlopBufferHorizontal(OPTS.control_flop, OPTS.column_decoder_buffers,
+                                                  dummy_indices=[0, 2])
+        elif words_per_row == 4:
+            column_decoder = predecode2x4_horizontal(use_flops=True, buffer_sizes=buffer_sizes)
         else:
-            self.column_decoder = predecode3x8_horizontal(use_flops=True, buffer_sizes=buffer_sizes)
+            column_decoder = predecode3x8_horizontal(use_flops=True, buffer_sizes=buffer_sizes)
+        return column_decoder
 
     def route_layout(self):
         super().route_layout()

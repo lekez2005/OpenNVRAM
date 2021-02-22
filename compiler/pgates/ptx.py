@@ -501,7 +501,7 @@ class ptx(design.design):
         cap_val = self.get_tx_cap(tx_type=self.tx_type[0], terminal=pin_name,
                                   width=self.tx_width, nf=self.mults,
                                   m=1, interpolate=True)
-        return cap_val, cap_val
+        return cap_val * num_elements, cap_val
 
     @staticmethod
     def get_tx_cap(tx_type, terminal="g", width=None, nf: int = 1, m: int = 1,

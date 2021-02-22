@@ -139,7 +139,7 @@ class NVSimComparison(CharTestBase):
             json.dump(existing_data, data_file, indent=2)
 
     def test_estimate_delay(self):
-        from base.dependency_graph import create_graph
+        from characterizer.dependency_graph import create_graph
         from base.design import design
         from globals import OPTS
         if not self.options.action == ACTION_ESTIMATE:
@@ -174,7 +174,6 @@ class NVSimComparison(CharTestBase):
 
         from base.design import design
         from characterizer import stimuli
-        from characterization_utils import search_meas, search_meas_usim
         from globals import OPTS
 
         import characterizer

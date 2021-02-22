@@ -153,10 +153,17 @@ class ControlBuffers(design, ABC):
         return args
 
     def create_mod(self, mod_class, **kwargs):
+        buffer_stages_key = None
+        if "buffer_stages" in kwargs:
+            if isinstance(kwargs["buffer_stages"], str):
+                buffer_stages_key = kwargs["buffer_stages"]
+                kwargs["buffer_stages"] = getattr(OPTS, kwargs["buffer_stages"])
         args = self.get_class_args(mod_class)
         args.update(kwargs)
         mod = mod_class(**args)
         self.add_mod(mod)
+        if buffer_stages_key is not None:
+            mod.buffer_stages_str = buffer_stages_key
         return mod
 
     def create_common_modules(self):
@@ -166,36 +173,36 @@ class ControlBuffers(design, ABC):
         self.inv = self.create_mod(pinv)
 
     def create_clk_buf(self):
-        self.clk_buf = self.create_mod(LogicBuffer, buffer_stages=OPTS.clk_buffers,
+        self.clk_buf = self.create_mod(LogicBuffer, buffer_stages="clk_buffers",
                                        logic="pnand2")
 
     def create_wordline_en(self):
         assert len(OPTS.wordline_en_buffers) % 2 == 0, "Number of wordline buffers should be even"
         self.wordline_buf = self.create_mod(LogicBuffer,
-                                            buffer_stages=OPTS.wordline_en_buffers,
+                                            buffer_stages="wordline_en_buffers",
                                             logic="pnor2")
 
     def create_write_buf(self):
-        self.write_buf = self.create_mod(LogicBuffer, buffer_stages=OPTS.write_buffers,
+        self.write_buf = self.create_mod(LogicBuffer, buffer_stages="write_buffers",
                                          logic="pnor2")
 
     def create_precharge_buffers(self):
         assert len(OPTS.precharge_buffers) % 2 == 0, "Number of precharge buffers should be even"
-        self.precharge_buf = self.create_mod(LogicBuffer, buffer_stages=OPTS.precharge_buffers,
+        self.precharge_buf = self.create_mod(LogicBuffer, buffer_stages="precharge_buffers",
                                              logic="pnand2")
 
     def create_sense_amp_buf(self):
         assert len(OPTS.sense_amp_buffers) % 2 == 1, "Number of sense_en buffers should be odd"
-        self.sense_amp_buf = self.create_mod(LogicBuffer, buffer_stages=OPTS.sense_amp_buffers,
+        self.sense_amp_buf = self.create_mod(LogicBuffer, buffer_stages="sense_amp_buffers",
                                              logic="pnand3")
 
     def create_tri_en_buf(self):
-        self.tri_en_buf = self.create_mod(LogicBuffer, buffer_stages=OPTS.tri_en_buffers,
+        self.tri_en_buf = self.create_mod(LogicBuffer, buffer_stages="tri_en_buffers",
                                           logic="pnand3")
 
     def create_sample_bar(self):
         assert len(OPTS.sampleb_buffers) % 2 == 0, "Number of sampleb buffers should be even"
-        self.sample_bar = self.create_mod(BufferStage, buffer_stages=OPTS.sampleb_buffers)
+        self.sample_bar = self.create_mod(BufferStage, buffer_stages="sampleb_buffers")
 
     def derive_module_offsets(self):
         if self.num_rows == 1:
@@ -788,25 +795,28 @@ class ControlBuffers(design, ABC):
         y_offset = pin.by() if pin.cy() > rail.cy() else pin.uy()
         self.join_rail_to_y_offset(x_offset, y_offset, rail, add_rail_via)
 
+    def get_output_driver(self, pin_name):
+        for connection in self.schematic_connections:
+            _, output_nets = self.get_module_connections(connection)
+            if pin_name in output_nets:
+                mod_conns = connection.connections
+                mod_pin_name = connection.mod.pins[mod_conns.index(pin_name)]
+                mod_inst = self.inst_dict[connection.inst_name]
+                out_pin = mod_inst.get_pin(mod_pin_name)
+                return mod_inst, out_pin
+
     def add_output_pins(self):
         """Add layout output pins"""
         for pin_name in self.output_pins:
-            for connection in self.schematic_connections:
-                _, output_nets = self.get_module_connections(connection)
-                if pin_name in output_nets:
-                    mod_conns = connection.connections
-                    mod_pin_name = connection.mod.pins[mod_conns.index(pin_name)]
-                    mod_inst = self.inst_dict[connection.inst_name]
-                    out_pin = mod_inst.get_pin(mod_pin_name)
-                    x_offset = out_pin.cx() - 0.5 * self.m2_width
-                    if out_pin.cy() > 0.5 * self.height:
-                        self.add_layout_pin(pin_name, METAL2,
-                                            offset=vector(x_offset, out_pin.uy()),
-                                            height=self.height - out_pin.uy())
-                    else:
-                        self.add_layout_pin(pin_name, METAL2, offset=vector(x_offset, 0),
-                                            height=out_pin.by())
-                    break
+            mod_inst, out_pin = self.get_output_driver(pin_name)
+            x_offset = out_pin.cx() - 0.5 * self.m2_width
+            if out_pin.cy() > 0.5 * self.height:
+                self.add_layout_pin(pin_name, METAL2,
+                                    offset=vector(x_offset, out_pin.uy()),
+                                    height=self.height - out_pin.uy())
+            else:
+                self.add_layout_pin(pin_name, METAL2, offset=vector(x_offset, 0),
+                                    height=out_pin.by())
 
     def get_output_pin_names(self):
         _, output_pins = self.get_schematic_pins()

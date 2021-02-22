@@ -124,6 +124,9 @@ class options(optparse.Values):
     flop_buffer = "flop_buffer.FlopBuffer"
 
     # buffer stages
+    max_buf_size = 40
+    # Penalize large buffer sizes. Add 'penalty'*(sum(sizes)) ps to delays
+    buffer_optimization_size_penalty = 0.1
     control_logic_clk_buffer_stages = [2, 6, 16, 24]  # buffer stages for control logic clk_bar and clk_buf
     control_logic_logic_buffer_stages = [2.5, 8]  # buffer stages for control logic outputs except clks
     bank_gate_buffers = {  # buffers for bank gate. "default" used for unspecified signals
@@ -143,6 +146,7 @@ class options(optparse.Values):
     use_precharge_trigger = False
 
     precharge_size = 4
+    max_precharge_size = 10
     column_mux_size = 8
 
     cells_per_group = 1

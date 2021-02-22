@@ -48,6 +48,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         self.num_words = num_words
         self.words_per_row = words_per_row
         self.num_banks = num_banks
+        self.is_optimized = False
 
         # to keep track of offsets used for repeaters or inter-array power
         self.occupied_m4_bitcell_indices = []
@@ -186,14 +187,15 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
 
     def create_left_bank_modules(self):
         """Copies modules from the specified adjacent bank"""
-        for module_name in self.get_module_list() + ["msf_mask_in", "msf_data_in", "control_flop",
-                                                     "control_flop_neg"]:
+        for module_name in self.get_module_list() + ["msf_mask_in", "msf_data_in"]:
             if not hasattr(self.adjacent_bank, module_name):
                 continue
             adjacent_mod = getattr(self.adjacent_bank, module_name)
             setattr(self, module_name, adjacent_mod)
             self.add_mod(adjacent_mod)
         self.create_control_buffers()
+        self.create_control_flops()
+        self.derive_chip_sel_decoder_clk()
 
     def create_modules(self):
         """Create modules that will be added to bank"""
@@ -227,17 +229,42 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
             self.column_mux_array = self.create_module('column_mux_array', word_size=self.word_size,
                                                        columns=self.num_cols)
 
-        # run optimizations
-        delay_strategy = delay_strategy_class()(self)
-        self.wordline_driver = delay_strategy.run_optimizations()
-
-        self.precharge_array = self.create_module('precharge_array', columns=self.num_cols, size=OPTS.precharge_size)
-
-        self.create_control_buffers()
-
         self.decoder = self.create_module('decoder', rows=self.num_rows)
 
-        self.create_control_flop()
+        self.wordline_driver = self.create_module('wordline_driver', rows=self.num_rows,
+                                                  buffer_stages=OPTS.wordline_buffers)
+
+        self.precharge_array = self.create_module('precharge_array', columns=self.num_cols,
+                                                  size=OPTS.precharge_size)
+
+        self.create_control_buffers()
+        self.derive_chip_sel_decoder_clk()
+
+        self.create_control_flops()
+        self.run_optimizations()
+
+    def run_optimizations(self):
+        if self.is_optimized or self.is_left_bank:
+            return
+        # run optimizations
+        from characterizer.control_buffers_optimizer import ControlBufferOptimizer
+        self.optimizer = ControlBufferOptimizer(self)
+        self.optimizer.run_optimizations()
+        self.is_optimized = True
+        self.recreate_modules()
+
+    def recreate_modules(self):
+        # temporarily suspend name map conflict check
+        existing_designs = set(design.name_map)
+        design.name_map.clear()
+        self.create_modules()
+        existing_designs.update(design.name_map)
+        design.name_map = list(existing_designs)
+
+    def derive_chip_sel_decoder_clk(self):
+        control_inputs = self.control_buffers.get_input_pin_names()
+        self.use_chip_sel = "chip_sel" in control_inputs
+        self.use_decoder_clk = "decoder_clk" in self.control_buffers.pins
 
     def create_module(self, mod_name, *args, **kwargs):
         """Creates mod from class 'mod_{mod_name}. args, kwargs are passed to class"""
@@ -287,11 +314,30 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         """Create control logic buffers"""
         pass
 
-    def create_control_flop(self):
-        self.control_flop = self.create_module("flop_buffer", OPTS.control_flop,
-                                               OPTS.control_flop_buffers, negate=False)
-        self.control_flop_neg = self.create_module("flop_buffer", OPTS.control_flop,
-                                                   OPTS.control_flop_buffers, negate=True)
+    def derive_control_flops(self):
+        flop_inputs = ["read", "bank_sel"]
+        negations = [False, True]
+        if self.use_chip_sel:
+            flop_inputs.append("chip_sel")
+            negations.append(True)
+            if self.is_left_bank:
+                negations[1] = False
+            else:
+                negations[1] = True
+        combinations = zip(flop_inputs, negations)
+        # sort by pin y
+        combinations = list(sorted(combinations,
+                                   key=lambda x: self.control_buffers.get_pin(x[0]).by()))
+        return combinations
+
+    def create_control_flops(self):
+        self.control_flop_mods = {}
+        for flop_name, negation in self.derive_control_flops():
+            buffer_stages = getattr(OPTS, flop_name + "_buf_buffers", OPTS.control_flop_buffers)
+            control_flop = self.create_module("flop_buffer", OPTS.control_flop,
+                                              buffer_stages, negate=negation)
+            self.control_flop_mods[flop_name] = control_flop
+            self.control_flop = control_flop  # for height dimension references
 
     def get_control_flop_connections(self):
         """When single bank or dependent 2 banks: Csb -> bank_sel
@@ -300,19 +346,16 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         """
         if self.use_chip_sel:
             bank_sel_in = "addr_msb"
-            if self.is_left_bank:
-                bank_sel_mod = self.control_flop
-            else:
-                bank_sel_mod = self.control_flop_neg
         else:
             bank_sel_in = "Csb"
-            bank_sel_mod = self.control_flop_neg
-        connections = {
-            "read_buf": ("read", "read_buf", self.control_flop),
-            "bank_sel_buf": (bank_sel_in, "bank_sel_buf", bank_sel_mod),
-        }
+        connections = [
+            ("read", "read_buf"),
+            (bank_sel_in, "bank_sel_buf"),
+        ]
         if self.use_chip_sel:
-            connections["chip_sel_buf"] = ("Csb", "chip_sel_buf", self.control_flop_neg)
+            connections.append(("Csb", "chip_sel_buf"))
+        connections = {net_out: (net_in, net_out, self.control_flop_mods[net_out[:-4]])
+                       for net_in, net_out in connections}
         return connections
 
     def get_control_names(self):
@@ -737,6 +780,36 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                                                   offset=vector(x_offset, self.bitcell_array_inst.by()))
         self.connect_inst(self.get_wordline_driver_connections())
 
+    def get_net_loads(self, net):
+        destinations = []
+        for i in range(len(self.conns)):
+            if net in self.conns[i]:
+                pin_index = self.conns[i].index(net)
+                inst = self.insts[i]
+                if inst.name == "control_buffers" or inst.name.startswith("right_buffer"):
+                    continue
+                pin_name = inst.mod.pins[pin_index]
+                destinations.append((inst, pin_name))
+        if net == "decoder_clk":
+            return self.get_decoder_clk_loads()
+        if net == "clk_buf" and not self.use_decoder_clk:
+            destinations.extend(self.get_decoder_clk_loads())
+        return destinations
+
+    def get_decoder_clk_loads(self):
+        destinations = []
+        if OPTS.decoder_flops:
+            destinations.append((self.decoder, "clk"))
+        if self.words_per_row > 1:
+            if hasattr(OPTS, "sram_class"):
+                sram_class = self.import_mod_class_from_str(OPTS.sram_class)
+            else:
+                from modules.shared_decoder.cmos_sram import CmosSram
+                sram_class = CmosSram
+            col_decoder = sram_class.create_column_decoder_modules(self.words_per_row)
+            destinations.append((col_decoder, "clk"))
+        return destinations
+
     def get_control_rails_destinations(self):
         """Map control logic buffers output pins to peripheral pins"""
         control_outputs = self.control_buffers.get_output_pin_names()
@@ -748,19 +821,12 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
             elif net == "decoder_clk":
                 destination_pins[net] = []
                 continue
-            destinations = []
-            for i in range(len(self.conns)):
-                if net in self.conns[i]:
-                    pin_index = self.conns[i].index(net)
-                    inst = self.insts[i]
-                    if inst.name == "control_buffers" or inst.name.startswith("right_buffer"):
-                        continue
-                    pin_name = inst.mod.pins[pin_index]
-                    destinations.extend(inst.get_pins(pin_name))
+            destinations = self.get_net_loads(net)
             if not destinations:
                 debug.warning("Control buffer output {} not connected".format(net))
             else:
-                destination_pins[net] = destinations
+                pins = [x[0].get_pins(x[1]) for x in destinations]
+                destination_pins[net] = list(itertools.chain.from_iterable(pins))
         return destination_pins
 
     def add_cross_contact_center(self, cont, offset, rotate=False, rail_width=None, fill=True):

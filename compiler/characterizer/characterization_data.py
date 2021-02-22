@@ -52,6 +52,18 @@ def get_size_key(size: float, size_suffixes: List[Tuple[str, float]] = None):
     return construct_suffixes(size_suffixes)
 
 
+def load_json_file(file_name):
+    if not os.path.exists(os.path.dirname(file_name)):
+        pathlib.Path(os.path.dirname(file_name)).mkdir(parents=True, exist_ok=True)
+
+    if not os.path.exists(file_name):
+        with open(file_name, "w") as data_file:
+            json.dump({}, data_file)
+
+    with open(file_name, "r") as data_file:
+        return json.load(data_file)
+
+
 def save_data(cell_name: str, pin_name: str, value: float,
               size: float = 1, clear_existing=False,
               file_suffixes: List[Tuple[str, float]] = None,
@@ -74,18 +86,10 @@ def save_data(cell_name: str, pin_name: str, value: float,
     :return: Updated json file content
     """
     file_name = get_data_file(cell_name, file_suffixes)
-    if not os.path.exists(os.path.dirname(file_name)):
-        pathlib.Path(os.path.dirname(file_name)).mkdir(parents=True, exist_ok=True)
-
-    if not os.path.exists(file_name):
-        with open(file_name, "w") as data_file:
-            json.dump({}, data_file)
+    existing_data = load_json_file(file_name)  # ensure file existence
 
     if clear_existing:
         existing_data = {}  # type: char_data_format
-    else:
-        with open(file_name, "r") as data_file:
-            existing_data = json.load(data_file)
 
     if pin_name not in existing_data:
         existing_data[pin_name] = {}

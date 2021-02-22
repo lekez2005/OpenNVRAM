@@ -635,3 +635,12 @@ class pgate(design.design):
         # super class method doesn't consider size in calculating
         cap_per_unit = total_cap / self.size
         return total_cap, cap_per_unit
+
+    def get_driver_resistance(self, pin_name, use_max_res=False, interpolate=None, corner=None):
+        if interpolate is None:
+            interpolate = OPTS.interpolate_characterization_data
+        resistance = self.get_input_cap_from_char("resistance", interpolate=interpolate,
+                                                  corner=corner)
+        if resistance:
+            return resistance / self.size
+        return super().get_driver_resistance(pin_name, use_max_res, interpolate, corner)

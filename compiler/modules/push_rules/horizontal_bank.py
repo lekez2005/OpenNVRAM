@@ -21,16 +21,31 @@ class HorizontalBank(BaselineBank):
         super().add_pins()
         self.add_pin("wordline_en")
 
+    def get_net_loads(self, net):
+        if net == "wordline_en":
+            return [(self.decoder, "en")]
+        return super().get_net_loads(net)
+
     def create_control_buffers(self):
         self.control_buffers = LatchedControlLogic(self)
         self.add_mod(self.control_buffers)
 
-    def create_control_flop(self):
-        self.control_flop = self.create_module("flop_buffer", OPTS.control_flop,
-                                               OPTS.control_flop_buffers, dummy_indices=[0])
-        self.control_flop_neg = self.create_module("flop_buffer", OPTS.control_flop,
-                                                   OPTS.control_flop_buffers,
-                                                   dummy_indices=[0], negate=True)
+    def create_control_flops(self):
+        self.control_flop_mods = {}
+        configs = self.derive_control_flops()
+        for i, config in enumerate(configs):
+            flop_name, negation = config
+            buffer_stages = getattr(OPTS, flop_name + "_buf_buffers", OPTS.control_flop_buffers)
+            if i == 0:
+                dummy_indices = [0]
+            elif i == len(configs) - 1:
+                dummy_indices = [2]
+            else:
+                dummy_indices = []
+            control_flop = self.create_module("flop_buffer", OPTS.control_flop,
+                                              buffer_stages, dummy_indices=dummy_indices)
+            self.control_flop_mods[flop_name] = control_flop
+            self.control_flop = control_flop  # for height dimension references
 
     def get_control_flop_connections(self):
         connections = super().get_control_flop_connections()

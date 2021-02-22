@@ -73,10 +73,7 @@ class BaseDelayStrategy(ABC):
 
             OPTS.wordline_buffers = self.get_wordline_driver_sizes()
 
-            wordline_driver = self.bank.create_module('wordline_driver', rows=self.num_rows,
-                                                      buffer_stages=OPTS.wordline_buffers)
-            if wordline_driver:
-                OPTS.wordline_en_buffers = self.get_wordline_en_sizes()
+            OPTS.wordline_en_buffers = self.get_wordline_en_sizes()
 
             OPTS.write_buffers = self.get_write_en_sizes()
 
@@ -88,10 +85,6 @@ class BaseDelayStrategy(ABC):
 
             predecode_sizes = self.get_predecoder_sizes()
             OPTS.predecode_sizes = predecode_sizes[1:]
-        else:
-            wordline_driver = self.bank.create_module('wordline_driver', rows=self.num_rows,
-                                                      buffer_stages=OPTS.wordline_buffers)
-        return wordline_driver
 
     @staticmethod
     def print_optimization_result(solution, optimization_spec, net_names, en_en_bar=True):

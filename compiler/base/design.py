@@ -463,13 +463,8 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                     add_fill(OPTS.repeaters_array_space_offsets[-1] + tap_width, "left")
                     add_fill(OPTS.repeaters_array_space_offsets[0] - instances[0].width, "right")
 
-    def create_mod_from_str(self, module_name, *args, **kwargs):
-        """Helper method to create modules from string specification
-        *args and **kwargs are passed to the class instantiation
-        specify class name using .delimiter in module_name or as separate parameter
-        specify rotation as 'rotation' parameter
-        """
-
+    @staticmethod
+    def import_mod_class_from_str(module_name, **kwargs):
         if "class_name" in kwargs and kwargs["class_name"]:
             class_name = kwargs["class_name"]
             del kwargs["class_name"]
@@ -477,15 +472,24 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             module_name, class_name = module_name.split('.')
         else:
             class_name = module_name
+        module = __import__(module_name)
+        mod_class = getattr(module, class_name)
+        return mod_class
 
+
+    def create_mod_from_str(self, module_name, *args, **kwargs):
+        """Helper method to create modules from string specification
+        *args and **kwargs are passed to the class instantiation
+        specify class name using .delimiter in module_name or as separate parameter
+        specify rotation as 'rotation' parameter
+        """
         if 'rotation' in kwargs:
             rotation = kwargs['rotation']
             del kwargs['rotation']
         else:
             rotation = None
 
-        module = __import__(module_name)
-        mod_class = getattr(module, class_name)
+        mod_class = self.import_mod_class_from_str(module_name, **kwargs)
         mod = mod_class(*args, **kwargs)
 
         if rotation is not None:

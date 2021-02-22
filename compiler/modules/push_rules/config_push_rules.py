@@ -6,6 +6,8 @@ baseline = False
 mram = False
 push = True
 
+sram_class = "modules.push_rules.horizontal_sram.HorizontalSram"
+
 bitcell_mod = "push_rules/cell_6t_hs_push"
 body_tap = "push_rules/cell_6t_hs_push_tap"
 predecoder_flop = "ms_flop_horz_push_rot"

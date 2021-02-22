@@ -192,14 +192,16 @@ class CmosSram(design):
         self.connect_inst(self.get_bank_connections(bank_num, bank_mod))
         return bank_inst
 
-    def create_column_decoder_modules(self):
+    @staticmethod
+    def create_column_decoder_modules(words_per_row):
         buffer_sizes = [OPTS.predecode_sizes[0]] + OPTS.column_decoder_buffers[1:]
-        if self.words_per_row == 2:
-            self.column_decoder = FlopBuffer(OPTS.control_flop, OPTS.column_decoder_buffers)
-        elif self.words_per_row == 4:
-            self.column_decoder = hierarchical_predecode2x4(use_flops=True, buffer_sizes=buffer_sizes)
+        if words_per_row == 2:
+            column_decoder = FlopBuffer(OPTS.control_flop, OPTS.column_decoder_buffers)
+        elif words_per_row == 4:
+            column_decoder = hierarchical_predecode2x4(use_flops=True, buffer_sizes=buffer_sizes)
         else:
-            self.column_decoder = hierarchical_predecode3x8(use_flops=True, buffer_sizes=buffer_sizes)
+            column_decoder = hierarchical_predecode3x8(use_flops=True, buffer_sizes=buffer_sizes)
+        return column_decoder
 
     def get_col_decoder_connections(self):
         col_address_bits = [i + self.row_addr_size for i in reversed(range(self.col_addr_size))]
@@ -214,7 +216,7 @@ class CmosSram(design):
     def create_column_decoder(self):
         if self.words_per_row < 2:
             return
-        self.create_column_decoder_modules()
+        self.column_decoder = self.create_column_decoder_modules(self.words_per_row)
         if self.words_per_row == 2:
             # Export internal flop output as layout pin, rearrange pin to match predecoder order
             self.column_decoder.pins = ["din", "dout", "dout_bar", "clk", "vdd", "gnd"]

@@ -595,7 +595,8 @@ class pgate(design.design):
         return True
 
     def get_char_data_file_suffixes(self, **kwargs):
-        return [("beta", parameter["beta"])]
+        return [("beta", parameter["beta"]),
+                ("contacts", int(self.contact_nwell))]
 
     def get_char_data_size_suffixes(self, **kwargs):
         """
@@ -630,7 +631,7 @@ class pgate(design.design):
         return total_cap, cap_per_unit
 
     def compute_input_cap(self, pin_name, wire_length: float = 0.0):
-        total_cap, cap_per_unit = super().compute_input_cap(pin_name, wire_length)
+        total_cap = super().compute_input_cap(pin_name, wire_length)
         # super class method doesn't consider size in calculating
-        cap_per_unit /= self.size
+        cap_per_unit = total_cap / self.size
         return total_cap, cap_per_unit

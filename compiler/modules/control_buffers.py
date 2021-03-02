@@ -21,6 +21,7 @@ from pgates.pnand2 import pnand2
 from pgates.pnor2 import pnor2
 
 ModOffset = collections.namedtuple("ModOffset", "inst_name x_offset mirror")
+Blockage = collections.namedtuple("Blockage", "x_offset top bottom")
 
 
 class Rail:
@@ -120,6 +121,8 @@ class ControlBuffers(design, ABC):
         self.derive_rails()
         self.add_rails()
         self.add_modules()
+
+        self.evaluate_vertical_connection_types()
 
         self.route_pin_connections()
         self.add_output_pins()
@@ -377,19 +380,30 @@ class ControlBuffers(design, ABC):
             x_offset = module_offset.x_offset - x_offset - self.m2_width
         return x_offset
 
-    def find_non_blocked_m2(self, desired_x):
+    def find_non_blocked_m2(self, desired_x, blockage_top=None, blockage_bottom=None):
         """Find un-obstructed M2 x offset, and if the connection is direct"""
         desired_x = utils.round_to_grid(desired_x)
-        all_m2 = list(sorted(self.m2_blockages, reverse=True))
+
+        all_m2_blockages = list(sorted(self.m2_blockages, reverse=True, key=lambda x: x.x_offset))
+        all_m2 = list(map(lambda x: x.x_offset, all_m2_blockages))
+
         parallel_space = self.get_parallel_space(METAL2)  # space for parallel lines
         m2_pitch = parallel_space + self.m2_width
+
+        y_space = self.get_line_end_space(METAL2)
 
         if all_m2 and desired_x >= max(all_m2) + m2_pitch:
             return desired_x, True
 
         # search left
         direct = True
-        for x_offset in all_m2:
+        for index, x_offset in enumerate(all_m2):
+            # first check for y overlap
+            if blockage_top is not None and blockage_top + y_space < all_m2_blockages[index].bottom:
+                continue
+            elif blockage_bottom is not None and blockage_bottom - y_space > all_m2_blockages[index].top:
+                continue
+            # then check for x overlaps
             if x_offset - desired_x >= m2_pitch:
                 # too far away on the right
                 continue
@@ -457,9 +471,41 @@ class ControlBuffers(design, ABC):
                         kwargs["x_offset"] = x_offset
                         kwargs["conn_type"] = (PinConnection.DIRECT_VERT
                                                if is_direct else PinConnection.VERT)
-                        self.m2_blockages.append(utils.round_to_grid(x_offset))
+                        self.m2_blockages.append(Blockage(utils.round_to_grid(x_offset), None, None))
                     input_connection = PinConnection(**kwargs)
                     self.pin_connections.append(input_connection)
+
+    def evaluate_vertical_connection_types(self):
+        """Re-evaluate x offset and whether direct vertical connection for each connection
+        Now that we know the rails y_offsets, some previously indirect connections can become direct if no y overlap
+        """
+        self.m2_blockages.clear()
+        for pin_connection in self.pin_connections:
+            if pin_connection.conn_type == PinConnection.DIRECT_HORZ:
+                continue
+            module_offset = self.module_offsets[pin_connection.inst_name]
+            inst = self.inst_dict[pin_connection.inst_name]
+            pin = inst.get_pin(inst.mod.pins[pin_connection.pin_index])
+            rail = self.rails[pin_connection.net_name].rect
+
+            is_top_mod = inst.by() > rail.cy()
+
+            pin_index = pin_connection.pin_index
+            x_offset = self.evaluate_pin_x_offset(module_offset, pin_index)
+
+            if is_top_mod:
+                is_direct = True
+                blockage_top = pin.cy()
+                blockage_bottom = rail.cy() - 0.5 * cross_m2m3.height
+            else:
+                blockage_top = rail.cy() + 0.5 * cross_m2m3.height
+                blockage_bottom = pin.cy()
+                x_offset, is_direct = self.find_non_blocked_m2(x_offset, blockage_top, blockage_bottom)
+
+            pin_connection.x_offset = x_offset
+            pin_connection.conn_type = PinConnection.DIRECT_VERT if is_direct else PinConnection.VERT
+
+            self.m2_blockages.append(Blockage(utils.round_to_grid(x_offset), blockage_top, blockage_bottom))
 
     def derive_rail_max_min_offsets(self, input_nets):
         """Get min and max x offsets for rails"""
@@ -701,18 +747,53 @@ class ControlBuffers(design, ABC):
         net = pin_connection.net_name
         original_rail = self.rails[net].rect
 
-        if inst_name not in self.indirect_m3_connections:
-            rail_y = min(self.min_rail_y + 0.5 * self.bus_width - 0.5 * m2m3.contact_width -
-                         self.get_space("via2") - m2m3.contact_width,
-                         self.min_rail_y + 0.5 * self.bus_width - 0.5 * m2m3.height -  # to bottom via
-                         self.get_line_end_space(METAL2) - # to top via
-                         0.5 * m2m3.height - 0.5 * self.m3_width)
-            self.indirect_m3_connections[inst_name] = [rail_y]
+        # evaluate M3 rail min_x and max_x
+        pin_index = self.connections_dict[inst_name].connections.index(net)
+        original_x_offset = self.evaluate_pin_x_offset(self.module_offsets[inst_name], pin_index)
+
+        m3_x_offset = pin_connection.x_offset + 0.5 * self.m2_width - 0.5 * m2m3.height
+        _, min_m3_width = self.calculate_min_area_fill(self.m3_width, layer=METAL3)
+        m3_end_x = original_x_offset + max(0.5 * self.m2_width + 0.5 * m2m3.height, min_m3_width)
+        m3_width = m3_end_x - m3_x_offset
+
+        # find unoccupied m3 rail y offset
+        rail_indices = list(sorted(self.indirect_m3_connections.keys()))
+        if not rail_indices:
+            min_rail_y = min(self.min_rail_y + 0.5 * self.bus_width - 0.5 * m2m3.contact_width -
+                             self.get_space("via2") - m2m3.contact_width,
+                             self.min_rail_y + 0.5 * self.bus_width - 0.5 * m2m3.height -  # to bottom via
+                             self.get_line_end_space(METAL2) -  # to top via
+                             0.5 * m2m3.height - 0.5 * self.m3_width)
+            rail_y = min_rail_y
+            rail_index = 0
         else:
             rail_pitch = self.get_line_end_space(METAL2) + cross_m2m3.first_layer_height
-
-            rail_y = self.indirect_m3_connections[inst_name][-1] - rail_pitch
-            self.indirect_m3_connections[inst_name].append(rail_y)
+            rail_x_space = self.get_line_end_space(METAL3)
+            rail_index = 0
+            while True:
+                if rail_index not in self.indirect_m3_connections:
+                    # starting new rail index
+                    rail_y = self.indirect_m3_connections[rail_index - 1][0][2] - rail_pitch
+                    break
+                # loop through existing rails
+                existing_rails = self.indirect_m3_connections[rail_index]
+                # look for clashes
+                clash = False
+                for min_x, max_x, _ in existing_rails:
+                    if min_x - rail_x_space < m3_x_offset < max_x + rail_x_space:
+                        clash = True
+                        break
+                    elif min_x - rail_x_space < m3_end_x < max_x + rail_x_space:
+                        clash = True
+                        break
+                if clash:
+                    rail_index += 1
+                else:
+                    rail_y = self.indirect_m3_connections[rail_index][0][2]
+                    break
+        if rail_index not in self.indirect_m3_connections:
+            self.indirect_m3_connections[rail_index] = []
+        self.indirect_m3_connections[rail_index].append((m3_x_offset, m3_end_x, rail_y))
 
         # add m2 to new rail
         _, min_m2_height = self.calculate_min_area_fill(self.m2_width, layer=METAL2)
@@ -729,9 +810,6 @@ class ControlBuffers(design, ABC):
             self.add_cross_contact_center(cross_m2m3, offset=vector(via_x, original_rail.cy()),
                                           rotate=False)
 
-        pin_index = self.connections_dict[inst_name].connections.index(net)
-        original_x_offset = self.evaluate_pin_x_offset(self.module_offsets[inst_name], pin_index)
-
         if via_x + 0.5 * m2m3.contact_width + self.get_via_space(m2m3) > original_x_offset:
             # use a direct M2 connection (no vias)
             new_rail = self.add_rect(METAL2, offset=vector(via_x, rail_y),
@@ -744,10 +822,6 @@ class ControlBuffers(design, ABC):
                                       offset=vector(via_x, rail_y + 0.5 * self.m3_width),
                                       rotate=False)
 
-        _, min_m3_width = self.calculate_min_area_fill(self.m3_width, layer=METAL3)
-        m3_x_offset = pin_connection.x_offset + 0.5 * self.m3_width - 0.5 * m2m3.height
-        m3_end_x = original_x_offset + 0.5 * self.m3_width + 0.5 * m2m3.height
-        m3_width = max(m3_end_x - m3_x_offset, min_m3_width)
         new_rail = self.add_rect(METAL3, offset=vector(m3_x_offset, rail_y), width=m3_width)
 
         self.route_direct_rail_to_pin(pin_connection, new_rail, original_x_offset)

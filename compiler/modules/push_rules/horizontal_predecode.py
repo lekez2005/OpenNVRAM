@@ -32,12 +32,6 @@ class horizontal_predecode(hierarchical_predecode, ABC):
         self.add_boundary()
         self.DRC_LVS()
 
-    def connect_inst(self, args, check=True):
-        """Correct connections for negative outputs"""
-        if self.negate and args and args[0].startswith("flop_in"):
-            args[1], args[2] = args[2], args[1]
-        super().connect_inst(args, check)
-
     def create_layout(self):
         self.create_rails()
         self.add_input_inverters()
@@ -146,12 +140,8 @@ class horizontal_predecode(hierarchical_predecode, ABC):
             self.connect_pin_to_rail(self.rails["clk"],
                                      self.in_inst[row].get_pin("clk"))
 
-            if self.negate:
-                a = "dout_bar"
-                a_bar = "dout"
-            else:
-                a = "dout"
-                a_bar = "dout_bar"
+            a = "dout"
+            a_bar = "dout_bar"
 
             self.connect_pin_to_rail(self.rails["A[{}]".format(row)],
                                      self.in_inst[row].get_pin(a))

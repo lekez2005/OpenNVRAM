@@ -21,7 +21,14 @@ class HierarchicalPredecode2x4Test(OpenRamTest):
 
         debug.info(1, "Testing sample for hierarchy_predecode2x4 without flop")
         a = pre.hierarchical_predecode2x4(use_flops=False)
-        self.local_drc_check(a)
+        self.local_check(a)
+
+    def test_even_buffer_stages(self):
+        from modules import hierarchical_predecode2x4 as pre
+
+        debug.info(1, "Testing sample for hierarchy_predecode2x4 with flop")
+        a = pre.hierarchical_predecode2x4(use_flops=True, buffer_sizes=[1, 2, 4])
+        self.local_check(a)
 
         
 OpenRamTest.run_tests(__name__)

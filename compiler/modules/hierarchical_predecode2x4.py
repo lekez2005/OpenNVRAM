@@ -5,9 +5,9 @@ class hierarchical_predecode2x4(hierarchical_predecode):
     """
     Pre 2x4 decoder used in hierarchical_decoder.
     """
-    def __init__(self, route_top_rail=True, use_flops=False, buffer_sizes=None):
+    def __init__(self, route_top_rail=True, use_flops=False, buffer_sizes=None, negate=False):
         hierarchical_predecode.__init__(self, 2, route_top_rail, use_flops=use_flops,
-                                        buffer_sizes=buffer_sizes)
+                                        buffer_sizes=buffer_sizes, negate=negate)
 
         self.add_pins()
         self.create_modules()

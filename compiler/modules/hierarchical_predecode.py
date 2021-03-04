@@ -3,13 +3,16 @@ import math
 import debug
 from base import contact
 from base import design
-from base.contact import m2m3, m1m2
+from base.contact import m2m3, m1m2, cross_m1m2
 from base.design import METAL3, METAL1, METAL2, PIMP, NIMP
 from base.vector import vector
 from globals import OPTS
+from modules.buffer_stage import BufferStage
 from pgates.pinv import pinv
 from pgates.pnand2 import pnand2
 from pgates.pnand3 import pnand3
+from pgates.pnor2 import pnor2
+from pgates.pnor3 import pnor3
 from tech import drc
 
 
@@ -21,6 +24,7 @@ class hierarchical_predecode(design.design):
                  negate=False):
         self.number_of_inputs = input_number
         self.number_of_outputs = int(math.pow(2, self.number_of_inputs))
+
         name = "pre{0}x{1}".format(self.number_of_inputs,self.number_of_outputs)
         if not route_top_rail:
             name += "_no_top"
@@ -31,8 +35,13 @@ class hierarchical_predecode(design.design):
             name += "_" + ("__".join(['{:.3g}'.format(x) for x in buffer_sizes])).replace(".", "_")
         else:
             self.buffer_sizes = OPTS.predecode_sizes
-        if negate:  # TODO implement for non-horizontal
+        if negate:
             name += "_neg"
+
+        if len(self.buffer_sizes) % 2 == 1:
+            negate = not negate
+
+        self.negate = negate
         design.design.__init__(self, name=name)
         self.route_top_rail = route_top_rail
         self.use_flops = use_flops
@@ -72,27 +81,41 @@ class hierarchical_predecode(design.design):
         self.nand = self.create_nand(self.number_of_inputs)
         self.add_mod(self.nand)
 
-        # TODO use buffer stages in place of single output inverter
+        self.output_buffer = BufferStage(buffer_stages=self.buffer_sizes[1:], route_outputs=False,
+                                         height=self.module_height)
+        self.add_mod(self.output_buffer)
 
         if not self.route_top_rail:
-            self.top_inv = pinv(size=inverter_size, contact_nwell=False, height=self.module_height)
-            self.add_mod(self.top_inv)
+            self.top_output_buffer = BufferStage(buffer_stages=self.buffer_sizes[1:],
+                                                 route_outputs=False, contact_nwell=False,
+                                                 height=self.module_height)
+            self.add_mod(self.top_output_buffer)
             self.top_nand = self.create_nand(self.number_of_inputs)
             self.add_mod(self.top_nand)
         else:
-            self.top_inv = self.inv
+            self.top_output_buffer = self.output_buffer
             self.top_nand = self.nand
 
     def create_nand(self, inputs):
         """ Create the NAND for the predecode input stage """
         nand_size = self.buffer_sizes[0]
         if inputs == 2:
-            nand_class = pnand2
+            nand_class = pnor2 if self.negate else pnand2
         elif inputs == 3:
-            nand_class = pnand3
+            nand_class = pnor3 if self.negate else pnand3
         else:
             return debug.error("Invalid number of predecode inputs.", -1)
         while nand_size >= 1:
+            # silence name clash/size errors
+            def noop(*args, **kwargs): pass
+
+            def silect_check(check, _):
+                assert check
+
+            debug_error = debug.error
+            debug_check = debug.check
+            debug.error = noop
+            debug.check = silect_check
             try:
                 # adjacent inverter will have body taps
                 nand = nand_class(size=nand_size, contact_nwell=False,
@@ -101,6 +124,9 @@ class hierarchical_predecode(design.design):
                 return nand
             except AssertionError:
                 nand_size *= 0.98
+            finally:
+                debug.error = debug_error
+                debug.check = debug_check
 
     def setup_flop_offsets(self):
         x_offset = 0
@@ -261,8 +287,6 @@ class hierarchical_predecode(design.design):
                                    "inbar[{0}]".format(row),
                                    "clk", "vdd", "gnd"])
 
-
-
     def add_output_inverters(self):
         """ Create inverters for the inverted output decode signals. """
 
@@ -270,25 +294,31 @@ class hierarchical_predecode(design.design):
         for inv_num in range(self.number_of_outputs):
             name = "pre_nand_inv_{}".format(inv_num)
             if (inv_num % 2 == 1):
-                y_off = inv_num * self.inv.height
+                y_off = inv_num * self.output_buffer.height
                 mirror = "R0"
             else:
-                y_off =(inv_num + 1)*self.inv.height
+                y_off =(inv_num + 1)*self.output_buffer.height
                 mirror = "MX"
             offset = vector(self.x_off_inv_2, y_off)
             if inv_num < self.number_of_outputs - 1:
-                inv = self.inv
+                output_buffer = self.output_buffer
             else:
-                inv = self.top_inv
+                output_buffer = self.top_output_buffer
             self.inv_inst.append(self.add_inst(name=name,
-                                               mod=inv,
+                                               mod=output_buffer,
                                                offset=offset,
                                                mirror=mirror))
-            self.connect_inst(["Z[{}]".format(inv_num),
-                               "out[{}]".format(inv_num),
-                               "vdd", "gnd"])
+            out_net = "out[{}]".format(inv_num)
+            out_bar_net = "out_bar[{}]".format(inv_num)
+            z_net = "Z[{}]".format(inv_num)
 
-
+            if len(output_buffer.buffer_stages) == 1:
+                output_nets = [out_net, z_net]
+            elif len(output_buffer.buffer_stages) % 2 == 1:
+                output_nets = [out_net, out_bar_net]
+            else:
+                output_nets = [out_bar_net, out_net]
+            self.connect_inst([z_net] + output_nets + ["vdd", "gnd"])
 
     def add_nand(self,connections):
         """ Create the NAND stage for the decodes """
@@ -311,10 +341,16 @@ class hierarchical_predecode(design.design):
                                                 mod=nand,
                                                 offset=offset,
                                                 mirror=mirror))
-            self.connect_inst(connections[nand_input])
+            nand_conns = []
+            for net in connections[nand_input]:
+                if self.negate and net.startswith("in["):
+                    net = net.replace("in[", "inbar[")
+                elif self.negate and net.startswith("inbar["):
+                    net = net.replace("inbar[", "in[")
+                nand_conns.append(net)
+            self.connect_inst(nand_conns)
 
             self.join_inverter_nand_implants(nand_input)
-
 
     def route(self):
         if self.use_flops:
@@ -357,10 +393,11 @@ class hierarchical_predecode(design.design):
 
             # route nand output to output inv input
             z_pin = self.nand_inst[num].get_pin("Z")
-            a_pin = self.inv_inst[num].get_pin("A")
+            a_pin = self.inv_inst[num].get_pin("in")
             self.add_rect("metal1", offset=vector(z_pin.rx(), a_pin.by()), width=a_pin.lx()-z_pin.rx())
 
-            self.copy_layout_pin(self.inv_inst[num], "Z", "out[{}]".format(num))
+            out_pin = "out_inv" if len(self.output_buffer.buffer_stages) % 2 == 1 else "out"
+            self.copy_layout_pin(self.inv_inst[num], out_pin, "out[{}]".format(num))
 
     def route_horizontal_input_flops(self):
         """
@@ -479,6 +516,9 @@ class hierarchical_predecode(design.design):
         for k in range(self.number_of_outputs):
             # create x offset list         
             index_lst= nand_input_line_combination[k]
+            if self.negate:
+                index_lst = [x.replace("A[", "Abar2[").replace("Abar[", "A[").
+                                 replace("Abar2[", "Abar[") for x in index_lst]
 
             if self.number_of_inputs == 2:
                 gate_lst = ["A","B"]
@@ -494,7 +534,7 @@ class hierarchical_predecode(design.design):
                 gate_pin = self.nand_inst[k].get_pin(gate_pin_name)
                 pin_pos = gate_pin.lc()
                 rail_pos = vector(self.rails[rail_pin], pin_pos.y)
-                self.add_via_center(layers=layers, offset=rail_pos, rotate=0)
+                self.add_cross_contact_center(cross_m1m2, offset=rail_pos, rotate=True)
                 if gate_pin_name == "A":
                     self.add_rect(METAL1, offset=vector(rail_pos.x, rail_pos.y - 0.5 * self.m1_width),
                                   width=gate_pin.lx() - rail_pos.x)
@@ -613,22 +653,26 @@ class hierarchical_predecode(design.design):
         """
         if not self.implant_enclose_poly:  # implant enclose active already satisfied
             return
-        inv_inst = self.inv_inst[row]
+        inv_inst = self.inv_inst[row].mod.module_insts[0]
         nand_inst = self.nand_inst[row]
         rects = inv_inst.get_layer_shapes(PIMP) + inv_inst.get_layer_shapes(NIMP)
         rects = list(sorted(rects, key=lambda x: x.cy()))
         # top and bottom rect
         for i in range(2):
             rect = [rects[0], rects[-1]][i]
-            if rect.uy() < nand_inst.uy() and rect.by() > nand_inst.by(): # not a body tap
+            if rect.uy() < inv_inst.height and rect.by() > 0: # not a body tap
                 continue
+            layer = NIMP if i == 0 else PIMP
+            y_offset = row * inv_inst.height + rect.by()
             if row % 2 == 0:
-                layer = NIMP if i == 0 else PIMP
+                y_offset += (inv_inst.height - rect.uy())
             else:
-                layer = PIMP if i == 0 else NIMP
+                y_offset += rect.by()
+            x_end = self.inv_inst[row].lx() + inv_inst.lx() + rect.lx()
+
             self.add_rect(layer, offset=vector(nand_inst.lx(), rect.by()),
                           height=rect.height,
-                          width=rect.lx() - nand_inst.lx())
+                          width=x_end - nand_inst.lx())
 
     def get_nand_input_line_combination(self):
         raise NotImplementedError

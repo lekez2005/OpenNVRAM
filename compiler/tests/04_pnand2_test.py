@@ -33,7 +33,7 @@ class Pnand2Test(OpenRamTest):
         OPTS.use_body_taps = False
         tech.drc_exceptions["pnand2"] = (tech.drc_exceptions.get("latchup", []) +
                                          tech.drc_exceptions.get("min_nwell", []))
-        tx = pnand2.pnand2(size=1, align_bitcell=True)
+        tx = pnand2.pnand2(size=1, align_bitcell=True, same_line_inputs=True)
         self.local_drc_check(tx)
 
     def test_bitcell_aligned_pnand2_no_tap(self):
@@ -44,7 +44,7 @@ class Pnand2Test(OpenRamTest):
         OPTS.use_body_taps = True
         tech.drc_exceptions["pnand2"] = (tech.drc_exceptions.get("latchup", []) +
                                          tech.drc_exceptions.get("min_nwell", []))
-        tx = pnand2.pnand2(size=1, align_bitcell=True)
+        tx = pnand2.pnand2(size=1, align_bitcell=True, same_line_inputs=True)
         self.local_drc_check(tx)
 
 

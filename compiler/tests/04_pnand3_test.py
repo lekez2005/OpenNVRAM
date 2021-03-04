@@ -32,7 +32,7 @@ class Pnand2Test(OpenRamTest):
         debug.info(2, "Checking 3-input bitcell pitch matched nand gate")
         tech.drc_exceptions["pnand3"] = (tech.drc_exceptions.get("latchup", []) +
                                          tech.drc_exceptions.get("min_nwell", []))
-        tx = pnand3.pnand3(size=1, align_bitcell=True)
+        tx = pnand3.pnand3(size=1, align_bitcell=True, same_line_inputs=True)
         self.local_drc_check(tx)
 
 

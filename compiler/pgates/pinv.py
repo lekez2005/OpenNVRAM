@@ -100,19 +100,11 @@ class pinv(pgate.pgate, metaclass=unique_meta.Unique):
             offset = vector(0.5 * (pin_left + pin_right), self.mid_y)
             self.add_layout_pin_center_rect("A", METAL1, offset, width=pin_right - pin_left)
 
-    def add_ptx_inst(self):
-        self.pmos = ptx_spice(self.pmos_width, mults=self.tx_mults, tx_type="pmos")
-        self.add_inst(name="pinv_pmos",
-                      mod=self.pmos,
-                      offset=vector(0, 0))
-        self.add_mod(self.pmos)
-        self.connect_inst(["Z", "A", "vdd", "vdd"])
-        self.nmos = ptx_spice(self.nmos_width, mults=self.tx_mults, tx_type="nmos")
-        self.add_inst(name="pinv_nmos",
-                      mod=self.nmos,
-                      offset=vector(0, 0))
-        self.add_mod(self.nmos)
-        self.connect_inst(["Z", "A", "gnd", "gnd"])
+    def get_ptx_connections(self):
+        return [
+            (self.pmos, ["Z", "A", "vdd", "vdd"]),
+            (self.nmos, ["Z", "A", "gnd", "gnd"])
+        ]
 
 
     def input_load(self):

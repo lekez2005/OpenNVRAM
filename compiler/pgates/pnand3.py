@@ -33,24 +33,12 @@ class pnand3(pnand2):
         pin_names = ["A", "B", "C"]
         self.add_poly_contacts(pin_names, y_shifts)
 
-    def add_ptx_inst(self):
-        offset = vector(0, 0)
-        self.pmos = ptx_spice(self.pmos_width, mults=self.tx_mults / 3, tx_type="pmos")
-        self.pmos1_inst = self.add_inst(name="pnand3_pmos1", mod=self.pmos, offset=offset)
-        self.connect_inst(["vdd", "A", "Z", "vdd"])
-
-        self.pmos2_inst = self.add_inst(name="pnand3_pmos2", mod=self.pmos, offset=offset)
-        self.connect_inst(["Z", "B", "vdd", "vdd"])
-
-        self.pmos3_inst = self.add_inst(name="pnand3_pmos3", mod=self.pmos, offset=offset)
-        self.connect_inst(["Z", "C", "vdd", "vdd"])
-
-        self.nmos = ptx_spice(self.nmos_width, mults=self.tx_mults / 3, tx_type="nmos")
-        self.nmos1_inst = self.add_inst(name="pnand3_nmos1", mod=self.nmos, offset=offset)
-        self.connect_inst(["Z", "C", "net1", "gnd"])
-
-        self.nmos2_inst = self.add_inst(name="pnand3_nmos2", mod=self.nmos, offset=offset)
-        self.connect_inst(["net1", "B", "net2", "gnd"])
-
-        self.nmos3_inst = self.add_inst(name="pnand3_nmos3", mod=self.nmos, offset=offset)
-        self.connect_inst(["net2", "A", "gnd", "gnd"])
+    def get_ptx_connections(self):
+        return [
+            (self.pmos, ["vdd", "A", "Z", "vdd"]),
+            (self.pmos, ["Z", "B", "vdd", "vdd"]),
+            (self.pmos, ["Z", "C", "vdd", "vdd"]),
+            (self.nmos, ["Z", "C", "net1", "gnd"]),
+            (self.nmos, ["net1", "B", "net2", "gnd"]),
+            (self.nmos, ["net2", "A", "gnd", "gnd"])
+        ]

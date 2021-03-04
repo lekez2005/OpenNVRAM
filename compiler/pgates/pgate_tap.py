@@ -55,14 +55,16 @@ class pgate_tap(design, metaclass=unique_meta.Unique):
             if self.has_dummy:
                 active_x = max(active_x, 0.5 * pgate_mod.poly_width + dummy_to_active)
             if i == 0:
-                implant_top = pgate_implant.uy() - self.implant_space
+                implant_top = pgate_implant.uy() - max(self.implant_space,
+                                                       self.well_enclose_active)
                 implant_bottom = - 0.5 * self.implant_width
                 active_bottom = max(0, implant_bottom + active_enclosure)
                 active_top = implant_top - active_enclosure
             else:
                 implant_top = self.height + 0.5 * self.implant_width
                 active_top = min(self.height, implant_top - active_enclosure)
-                implant_bottom = pgate_implant.by() + self.implant_space
+                implant_bottom = pgate_implant.by() + max(self.implant_space,
+                                                          self.well_enclose_active)
                 active_bottom = implant_bottom + active_enclosure
             # add active
             active_height = active_top - active_bottom

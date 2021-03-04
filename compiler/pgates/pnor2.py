@@ -27,18 +27,10 @@ class pnor2(pnand2):
     def connect_s_or_d(self, _, __):
         super().connect_s_or_d(self.source_positions[1:], self.drain_positions)
 
-    def add_ptx_inst(self):
-        offset = vector(0, 0)
-        self.pmos = ptx_spice(self.pmos_width, mults=self.tx_mults / 2, tx_type="pmos")
-        self.pmos1_inst = self.add_inst(name="pnor2_pmos1", mod=self.pmos, offset=offset)
-        self.connect_inst(["vdd", "A", "net1", "vdd"])
-
-        self.pmos2_inst = self.add_inst(name="pnor2_pmos2", mod=self.pmos, offset=offset)
-        self.connect_inst(["net1", "B", "Z", "vdd"])
-
-        self.nmos = ptx_spice(self.nmos_width, mults=self.tx_mults / 2, tx_type="nmos")
-        self.nmos1_inst = self.add_inst(name="pnor2_nmos1", mod=self.nmos, offset=offset)
-        self.connect_inst(["Z", "A", "gnd", "gnd"])
-
-        self.nmos2_inst = self.add_inst(name="pnor2_nmos2", mod=self.nmos, offset=offset)
-        self.connect_inst(["Z", "B", "gnd", "gnd"])
+    def get_ptx_connections(self):
+        return [
+            (self.pmos, ["vdd", "A", "net1", "vdd"]),
+            (self.pmos, ["net1", "B", "Z", "vdd"]),
+            (self.nmos, ["Z", "A", "gnd", "gnd"]),
+            (self.nmos, ["Z", "B", "gnd", "gnd"]),
+        ]

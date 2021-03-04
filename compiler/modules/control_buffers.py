@@ -5,7 +5,7 @@ from typing import List, Tuple, Union
 
 import debug
 from base import utils
-from base.contact import m2m3, m1m2, cross_m2m3
+from base.contact import m2m3, m1m2, cross_m2m3, cross_m1m2
 from base.design import design, METAL3, METAL2, METAL1, DRAWING, ACTIVE
 from base.geometry import NO_MIRROR, MIRROR_XY
 from base.utils import round_to_grid as round_gd
@@ -465,7 +465,10 @@ class ControlBuffers(design, ABC):
                     else:
                         x_offset = self.evaluate_pin_x_offset(module_offset, pin_index)
                         if j == 1:
-                            x_offset, is_direct = self.find_non_blocked_m2(x_offset)
+                            new_x, is_direct = self.find_non_blocked_m2(x_offset)
+                            # actual x will be calculated after rails placement
+                            x_offset = max(x_offset, new_x)
+
                         else:
                             is_direct = True
                         kwargs["x_offset"] = x_offset
@@ -853,7 +856,7 @@ class ControlBuffers(design, ABC):
 
         self.add_rect(METAL2, offset=vector(x_offset, pin.cy() - 0.5 * self.m2_width),
                       width=pin.cx() - x_offset)
-        self.add_contact_center(m1m2.layer_stack, offset=pin.center())
+        self.add_cross_contact_center(cross_m1m2, offset=pin.center(), rotate=False)
 
     def connect_c_pin(self, inst, pin_name, rail, x_offset, add_rail_via):
         pin = inst.get_pin(pin_name)
@@ -862,7 +865,8 @@ class ControlBuffers(design, ABC):
 
         self.add_rect(METAL2, offset=vector(x_offset, a_pin.cy() - 0.5 * self.m2_width),
                       width=pin.cx() - x_offset)
-        self.add_contact_center(m1m2.layer_stack, offset=vector(pin.cx(), a_pin.cy()))
+        self.add_cross_contact_center(cross_m1m2, offset=vector(pin.cx(), a_pin.cy()),
+                                      rotate=False)
 
     def connect_z_pin(self, inst, pin_name, rail, x_offset, add_rail_via):
         pin = inst.get_pin(pin_name)

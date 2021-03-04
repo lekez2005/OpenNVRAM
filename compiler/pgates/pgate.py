@@ -12,6 +12,7 @@ from base.vector import vector
 from base.well_active_contacts import calculate_contact_width
 from base.well_implant_fills import calculate_tx_metal_fill
 from globals import OPTS
+from pgates.ptx_spice import ptx_spice
 from tech import drc, parameter, info
 from tech import layer as tech_layers
 
@@ -73,7 +74,7 @@ class pgate(design.design):
 
     @staticmethod
     def get_height(height, align_bitcell):
-        if OPTS.use_body_taps and hasattr(OPTS, "logic_buffers_height"):
+        if hasattr(OPTS, "logic_buffers_height"):
             default_height = OPTS.logic_buffers_height
         else:
             default_height = pgate.bitcell.height
@@ -127,6 +128,7 @@ class pgate(design.design):
             self.get_vertical_space(nmos_width)
 
         # top and bottom space based on poly
+        self.active_to_poly_contact = drc["poly_contact_to_active"]
         poly_poly_allowance = self.poly_extend_active + 0.5 * (self.poly_vert_space or self.poly_space)
         self.top_space = max(self.top_space, poly_poly_allowance)
         self.bottom_space = max(self.bottom_space, poly_poly_allowance)
@@ -149,7 +151,7 @@ class pgate(design.design):
         # middle space
         # first calculate height of tracks (all poly contacts)
         line_space = max(self.get_line_end_space(METAL1), self.get_line_end_space(METAL2))
-        self.gate_rail_pitch = (0.5 * contact.m1m2.second_layer_height +
+        self.gate_rail_pitch = (0.5 * self.m2_width +
                                 line_space + 0.5 * self.m2_width)
 
         if self.same_line_inputs:
@@ -175,12 +177,16 @@ class pgate(design.design):
         self.gate_fill_width = fill_width
         self.mid_track_extent = track_extent
 
-        # add space based on active contacts fills
-        self.nmos_fill_extension = max(0, self.nmos_fill_height - nmos_width)
-        self.pmos_fill_extension = max(0, self.pmos_fill_height - pmos_width)
-
-        self.middle_space = max(track_extent + 2 * self.line_end_space +
-                                self.nmos_fill_extension + self.pmos_fill_extension,
+        # mid space assuming overlap with active
+        poly_contact_base = (self.active_to_poly_contact + 0.5 * self.contact_width -
+                             0.5 * contact.poly.second_layer_height)
+        self.track_bot_space = max(poly_contact_base,
+                                   (0.5 * self.nmos_fill_height - 0.5 * nmos_width +
+                                    self.line_end_space))
+        self.track_top_space = max(poly_contact_base,
+                                   (0.5 * self.pmos_fill_height - 0.5 * pmos_width +
+                                    self.line_end_space))
+        self.middle_space = max(self.track_bot_space + track_extent + self.track_top_space,
                                 2 * self.implant_to_channel)
 
         return self.top_space + self.middle_space + self.bottom_space
@@ -273,14 +279,17 @@ class pgate(design.design):
         # unaccounted for space
         extra_space = non_active_height - (self.top_space + self.bottom_space + self.middle_space)
 
-        actual_bottom_space = self.bottom_space + utils.floor(0.5 * extra_space)
-        actual_top_space = self.top_space + utils.floor(0.5 * extra_space)
+        # redistribute spaces
+        additional_space = utils.floor(0.33 * extra_space)
+        actual_bottom_space = self.bottom_space + additional_space
+        actual_top_space = self.top_space + additional_space
+        self.track_bot_space = self.track_bot_space + utils.floor(0.5 * additional_space)
 
         self.active_mid_y_pmos = self.height - actual_top_space - 0.5 * self.pmos_width
         self.active_mid_y_nmos = actual_bottom_space + 0.5 * self.nmos_width
 
-        self.mid_y = (self.active_mid_y_nmos + 0.5 * self.nmos_width + self.nmos_fill_extension +
-                      self.line_end_space + 0.5 * self.mid_track_extent)
+        self.mid_y = (self.active_mid_y_nmos + 0.5 * self.nmos_width + self.track_bot_space +
+                      + 0.5 * self.mid_track_extent)
 
         self.active_enclose_contact = max(drc["active_enclosure_contact"],
                                           (self.active_width - self.contact_width) / 2)
@@ -589,6 +598,22 @@ class pgate(design.design):
         module.add_rect("nwell", offset=vector(nwell_left, nwell_bottom),
                         width=nwell_right - nwell_left,
                         height=nwell_top - nwell_bottom)
+
+    def get_ptx_connections(self):
+        raise NotImplementedError
+
+    def add_ptx_inst(self):
+        offset = vector(0, 0)
+        self.pmos = ptx_spice(self.pmos_width, mults=self.tx_mults / self.num_tracks,
+                              tx_type="pmos")
+        self.add_mod(self.pmos)
+        self.nmos = ptx_spice(self.nmos_width, mults=self.tx_mults / self.num_tracks,
+                              tx_type="nmos")
+        for index, conn_def in enumerate(self.get_ptx_connections()):
+            mos, conn = conn_def
+            name = "{}{}".format(mos.tx_type, index + 1)
+            self.add_inst(name=name, mod=mos, offset=offset)
+            self.connect_inst(conn)
 
     def is_delay_primitive(self):
         """Whether to descend into this module to evaluate sub-modules for delay"""

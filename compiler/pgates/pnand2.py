@@ -71,22 +71,13 @@ class pnand2(pgate.pgate, metaclass=unique_meta.Unique):
         pin_names = ["A", "B"]
         self.add_poly_contacts(pin_names, y_shifts)
 
-
-    def add_ptx_inst(self):
-        offset = vector(0, 0)
-        self.pmos = ptx_spice(self.pmos_width, mults=self.tx_mults/2, tx_type="pmos")
-        self.pmos1_inst = self.add_inst(name="pnand2_pmos1", mod=self.pmos, offset=offset)
-        self.connect_inst(["vdd", "A", "Z", "vdd"])
-
-        self.pmos2_inst = self.add_inst(name="pnand2_pmos2", mod=self.pmos, offset=offset)
-        self.connect_inst(["Z", "B", "vdd", "vdd"])
-
-        self.nmos = ptx_spice(self.nmos_width, mults=self.tx_mults/2, tx_type="nmos")
-        self.nmos1_inst = self.add_inst(name="pnand2_nmos1", mod=self.nmos, offset=offset)
-        self.connect_inst(["Z", "B", "net1", "gnd"])
-
-        self.nmos2_inst = self.add_inst(name="pnand2_nmos2", mod=self.nmos, offset=offset)
-        self.connect_inst(["net1", "A", "gnd", "gnd"])
+    def get_ptx_connections(self):
+        return [
+            (self.pmos, ["vdd", "A", "Z", "vdd"]),
+            (self.pmos, ["Z", "B", "vdd", "vdd"]),
+            (self.nmos, ["Z", "B", "net1", "gnd"]),
+            (self.nmos, ["net1", "A", "gnd", "gnd"])
+        ]
 
     def input_load(self):
         return ((self.nmos_size+self.pmos_size)/parameter["min_tx_size"])*spice["min_tx_gate_c"]

@@ -11,14 +11,14 @@ import debug
 
 class Pnor2Test(OpenRamTest):
 
-    def test_pnand2(self):
+    def test_pnor2(self):
         from pgates import pnor2
 
         debug.info(2, "Checking 2-input nor gate")
         dut = pnor2.pnor2(size=1, same_line_inputs=False)
         self.local_check(dut)
 
-    def test_pnand2_same_line_inputs(self):
+    def test_pnor2_same_line_inputs(self):
         from pgates import pnor2
 
         debug.info(2, "Checking 2-input nor gate")

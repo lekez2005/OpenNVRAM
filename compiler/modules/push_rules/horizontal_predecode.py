@@ -1,18 +1,18 @@
 from abc import ABC
 
-from base import contact, utils
+from base import contact
 from base.contact import m1m2, m2m3
 from base.design import PO_DUMMY, METAL1, METAL2, METAL3
 from base.hierarchy_layout import GDS_ROT_90
 from base.vector import vector
 from globals import OPTS
 from modules.hierarchical_predecode import hierarchical_predecode
-from modules.push_rules.pgate_horizontal_tap import pgate_horizontal_tap
-from modules.push_rules.pinv_horizontal import pinv_horizontal
-from modules.push_rules.pnand2_horizontal import pnand2_horizontal
-from modules.push_rules.pnand3_horizontal import pnand3_horizontal
-from modules.push_rules.pnor2_horizontal import pnor2_horizontal
-from modules.push_rules.pnor3_horizontal import pnor3_horizontal
+from modules.horizontal.pgate_horizontal_tap import pgate_horizontal_tap
+from modules.horizontal.pinv_horizontal import pinv_horizontal
+from modules.horizontal.pnand2_horizontal import pnand2_horizontal
+from modules.horizontal.pnand3_horizontal import pnand3_horizontal
+from modules.horizontal.pnor2_horizontal import pnor2_horizontal
+from modules.horizontal.pnor3_horizontal import pnor3_horizontal
 
 
 class horizontal_predecode(hierarchical_predecode, ABC):

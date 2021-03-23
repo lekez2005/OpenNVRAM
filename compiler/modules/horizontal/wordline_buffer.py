@@ -5,7 +5,7 @@ from base.vector import vector
 from globals import OPTS
 from modules.buffer_stage import BufferStage
 from modules.push_rules.push_bitcell_array import push_bitcell_array
-from modules.push_rules.wordline_inverter import wordline_inverter
+from modules.horizontal.wordline_inverter import wordline_inverter
 
 
 class wordline_buffer(BufferStage):

@@ -1,6 +1,6 @@
 from base import unique_meta, utils
 from base.vector import vector
-from modules.push_rules.pgate_horizontal import pgate_horizontal
+from modules.horizontal.pgate_horizontal import pgate_horizontal
 from pgates.ptx_spice import ptx_spice
 
 

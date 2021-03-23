@@ -1,5 +1,5 @@
 from modules.buffer_stage import BufferStage
-from modules.push_rules.pinv_horizontal import pinv_horizontal
+from modules.horizontal.pinv_horizontal import pinv_horizontal
 
 
 class BufferStagesHorizontal(BufferStage):

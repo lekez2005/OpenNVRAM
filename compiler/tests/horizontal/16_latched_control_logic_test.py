@@ -21,7 +21,7 @@ class LatchedControlLogicTest(TestBase):
         self.run_buffer_test(is_left_bank=True)
 
     def run_buffer_test(self, is_left_bank=False, words_per_row=1, num_banks=1, rows=2):
-        from modules.push_rules.latched_control_logic import LatchedControlLogic
+        from modules.horizontal.latched_control_logic import LatchedControlLogic
         from globals import OPTS
 
         num_banks = 2 if is_left_bank else num_banks

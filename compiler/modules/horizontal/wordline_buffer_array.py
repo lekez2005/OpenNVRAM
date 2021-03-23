@@ -4,10 +4,9 @@ from base.design import design, PO_DUMMY, NIMP, PIMP, ACTIVE, METAL1, NWELL
 from base.hierarchy_layout import GDS_ROT_270
 from base.unique_meta import Unique
 from base.vector import vector
-from globals import OPTS
 from modules.push_rules.push_bitcell_array import push_bitcell_array
-from modules.push_rules.wordline_buffer import wordline_buffer
-from modules.push_rules.wordline_inverter import wordline_inverter
+from modules.horizontal.wordline_buffer import wordline_buffer
+from modules.horizontal.wordline_inverter import wordline_inverter
 from tech import drc
 import tech
 

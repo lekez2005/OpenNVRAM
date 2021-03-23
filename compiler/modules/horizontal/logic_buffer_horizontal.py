@@ -1,9 +1,9 @@
 from modules.logic_buffer import LogicBuffer
-from modules.push_rules.buffer_stages_horizontal import BufferStagesHorizontal
-from modules.push_rules.pnand2_horizontal import pnand2_horizontal
-from modules.push_rules.pnand3_horizontal import pnand3_horizontal
-from modules.push_rules.pnor2_horizontal import pnor2_horizontal
-from modules.push_rules.pnor3_horizontal import pnor3_horizontal
+from modules.horizontal.buffer_stages_horizontal import BufferStagesHorizontal
+from modules.horizontal.pnand2_horizontal import pnand2_horizontal
+from modules.horizontal.pnand3_horizontal import pnand3_horizontal
+from modules.horizontal.pnor2_horizontal import pnor2_horizontal
+from modules.horizontal.pnor3_horizontal import pnor3_horizontal
 
 logic_mods = {
     "pnand2": pnand2_horizontal,

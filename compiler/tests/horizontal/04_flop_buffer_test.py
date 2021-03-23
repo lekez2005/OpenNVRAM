@@ -13,7 +13,7 @@ class FlopBufferTest(TestBase):
 
         debug.info(2, "Checking 1 stage flop buffer")
 
-        from modules.push_rules.flop_buffer_horizontal import FlopBufferHorizontal
+        from modules.horizontal.flop_buffer_horizontal import FlopBufferHorizontal
         dut = FlopBufferHorizontal(flop_module_name=OPTS.control_flop, buffer_stages=[1])
         self.local_check(dut)
 
@@ -23,7 +23,7 @@ class FlopBufferTest(TestBase):
 
         debug.info(2, "Checking 1 stage no top dummy flop buffer")
 
-        from modules.push_rules.flop_buffer_horizontal import FlopBufferHorizontal
+        from modules.horizontal.flop_buffer_horizontal import FlopBufferHorizontal
         dut = FlopBufferHorizontal(flop_module_name=OPTS.control_flop, buffer_stages=[1],
                                    dummy_indices=[0])
         self.local_check(dut)
@@ -34,7 +34,7 @@ class FlopBufferTest(TestBase):
 
         debug.info(2, "Checking 2 stage flop buffer")
 
-        from modules.push_rules.flop_buffer_horizontal import FlopBufferHorizontal
+        from modules.horizontal.flop_buffer_horizontal import FlopBufferHorizontal
         dut = FlopBufferHorizontal(flop_module_name=OPTS.control_flop, buffer_stages=[2, 4])
         self.local_check(dut)
 

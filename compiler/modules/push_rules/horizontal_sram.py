@@ -1,12 +1,10 @@
 import debug
-from base import utils
-from base.contact import m1m2, cross_m2m3, m2m3, m3m4, cross_m1m2
-from base.contact_full_stack import ContactFullStack
+from base.contact import m1m2, cross_m2m3, m2m3, m3m4
 from base.design import METAL2, METAL3, METAL1, METAL4, NIMP
 from base.hierarchy_layout import GDS_ROT_270
 from base.vector import vector
 from globals import OPTS
-from modules.push_rules.flop_buffer_horizontal import FlopBufferHorizontal
+from modules.horizontal.flop_buffer_horizontal import FlopBufferHorizontal
 from modules.push_rules.horizontal_bank import HorizontalBank
 from modules.push_rules.predecode2x4_horizontal import predecode2x4_horizontal
 from modules.push_rules.predecode3x8_horizontal import predecode3x8_horizontal

@@ -98,6 +98,7 @@ drc["layer_map"]=os.environ.get("OPENRAM_TECH")+"/freepdk45/layers.map"
 
 # minwidth_tx with contact (no dog bone transistors)
 drc["minwidth_tx"]=0.09
+drc["maxwidth_tx"] = 4
 drc["minlength_channel"] = 0.05
 
 # for metal buses

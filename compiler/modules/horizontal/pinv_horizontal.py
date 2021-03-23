@@ -1,8 +1,8 @@
 from base import unique_meta, contact, utils
 from base.contact import m1m2
-from base.design import METAL1, CONTACT, METAL2
+from base.design import METAL1, CONTACT, METAL2, POLY
 from base.vector import vector
-from modules.push_rules.pgate_horizontal import pgate_horizontal
+from modules.horizontal.pgate_horizontal import pgate_horizontal
 from pgates.ptx_spice import ptx_spice
 from tech import drc
 
@@ -84,6 +84,10 @@ class pinv_horizontal(pgate_horizontal, metaclass=unique_meta.Unique):
         x_offset = self.gate_contact_x + 0.5 * contact_width
         for y_offset in all_contact_mid_y:
             self.add_rect_center(CONTACT, offset=vector(x_offset, y_offset))
+            poly_width = self.contact_width + 2 * contact.poly.first_layer_vertical_enclosure
+            poly_height = self.contact_width + 2 * contact.poly.first_layer_horizontal_enclosure
+            self.add_rect_center(POLY, offset=vector(x_offset, y_offset),
+                                 width=poly_width, height=poly_height)
 
         m1_x_extension = 0.5 * contact.poly.second_layer_width
         m1_y_extension = 0.5 * contact.poly.second_layer_height
@@ -141,7 +145,8 @@ class pinv_horizontal(pgate_horizontal, metaclass=unique_meta.Unique):
         for i in range(2):
             for j in range(self.num_instances):
                 pin = self.instances[j].get_pin(pin_names[i])
-                self.add_contact(m1m2.layer_stack, offset=vector(pin.lx(), via_offsets[i]))
+                via_x = pin.cx() - 0.5 * m1m2.width
+                self.add_contact(m1m2.layer_stack, offset=vector(via_x, via_offsets[i]))
             left_pin = self.instances[0].get_pin(pin_names[i])
             right_pin = self.instances[-1].get_pin(pin_names[i])
             self.add_rect(METAL2, offset=vector(left_pin.cx(), y_offsets[i]),

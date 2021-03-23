@@ -101,12 +101,29 @@ class PgateCaps(CharTestBase):
         from pgates.pnand3 import pnand3
         from pgates.pnor2 import pnor2
 
-        modules_dict = {
-            PINV: pinv,
-            PNAND2: pnand2,
-            PNAND3: pnand3,
-            PNOR2: pnor2
-        }
+        if options.horizontal:
+            from modules.horizontal.pinv_horizontal import pinv_horizontal
+            from modules.horizontal.pnand2_horizontal import pnand2_horizontal
+            from modules.horizontal.pnor2_horizontal import pnor2_horizontal
+            from modules.horizontal.pnand3_horizontal import pnand3_horizontal
+            modules_dict = {
+                PINV: pinv_horizontal,
+                PNAND2: pnand2_horizontal,
+                PNAND3: pnand3_horizontal,
+                PNOR2: pnor2_horizontal
+            }
+            module_args = {"size": size}
+        else:
+            modules_dict = {
+                PINV: pinv,
+                PNAND2: pnand2,
+                PNAND3: pnand3,
+                PNOR2: pnor2
+            }
+            module_args = {"size": size, "height": height,
+                           "contact_nwell": not options.no_contacts,
+                           "contact_pwell": not options.no_contacts}
+
         mod = modules_dict[gate]
 
         module_args = {"size": size, "height": OPTS.logic_buffers_height,

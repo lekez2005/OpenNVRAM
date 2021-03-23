@@ -3,8 +3,8 @@ from base.design import NIMP, METAL2, METAL3, PO_DUMMY
 from base.hierarchy_layout import GDS_ROT_270
 from base.vector import vector
 from modules.flop_buffer import FlopBuffer
-from modules.push_rules.buffer_stages_horizontal import BufferStagesHorizontal
-from modules.push_rules.pgate_horizontal_tap import pgate_horizontal_tap
+from modules.horizontal.buffer_stages_horizontal import BufferStagesHorizontal
+from modules.horizontal.pgate_horizontal_tap import pgate_horizontal_tap
 
 
 class FlopBufferHorizontal(FlopBuffer):

@@ -1,7 +1,7 @@
 from base import unique_meta, contact, utils
-from base.design import design, PIMP, NIMP, NWELL, ACTIVE, METAL1
+from base.design import design, PIMP, NIMP, NWELL, ACTIVE, METAL1, PWELL
 from base.vector import vector
-from modules.push_rules.pgate_horizontal import pgate_horizontal
+from modules.horizontal.pgate_horizontal import pgate_horizontal
 from tech import drc
 
 
@@ -28,35 +28,48 @@ class pgate_horizontal_tap(design, metaclass=unique_meta.Unique):
 
         tap_layers = [PIMP, NIMP]
 
+        wells = [PWELL, NWELL]
+
         implant_space = self.implant_space
 
         tap_rect = None
+
+        # prevent contact clash with z pin
+        z_pin = self.pgate_mod.get_pin("Z")
+        contact_mid = (-(self.pgate_mod.width - z_pin.rx()) +
+                       self.get_parallel_space(METAL1) +
+                       0.5 * contact.well.second_layer_width)
+        # make implant cover contact active
+        min_implant_width = contact.well.first_layer_width + 2 * self.implant_enclose_active
 
         for i in range(2):
             dut_rect = self.pgate_mod.get_layer_shapes(dut_layers[i])[0]
             dut_rect_height = dut_rect.uy() if i == 0 else (self.pgate_mod.height - dut_rect.by())
             tap_implant_height = dut_rect_height - implant_space
+            min_area = drc.get("minarea_implant", 0)
             tap_implant_width = utils.ceil(max(self.implant_width,
-                                               drc["minarea_implant"] / tap_implant_height))
+                                               min_area / tap_implant_height,
+                                               min_implant_width))
             implant_y = 0 if i == 0 else dut_rect.by() + implant_space
-            implant_x = dut_rect.rx() - self.pgate_mod.width
+            implant_x = max(dut_rect.rx() - self.pgate_mod.width,
+                            contact_mid - 0.5 * tap_implant_width)
 
             tap_rect = self.add_rect(tap_layers[i], offset=vector(implant_x, implant_y),
                                      width=tap_implant_width, height=tap_implant_height)
-            if i == 1:
-                nwell = self.pgate_mod.get_layer_shapes(NWELL)[0]
-                nwell_width = (tap_rect.rx() + self.well_enclose_active
-                               - self.implant_enclose_active)
-                self.add_rect(NWELL, offset=vector(0.0, nwell.by()),
-                              width=nwell_width,
-                              height=nwell.height)
+            if i == 1 or self.has_pwell:
+                well_rect = self.pgate_mod.get_layer_shapes(wells[i])[0]
+                well_width = (tap_rect.rx() + self.well_enclose_active
+                              - self.implant_enclose_active)
+                self.add_rect(wells[i], offset=vector(0.0, well_rect.by()),
+                              width=well_width,
+                              height=well_rect.height)
 
         self.width = tap_rect.rx() + tap_rect.lx()  # prevent right adjacent implant overlap
         self.height = self.pgate_mod.height
 
     def add_contacts(self):
         active_enclosure = self.implant_enclose_active
-        poly_extension = 0.5 * self.poly_to_field_poly + self.poly_to_active
+        poly_extension = self.poly_to_active - 0.5 * self.poly_to_field_poly
 
         tap_layers = [PIMP, NIMP]
         pin_names = ["gnd", "vdd"]

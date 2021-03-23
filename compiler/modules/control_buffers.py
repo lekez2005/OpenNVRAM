@@ -14,7 +14,7 @@ from base.well_implant_fills import get_default_fill_layers, create_wells_and_im
 from globals import OPTS
 from modules.buffer_stage import BufferStage
 from modules.logic_buffer import LogicBuffer
-from modules.push_rules.pgate_horizontal import pgate_horizontal
+from modules.horizontal.pgate_horizontal import pgate_horizontal
 from pgates.pgate import pgate
 from pgates.pinv import pinv
 from pgates.pnand2 import pnand2

@@ -5,10 +5,10 @@ from base.hierarchy_layout import GDS_ROT_270
 from base.vector import vector
 from globals import OPTS
 from modules.baseline_bank import LEFT_FILL, RIGHT_FILL, BaselineBank
-from modules.push_rules.buffer_stages_horizontal import BufferStagesHorizontal
-from modules.push_rules.latched_control_logic import LatchedControlLogic
-from modules.push_rules.pgate_horizontal import pgate_horizontal
-from modules.push_rules.pgate_horizontal_tap import pgate_horizontal_tap
+from modules.horizontal.buffer_stages_horizontal import BufferStagesHorizontal
+from modules.horizontal.latched_control_logic import LatchedControlLogic
+from modules.horizontal.pgate_horizontal import pgate_horizontal
+from modules.horizontal.pgate_horizontal_tap import pgate_horizontal_tap
 
 
 class HorizontalBank(BaselineBank):

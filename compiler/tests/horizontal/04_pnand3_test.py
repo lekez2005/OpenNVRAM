@@ -9,7 +9,7 @@ class Pnand3Test(TestBase):
 
     def test_size_1(self):
         import debug
-        from modules.push_rules.pnand3_horizontal import pnand3_horizontal
+        from modules.horizontal.pnand3_horizontal import pnand3_horizontal
 
         debug.info(2, "Checking 1x size horizontal nand3")
         dut = pnand3_horizontal(size=1)
@@ -17,7 +17,7 @@ class Pnand3Test(TestBase):
 
     def test_size_2(self):
         import debug
-        from modules.push_rules.pnand3_horizontal import pnand3_horizontal
+        from modules.horizontal.pnand3_horizontal import pnand3_horizontal
 
         debug.info(2, "Checking two-finger horizontal nand2")
         dut = pnand3_horizontal(size=2)

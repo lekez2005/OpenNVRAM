@@ -3,7 +3,7 @@ from base.contact import m1m2, m2m3
 from base.design import METAL1, POLY, ACTIVE, PIMP, NIMP, NWELL, METAL3, CONTACT, METAL2
 from base.vector import vector
 from base.well_implant_fills import calculate_tx_metal_fill
-from modules.push_rules.pinv_horizontal import pinv_horizontal
+from modules.horizontal.pinv_horizontal import pinv_horizontal
 from modules.push_rules.push_bitcell_array import push_bitcell_array
 from pgates.ptx_spice import ptx_spice
 from tech import drc

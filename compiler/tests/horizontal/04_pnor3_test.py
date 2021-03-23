@@ -9,7 +9,7 @@ class Pnor2Test(TestBase):
 
     def test_size_1(self):
         import debug
-        from modules.push_rules.pnor3_horizontal import pnor3_horizontal
+        from modules.horizontal.pnor3_horizontal import pnor3_horizontal
 
         debug.info(2, "Checking 1x size horizontal nor2")
         dut = pnor3_horizontal(size=1)
@@ -17,7 +17,7 @@ class Pnor2Test(TestBase):
 
     def test_size_2(self):
         import debug
-        from modules.push_rules.pnor3_horizontal import pnor3_horizontal
+        from modules.horizontal.pnor3_horizontal import pnor3_horizontal
 
         debug.info(2, "Checking two-finger horizontal nor2")
         dut = pnor3_horizontal(size=2)

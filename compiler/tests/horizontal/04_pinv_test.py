@@ -9,7 +9,7 @@ class PinvTest(TestBase):
 
     def test_1_finger_pinv(self):
         import debug
-        from modules.push_rules.pinv_horizontal import pinv_horizontal
+        from modules.horizontal.pinv_horizontal import pinv_horizontal
 
         debug.info(2, "Checking 1x size inverter")
         inv = pinv_horizontal(size=1)
@@ -17,7 +17,7 @@ class PinvTest(TestBase):
 
     def test_two_finger_pinv(self):
         import debug
-        from modules.push_rules.pinv_horizontal import pinv_horizontal
+        from modules.horizontal.pinv_horizontal import pinv_horizontal
 
         debug.info(2, "Checking two-finger inverter")
         inv = pinv_horizontal(size=2)
@@ -25,7 +25,7 @@ class PinvTest(TestBase):
 
     def test_three_finger_pinv(self):
         import debug
-        from modules.push_rules.pinv_horizontal import pinv_horizontal
+        from modules.horizontal.pinv_horizontal import pinv_horizontal
 
         debug.info(2, "Checking three-finger inverter")
         inv = pinv_horizontal(size=3)
@@ -33,7 +33,7 @@ class PinvTest(TestBase):
 
     def test_medium_three(self):
         import debug
-        from modules.push_rules.pinv_horizontal import pinv_horizontal
+        from modules.horizontal.pinv_horizontal import pinv_horizontal
 
         debug.info(2, "Checking three-finger inverter")
         inv = pinv_horizontal(size=3 * 2)
@@ -46,7 +46,7 @@ class PinvTest(TestBase):
     @staticmethod
     def get_max_size():
         from tech import drc, parameter
-        from modules.push_rules.pinv_horizontal import pinv_horizontal
+        from modules.horizontal.pinv_horizontal import pinv_horizontal
 
         beta = parameter["beta"]
         num_fingers = pinv_horizontal.max_tx_mults
@@ -54,7 +54,7 @@ class PinvTest(TestBase):
 
     def test_two_instances(self):
         import debug
-        from modules.push_rules.pinv_horizontal import pinv_horizontal
+        from modules.horizontal.pinv_horizontal import pinv_horizontal
 
         max_size, beta = self.get_max_size()
 
@@ -64,7 +64,7 @@ class PinvTest(TestBase):
 
     def test_three_instances(self):
         import debug
-        from modules.push_rules.pinv_horizontal import pinv_horizontal
+        from modules.horizontal.pinv_horizontal import pinv_horizontal
 
         max_size, beta = self.get_max_size()
 

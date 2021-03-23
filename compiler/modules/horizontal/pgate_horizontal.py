@@ -3,7 +3,7 @@ import math
 import tech
 from base import utils, contact
 from base.contact import m1m2
-from base.design import design, METAL1, PO_DUMMY, ACTIVE, POLY, PIMP, NIMP, NWELL, METAL2, CONTACT
+from base.design import design, METAL1, PO_DUMMY, ACTIVE, POLY, PIMP, NIMP, NWELL, METAL2, CONTACT, PWELL
 from base.hierarchy_layout import GDS_ROT_90
 from base.vector import vector
 from base.well_implant_fills import calculate_tx_metal_fill
@@ -90,7 +90,10 @@ class pgate_horizontal(design):
     def initialize_constraints(cls, design_self: 'pgate_horizontal'):
         rail_height = design_self.rail_height
 
-        cls.active_enclosure_contact = active_enclose_contact = drc["active_enclosure_contact"]
+        active_enclose_contact = max(drc["active_enclosure_contact"],
+                                     (design_self.active_width - design_self.contact_width) / 2)
+
+        cls.active_enclosure_contact = active_enclose_contact
 
         cls.insert_poly_dummies = PO_DUMMY in tech_layers
 
@@ -201,26 +204,35 @@ class pgate_horizontal(design):
 
         poly_to_mid_contact = 0.5 * contact.poly.first_layer_height
 
+        input_x_offset = max(self.get_parallel_space(METAL1),
+                             self.get_via_space(m1m2))
+
         if self.num_poly_contacts == 1:
             # inverter
-            poly_x_offset = 0.5 * self.poly_to_field_poly
+            poly_x_offset = max(input_x_offset + 0.5 * self.m1_width -
+                                0.5 * contact.poly.first_layer_height,
+                                0.5 * self.poly_to_field_poly)
             gate_contact_x = poly_x_offset + poly_to_mid_contact - 0.5 * self.contact_width
             pin_right_x = (gate_contact_x + 0.5 * self.contact_width +
                            0.5 * max(self.m1_width, self.m2_width))
         else:
-            input_x_offset = max(self.get_parallel_space(METAL1),
-                                 self.get_via_space(m1m2))
             pitch = max(self.m1_width + self.get_parallel_space(METAL1),
                         self.m2_width + self.get_parallel_space(METAL2))
 
             for _ in range(self.num_poly_contacts - 1):
                 input_x_offset += pitch
             # for nand and nor, A pin is wide enough to prevent line end space drc issue
-            self.nand_nor_a_width = max(self.get_drc_by_layer(METAL1, "line_end_threshold"),
-                                        self.m2_width)
-            pin_right_x = input_x_offset + self.nand_nor_a_width
+            self.nand_nor_pin_width = max(self.get_drc_by_layer(METAL1,
+                                                                "line_end_threshold") or 0.0,
+                                          self.m2_width)
+            poly_m1_extension = 0.5 * self.m1_width + 0.5 * contact.poly.second_layer_height
+            pin_right_x = max(input_x_offset + self.nand_nor_pin_width,
+                              input_x_offset + poly_m1_extension)
+
             m1_poly_x_extension = 0.5 * (self.m1_width - self.contact_width)
-            gate_contact_x = pin_right_x - self.nand_nor_a_width + m1_poly_x_extension
+            gate_contact_x = min(pin_right_x - self.nand_nor_pin_width + m1_poly_x_extension,
+                                 input_x_offset + 0.5 * self.m1_width - 0.5 * self.contact_width)
+
             poly_x_offset = gate_contact_x + 0.5 * self.contact_width - poly_to_mid_contact
 
         self.gate_contact_x = gate_contact_x
@@ -320,6 +332,10 @@ class pgate_horizontal(design):
         self.add_rect(NWELL, offset=vector(nwell_x, self.mid_y),
                       width=self.width - nwell_x - nwell_x,
                       height=self.height - self.mid_y)
+        if self.has_pwell:
+            self.add_rect(PWELL, offset=vector(nwell_x, 0),
+                          width=self.width - nwell_x - nwell_x,
+                          height=self.mid_y)
 
     def get_contact_indices(self, is_nmos):
         if (is_nmos and self.all_nmos) or (not is_nmos and self.all_pmos):
@@ -483,23 +499,30 @@ class pgate_horizontal(design):
 
         x_offset = self.gate_contact_x + 0.5 * self.contact_width - 0.5 * self.m1_width
 
+        poly_width = self.contact_width + 2 * contact.poly.first_layer_vertical_enclosure
+        poly_height = self.contact_width + 2 * contact.poly.first_layer_horizontal_enclosure
+
         for i in range(len(pin_names)):
             pin_name = pin_names[i]
 
-            nmos_y = nmos_poly_offsets[i] + 0.5 * self.contact_width - 0.5 * self.m1_width
-            pmos_y = pmos_poly_offsets[i] + 0.5 * self.contact_width - 0.5 * self.m1_width
-            self.add_rect(CONTACT, offset=vector(self.gate_contact_x, nmos_y))
-            self.add_rect(CONTACT, offset=vector(self.gate_contact_x, pmos_y))
+            nmos_y = nmos_poly_offsets[i] + 0.5 * self.poly_width
+            pmos_y = pmos_poly_offsets[i] + 0.5 * self.poly_width
+            contact_mid_x = self.gate_contact_x + 0.5 * self.contact_width
+
+            for y_offset in [nmos_y, pmos_y]:
+                self.add_rect_center(CONTACT, offset=vector(contact_mid_x, y_offset))
+                self.add_rect_center(POLY, offset=vector(contact_mid_x, y_offset),
+                                     width=poly_width, height=poly_height)
 
             if i == 0:
                 m1_ext = 0.5 * contact.poly.second_layer_height
-                pin_width = self.nand_nor_a_width
-                x_offset = self.pin_right_x - pin_width
+                pin_width = self.nand_nor_pin_width
+                x_offset = contact_mid_x - 0.5 * self.m1_width
             else:
                 m1_ext = 0.5 * contact.poly.second_layer_width
                 pin_width = self.m1_width
 
-            pin_y = nmos_y + 0.5 * self.contact_width - m1_ext
+            pin_y = nmos_y - m1_ext
 
             pin = self.add_layout_pin(pin_name, METAL1, offset=vector(x_offset, pin_y),
                                       height=pmos_y - nmos_y + 2 * m1_ext,

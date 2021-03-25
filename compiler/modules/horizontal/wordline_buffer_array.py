@@ -1,4 +1,5 @@
 from base.design import design, PIMP, NIMP
+from base.geometry import MIRROR_X_AXIS, NO_MIRROR
 from base.hierarchy_layout import GDS_ROT_270
 from base.vector import vector
 from globals import OPTS
@@ -54,10 +55,10 @@ class wordline_buffer_array(design):
         for i in range(self.rows):
             y_offset = self.bitcell_offsets[i]
             if i % 2 == 0:
-                mirror = "MX"
+                mirror = MIRROR_X_AXIS
                 y_offset += self.buffer.height
             else:
-                mirror = ""
+                mirror = NO_MIRROR
 
             offset = vector(0, y_offset)
             buffer_inst = self.add_inst("driver{}".format(i), self.buffer, offset=offset,

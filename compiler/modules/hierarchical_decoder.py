@@ -352,19 +352,21 @@ class hierarchical_decoder(design.design):
         self.nand_inst = []
         for row in range(self.rows):
             name = "DEC_NAND[{0}]".format(row)
-            if ((row % 2) == 1):
-                y_off = self.predecoder_height + nand_mod.height*row
-                y_dir = 1
-                mirror = "R0"
-            else:
-                y_off = self.predecoder_height + nand_mod.height*(row + 1)
-                y_dir = -1
-                mirror = "MX"
-
+            y_off, mirror = self.get_row_y_offset(row)
             self.nand_inst.append(self.add_inst(name=name,
                                                 mod=nand_mod,
                                                 offset=[self.routing_width, y_off],
                                                 mirror=mirror))
+
+    def get_row_y_offset(self, row):
+        if row % 2 == 1:
+            inv_row_height = self.inv.height * row
+            mirror = "R0"
+        else:
+            inv_row_height = self.inv.height * (row + 1)
+            mirror = "MX"
+        y_off = self.predecoder_height + inv_row_height
+        return y_off, mirror
 
     def add_decoder_inv_array(self):
         """Add a column of INV gates for the decoder above the predecoders
@@ -378,16 +380,8 @@ class hierarchical_decoder(design.design):
         self.inv_inst = []
         for row in range(self.rows):
             name = "DEC_INV_[{0}]".format(row)
-            if (row % 2 == 1):
-                inv_row_height = self.inv.height * row
-                mirror = "R0"
-                y_dir = 1
-            else:
-                inv_row_height = self.inv.height * (row + 1)
-                mirror = "MX"
-                y_dir = -1
-            y_off = self.predecoder_height + inv_row_height
-            offset = vector(x_off,y_off)
+            y_off, mirror = self.get_row_y_offset(row)
+            offset = vector(x_off, y_off)
             
             self.inv_inst.append(self.add_inst(name=name,
                                                mod=self.inv,
@@ -438,8 +432,7 @@ class hierarchical_decoder(design.design):
             # route nand output to output inv input
             z_pin = self.nand_inst[row].get_pin("Z")
             a_pin = self.inv_inst[row].get_pin("A")
-            self.add_rect(METAL1, offset=vector(z_pin.rx(), a_pin.cy() - 0.5 * self.m1_width),
-                          width=a_pin.lx() - z_pin.rx())
+            self.join_nand_inv_pins(z_pin, a_pin)
 
             z_pin = self.inv_inst[row].get_pin("Z")
             self.add_layout_pin(text="decode[{0}]".format(row),
@@ -447,6 +440,10 @@ class hierarchical_decoder(design.design):
                                 offset=z_pin.ll(),
                                 width=z_pin.width(),
                                 height=z_pin.height())
+
+    def join_nand_inv_pins(self, z_pin, a_pin):
+        self.add_rect(METAL1, offset=vector(z_pin.rx(), a_pin.cy() - 0.5 * self.m1_width),
+                      width=a_pin.lx() - z_pin.rx())
 
     def add_body_contacts(self):
         """Add contacts to the left of the nand gates"""

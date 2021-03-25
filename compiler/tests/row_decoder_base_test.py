@@ -2,9 +2,10 @@ from importlib import reload
 
 import debug
 
+# TODO decoder temporary glitches are triggering false positives in vector checks
 period_base = 50e-12
 period_32_rows = 20e-12
-setup_time = 0
+setup_time = 10e-12
 rise_time = 5e-12
 
 
@@ -54,6 +55,7 @@ class RowDecoderBase:
             vec_file.write("VOH {}\n".format(0.5 * vdd_value))
             vec_file.write("VOL {}\n".format(0.5 * vdd_value))
             vec_file.write("IO {}\n".format(' '.join(["O"] * num_rows)))
+            vec_file.write("CHECK_WINDOW 0 1p 0\n")
             vec_file.write("VNAME {}\n".format(' '.join(["decode[{}]".format(x) for x in range(num_rows)])))
             # Expected output
             for i in range(num_rows):

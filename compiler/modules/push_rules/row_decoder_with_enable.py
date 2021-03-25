@@ -12,7 +12,7 @@ from modules.push_rules.predecode3x8_horizontal import predecode3x8_horizontal
 from modules.push_rules.push_bitcell_array import push_bitcell_array
 
 
-class row_decoder_horizontal(hierarchical_decoder):
+class row_decoder_with_enable(hierarchical_decoder):
     rotation_for_drc = GDS_ROT_270
     and_insts = []
     tap_insts = []

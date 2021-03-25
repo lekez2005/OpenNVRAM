@@ -96,6 +96,8 @@ drc["lvs_rules"]=drclvs_home+"/calibreLVS.rul"
 drc["xrc_rules"]=drclvs_home+"/calibrexRC.rul"
 drc["layer_map"]=os.environ.get("OPENRAM_TECH")+"/freepdk45/layers.map"
 
+drc["latchup_spacing"] = 40  # not an enforced rule but realistically needed
+
 # minwidth_tx with contact (no dog bone transistors)
 drc["minwidth_tx"]=0.09
 drc["maxwidth_tx"] = 4

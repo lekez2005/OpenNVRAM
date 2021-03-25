@@ -35,24 +35,12 @@ class pnand3_horizontal(pgate_horizontal, metaclass=unique_meta.Unique):
         self.nmos_finger_width = utils.ceil(3 * self.min_tx_width * self.size)
         self.pmos_finger_width = utils.ceil(self.beta * self.min_tx_width * self.size)
 
-    def add_ptx_insts(self):
-        offset = vector(0, 0)
-        self.pmos = ptx_spice(self.pmos_finger_width, mults=1, tx_type="pmos")
-        self.pmos1_inst = self.add_inst(name="pnand3_pmos1", mod=self.pmos, offset=offset)
-        self.connect_inst(["vdd", "A", "Z", "vdd"])
-
-        self.pmos2_inst = self.add_inst(name="pnand3_pmos2", mod=self.pmos, offset=offset)
-        self.connect_inst(["Z", "B", "vdd", "vdd"])
-
-        self.pmos3_inst = self.add_inst(name="pnand3_pmos3", mod=self.pmos, offset=offset)
-        self.connect_inst(["Z", "C", "vdd", "vdd"])
-
-        self.nmos = ptx_spice(self.nmos_finger_width, mults=1, tx_type="nmos")
-        self.nmos1_inst = self.add_inst(name="pnand3_nmos1", mod=self.nmos, offset=offset)
-        self.connect_inst(["Z", "C", "net1", "gnd"])
-
-        self.nmos2_inst = self.add_inst(name="pnand3_nmos2", mod=self.nmos, offset=offset)
-        self.connect_inst(["net1", "B", "net2", "gnd"])
-
-        self.nmos3_inst = self.add_inst(name="pnand3_nmos3", mod=self.nmos, offset=offset)
-        self.connect_inst(["net2", "A", "gnd", "gnd"])
+    def get_ptx_connections(self):
+        return [
+            (self.pmos, ["vdd", "A", "Z", "vdd"]),
+            (self.pmos, ["Z", "B", "vdd", "vdd"]),
+            (self.pmos, ["Z", "C", "vdd", "vdd"]),
+            (self.nmos, ["Z", "C", "net1", "gnd"]),
+            (self.nmos, ["net1", "B", "net2", "gnd"]),
+            (self.nmos, ["net2", "A", "gnd", "gnd"])
+        ]

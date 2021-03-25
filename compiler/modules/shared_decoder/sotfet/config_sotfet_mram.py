@@ -10,7 +10,7 @@ bitcell_name_template = "Xbitcell_b{bank}_r{row}_c{col}"
 
 bitcell = "sotfet_mram_bitcell"
 mram_bitcell = "sotfet_mram_small"
-body_tap = "sotfet_mram_tap_small"
+body_tap_mod = "sotfet_mram_tap_small"
 bitcell_array = "sotfet_mram_bitcell_array"
 
 precharge = "sotfet_mram_precharge"
@@ -25,6 +25,8 @@ sense_amp_tap = "sotfet_mram_sense_amp_tap"
 decoder = "stacked_hierarchical_decoder"
 rwl_driver = "stacked_wordline_driver_array"
 wwl_driver = "stacked_wordline_driver_array"
+
+wordline_beta = [1, 0.9, 2.2]  # critical path is for Low to High
 
 num_write_en_stages = 3
 write_buffers = [3.56, 12.6, 45]

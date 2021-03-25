@@ -13,34 +13,26 @@ class WordlineBufferTest(TestBase):
         debug.info(1, "Testing standalone wordline buffer inverter")
         from modules.horizontal.wordline_inverter import wordline_inverter
         a = wordline_inverter(size=4)
-        self.local_check(a)
+        self.local_drc_check(a)
 
     def test_mirror_inverter(self):
         debug.info(1, "Testing standalone wordline buffer inverter")
         from modules.horizontal.wordline_inverter import wordline_inverter
         a = wordline_inverter(size=4, mirror=True)
-        self.local_check(a)
+        self.local_drc_check(a)
 
     def test_buffer(self):
         from globals import OPTS
         debug.info(1, "Testing standalone wordline buffer inverter")
         from modules.horizontal.wordline_buffer import wordline_buffer
-        a = wordline_buffer(OPTS.wordline_buffers)
-        self.local_check(a)
-
-    def test_buffer_tap(self):
-        from globals import OPTS
-        debug.info(1, "Testing standalone wordline buffer inverter")
-        from modules.horizontal.wordline_buffer import wordline_buffer
-        from modules.horizontal.wordline_buffer_array import buffer_tap
-        buffer = wordline_buffer(OPTS.wordline_buffers)
-        tap = buffer_tap(buffer)
-        self.local_check(tap)
+        a = wordline_buffer(OPTS.wordline_buffers, route_outputs=False)
+        self.local_drc_check(a)
 
     def test_buffer_array(self):
+        from  globals import OPTS
         debug.info(1, "Testing standalone wordline buffer inverter")
         from modules.horizontal.wordline_buffer_array import wordline_buffer_array
-        buffer_array = wordline_buffer_array(32)
+        buffer_array = wordline_buffer_array(32, OPTS.wordline_buffers)
         self.local_check(buffer_array)
 
 

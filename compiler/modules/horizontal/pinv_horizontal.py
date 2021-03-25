@@ -98,19 +98,11 @@ class pinv_horizontal(pgate_horizontal, metaclass=unique_meta.Unique):
         self.add_layout_pin("A", METAL1, offset=vector(x_offset - m1_x_extension, pin_y),
                             width=2 * m1_x_extension, height=pin_height)
 
-    def add_ptx_insts(self):
-        self.pmos = ptx_spice(self.pmos_finger_width, mults=self.num_fingers, tx_type="pmos")
-        self.add_inst(name="pinv_pmos",
-                      mod=self.pmos,
-                      offset=vector(0, 0))
-        self.add_mod(self.pmos)
-        self.connect_inst(["Z", "A", "vdd", "vdd"])
-        self.nmos = ptx_spice(self.nmos_finger_width, mults=self.num_fingers, tx_type="nmos")
-        self.add_inst(name="pinv_nmos",
-                      mod=self.nmos,
-                      offset=vector(0, 0))
-        self.add_mod(self.nmos)
-        self.connect_inst(["Z", "A", "gnd", "gnd"])
+    def get_ptx_connections(self):
+        return [
+            (self.pmos, ["Z", "A", "vdd", "vdd"]),
+            (self.nmos, ["Z", "A", "gnd", "gnd"])
+        ]
 
     def add_instances(self):
         offset = vector(0, 0)

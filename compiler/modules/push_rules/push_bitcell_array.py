@@ -8,31 +8,29 @@ from base.hierarchy_layout import GDS_ROT_90
 from base.library_import import library_import
 from base.vector import vector
 from globals import OPTS
-from modules.bitcell import bitcell as bitcell_class
 from modules.bitcell_array import bitcell_array
 from tech import drc, add_tech_layers
 
 
 @library_import
 class bitcell_tap(design):
-    lib_name = OPTS.body_tap
+    lib_name = OPTS.body_tap_mod
     pin_names = ["vdd", "gnd"]
 
 
 class push_bitcell_array(bitcell_array):
-    bitcell = bitcell_class()
-    body_tap = bitcell_tap()
     rotation_for_drc = GDS_ROT_90
 
     def __init__(self, cols, rows, name="bitcell_array"):
         design.__init__(self, name)
         debug.info(1, "Creating {0} {1} x {2}".format(self.name, rows, cols))
 
+        self.cell = self.create_mod_from_str(OPTS.bitcell)
+        self.bitcell = self.cell
+        self.body_tap = self.create_mod_from_str(OPTS.body_tap)
+
         self.column_size = cols
         self.row_size = rows
-
-        self.add_mod(self.bitcell)
-        self.cell = self.bitcell
 
         self.add_pins()
 
@@ -57,12 +55,10 @@ class push_bitcell_array(bitcell_array):
         self.connect_dummies()
 
     @staticmethod
-    def get_bitcell_offsets(num_rows: int, cells_per_group: int):
+    def get_bitcell_offsets(num_rows: int, cells_per_group: int, bitcell, body_tap):
         num_rows += 2  # for dummies
-        bitcell = push_bitcell_array.bitcell
-        bitcell_height = push_bitcell_array.bitcell.height
-
-        tap_height = push_bitcell_array.body_tap.height
+        bitcell_height = bitcell.height
+        tap_height = body_tap.height
 
         cell_spacing = int(math.floor(0.95 * drc["latchup_spacing"] / bitcell.height)
                            - cells_per_group)
@@ -121,7 +117,7 @@ class push_bitcell_array(bitcell_array):
         self.bitcell_offsets = [(i + 1) * self.bitcell.width for i in range(self.column_size)]
 
         self.bitcell_y_offsets, self.tap_offsets, self.dummy_offsets = \
-            self.get_bitcell_offsets(self.row_size, 2)
+            self.get_bitcell_offsets(self.row_size, 2, self.bitcell, self.body_tap)
         self.all_y_offsets = ([self.dummy_offsets[0]] + self.bitcell_y_offsets
                               + [self.dummy_offsets[-1]])
         for col in range(self.column_size):

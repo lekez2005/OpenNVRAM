@@ -2,6 +2,11 @@ from modules.shared_decoder.sotfet.config_sotfet_mram import *
 
 from freepdk45_common_config import *
 
+python_path += ["modules/sotfet"]
+
+mram_bitcell = "mram/sotfet_mram_small"
+body_tap = "sotfet_mram_bitcell_tap"
+body_tap_mod = "mram/sotfet_mram_small_tap"
 
 
 model_file = "sotfet_mram_small_real.scs"

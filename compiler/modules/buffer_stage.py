@@ -75,6 +75,10 @@ class BufferStage(design.design, metaclass=Unique):
         return pinv(size=size, height=self.height, contact_nwell=self.contact_nwell, contact_pwell=self.contact_pwell,
                     align_bitcell=self.align_bitcell)
 
+    def join_a_z_pins(self, a_pin, z_pin):
+        self.add_rect("metal1", offset=vector(z_pin.rx(), a_pin.cy() - 0.5 * self.m1_width),
+                      width=a_pin.lx() - z_pin.rx())
+
     def add_buffers(self):
         for i in range(self.total_instances):
             size = self.buffer_stages[i]
@@ -92,7 +96,7 @@ class BufferStage(design.design, metaclass=Unique):
                 in_name = self.out_names[-1]
                 z_pin = self.module_insts[-2].get_pin("Z")
                 a_pin = self.module_insts[-1].get_pin("A")
-                self.add_rect("metal1", offset=vector(z_pin.rx(), a_pin.cy()-0.5*self.m1_width), width=a_pin.lx()-z_pin.rx())
+                self.join_a_z_pins(a_pin, z_pin)
 
             self.connect_inst([in_name, out_name, "vdd", "gnd"])
 

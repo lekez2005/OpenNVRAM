@@ -7,6 +7,7 @@ from base.design import design, METAL1, PO_DUMMY, ACTIVE, POLY, PIMP, NIMP, NWEL
 from base.hierarchy_layout import GDS_ROT_90
 from base.vector import vector
 from base.well_implant_fills import calculate_tx_metal_fill
+from pgates.ptx_spice import ptx_spice
 from tech import drc, parameter, layer as tech_layers
 
 
@@ -29,7 +30,7 @@ class pgate_horizontal(design):
         self.size = size
         design.__init__(self, self.name)
         if not pgate_horizontal.contraints_initialized:
-            pgate_horizontal.initialize_constraints(self)
+            self.__class__.initialize_constraints(self)
         self.rail_height = self.__class__.rail_height
         self.height = pgate_horizontal.height
 
@@ -58,8 +59,23 @@ class pgate_horizontal(design):
     def calculate_constraints(self):
         raise NotImplementedError
 
-    def add_ptx_insts(self):
+    def get_ptx_connections(self):
         raise NotImplementedError
+
+    def add_ptx_insts(self):
+        offset = vector(0, 0)
+        self.pmos = ptx_spice(self.pmos_finger_width,
+                              mults=int(self.num_fingers / self.num_poly_contacts),
+                              tx_type="pmos")
+        self.add_mod(self.pmos)
+        self.nmos = ptx_spice(self.nmos_finger_width,
+                              mults=int(self.num_fingers / self.num_poly_contacts),
+                              tx_type="nmos")
+        for index, conn_def in enumerate(self.get_ptx_connections()):
+            mos, conn = conn_def
+            name = "{}{}".format(mos.tx_type, index + 1)
+            self.add_inst(name=name, mod=mos, offset=offset)
+            self.connect_inst(conn)
 
     def create_layout(self):
         self.add_pins()
@@ -487,6 +503,14 @@ class pgate_horizontal(design):
             self.add_rect(METAL1, offset=vector(x_offset, y_offset), width=dummy_contact.height,
                           height=pin.cy() - y_offset)
 
+    def add_poly_contact(self, contact_mid_x, poly_mid_y):
+        poly_width = self.contact_width + 2 * contact.poly.first_layer_vertical_enclosure
+        poly_height = self.contact_width + 2 * contact.poly.first_layer_horizontal_enclosure
+
+        self.add_rect_center(CONTACT, offset=vector(contact_mid_x, poly_mid_y))
+        self.add_rect_center(POLY, offset=vector(contact_mid_x, poly_mid_y),
+                             width=poly_width, height=poly_height)
+
     def connect_inputs(self):
 
         nmos_poly_offsets, pmos_poly_offsets, _ = self.get_poly_y_offsets(self.num_fingers)
@@ -499,9 +523,6 @@ class pgate_horizontal(design):
 
         x_offset = self.gate_contact_x + 0.5 * self.contact_width - 0.5 * self.m1_width
 
-        poly_width = self.contact_width + 2 * contact.poly.first_layer_vertical_enclosure
-        poly_height = self.contact_width + 2 * contact.poly.first_layer_horizontal_enclosure
-
         for i in range(len(pin_names)):
             pin_name = pin_names[i]
 
@@ -510,9 +531,7 @@ class pgate_horizontal(design):
             contact_mid_x = self.gate_contact_x + 0.5 * self.contact_width
 
             for y_offset in [nmos_y, pmos_y]:
-                self.add_rect_center(CONTACT, offset=vector(contact_mid_x, y_offset))
-                self.add_rect_center(POLY, offset=vector(contact_mid_x, y_offset),
-                                     width=poly_width, height=poly_height)
+                self.add_poly_contact(contact_mid_x, y_offset)
 
             if i == 0:
                 m1_ext = 0.5 * contact.poly.second_layer_height

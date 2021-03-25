@@ -36,11 +36,5 @@ class pnor3_horizontal(pgate_horizontal, metaclass=unique_meta.Unique):
         self.pmos_finger_width = utils.ceil(3 * self.beta * self.min_tx_width * self.size)
 
     def get_ptx_connections(self):
-        return [
-            (self.pmos, ["vdd", "A", "net1", "vdd"]),
-            (self.pmos, ["net1", "B", "net2", "vdd"]),
-            (self.pmos, ["net2", "C", "Z", "vdd"]),
-            (self.nmos, ["Z", "A", "gnd", "gnd"]),
-            (self.nmos, ["Z", "B", "gnd", "gnd"]),
-            (self.nmos, ["Z", "C", "gnd", "gnd"])
-        ]
+        from pgates.pnor3 import get_ptx_connections
+        return get_ptx_connections(self)

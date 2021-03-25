@@ -28,9 +28,13 @@ class pnor2(pnand2):
         super().connect_s_or_d(self.source_positions[1:], self.drain_positions)
 
     def get_ptx_connections(self):
-        return [
-            (self.pmos, ["vdd", "A", "net1", "vdd"]),
-            (self.pmos, ["net1", "B", "Z", "vdd"]),
-            (self.nmos, ["Z", "A", "gnd", "gnd"]),
-            (self.nmos, ["Z", "B", "gnd", "gnd"]),
-        ]
+        return get_ptx_connections(self)
+
+
+def get_ptx_connections(self):
+    return [
+        (self.pmos, ["vdd", "A", "net1", "vdd"]),
+        (self.pmos, ["net1", "B", "Z", "vdd"]),
+        (self.nmos, ["Z", "A", "gnd", "gnd"]),
+        (self.nmos, ["Z", "B", "gnd", "gnd"]),
+    ]

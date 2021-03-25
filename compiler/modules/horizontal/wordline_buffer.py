@@ -3,7 +3,7 @@ from base.hierarchy_layout import GDS_ROT_270
 from base.vector import vector
 from globals import OPTS
 from modules.buffer_stage import BufferStage
-from modules.horizontal.wordline_inverter import wordline_inverter
+from modules.horizontal.pinv_wordline import pinv_wordline
 
 
 class wordline_buffer(BufferStage):
@@ -23,7 +23,7 @@ class wordline_buffer(BufferStage):
         index = self.buffer_stages.index(size)
         mirror = index % 2 == 1
         beta = OPTS.wordline_beta[index]
-        inv = wordline_inverter(size=size, beta=beta, mirror=mirror)
+        inv = pinv_wordline(size=size, beta=beta, mirror=mirror)
         self.height = inv.height
         return inv
 

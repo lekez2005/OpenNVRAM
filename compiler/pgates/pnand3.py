@@ -34,11 +34,15 @@ class pnand3(pnand2):
         self.add_poly_contacts(pin_names, y_shifts)
 
     def get_ptx_connections(self):
-        return [
-            (self.pmos, ["vdd", "A", "Z", "vdd"]),
-            (self.pmos, ["Z", "B", "vdd", "vdd"]),
-            (self.pmos, ["Z", "C", "vdd", "vdd"]),
-            (self.nmos, ["Z", "C", "net1", "gnd"]),
-            (self.nmos, ["net1", "B", "net2", "gnd"]),
-            (self.nmos, ["net2", "A", "gnd", "gnd"])
-        ]
+        return get_ptx_connections(self)
+
+
+def get_ptx_connections(self):
+    return [
+        (self.pmos, ["vdd", "A", "Z", "vdd"]),
+        (self.pmos, ["Z", "B", "vdd", "vdd"]),
+        (self.pmos, ["Z", "C", "vdd", "vdd"]),
+        (self.nmos, ["Z", "C", "net1", "gnd"]),
+        (self.nmos, ["net1", "B", "net2", "gnd"]),
+        (self.nmos, ["net2", "A", "gnd", "gnd"])
+    ]

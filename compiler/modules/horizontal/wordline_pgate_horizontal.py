@@ -13,6 +13,7 @@ class wordline_pgate_horizontal(pgate_horizontal):
     nmos_pmos_nets_aligned = False  # nmos and pmos nets directly connected
 
     def get_source_drain_connections(self):
+        # [(nmos_power, pmos_power), (nmos_outputs, pmos_outputs)]
         raise NotImplementedError
 
     @classmethod
@@ -94,9 +95,9 @@ class wordline_pgate_horizontal(pgate_horizontal):
                                          self.well_enclose_active, 0.5 * self.poly_space)
 
         if not self.nmos_pmos_nets_aligned:
-            self.active_rect_space = max(self.active_rect_space,
-                                         2 * self.get_line_end_space(METAL1) +
-                                         self.m1_width)
+            self.active_rect_space = (max(0, 0.5 * (m1m2.height - self.nmos_finger_width)) +
+                                      2 * self.get_line_end_space(METAL1) + self.m1_width +
+                                      max(0, 0.5 * (m1m2.height - self.pmos_finger_width)))
 
         self.p_active_x = self.n_active_right + self.active_rect_space
 
@@ -151,7 +152,11 @@ class wordline_pgate_horizontal(pgate_horizontal):
         implant_layers = [NIMP, PIMP]
         well_layers = [PWELL, NWELL]
 
-        self.mid_x = self.left_active_rect.rx() + 0.5 * self.active_rect_space
+        m1m2_extension = max(0, 0.5 * (m1m2.height - self.left_active_rect.width))
+        self.mid_x = self.left_active_rect.rx() + max(0.5 * self.active_rect_space,
+                                                      m1m2_extension +
+                                                      self.get_line_end_space(METAL1) +
+                                                      0.5 * self.m1_width)
 
         for type_index, layer_type in enumerate([implant_layers, well_layers]):
             if self.mirror:
@@ -186,8 +191,8 @@ class wordline_pgate_horizontal(pgate_horizontal):
                 self.add_rect(METAL1, offset=vector(self.nmos_active.cx(), y_offsets[y_index]),
                               width=self.pmos_active.cx() - self.nmos_active.cx())
         else:
-            top_y = y_offsets[max(nmos_conns + pmos_conns)] + 0.5 * self.m1_width
-            bot_y = y_offsets[min(nmos_conns + pmos_conns)] - 0.5 * self.m1_width
+            top_y = y_offsets[max(nmos_conns + pmos_conns)] + self.m1_width
+            bot_y = y_offsets[min(nmos_conns + pmos_conns)]
             self.add_rect(METAL1, offset=vector(self.mid_x - 0.5 * self.m1_width, bot_y),
                           width=self.m1_width, height=top_y - bot_y)
             for rect, conns in [(self.nmos_active, nmos_conns), (self.pmos_active, pmos_conns)]:

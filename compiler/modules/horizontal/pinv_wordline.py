@@ -4,9 +4,9 @@ from base.vector import vector
 from modules.horizontal.wordline_pgate_horizontal import wordline_pgate_horizontal
 
 
-class wordline_inverter(wordline_pgate_horizontal, metaclass=unique_meta.Unique):
+class pinv_wordline(wordline_pgate_horizontal, metaclass=unique_meta.Unique):
     nmos_pmos_nets_aligned = True
-    pgate_name = "wordline_inverter"
+    pgate_name = "pinv_wordline"
 
     def get_ptx_connections(self):
         return [

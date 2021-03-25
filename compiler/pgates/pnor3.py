@@ -35,11 +35,15 @@ class pnor3(pnand2):
         self.add_pin_list(["A", "B", "C", "Z", "vdd", "gnd"])
 
     def get_ptx_connections(self):
-        return [
-            (self.pmos, ["vdd", "A", "net1", "vdd"]),
-            (self.pmos, ["net1", "B", "net2", "vdd"]),
-            (self.pmos, ["net2", "C", "Z", "vdd"]),
-            (self.nmos, ["Z", "A", "gnd", "gnd"]),
-            (self.nmos, ["Z", "B", "gnd", "gnd"]),
-            (self.nmos, ["Z", "C", "gnd", "gnd"])
-        ]
+        return get_ptx_connections(self)
+
+
+def get_ptx_connections(self):
+    return [
+        (self.pmos, ["vdd", "A", "net1", "vdd"]),
+        (self.pmos, ["net1", "B", "net2", "vdd"]),
+        (self.pmos, ["net2", "C", "Z", "vdd"]),
+        (self.nmos, ["Z", "A", "gnd", "gnd"]),
+        (self.nmos, ["Z", "B", "gnd", "gnd"]),
+        (self.nmos, ["Z", "C", "gnd", "gnd"])
+    ]

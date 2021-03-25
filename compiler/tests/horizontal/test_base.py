@@ -13,11 +13,12 @@ from shared_decoder.test_base import TestBase as SharedTestBase
 class TestBase(SharedTestBase):
 
     def add_body_tap_and_test(self, dut_):
-        from base.design import design
+        from base.design import design, PIMP, NIMP
         from base.hierarchy_layout import GDS_ROT_90
         from base.vector import vector
+        from modules.buffer_stage import BufferStage
         from modules.horizontal.pgate_horizontal import pgate_horizontal
-        from modules.horizontal.pgate_horizontal_tap import pgate_horizontal_tap
+        from modules.horizontal.wordline_pgate_horizontal import wordline_pgate_horizontal
 
         class WrappedDut(design):
             rotation_for_drc = GDS_ROT_90
@@ -28,20 +29,37 @@ class TestBase(SharedTestBase):
                 self.dut = dut
                 self.add_mod(dut)
 
-                tap = pgate_horizontal_tap(dut)
-                self.add_mod(tap)
-
                 dut_inst = self.add_inst("dut", mod=self.dut, offset=vector(0, 0))
                 self.connect_inst(self.dut.pins)
 
-                tap_inst = self.add_inst("tap", mod=tap, offset=dut_inst.lr())
-                self.connect_inst([])
+                if isinstance(dut, (wordline_pgate_horizontal, BufferStage)):
+                    from modules.horizontal.wordline_pgate_tap import wordline_pgate_tap
+
+                    if isinstance(dut, BufferStage):
+                        pwell_tap = wordline_pgate_tap(dut.buffer_invs[0], PIMP)
+                        nwell_tap = wordline_pgate_tap(dut.buffer_invs[0], NIMP)
+                        inst_list = dut.module_insts
+                    else:
+                        pwell_tap = wordline_pgate_tap(dut, PIMP)
+                        nwell_tap = wordline_pgate_tap(dut, NIMP)
+                        inst_list = [dut_inst]
+                    wordline_pgate_tap.add_buffer_taps(self, 0, dut_inst.uy(),
+                                                       inst_list,
+                                                       pwell_tap, nwell_tap)
+                    self.width = dut.width
+                else:
+                    from modules.horizontal.pgate_horizontal_tap import pgate_horizontal_tap
+                    tap = pgate_horizontal_tap(dut)
+                    self.add_mod(tap)
+
+                    tap_inst = self.add_inst("tap", mod=tap, offset=dut_inst.lr())
+                    self.connect_inst([])
+                    self.width = tap_inst.rx()
 
                 for pin_name in self.dut.pins:
                     self.add_pin(pin_name)
                     self.copy_layout_pin(dut_inst, pin_name, pin_name)
 
-                self.width = tap_inst.rx()
                 self.height = dut.height
 
         real_dut = WrappedDut(dut_)

@@ -100,8 +100,9 @@ class wordline_pgate_tap(design, metaclass=Unique):
                 for rect in mod_rects:
                     rect_x = x_offset + buffer_inst.lx() + rect.lx()
                     rect_y = y_offset
+                    height = pwell_tap.height + design_self.well_enclose_active
                     design_self.add_rect(layer, offset=vector(rect_x, rect_y),
-                                         width=rect.width, height=pwell_tap.height)
+                                         width=rect.width, height=height)
 
             # join the power pins
             power_m2_rects = []

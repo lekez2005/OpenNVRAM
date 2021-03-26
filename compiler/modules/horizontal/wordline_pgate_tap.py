@@ -89,7 +89,8 @@ class wordline_pgate_tap(design, metaclass=Unique):
 
     @staticmethod
     def add_buffer_taps(design_self: design, x_offset, y_offset,
-                        module_insts, pwell_tap, nwell_tap):
+                        module_insts, pwell_tap, nwell_tap, add_taps=True):
+        # if not add_taps, just add the wells and connect the power, this to avoid adjacent taps overlap
         tap_insts = []
         layers = [PWELL, NWELL]
         for buffer_index, buffer_inst in enumerate(module_insts):
@@ -116,6 +117,9 @@ class wordline_pgate_tap(design, metaclass=Unique):
 
             left_m2, right_m2 = sorted(power_m2_rects, key=lambda x: x.lx())
 
+            if not add_taps:
+                continue
+
             taps = [pwell_tap, nwell_tap]
             if mod.mirror:
                 taps = list(reversed(taps))
@@ -128,8 +132,8 @@ class wordline_pgate_tap(design, metaclass=Unique):
             if buffer_index == len(module_insts) - 1:
                 right_x = mod.width - right_tap.width
 
-            left_x += buffer_inst.lx()
-            right_x += buffer_inst.lx()
+            left_x += buffer_inst.lx() + x_offset
+            right_x += buffer_inst.lx() + x_offset
             for tap_x, tap, m2_rect in [(left_x, left_tap, left_m2),
                                (right_x, right_tap, right_m2)]:
                 tap_inst = design_self.add_inst(tap.name, tap,

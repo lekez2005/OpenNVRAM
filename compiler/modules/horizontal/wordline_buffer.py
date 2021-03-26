@@ -6,7 +6,7 @@ from modules.buffer_stage import BufferStage
 from modules.horizontal.pinv_wordline import pinv_wordline
 
 
-class wordline_buffer(BufferStage):
+class WordlineBuffer(BufferStage):
     rotation_for_drc = GDS_ROT_270
 
     @classmethod

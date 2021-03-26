@@ -143,6 +143,9 @@ class LogicBuffer(design.design, metaclass=Unique):
         # logic output to buffer input
         logic_out = self.logic_inst.get_pin("Z")
         buffer_in = self.buffer_inst.get_pin("in")
+        self.join_logic_out_to_buffer_in(logic_out, buffer_in)
+
+    def join_logic_out_to_buffer_in(self, logic_out, buffer_in):
         self.add_rect("metal1", offset=vector(logic_out.cx(), buffer_in.cy() - 0.5*self.m1_width),
                       width=buffer_in.lx() - logic_out.cx())
 

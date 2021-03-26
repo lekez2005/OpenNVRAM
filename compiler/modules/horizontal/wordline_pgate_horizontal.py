@@ -201,12 +201,13 @@ class wordline_pgate_horizontal(pgate_horizontal):
                                   width=rect.cx() - self.mid_x)
         # output pin
         x_offset = self.output_x
-        for y_index in pmos_conns:
+        conns = pmos_conns if self.pmos_active == self.right_active_rect else nmos_conns
+        for y_index in conns:
             self.add_rect(METAL1, offset=vector(x_offset, y_offsets[y_index]),
-                          width=self.pmos_active.cx() - x_offset)
+                          width=self.right_active_rect.cx() - x_offset)
 
-        top_y = y_offsets[max(pmos_conns)] + self.m1_width
-        bot_y = y_offsets[min(pmos_conns)]
+        top_y = y_offsets[max(conns)] + self.m1_width
+        bot_y = y_offsets[min(conns)]
 
         self.add_layout_pin("Z", METAL1, offset=vector(x_offset, bot_y),
                             height=top_y - bot_y)

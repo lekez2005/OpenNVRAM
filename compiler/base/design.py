@@ -476,8 +476,13 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         mod_class = getattr(module, class_name)
         return mod_class
 
-
     def create_mod_from_str(self, module_name, *args, **kwargs):
+        mod = self.create_mod_from_str_(module_name, *args, **kwargs)
+        self.add_mod(mod)
+        return mod
+
+    @staticmethod
+    def create_mod_from_str_(module_name, *args, **kwargs):
         """Helper method to create modules from string specification
         *args and **kwargs are passed to the class instantiation
         specify class name using .delimiter in module_name or as separate parameter
@@ -489,14 +494,13 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         else:
             rotation = None
 
-        mod_class = self.import_mod_class_from_str(module_name, **kwargs)
+        mod_class = design.import_mod_class_from_str(module_name, **kwargs)
         mod = mod_class(*args, **kwargs)
 
         if rotation is not None:
             from base.rotation_wrapper import RotationWrapper
             mod = RotationWrapper(mod, rotation_angle=rotation)
 
-        self.add_mod(mod)
         return mod
 
     def DRC_LVS(self, final_verification=False):

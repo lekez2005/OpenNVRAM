@@ -120,6 +120,14 @@ class OpenRamTest(unittest.TestCase):
         mod_class = getattr(class_file, config_mod_name)
         return mod_class
 
+    @staticmethod
+    def create_class_from_opts(opt_name, *args, **kwargs):
+        from base.design import design
+        from globals import OPTS
+        opt_val = getattr(OPTS, opt_name)
+        mod = design.create_mod_from_str_(opt_val, *args, **kwargs)
+        return mod
+
     def isclose(self, value1, value2, error_tolerance=1e-2):
         """ This is used to compare relative values. """
         import debug

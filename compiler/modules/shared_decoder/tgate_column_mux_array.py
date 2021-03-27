@@ -8,13 +8,13 @@ from modules.single_level_column_mux_array import single_level_column_mux_array
 @library_import
 class tgate_column_mux_tap(design.design):
     pin_names = []
-    lib_name = "tgate_column_mux_tap"
+    lib_name = getattr(OPTS, "tgate_column_mux_tap_mod", "tgate_column_mux_tap")
 
 
 @library_import
 class tgate_column_mux(design.design):
     pin_names = "bl br bl_out br_out sel gnd vdd".split()
-    lib_name = "tgate_column_mux"
+    lib_name = getattr(OPTS, "tgate_column_mux_mod", "tgate_column_mux")
 
 
 class tgate_column_mux_array(single_level_column_mux_array):

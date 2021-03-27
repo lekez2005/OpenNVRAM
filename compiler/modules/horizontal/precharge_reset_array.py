@@ -1,0 +1,53 @@
+from base import utils
+from base.geometry import MIRROR_Y_AXIS, NO_MIRROR
+from base.vector import vector
+from modules.horizontal.precharge_and_reset import PrechargeAndReset
+from modules.precharge_array import precharge_array
+
+
+class PrechargeResetArray(precharge_array):
+
+    def create_modules(self):
+        self.pc_cell = PrechargeAndReset(name="precharge", size=self.size)
+        self.add_mod(self.pc_cell)
+
+        self.pc_cell_mirror = PrechargeAndReset(name="precharge_mirror", size=self.size,
+                                                mirror=True)
+        self.add_mod(self.pc_cell_mirror)
+
+    def add_pins(self):
+        super().add_pins()
+        self.add_pin("br_reset")
+
+    def create_layout(self):
+        self.add_insts()
+        for pin_name in ["vdd", "gnd", "br_reset", "en"]:
+            for pin in self.pc_cell.get_pins(pin_name):
+                self.add_layout_pin(pin_name, pin.layer, pin.ll(),
+                                    width=self.width - pin.lx(),
+                                    height=pin.height())
+
+    def add_insts(self):
+        """Creates a precharge array by horizontally tiling the precharge cell"""
+        (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
+
+        self.child_insts = []
+        for i in range(self.columns):
+            name = "pre_column_{0}".format(i)
+            offset = vector(self.bitcell_offsets[i], 0)
+            if i % 2 == 1:
+                mirror = MIRROR_Y_AXIS
+                offset.x += self.pc_cell.width
+                mod = self.pc_cell_mirror
+            else:
+                mirror = NO_MIRROR
+                mod = self.pc_cell
+            inst = self.add_inst(name=name, mod=mod, offset=offset,
+                                 mirror=mirror)
+
+            self.copy_layout_pin(inst, "bl", "bl[{0}]".format(i))
+            self.copy_layout_pin(inst, "br", "br[{0}]".format(i))
+            self.connect_inst(["bl[{0}]".format(i), "br[{0}]".format(i),
+                               "en", "br_reset", "vdd", "gnd"])
+            self.child_insts.append(inst)
+        self.width = inst.rx()

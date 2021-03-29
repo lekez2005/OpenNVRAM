@@ -74,13 +74,11 @@ class bitcell_array(design.design):
 
     def get_cell_offset(self, col_index, row_index):
         if self.bitcell_x_offsets is None:
-            x_offsets = self.calculate_x_offsets(bitcell=self.cell, body_tap=self.body_tap,
-                                                 num_cols=self.column_size, dummy_cell=self.dummy_cell)
+            x_offsets = self.calculate_x_offsets(num_cols=self.column_size)
             self.bitcell_x_offsets = x_offsets
             self.combined_x_offsets = list(sorted(x_offsets[0] + x_offsets[2]))
 
-            y_offsets = self.calculate_y_offsets(bitcell=self.cell, body_tap=self.body_tap,
-                                                 num_rows=self.row_size, dummy_cell=self.dummy_cell)
+            y_offsets = self.calculate_y_offsets(num_rows=self.row_size)
             self.bitcell_y_offsets = y_offsets
             self.combined_y_offsets = list(sorted(y_offsets[0] + y_offsets[2]))
 
@@ -94,12 +92,12 @@ class bitcell_array(design.design):
         # assuming bitcell's default is nwell on top, psub below, to make bottom-most bitcell's
         # nwell align with precharge cell's nwell, the lowest cell should be mirrored around x axis
         if row_index % 2 == 1:
-            if OPTS.mirror_bitcell_y_axis and col_index % 2 == 0:
+            if col_index % 2 == 0 and OPTS.mirror_bitcell_y_axis and not OPTS.symmetric_bitcell:
                 mirror = MIRROR_Y_AXIS
                 x_offset += self.cell.width
         else:
             y_offset += self.cell.height
-            if OPTS.mirror_bitcell_y_axis and col_index % 2 == 0:
+            if col_index % 2 == 0 and OPTS.mirror_bitcell_y_axis and not OPTS.symmetric_bitcell:
                 mirror = MIRROR_XY
                 x_offset += self.cell.width
             else:
@@ -451,7 +449,9 @@ class bitcell_array(design.design):
             outputs.append([x if x <= closest_offset else x + space for x in offset_list])
         return closest_offset, outputs
 
-    def calculate_x_offsets(self, bitcell, body_tap, dummy_cell, num_cols):
+    @staticmethod
+    def calculate_x_offsets(num_cols):
+        bitcell, body_tap, dummy_cell = bitcell_array.create_modules()
         dummy_width = dummy_cell.width if dummy_cell is not None else None
         if OPTS.use_x_body_taps:
             tap_width = body_tap.width
@@ -497,7 +497,8 @@ class bitcell_array(design.design):
         return x_offsets
 
     @staticmethod
-    def calculate_y_offsets(bitcell, body_tap, dummy_cell, num_rows):
+    def calculate_y_offsets(num_rows):
+        bitcell, body_tap, dummy_cell = bitcell_array.create_modules()
         if dummy_cell is not None:
             dummy_height = dummy_cell.height
         else:

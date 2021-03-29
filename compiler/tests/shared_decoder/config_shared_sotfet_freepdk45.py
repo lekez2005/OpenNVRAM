@@ -9,6 +9,7 @@ mirror_bitcell_y_axis = True
 mram_bitcell = "mram/sotfet_mram_small"
 body_tap = "sotfet_mram_bitcell_tap"
 body_tap_mod = "mram/sotfet_mram_small_tap"
+tgate_column_mux_mod = "mram/tgate_column_mux_sotfet"
 
 precharge_array = "precharge_reset_array.PrechargeResetArray"
 

@@ -23,7 +23,7 @@ class tgate_column_mux_array(single_level_column_mux_array):
         super().create_layout()
         self.add_body_contacts()
 
-    def add_modules(self):
+    def create_modules(self):
         self.mux = tgate_column_mux()
         self.child_mod = self.mux
         self.add_mod(self.mux)

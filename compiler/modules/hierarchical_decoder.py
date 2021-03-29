@@ -123,9 +123,7 @@ class hierarchical_decoder(design.design):
                 index = index + 1
             self.predec_groups.append(lines)
 
-        bitcell, body_tap, dummy_cell = bitcell_array.create_modules()
-        offsets = bitcell_array.calculate_y_offsets(bitcell, body_tap, dummy_cell,
-                                                    num_rows=self.rows)
+        offsets = bitcell_array.calculate_y_offsets(num_rows=self.rows)
         self.bitcell_offsets, self.tap_offsets, self.dummy_offsets = offsets
 
         self.calculate_dimensions()

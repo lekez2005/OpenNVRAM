@@ -3,11 +3,9 @@ from base.design import PIMP, NIMP, METAL1
 from base.geometry import MIRROR_X_AXIS, NO_MIRROR
 from base.hierarchy_layout import GDS_ROT_270
 from base.vector import vector
-from globals import OPTS
 from modules.bitcell_array import bitcell_array
 from modules.horizontal.wordline_logic_buffer import WordlineLogicBuffer
 from modules.horizontal.wordline_pgate_tap import wordline_pgate_tap
-from modules.push_rules.push_bitcell_array import push_bitcell_array
 from modules.wordline_driver_array import wordline_driver_array
 
 
@@ -29,8 +27,7 @@ class wordline_buffer_array(wordline_driver_array):
         self.pwell_tap = wordline_pgate_tap(reference_mod, PIMP)
         self.nwell_tap = wordline_pgate_tap(reference_mod, NIMP)
 
-        bitcell, body_tap, dummy_cell = bitcell_array.create_modules()
-        offsets = bitcell_array.calculate_y_offsets(bitcell, body_tap, dummy_cell, num_rows=self.rows)
+        offsets = bitcell_array.calculate_y_offsets(num_rows=self.rows)
         self.bitcell_offsets, self.tap_offsets, _ = offsets
 
         self.width = self.logic_buffer.width

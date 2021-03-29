@@ -1,13 +1,12 @@
 import debug
-from base import contact
 from base import design
-from base import utils
 from base.contact import m1m2, cross_m1m2
-from base.design import METAL2, PWELL, ACTIVE
+from base.design import METAL2, METAL1
+from base.hierarchy_layout import GDS_ROT_90
 from base.vector import vector
 from globals import OPTS
+from modules.bitcell_array import bitcell_array
 from modules.single_level_column_mux import single_level_column_mux
-from tech import info
 
 
 class single_level_column_mux_array(design.design):
@@ -38,7 +37,7 @@ class single_level_column_mux_array(design.design):
         self.add_pin("gnd")
 
     def create_layout(self):
-        self.add_modules()
+        self.create_modules()
         self.setup_layout_constants()
         self.create_array()
         self.add_routing()
@@ -49,7 +48,7 @@ class single_level_column_mux_array(design.design):
         self.add_layout_pins()
         self.add_boundary()
 
-    def add_modules(self):
+    def create_modules(self):
         self.mux = single_level_column_mux(tx_size=OPTS.column_mux_size)
         self.child_mod = self.mux
         self.add_mod(self.mux)
@@ -59,33 +58,47 @@ class single_level_column_mux_array(design.design):
         self.bus_pitch = self.bus_width + self.bus_space
         # one set of metal1 routes for select signals and a pair to interconnect the mux outputs bl/br
         # two extra route pitch is to space from the sense amp
-        self.route_height = (self.words_per_row + 4) * self.bus_pitch
+
+        self.route_height = (self.words_per_row + 3) * self.bus_pitch
+        self.mirror = OPTS.mirror_bitcell_y_axis and not OPTS.symmetric_bitcell
+        if self.mirror:
+            self.route_height += self.bus_pitch  # extra space to cross br
 
     def create_array(self):
         self.child_insts = []
 
-        (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
+        offsets = bitcell_array.calculate_x_offsets(num_cols=self.columns)
+        (self.bitcell_offsets, self.tap_offsets, _) = offsets
 
         # For every column, add a pass gate
         for col_num in range(self.columns):
             name = "MUX{0}".format(col_num)
-            x_off = vector(self.bitcell_offsets[col_num], self.route_height)
-            self.child_insts.append(self.add_inst(name=name, mod=self.mux, offset=x_off))
+            offset = vector(self.bitcell_offsets[col_num], self.route_height)
 
-            self.connect_inst(["bl[{}]".format(col_num),
-                               "br[{}]".format(col_num),
-                               "bl_out[{}]".format(int(col_num / self.words_per_row)),
-                               "br_out[{}]".format(int(col_num / self.words_per_row)),
-                               "sel[{}]".format(col_num % self.words_per_row),
-                               "gnd"])
+            if (col_num + OPTS.num_dummies) % 2 == 0 and self.mirror:
+                bitline_nets = "br[{0}] bl[{0}] "
+            else:
+                bitline_nets = "bl[{0}] br[{0}] "
+            bitline_nets += (bitline_nets.replace("bl", "bl_out").replace("br", "br_out")
+                             .replace("{0}", "{1}"))
+            bitline_conns = bitline_nets.format(col_num, int(col_num / self.words_per_row)).split()
+
+            self.child_insts.append(self.add_inst(name=name, mod=self.mux, offset=offset))
+
+            self.connect_inst(bitline_conns +
+                              ["sel[{}]".format(col_num % self.words_per_row), "gnd"])
 
     def add_layout_pins(self):
         """ Add the pins after we determine the height. """
         # For every column, add a pass gate
         for col_num in range(self.columns):
             child_insts = self.child_insts[col_num]
-            self.copy_layout_pin(child_insts, "bl", "bl[{}]".format(col_num))
-            self.copy_layout_pin(child_insts, "br", "br[{}]".format(col_num))
+            if (col_num + OPTS.num_dummies) % 2 == 0 and self.mirror:
+                pin_names = [("bl", "br"), ("br", "bl")]
+            else:
+                pin_names = [("bl", "bl"), ("br", "br")]
+            for source_pin, dest_pin in pin_names:
+                self.copy_layout_pin(child_insts, source_pin, "{}[{}]".format(dest_pin, col_num))
 
         cell_gnd_pin = self.child_insts[0].get_pin("gnd")
         self.add_layout_pin("gnd", "metal1", offset=cell_gnd_pin.ll(),
@@ -132,61 +145,75 @@ class single_level_column_mux_array(design.design):
         """  Connect the output bit-lines to form the appropriate width mux """
         bl_out_y = self.get_pin("sel[{}]".format(self.words_per_row - 1)).by() - self.bus_pitch
         br_out_y = bl_out_y - self.bus_pitch
+        if self.mirror:
+            bl_out_y, br_out_y = br_out_y, bl_out_y
 
         cross_via_extension = 0.5 * cross_m1m2.height
 
         for j in range(self.columns):
             bl_out, br_out = self.get_output_bitlines(j)
+            if self.mirror and (j + OPTS.num_dummies) % 2 == 0:
+                bl_out, br_out = br_out, bl_out
 
-            bl_out_offset = vector(bl_out.lx() - cross_via_extension, bl_out_y)
-            br_out_offset = vector(br_out.lx() - cross_via_extension, br_out_y)
+            bl_out_offset = vector(bl_out.cx() - cross_via_extension, bl_out_y)
+            br_out_offset = vector(br_out.cx() - cross_via_extension, br_out_y)
+
+            bl_via_offset = vector(bl_out.cx(), bl_out_y + 0.5 * self.bus_width)
+            br_via_offset = vector(br_out.cx(), br_out_y + 0.5 * self.bus_width)
+
+            for pin, via_offset in zip([bl_out, br_out], [bl_via_offset, br_via_offset]):
+                self.add_rect(METAL2, offset=vector(pin.lx(), via_offset.y),
+                              width=pin.width(), height=pin.by() - via_offset.y)
 
             if (j % self.words_per_row) == 0:
                 # Create the metal1 to connect the n-way mux output from the pass gate
-                # These will be located below the select lines. Yes, these are M2 width
-                # to ensure vias are enclosed and M1 min width rules.
+                # These will be located below the select lines.
 
-                width = (contact.m1m2.width + self.bitcell_offsets[j + self.words_per_row - 1]
-                         - self.bitcell_offsets[j] + 2 * cross_via_extension)
-                self.add_rect(layer="metal1",
-                              offset=bl_out_offset,
-                              width=width,
-                              height=self.bus_width)
-                self.add_rect(layer="metal1",
-                              offset=br_out_offset,
-                              width=width,
-                              height=self.bus_width)
+                last_bl_out, last_br_out = self.get_output_bitlines(j + self.words_per_row - 1)
+                # add m1 rect to extend from beginning to end of bitline connected to it
+                bl_width = last_bl_out.cx() - bl_out.cx() + 2 * cross_via_extension
+                br_width = last_br_out.cx() - br_out.cx() + 2 * cross_via_extension
+                for rect_offset, width in zip([bl_out_offset, br_out_offset], [bl_width, br_width]):
+                    self.add_rect(METAL1, offset=rect_offset, width=width, height=self.bus_width)
 
-                # Extend the bitline output rails and gnd downward on the first bit of each n-way mux
-                self.add_layout_pin(text="bl_out[{}]".format(int(j / self.words_per_row)),
-                                    layer="metal2",
-                                    offset=vector(bl_out.lx(), 0),
-                                    width=bl_out.width(),
-                                    height=self.route_height)
-                self.add_layout_pin(text="br_out[{}]".format(int(j / self.words_per_row)),
-                                    layer="metal2",
-                                    offset=vector(br_out.lx(), 0),
-                                    width=br_out.width(),
-                                    height=self.route_height)
+                if self.mirror:
+                    # prevent clash with bl pin below it
+                    self.add_via_center(m1m2.layer_stack, bl_via_offset, rotate=GDS_ROT_90)
+                    self.add_via_center(m1m2.layer_stack, br_via_offset, rotate=GDS_ROT_90)
 
-                self.add_cross_contact_center(cross_m1m2,
-                                              offset=vector(bl_out.cx(),
-                                                            bl_out_y + 0.5 * self.bus_width),
-                                              rotate=True)
-                self.add_cross_contact_center(cross_m1m2,
-                                              offset=vector(br_out.cx(),
-                                                            br_out_y + 0.5 * self.bus_width),
-                                              rotate=True)
+                    _, adjacent_br_pin = self.get_output_bitlines(j + 1)
+                    bl_top_y = bl_via_offset.y
+                    bl_x_offset = br_out.lx()
+                    br_x_offset = bl_out.lx()
+                    br_top_y = bl_top_y - self.bus_pitch
 
-            else:
-                pins = [bl_out, br_out]
-                y_offsets = [bl_out_y, br_out_y]
-                for i in range(2):
-                    self.add_rect(layer=METAL2, width=bl_out.width(),
-                                  offset=vector(pins[i].lx(), y_offsets[i] - cross_via_extension),
-                                  height=self.route_height - y_offsets[i] + cross_via_extension)
-                    # This via is on the right of the wire
+                    self.add_rect(METAL2, offset=vector(adjacent_br_pin.lx(), br_top_y),
+                                  width=adjacent_br_pin.width(), height=br_out_y - br_top_y)
                     self.add_cross_contact_center(cross_m1m2, rotate=True,
-                                                  offset=vector(pins[i].cx(),
-                                                                y_offsets[i]
-                                                                + 0.5 * self.bus_width))
+                                                  offset=vector(adjacent_br_pin.cx(), br_top_y))
+
+                    for bitline_pin, pin_top, adj_pin in zip([br_out, bl_out], [bl_top_y, br_top_y],
+                                                             [bl_out, adjacent_br_pin]):
+                        rect_x = bitline_pin.cx() - cross_via_extension
+                        self.add_rect(METAL1, offset=vector(rect_x, pin_top - 0.5 * self.bus_width),
+                                      height=self.bus_width,
+                                      width=adj_pin.cx() + cross_via_extension - rect_x)
+                        via_offset = vector(bitline_pin.cx(), pin_top)
+                        self.add_via_center(m1m2.layer_stack, via_offset, rotate=GDS_ROT_90)
+
+                else:
+                    self.add_cross_contact_center(cross_m1m2, bl_via_offset, rotate=True)
+                    bl_top_y = bl_via_offset.y
+                    br_top_y = br_via_offset.y
+                    bl_x_offset = bl_out.lx()
+                    br_x_offset = br_out.lx()
+                    self.add_cross_contact_center(cross_m1m2, br_via_offset, rotate=True)
+                for top_y, pin_x, pin_name in zip([bl_top_y, br_top_y], [bl_x_offset, br_x_offset],
+                                                  ["bl_out", "br_out"]):
+                    pin_name += "[{}]".format(int(j / self.words_per_row))
+                    self.add_layout_pin(pin_name,  METAL2, offset=vector(pin_x, 0),
+                                        width=bl_out.width(), height=top_y)
+            else:
+                # add via to the connection rect
+                for via_offset in [bl_via_offset, br_via_offset]:
+                    self.add_cross_contact_center(cross_m1m2, rotate=True, offset=via_offset)

@@ -1,7 +1,7 @@
-from base import utils
 from base.geometry import MIRROR_Y_AXIS, NO_MIRROR
 from base.vector import vector
 from globals import OPTS
+from modules.bitcell_array import bitcell_array
 from modules.horizontal.precharge_and_reset import PrechargeAndReset
 from modules.precharge_array import precharge_array
 
@@ -33,13 +33,15 @@ class PrechargeResetArray(precharge_array):
 
     def add_insts(self):
         """Creates a precharge array by horizontally tiling the precharge cell"""
-        (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
+        offsets = bitcell_array.calculate_x_offsets(num_cols=self.columns)
+
+        (self.bitcell_offsets, self.tap_offsets, _) = offsets
 
         self.child_insts = []
         for i in range(self.columns):
             name = "pre_column_{0}".format(i)
             offset = vector(self.bitcell_offsets[i], 0)
-            if i % 2 == 1:
+            if (i + OPTS.num_dummies) % 2 == 0:
                 mirror = MIRROR_Y_AXIS
                 offset.x += self.pc_cell.width
                 mod = self.pc_cell_mirror

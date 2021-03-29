@@ -48,8 +48,8 @@ class cam_bitcell_12t_array(bitcell_array.bitcell_array):
 
             for pin_index in range(2):
                 cell_pin_name = cell_pin_names[pin_index]
-                bot_pin = self.cell_inst[0, col].get_pin(cell_pin_name)
-                top_pin = self.cell_inst[self.row_size-1, col].get_pin(cell_pin_name)
+                bot_pin = self.cell_inst[0][col].get_pin(cell_pin_name)
+                top_pin = self.cell_inst[self.row_size-1][col].get_pin(cell_pin_name)
                 self.add_layout_pin(text=pin_names[pin_index].format(col),
                                     layer=bot_pin.layer,
                                     offset=bot_pin.ll(),
@@ -59,8 +59,8 @@ class cam_bitcell_12t_array(bitcell_array.bitcell_array):
         for row in range(self.row_size):
             for (cell_pin_name, module_pin_name) in [("ML", "ml[{0}]"), ("WWL", "wwl[{0}]")]:
                 # add ml_pin
-                leftmost_pin = self.cell_inst[row, 0].get_pin(cell_pin_name)
-                rightmost_pin = self.cell_inst[row, self.column_size-1].get_pin(cell_pin_name)
+                leftmost_pin = self.cell_inst[row][0].get_pin(cell_pin_name)
+                rightmost_pin = self.cell_inst[row][self.column_size-1].get_pin(cell_pin_name)
                 # add ml pin label and offset
                 self.add_layout_pin(text=module_pin_name.format(row),
                                     layer=leftmost_pin.layer,

@@ -30,7 +30,7 @@ class Pnand2Test(OpenRamTest):
         from pgates import pnand2
         import tech
         debug.info(2, "Checking 1x size bitcell pitch matched")
-        OPTS.use_body_taps = False
+        OPTS.use_x_body_taps = False
         tech.drc_exceptions["pnand2"] = (tech.drc_exceptions.get("latchup", []) +
                                          tech.drc_exceptions.get("min_nwell", []))
         tx = pnand2.pnand2(size=1, align_bitcell=True, same_line_inputs=True)
@@ -41,7 +41,7 @@ class Pnand2Test(OpenRamTest):
         from pgates import pnand2
         import tech
         debug.info(2, "Checking 1x size bitcell pitch matched")
-        OPTS.use_body_taps = True
+        OPTS.use_x_body_taps = True
         tech.drc_exceptions["pnand2"] = (tech.drc_exceptions.get("latchup", []) +
                                          tech.drc_exceptions.get("min_nwell", []))
         tx = pnand2.pnand2(size=1, align_bitcell=True, same_line_inputs=True)

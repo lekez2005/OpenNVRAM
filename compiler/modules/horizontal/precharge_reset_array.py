@@ -1,6 +1,7 @@
 from base import utils
 from base.geometry import MIRROR_Y_AXIS, NO_MIRROR
 from base.vector import vector
+from globals import OPTS
 from modules.horizontal.precharge_and_reset import PrechargeAndReset
 from modules.precharge_array import precharge_array
 
@@ -11,9 +12,12 @@ class PrechargeResetArray(precharge_array):
         self.pc_cell = PrechargeAndReset(name="precharge", size=self.size)
         self.add_mod(self.pc_cell)
 
-        self.pc_cell_mirror = PrechargeAndReset(name="precharge_mirror", size=self.size,
-                                                mirror=True)
-        self.add_mod(self.pc_cell_mirror)
+        if OPTS.symmetric_bitcell:
+            self.pc_cell_mirror = PrechargeAndReset(name="precharge_mirror", size=self.size,
+                                                    mirror=True)
+            self.add_mod(self.pc_cell_mirror)
+        else:
+            self.pc_cell_mirror = self.pc_cell
 
     def add_pins(self):
         super().add_pins()

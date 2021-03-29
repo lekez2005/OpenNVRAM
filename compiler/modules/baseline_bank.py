@@ -1686,7 +1686,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         return bitcell_index, bitcell_offsets[bitcell_index] + self.get_m4_rail_x()
 
     def route_body_tap_supplies(self):
-        if not OPTS.use_body_taps:
+        if not OPTS.use_x_body_taps:
             return
         rails = utils.get_libcell_pins(["vdd", "gnd"], OPTS.body_tap)
         if not rails["vdd"] or not rails["gnd"]:

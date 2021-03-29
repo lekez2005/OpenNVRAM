@@ -5,7 +5,6 @@ from base.design import NWELL
 from base.vector import vector
 from globals import OPTS
 from modules.precharge import precharge, precharge_tap
-from tech import drc
 
 
 class precharge_array(design.design):
@@ -32,7 +31,7 @@ class precharge_array(design.design):
         self.pc_cell = precharge(name="precharge", size=self.size)
         self.add_mod(self.pc_cell)
 
-        if OPTS.use_body_taps:
+        if OPTS.use_x_body_taps:
             self.body_tap = precharge_tap(self.pc_cell)
             self.add_mod(self.body_tap)
 

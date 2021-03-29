@@ -56,11 +56,10 @@ class row_decoder_with_enable(hierarchical_decoder):
         self.nand2 = self.nand3 = self.inv = self.decoder_and
         super().calculate_dimensions()
 
-        self.bitcell_offsets, self.tap_offsets, _ = push_bitcell_array. \
-            get_bitcell_offsets(self.rows, 2)
-
         self.row_decoder_width = self.decoder_and.width + self.routing_width
-        self.row_decoder_height = self.bitcell_offsets[-1] + 2 * push_bitcell_array.bitcell.height
+        self.row_decoder_height = (self.bitcell_offsets[-1] +
+                                   self.decoder_and.height +
+                                   OPTS.num_dummies * self.decoder_and.height)
 
         vdd_pin = (self.pre2_4 or self.pre3_8).get_pins("vdd")[0]
         self.predecoder_space = vdd_pin.height() + self.get_wide_space(METAL1)

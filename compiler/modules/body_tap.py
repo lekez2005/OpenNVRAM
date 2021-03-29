@@ -10,4 +10,4 @@ class body_tap(design):
     """
 
     pin_names = []
-    lib_name = OPTS.body_tap
+    lib_name = getattr(OPTS, "body_tap_mod", OPTS.body_tap)

@@ -125,7 +125,7 @@ def get_tap_positions(num_columns):
 
     cells_per_group = OPTS.cells_per_group
 
-    if not OPTS.use_body_taps:
+    if not OPTS.use_x_body_taps:
         bitcell_offsets = [i*bitcell.width for i in range(num_columns)]
         return bitcell_offsets, []
 

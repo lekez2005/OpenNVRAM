@@ -40,7 +40,7 @@ class tri_gate_array(BitcellAlignedArray):
         self.add_pin_list(["vdd", "gnd"])
 
     def create_body_tap(self):
-        if OPTS.use_body_taps:
+        if OPTS.use_x_body_taps:
             self.body_tap = tri_gate_tap()
             debug.info(1, "Using body tap {} for {}".format(self.body_tap.name,
                                                             self.name))

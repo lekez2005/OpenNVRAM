@@ -67,7 +67,7 @@ class pgate(design.design):
         self.contact_nwell = contact_nwell
         self.height = height
         self.align_bitcell = align_bitcell
-        if self.align_bitcell and OPTS.use_body_taps:
+        if self.align_bitcell and OPTS.use_x_body_taps:
             self.contact_pwell = self.contact_nwell = False
         self.same_line_inputs = same_line_inputs
         self.implant_to_channel = drc["implant_to_channel"]
@@ -533,7 +533,7 @@ class pgate(design.design):
         y_offsets = [0, self.height]
         pin_names = ["gnd", "vdd"]
 
-        if self.align_bitcell and OPTS.use_body_taps:
+        if self.align_bitcell and OPTS.use_x_body_taps:
             for i in range(len(y_offsets)):
                 y_offset = y_offsets[i]
                 self.add_layout_pin_center_rect(pin_names[i], METAL1,

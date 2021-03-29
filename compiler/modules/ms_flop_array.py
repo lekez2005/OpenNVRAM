@@ -23,7 +23,7 @@ class ms_flop_array(BitcellAlignedArray):
     """
 
     def create_body_tap(self):
-        if OPTS.use_body_taps:
+        if OPTS.use_x_body_taps:
             self.body_tap = ms_flop_tap()
             debug.info(1, "Using body tap {} for {}".format(self.body_tap.name,
                                                             self.name))
@@ -73,7 +73,7 @@ class ms_flop_array(BitcellAlignedArray):
     def create_modules(self):
         self.child_mod = self.ms = self.create_mod_from_str(OPTS.ms_flop, self.flop_mod)
         self.height = self.child_mod.height
-        if OPTS.use_body_taps and self.flop_tap_name:
+        if OPTS.use_x_body_taps and self.flop_tap_name:
             self.body_tap = ms_flop_tap(self.flop_tap_name)
             self.add_mod(self.body_tap)
 

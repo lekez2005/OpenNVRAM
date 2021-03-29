@@ -99,7 +99,7 @@ class BitcellAlignedArray(design, ABC):
         self.height = self.child_mod.height
 
     def create_body_tap(self):
-        if self.tap_name and OPTS.use_body_taps:
+        if self.tap_name and OPTS.use_x_body_taps:
             self.body_tap = self.create_mod_from_str(self.tap_name)
             debug.info(1, "Using body tap {} for {}".format(self.body_tap.name,
                                                             self.name))

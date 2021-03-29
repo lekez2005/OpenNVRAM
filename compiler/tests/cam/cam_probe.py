@@ -24,7 +24,7 @@ class CamProbe(SramProbe):
         (cam_block, col_num) = self.get_col_location(col)
         block_inst = bank_inst.mod.block_insts[cam_block]
         return utils.get_pin_rect(pin, [bank_inst, block_inst, block_inst.mod.bitcell_array_inst,
-                                        block_inst.mod.bitcell_array_inst.mod.cell_inst[row, col_num]])
+                                        block_inst.mod.bitcell_array_inst.mod.cell_inst[row][col_num]])
 
     def get_bitline_label(self, bank_index, pin_name, col):
         (cam_block, col_num) = self.get_col_location(col)

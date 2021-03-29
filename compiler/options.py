@@ -58,7 +58,6 @@ class options(optparse.Values):
     supply_voltages = ""
     temperatures = ""
     process_corners = ""
-    use_body_taps = True  # bitcell does not include body taps so insert body taps between bitcells
 
     spectre_format = "psfbin"
     spectre_ic_mode = "node"
@@ -149,7 +148,17 @@ class options(optparse.Values):
     max_precharge_size = 10
     column_mux_size = 8
 
+    # bitcell config
+    # bitcell can be mirrored across y axis without really swapping bitlines
+    symmetric_bitcell = True
+    mirror_bitcell_y_axis = False
     cells_per_group = 1
+    num_dummies = 0
+    dummy_cell = None
+    export_dummy_bitcell_pins = True
+
+    use_x_body_taps = True  # bitcell does not include body taps so insert body taps between bitcells columns
+    use_y_body_taps = False # insert taps between bitcell rows
 
     # control signals routing configuration
     # whether to route rails to the left of the peripherals array

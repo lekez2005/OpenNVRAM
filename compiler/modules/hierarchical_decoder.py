@@ -8,6 +8,7 @@ from base.contact import m2m3, cross_m2m3
 from base.design import ACTIVE, PIMP, METAL2, METAL3, METAL1
 from base.vector import vector
 from globals import OPTS
+from modules.bitcell_array import bitcell_array
 from modules.hierarchical_predecode2x4 import hierarchical_predecode2x4 as pre2x4
 from modules.hierarchical_predecode3x8 import hierarchical_predecode3x8 as pre3x8
 from pgates.pinv import pinv
@@ -121,6 +122,11 @@ class hierarchical_decoder(design.design):
                 lines.append(index)
                 index = index + 1
             self.predec_groups.append(lines)
+
+        bitcell, body_tap, dummy_cell = bitcell_array.create_modules()
+        offsets = bitcell_array.calculate_y_offsets(bitcell, body_tap, dummy_cell,
+                                                    num_rows=self.rows)
+        self.bitcell_offsets, self.tap_offsets, self.dummy_offsets = offsets
 
         self.calculate_dimensions()
 

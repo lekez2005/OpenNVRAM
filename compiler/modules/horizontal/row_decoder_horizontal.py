@@ -2,14 +2,13 @@ from base.contact import cross_m1m2
 from base.design import METAL1, PIMP, NIMP
 from base.geometry import NO_MIRROR, MIRROR_X_AXIS
 from base.vector import vector
-from globals import OPTS
 from modules.hierarchical_decoder import hierarchical_decoder
 from modules.hierarchical_predecode2x4 import hierarchical_predecode2x4
 from modules.hierarchical_predecode3x8 import hierarchical_predecode3x8
 from modules.horizontal.pinv_wordline import pinv_wordline
 from modules.horizontal.pnand2_wordline import pnand2_wordline, pnand3_wordline
 from modules.horizontal.wordline_pgate_tap import wordline_pgate_tap
-from modules.push_rules.push_bitcell_array import push_bitcell_array
+from tech import drc
 
 
 class row_decoder_horizontal(hierarchical_decoder):
@@ -25,11 +24,6 @@ class row_decoder_horizontal(hierarchical_decoder):
         self.add_mod(self.nand3)
 
         self.create_predecoders()
-
-        bitcell = self.create_mod_from_str(OPTS.bitcell)
-        body_tap = self.create_mod_from_str(OPTS.body_tap)
-        self.bitcell_offsets, self.tap_offsets, self.dummy_offsets = push_bitcell_array. \
-            get_bitcell_offsets(self.rows, 2, bitcell, body_tap)
 
         self.pwell_tap = wordline_pgate_tap(self.inv, PIMP)
         self.nwell_tap = wordline_pgate_tap(self.inv, NIMP)
@@ -65,7 +59,13 @@ class row_decoder_horizontal(hierarchical_decoder):
 
     def calculate_dimensions(self):
         super().calculate_dimensions()
-        self.height = self.predecoder_height + self.dummy_offsets[-1]
+        if self.bitcell_offsets[0] > 0:
+            extra_height = self.bitcell_offsets[0]
+        else:
+            extra_height = drc["pwell_to_nwell"] + 2 * self.well_enclose_active
+
+        self.predecoder_height += extra_height
+        self.height += extra_height
 
     def connect_rail_m2(self, rail_index, pin):
         x_offset = self.rail_x_offsets[rail_index]

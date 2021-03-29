@@ -1,5 +1,5 @@
 bitcell_mod = "cell_6t_4_fingers"
-use_body_taps = False
+use_x_body_taps = False
 
 write_driver_mod = "write_driver_mask"
 sense_amp_array = "sense_amp_array"

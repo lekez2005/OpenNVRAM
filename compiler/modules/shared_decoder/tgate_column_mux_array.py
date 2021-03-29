@@ -27,7 +27,7 @@ class tgate_column_mux_array(single_level_column_mux_array):
         self.mux = tgate_column_mux()
         self.child_mod = self.mux
         self.add_mod(self.mux)
-        if OPTS.use_body_taps:
+        if OPTS.use_x_body_taps:
             self.body_tap = tgate_column_mux_tap()
 
     def connect_inst(self, args, check=True):

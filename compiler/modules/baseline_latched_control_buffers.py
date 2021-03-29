@@ -63,11 +63,10 @@ class LatchedControlBuffers(ControlBuffers):
             ("wordline_buf", self.wordline_buf,
              ["sense_trig", "bank_sel_cbar", "wordline_en", "wordline_en_bar"]),
             ("write_buf", self.write_buf,
-             ["read", "bank_sel_cbar", "write_en", "write_en_bar"]),
-            ("sel_clk_sense", self.nor,
-             ["sense_trig", "bank_sel_cbar", "sel_clk_sense"]),
-            ("sample_bar_int", self.nand_x2,
-             ["read", "sel_clk_sense", "sample_bar_int"]),
+             ["read", "bank_sel_cbar", "write_en", "write_en_bar"])
+        ]
+        self.add_sample_b_connections(connections)
+        connections += [
             ("sample_bar", self.sample_bar,
              ["sample_bar_int", "sample_en_buf", "sample_en_bar"]),
             ("sense_amp_buf", self.sense_amp_buf,
@@ -105,6 +104,16 @@ class LatchedControlBuffers(ControlBuffers):
         logic = "pnand3" if self.bank.words_per_row == 1 else "pnand2"
         self.precharge_buf = self.create_mod(LogicBuffer, buffer_stages="precharge_buffers",
                                              logic=logic)
+
+    def add_sample_b_connections(self, connections):
+        if self.bank.words_per_row == 1:
+            connections.append(("sense_trig_bar", self.inv, ["sense_trig", "sense_trig_bar"]))
+            connections.append(("sample_bar_int", self.nand3,
+                                ["bank_sel", "read", "sense_trig_bar", "sample_bar_int"]))
+        else:
+            connections.append(("sense_trig_bar", self.inv, ["sense_trig", "sense_trig_bar"]))
+            connections.append(("sample_bar_int", self.nand3,
+                                ["bank_sel", "read", "sense_trig_bar", "sample_bar_int"]))
 
     def add_precharge_buf_connections(self, connections):
         precharge_in = "precharge_trig" if self.use_precharge_trigger else "clk"

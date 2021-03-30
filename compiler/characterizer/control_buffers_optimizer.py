@@ -13,6 +13,7 @@ from globals import OPTS
 from modules.baseline_bank import BaselineBank
 from modules.buffer_stage import BufferStage
 from modules.control_buffers import ControlBuffers
+from modules.flop_buffer import FlopBuffer
 from modules.logic_buffer import LogicBuffer
 
 
@@ -27,7 +28,7 @@ class ControlBufferOptimizer:
         if hasattr(OPTS, 'configure_sizes'):
             getattr(OPTS, 'configure_sizes')(self.bank, OPTS)
         if not run_optimizations_:
-            return
+            return False
 
         # copy to prevent side effects
         self.backups = ["objs", "insts", "conns", "occupied_m4_bitcell_indices", "m2_rails"]
@@ -42,6 +43,7 @@ class ControlBufferOptimizer:
         # restore initial bank
         for name in self.backups:
             setattr(self.bank, name, getattr(self, name + "_backup"))
+        return True
 
     def place_bank_modules_and_rails(self):
         """Place bank modules so we can estimate loads"""
@@ -54,6 +56,7 @@ class ControlBufferOptimizer:
         self.extract_control_buffer_loads()
         self.extract_wordline_driver_loads()
         self.extract_row_decoder_loads()
+        self.extract_col_decoder_loads()
         self.extract_control_flop_loads()
 
     def create_buffer_stages_config(self, driver_conn_index):
@@ -185,11 +188,29 @@ class ControlBufferOptimizer:
         buffer_stages_inst = predecoder.inv_inst[0]
         driver_inst = predecoder.nand_inst[0]
 
-        buffer_stages_inst.mod.buffer_stages = [buffer_stages_inst.mod.size]
         config = (buffer_stages_inst, driver_inst, parent_mod)
 
         self.driver_loads["row_decoder"] = {"loads": [("out[0]", total_cap)], "config": config,
                                             "buffer_stages_str": "predecoder_buffers"}
+
+    def extract_col_decoder_loads(self):
+        # add col mux
+        if self.bank.words_per_row == 1:
+            return
+        # optimize using flop buffer
+        parent_mod = self.bank.control_flop_insts[0][2].mod
+        buffer_stages_inst = parent_mod.buffer_inst
+
+        driver_inst = parent_mod.flop_inst
+        config = (buffer_stages_inst, driver_inst, parent_mod)
+
+        sel_in_cap, _ = self.bank.column_mux_array.get_input_cap("sel[0]")
+        driver_load = {
+            "loads": [("out", sel_in_cap), ("out_inv", sel_in_cap)],
+            "config": config,
+            "buffer_stages_str": "column_decoder_buffers"
+        }
+        self.driver_loads["col_decoder"] = driver_load
 
     def extract_wordline_driver_loads(self):
         """Create config for optimizing wordline driver"""
@@ -305,6 +326,8 @@ class ControlBufferOptimizer:
                 valid_vertices.append(last_vertex)
         except RuntimeError as ex:
             if "Initial simplex is flat" in str(ex):  # just a linear fit
+                valid_vertices = [0, len(x_data) - 1]
+            if "The initial hull is narrow" in str(ex):  # just a linear fit
                 valid_vertices = [0, len(x_data) - 1]
             else:
                 raise ex
@@ -463,7 +486,7 @@ class ControlBufferOptimizer:
                 tau = stage_loads[i] * resistances[i]
                 beta = 1 / (gms[i] * resistances[i])
                 alpha = slew / tau
-                delay, slew = buffer_mod.horiwitz_delay(tau, beta, alpha)
+                delay, slew = buffer_mod.horowitz_delay(tau, beta, alpha)
                 delays[i] = delay
             return delays, slew
 
@@ -488,7 +511,7 @@ class ControlBufferOptimizer:
             tau = res * (bitline_in_cap + cout)
             beta = 1 / (gm * res)
             alpha = slew / tau
-            delay, slew = buffer_mod.horiwitz_delay(tau, beta, alpha)
+            delay, slew = buffer_mod.horowitz_delay(tau, beta, alpha)
             delays.append(delay)
             return delays
 
@@ -560,6 +583,8 @@ class ControlBufferOptimizer:
                 all_num_stages.add(default_num_stages - 2)
             if default_num_stages >= 4 and len(buffer_loads) == 2:
                 all_num_stages.update(range(3, default_num_stages))
+            if buffer_stages_str == "column_decoder_buffers":
+                all_num_stages = {2}
 
             min_criteria, min_stages = np.inf, None
             debug.info(1, "{}: {}".format(buffer_stages_str, buffer_loads))

@@ -12,6 +12,14 @@ def add_tech_layers(obj):
                          height=well_rect.height)
 
 
+def delay_params_class():
+    try:
+        from delay_params import DelayParams
+    except ImportError:
+        from .delay_params import DelayParams
+    return DelayParams
+
+
 info = {}
 info["name"] = "freepdk45"
 info["body_tie_down"] = 0
@@ -66,10 +74,12 @@ layer["metal10"] = 29
 layer["text"]    = 239
 layer["boundary"]= 239
 
+purpose = {"drawing": 0}
+
 
 default_fill_layers = ["nwell", "nimplant", "pimplant", "pwell"]
 
-power_grid_layers = ["metal5", "metal6"]
+power_grid_layers = ["metal9", "metal10"]
 power_grid_num_vias = 2
 
 ###################################################
@@ -128,6 +138,8 @@ drc["active_enclosure_gate"] = 0.07
 drc["poly_to_active"] = 0.05
 # POLY.6 Minimum Minimum spacing of field poly
 drc["poly_to_field_poly"] = 0.075
+
+drc["poly_contact_to_active"] = 0.055
 # Not a rule
 drc["minarea_poly"] = 0.0
 
@@ -367,11 +379,13 @@ spice["channel"] = drc["minlength_channel"]
 spice["clk"] = "clk"
 
 # analytical delay parameters
-spice["wire_unit_r"] = 0.075     # Unit wire resistance in ohms/square
-spice["wire_unit_c"] = 0.64      # Unit wire capacitance ff/um^2
-spice["min_tx_r"] = 9250.0       # Minimum transistor on resistance in ohms
-spice["min_tx_drain_c"] = 0.7    # Minimum transistor drain capacitance in ff
-spice["min_tx_gate_c"] = 0.2     # Minimum transistor gate capacitance in ff
+spice["wire_unit_r"] = 0.38     # Unit wire resistance in ohms/square
+spice["wire_unit_c"] = 0.15      # Unit wire capacitance ff/um^2
+spice["min_tx_r"] = 9000       # Minimum transistor on resistance in ohms
+spice["min_tx_drain_c"] = 0.24    # Minimum transistor drain capacitance in ff
+spice["min_tx_gate_c"] = 0.13     # Minimum transistor gate capacitance in ff
+spice["pmos_unit_gm"] = 68e-6
+spice["nmos_unit_gm"] = 105e-6
 spice["msflop_setup"] = 9        # DFF setup time in ps
 spice["msflop_hold"] = 1         # DFF hold time in ps
 spice["msflop_delay"] = 20.5     # DFF Clk-to-q delay in ps

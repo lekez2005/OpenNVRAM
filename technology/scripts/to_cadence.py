@@ -11,13 +11,13 @@ except (ImportError, ModuleNotFoundError):
     from .script_loader import load_setup
 
 
-def export_gds(gds):
-    setup, _ = load_setup()
+def export_gds(gds, top_level=False):
+    setup, _ = load_setup(top_level=top_level)
 
     command = [
         "strmin",
         "-layerMap", setup.layer_map,
-        "-library", setup.export_library_name,
+        "-library",  setup.export_library_name,
         "-strmFile", gds,
         "-attachTechFileOfLib", setup.pdk_library_name,
         "-logFile", os.environ["SCRATCH"] + "/logs/strmIn.log",
@@ -34,7 +34,7 @@ def latest_scratch(scratch):
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        export_gds(sys.argv[1])
+        export_gds(sys.argv[1], top_level=True)
     else:
         scratch = os.path.join(os.environ["SCRATCH"], "openram")
-        export_gds(os.path.join(latest_scratch(scratch), "/temp.gds"))
+        export_gds(os.path.join(latest_scratch(scratch), "/temp.gds"), top_level=False)

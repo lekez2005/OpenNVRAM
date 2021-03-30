@@ -123,8 +123,6 @@ class SequentialDelay(delay):
 
         with open(ic_file, "w") as ic:
 
-            ic.write("simulator lang=spectre \n")
-
             storage_nodes = probe.get_bitcell_storage_nodes()
             for address in range(self.sram.num_words):
                 address_data = list(reversed(existing_data[address]))
@@ -133,11 +131,10 @@ class SequentialDelay(delay):
                     col_node = storage_nodes[address][col]
                     self.write_ic(ic, col_node, col_voltage)
 
-            ic.write("simulator lang=spice \n")
             ic.flush()
 
     def write_ic(self, ic, col_node, col_voltage):
-        ic.write("ic {}={} \n".format(col_node, col_voltage))
+        ic.write(".ic V({})={} \n".format(col_node, col_voltage))
 
     def binary_to_voltage(self, x):
         return x * self.vdd_voltage

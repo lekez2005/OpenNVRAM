@@ -225,7 +225,7 @@ class stimuli():
             self.sf.write(".OPTIONS POST=1 RUNLVL=4 PROBE method=gear TEMP={}\n".format(self.temperature))
         else:
             self.sf.write(".TRAN 5p {0}n \n".format(end_time))
-            self.sf.write(".OPTIONS RUNLVL=6 PROBE MEASFAIL=1 MEASFORM=2\n".format(self.temperature))
+            self.sf.write(".OPTIONS RUNLVL=4 PROBE MEASFAIL=1 MEASFORM=2\n".format(self.temperature))
             self.sf.write(".TEMP={}\n".format(self.temperature))
             self.sf.write(".OPTION GMIN={0} GMINDC={0}\n".format(tech.spice["gmin"]))
             # only one of POST or PSF should be specified
@@ -235,14 +235,15 @@ class stimuli():
 
         # create plots for all signals
         self.sf.write("* probe is used for hspice/xa, while plot is used in ngspice\n")
-        if OPTS.debug_level > 1:
-            if OPTS.spice_name in ["hspice", "xa"]:
-                self.sf.write(".probe V(*)\n")
+        if not OPTS.use_pex:
+            if OPTS.debug_level > 1:
+                if OPTS.spice_name in ["hspice", "xa"]:
+                    self.sf.write(".probe V(*)\n")
+                else:
+                    self.sf.write(".plot V(*)\n")
             else:
-                self.sf.write(".plot V(*)\n")
-        else:
-            self.sf.write("*.probe V(*)\n")
-            self.sf.write("*.plot V(*)\n")
+                self.sf.write("*.probe V(*)\n")
+                self.sf.write("*.plot V(*)\n")
 
         # end the stimulus file
         self.sf.write(".end\n\n")
@@ -351,7 +352,7 @@ usim_opt  rcr_fmax=20G
     def write_supply(self):
         """ Writes supply voltage statements """
         self.sf.write("V{0} {0} 0 {1}\n".format(self.vdd_name, self.voltage))
-        self.sf.write("V{0} {0} 0 {1}\n".format(self.gnd_name, 0))
+        # self.sf.write("V{0} {0} 0 {1}\n".format(self.gnd_name, 0))
         # This is for the test power supply
         self.sf.write("V{0} {0} 0 {1}\n".format("test" + self.vdd_name, self.voltage))
         self.sf.write("V{0} {0} 0 {1}\n".format("test" + self.gnd_name, 0))

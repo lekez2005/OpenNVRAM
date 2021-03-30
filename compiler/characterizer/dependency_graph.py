@@ -240,7 +240,7 @@ class GraphNode:
             beta = 1 / (driver_gm * driver_res)
             alpha = slew_in / tau
 
-            delay, slew_out = self.module.horiwitz_delay(tau, beta, alpha)
+            delay, slew_out = self.module.horowitz_delay(tau, beta, alpha)
 
             self.delay = delay_data(delay, slew_out)
             return self.delay

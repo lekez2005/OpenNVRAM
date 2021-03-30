@@ -426,7 +426,7 @@ class spice(verilog.verilog):
             return num_elements * cap_per_stage, cap_per_stage
 
         # compute if not previously characterized
-        cap_value = self.compute_input_cap(pin_name, wire_length)
+        cap_value = num_elements * self.compute_input_cap(pin_name, wire_length)
         return cap_value, cap_value / num_elements
 
     def get_driver_resistance(self, pin_name, use_max_res=False, interpolate=None, corner=None):
@@ -490,7 +490,7 @@ class spice(verilog.verilog):
         return gm
 
     @staticmethod
-    def horiwitz_delay(tau, beta, alpha, switch_threshold=0.5):
+    def horowitz_delay(tau, beta, alpha, switch_threshold=0.5):
         """
         From http://www-vlsi.stanford.edu/people/alum/pdf/8401_Horowitz_TimingModels.pdf Pg 76
         :param tau: time constant (RC)
@@ -515,7 +515,7 @@ class spice(verilog.verilog):
         tau = driver_res * total_c + 0.5 * total_r * total_distributed_c
         beta = 1 / (driver_gm * driver_res)
         alpha = slew_in / tau
-        delay, slew_out = spice.horiwitz_delay(tau, beta, alpha)
+        delay, slew_out = spice.horowitz_delay(tau, beta, alpha)
 
         delay = 0.69 * driver_res * total_c + 0.38 * total_r * total_distributed_c
         slew_out = total_r * total_c

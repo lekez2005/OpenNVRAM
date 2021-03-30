@@ -27,6 +27,7 @@ class SharedDecoderSimulator(TestBase):
         OPTS.run_drc = options.run_drc
         OPTS.run_lvs = options.run_lvs
         OPTS.run_pex = options.run_pex
+        OPTS.spice_name = options.spice_name
 
         OPTS.num_banks = options.num_banks
         OPTS.word_size = options.word_size
@@ -58,7 +59,7 @@ class SharedDecoderSimulator(TestBase):
 
         self.sram = sram_class(word_size=OPTS.word_size, num_words=OPTS.num_words,
                                num_banks=OPTS.num_banks, words_per_row=OPTS.words_per_row,
-                               name="sram1")
+                               name="sram1", add_power_grid=True)
         debug.info(1, "Write netlist to file")
         self.sram.sp_write(OPTS.spice_file)
 
@@ -147,8 +148,9 @@ class SharedDecoderSimulator(TestBase):
             # minimize saved data to make simulation faster
             OPTS.spectre_save = "selected"
             delay.generate_energy_stimulus()
-            delay.probe.current_probes = ["Vvdd:p", "read"]
-            delay.probe.saved_nodes = []
+            # delay.probe.current_probes = ["vvdd", "vread"]
+            delay.probe.current_probes = []
+            delay.probe.saved_nodes = ["vdd", "Csb", "Web"]
             delay.dout_probes = delay.mask_probes = {}
         else:
             for i in range(len(addresses)):
@@ -187,6 +189,7 @@ def create_arg_parser():
     parser.add_argument("-W", "--word_size", default=DEFAULT_WORD_SIZE, type=int)
     parser.add_argument("-B", "--num_banks", default=1, choices=[1, 2], type=int)
     parser.add_argument("-t", "--tech", dest="tech_name", help="Technology name", default="freepdk45")
+    parser.add_argument("--simulator", dest="spice_name", help="Simulator name", default="spectre")
     parser.add_argument("--fixed_buffers", action="store_true")
     parser.add_argument("--latched", action="store_true")
     parser.add_argument("--small", action="store_true")

@@ -1,7 +1,5 @@
-import numpy as np
 import os
 
-import tech
 from characterizer.stimuli import stimuli
 from globals import OPTS
 from modules.shared_decoder.cmos_sram import CmosSram
@@ -13,10 +11,13 @@ class SpiceDut(stimuli):
     External peripheral spice should also be instantiated here
     """
 
-    def instantiate_sram(self, abits, dbits, num_banks, sram_name):
+    def instantiate_sram(self, sram: CmosSram):
+        abits = sram.addr_size
+        dbits = sram.word_size
+        num_banks = sram.num_banks
+        sram_name = sram.name
+
         self.sf.write("Xsram ")
-        if OPTS.push:
-            num_banks = 1
 
         for j in range(num_banks):
             for i in range(dbits):
@@ -26,20 +27,9 @@ class SpiceDut(stimuli):
         for i in range(actual_a_bits):
             self.sf.write("A[{0}] ".format(i))
 
-        # connect bank_sel_2 to last address bit
-        if not OPTS.push:
-            bank_sel_2 = "A[{0}]".format(abits - 1) * int(num_banks == 2)
-        else:
-            bank_sel_2 = ""
-        bank_sel_2 = ""  # TODO support two bank simulation
-        if OPTS.use_precharge_trigger:
-            precharge_trig = "precharge_trig"
-        else:
-            precharge_trig = ""
+        self.sf.write(" {0} {1} {2} ".format(" ".join(sram.control_pin_names),
+                                             self.vdd_name, self.gnd_name))
 
-        self.sf.write(" {1} bank_sel read {0} sense_trig {2} {3} {4} ".
-                      format(tech.spice["clk"], bank_sel_2, precharge_trig, self.vdd_name,
-                             self.gnd_name))
         if OPTS.mram == "sotfet":
             self.sf.write(" vref ")
 

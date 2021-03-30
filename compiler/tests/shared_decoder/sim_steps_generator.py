@@ -6,7 +6,6 @@ from random import randint
 import numpy as np
 
 import characterizer
-import verify
 from characterizer.sequential_delay import SequentialDelay
 from globals import OPTS
 from shared_probe import SharedProbe
@@ -30,7 +29,7 @@ class SimStepsGenerator(SequentialDelay):
         for i in range(self.word_size):
             self.bus_sigs.append("mask[{}]".format(i))
 
-        self.control_sigs = ["read", "acc_en", "acc_en_inv", "sense_trig", "bank_sel"]
+        self.control_sigs = ["web", "acc_en", "acc_en_inv", "sense_trig", "csb"]
         if "precharge_trig" in self.sram.pins:
             self.control_sigs.append("precharge_trig")
 
@@ -38,8 +37,9 @@ class SimStepsGenerator(SequentialDelay):
 
         self.sense_trig = self.prev_sense_trig = 0
         self.precharge_trig = self.prev_precharge_trig = 0
-        self.bank_sel = self.prev_bank_sel = 0
-        self.read = self.prev_read = 0
+        self.csb = self.prev_csb = 0
+        self.web = self.prev_web = 0
+        self.read = 1
         self.chip_enable = 1
 
         self.mask = self.prev_mask = [1] * self.word_size
@@ -76,7 +76,7 @@ class SimStepsGenerator(SequentialDelay):
 
         t2 = max(self.slew, self.current_time + 0.5 * self.slew - setup_time)
         t1 = max(0.0, self.current_time - 0.5 * self.slew - setup_time)
-        self.v_data[key] += " {0:5.5g}n {1}v {2:5.5g}n {3}v ".format(t1, self.vdd_voltage * prev_val, t2,
+        self.v_data[key] += " {0:8.8g}n {1}v {2:8.8g}n {3}v ".format(t1, self.vdd_voltage * prev_val, t2,
                                                            self.vdd_voltage * curr_val)
         self.v_comments[key] += " ({0}, {1}) ".format(int(self.current_time / self.period),
                                                       curr_val)
@@ -119,12 +119,21 @@ class SimStepsGenerator(SequentialDelay):
         self.saved_currents = self.probe.current_probes
 
         for node in self.saved_nodes:
-            self.sf.write(".probe V({0}) \n".format(node))
+            self.sf.write(".probe tran V({0}) \n".format(node))
+        self.sf.write(".probe v(vvdd)\n")
+        self.sf.write(".probe I(vvdd)\n")
 
-        self.sf.write("simulator lang=spectre \n")
+        # if OPTS.spice_name == "spectre":
+        #     self.sf.write("simulator lang=spectre \n")
+        #     for node in self.saved_currents:
+        #         self.sf.write("save {0} \n".format(node))
+        #     self.sf.write("simulator lang=spice \n")
+        # else:
+        #     for node in self.saved_currents:
+        #         self.sf.write(".probe tran I1({0}) \n".format(node))
+
         for node in self.saved_currents:
-            self.sf.write("save {0} \n".format(node))
-        self.sf.write("simulator lang=spice \n")
+            self.sf.write(".probe tran I1({0}) \n".format(node))
 
         self.finalize_output()
 
@@ -175,7 +184,7 @@ class SimStepsGenerator(SequentialDelay):
 
     def generate_energy_stimulus(self):
         num_sims = OPTS.energy
-        num_sims = 1
+        # num_sims = 1
         mask = [1] * self.word_size
 
         ops = ["read", "write"]
@@ -267,10 +276,9 @@ class SimStepsGenerator(SequentialDelay):
 
     def update_output(self, increment_time=True):
         # bank_sel
-        if self.num_banks == 1 or OPTS.push:
-            self.bank_sel = self.chip_enable
-        else:
-            self.bank_sel = int(not self.address[-1] and self.chip_enable)
+        self.csb = not self.chip_enable
+        self.web = self.read
+
         # write mask
         for i in range(self.word_size):
             key = "mask[{}]".format(i)
@@ -324,7 +332,7 @@ class SimStepsGenerator(SequentialDelay):
         self.data = list(reversed(data_v))
 
         # Needed signals
-        self.bank_sel = 1
+        self.chip_enable = 1
         self.read = 0
         self.acc_en = 0
         self.acc_en_inv = 1
@@ -448,14 +456,13 @@ class SimStepsGenerator(SequentialDelay):
 
         # instantiate the sram
         self.sf.write("\n* Instantiation of the SRAM\n")
-        self.stim.instantiate_sram(abits=self.addr_size, dbits=self.word_size,
-                                   num_banks=self.num_banks, sram_name=self.name)
+        self.stim.instantiate_sram(sram=self.sram)
 
         self.stim.inst_accesstx(self.word_size)
 
     def write_ic(self, ic, col_node, col_voltage):
         if self.is_cmos:
-            ic.write("ic {}={} \n".format(col_node, col_voltage))
+            ic.write(".ic V({})={} \n".format(col_node, col_voltage))
         else:
             phi = 0.1 * OPTS.llg_prescale
             theta = np.arccos(col_voltage) * OPTS.llg_prescale
@@ -463,5 +470,5 @@ class SimStepsGenerator(SequentialDelay):
             phi_node = col_node.replace(".state", ".I0.phi")
             theta_node = col_node.replace(".state", ".I0.theta")
 
-            ic.write("ic {}={} \n".format(phi_node, phi))
-            ic.write("ic {}={} \n".format(theta_node, theta))
+            ic.write(".ic V({})={} \n".format(phi_node, phi))
+            ic.write(".ic V({})={} \n".format(theta_node, theta))

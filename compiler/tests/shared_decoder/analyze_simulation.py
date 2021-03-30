@@ -21,13 +21,18 @@ def get_address_data(address, time):
 
 
 def pattern_from_saved(pattern, *args):
-    pattern = re.search(pattern, sim_analyzer.all_saved_signals)
+    if options.spice_name == "hspice":
+        pattern = re.sub(r"\\\)", "", re.sub(r"^v\\\(", "", pattern))
+        pattern = re.search(pattern, sim_analyzer.all_saved_signals, re.IGNORECASE)
+        args = [x.lower() for x in args]
+    else:
+        pattern = re.search(pattern, sim_analyzer.all_saved_signals)
     if pattern is None:
         return ""
     pattern = pattern.group(0)
     for i in range(0, len(args), 2):
         pattern = re.sub(args[i], args[i + 1], pattern)
-    pattern = re.sub("Xbank[01]+", "Xbank{0}", pattern)
+    pattern = re.sub("Xbank[01]+", "Xbank{0}", pattern, re.IGNORECASE)
     return pattern
 
 
@@ -94,10 +99,13 @@ address_width = int(np.log2(num_words))
 
 # Take overlap between cycles into account
 read_settling_time = 50e-12
-write_settling_time = 50e-12
+write_settling_time = 150e-12
 
 logging.info("Simulation Dir = {}".format(openram_temp))
 
+if options.spice_name == "hspice":
+    sim_analyzer.measure_file_name = "timing.lis"
+    sim_analyzer.transient_file_name = "timing.tr0"
 sim_analyzer.setup(num_cols_=options.num_cols, num_rows_=options.num_rows,
                    sim_dir_=openram_temp)
 sim_analyzer.word_size = options.word_size
@@ -134,33 +142,33 @@ if not schematic:
                                               "r[0-9]+", "r{1}")
         rwl_pattern = pattern_from_saved("v\(\S+rwl\S+Xbitcell_array\S+\)", "rwl\[[0-9]+\]", "rwl[{1}]",
                                          "r[0-9]+", "r{1}")
-    write_en_pattern = pattern_from_saved("v\(\S+write_en(?!_bar)\S+Xdriver\S+\)", "Xdriver_[0-9]+", "Xdriver_{1}")
+    write_en_pattern = pattern_from_saved("v\(\S+write_en(?!_bar)\S+Xmod\S+\)", "Xmod_[0-9]+", "Xmod_{1}")
 
-    write_en_bar_pattern = pattern_from_saved("v\(\S+write_en_bar\S+Xdriver\S+\)", "Xdriver_[0-9]+", "Xdriver_{1}")
+    write_en_bar_pattern = pattern_from_saved("v\(\S+write_en_bar\S+Xmod\S+\)", "Xmod_[0-9]+", "Xmod_{1}")
 
     bl_pattern = pattern_from_saved("v\(\S+bl\S+Xbitcell\S+\)", "c[0-9]+", "c{1}", "\[[0-9]+\]", "[{1}]")
     br_pattern = pattern_from_saved("v\(\S+br\S+Xbitcell\S+\)", "c[0-9]+", "c{1}", "\[[0-9]+\]", "[{1}]")
     if words_per_row > 1:
-        bl_out_pattern = pattern_from_saved("v\(\S+bl_out\S+Xsa\S+\)", "bl_out\[[0-9]+\]", "bl_out[{1}]",
-                                            "Xsa_d[0-9]+", "Xsa_d{1}")
-        br_out_pattern = pattern_from_saved("v\(\S+br_out\S+Xsa\S+\)", "br_out\[[0-9]+\]", "br_out[{1}]",
-                                            "Xsa_d[0-9]+", "Xsa_d{1}")
+        bl_out_pattern = pattern_from_saved("v\(\S+bl_out\S+Xsense\S+\)", "bl_out\[[0-9]+\]", "bl_out[{1}]",
+                                            "Xmod_[0-9]+", "Xmod_{1}")
+        br_out_pattern = pattern_from_saved("v\(\S+br_out\S+Xsense\S+\)", "br_out\[[0-9]+\]", "br_out[{1}]",
+                                            "Xmod_[0-9]+", "Xmod_{1}")
 
     flop_clk_in_pattern = pattern_from_saved("v\(\S+clk_bar\S+Xdata_in\S+\)", "dff[0-9]+", "dff{1}")
 
-    sense_en_pattern = pattern_from_saved("v\(\S+sense_en(?!_bar)\S+Xsa\S+\)", "Xsa_d[0-9]+", "Xsa_d{1}")
-    sample_en_bar_pattern = pattern_from_saved("v\(\S+sample_en_bar\S+Xsense_amp\S+\)", "Xsa_d[0-9]+", "Xsa_d{1}")
+    sense_en_pattern = pattern_from_saved("v\(\S+sense_en(?!_bar)\S+Xmod\S+\)", "Xmod_[0-9]+", "Xmod_{1}")
+    sample_en_bar_pattern = pattern_from_saved("v\(\S+sample_en_bar\S+Xsense_amp\S+\)", "Xmod_[0-9]+", "Xmod_{1}")
 
-    and_out_pattern = pattern_from_saved("v\(\S+and_out\S+Xsense_amp_array\S+\)", "Xsa_d[0-9]+", "Xsa_d{1}",
-                                         "and_out\[[0-9]+\]", "and_out[{2}]")
+    sense_out_pattern = pattern_from_saved("v\(\S+sense_out\S+Xsense_amp_array\S+\)", "Xmod_[0-9]+", "Xmod_{1}",
+                                         "sense_out\[[0-9]+\]", "sense_out[{2}]")
     if push:
-        and_out_pattern = pattern_from_saved("v\(\S+and_out\S+Xsense_amp_array\S+\)", "Xsa_d[0-9]+",
-                                             "Xsa_d{1}", "and_out\[[0-9]+\]", "and_out[{2}]")
+        sense_out_pattern = pattern_from_saved("v\(\S+sense_out\S+Xsense_amp_array\S+\)", "Xmod_[0-9]+",
+                                             "Xmod_{1}", "sense_out\[[0-9]+\]", "sense_out[{2}]")
 
 data_pattern = "D[{}]"
 sim_analyzer.data_pattern = data_pattern
 
-write_driver_in_pattern = pattern_from_saved("v\(\S+data_in\S+Xdriver\S+\)", "Xdriver_[0-9]+", "Xdriver_{1}",
+write_driver_in_pattern = pattern_from_saved("v\(\S+data_in\S+Xwrite_driver_array\S+\)", "Xmod_[0-9]+", "Xmod_{1}",
                                              "\[[0-9]+\]", "[{1}]")
 
 address_pattern = "A[{}]"
@@ -220,7 +228,7 @@ if __name__ == "__main__":
     print("----------------Read Analysis---------------")
     max_read_event = None
     for read_event in all_read_events:
-        print("Read at time: {:.4g} n".format(read_event[0] * 1e9))
+        print("Read {} at time: {:.4g} n".format(read_event[1], read_event[0] * 1e9))
         correct = sim_analyzer.verify_read_event(read_event[0], read_event[1],
                                                  read_event[2] + read_settling_time,
                                                  read_event[3], negate=not cmos)
@@ -236,12 +244,12 @@ if __name__ == "__main__":
         analysis_events = [max_read_event]
     else:
         analysis_events = all_read_events
-    for read_event in analysis_events:
+    for index, read_event in enumerate(analysis_events):
         d_delays = sim_analyzer.clk_bar_to_bus_delay(data_pattern, read_event[0],
                                                      read_event[0] + read_event[2] +
                                                      read_settling_time, num_bits=word_size)
 
-        if max(d_delays) > max_dout:
+        if max(d_delays) > max_dout or index == 0:
             max_read_event = read_event
             max_dout = max(d_delays)
             max_read_bit_delays = d_delays
@@ -262,7 +270,7 @@ if __name__ == "__main__":
 
     max_write_event = None
     for write_event_ in all_write_events:
-        print("Write at time: {:.4g} n".format(write_event_[0] * 1e9))
+        print("Write {} at time: {:.4g} n".format(write_event_[1], write_event_[0] * 1e9))
         correct = sim_analyzer.verify_write_event(write_event_[0], write_event_[1],
                                                   write_event_[2] + write_settling_time,
                                                   write_event_[3], negate=not cmos)
@@ -284,19 +292,19 @@ if __name__ == "__main__":
     else:
         analysis_events = all_write_events
 
-    for write_event in analysis_events:
+    for index, write_event in enumerate(analysis_events):
         max_valid_delay = (1 + write_event[3]) * write_event[2]
         max_q_, q_delays = sim_analyzer. \
             measure_delay_from_stim_measure("state_delay", event_time=write_event[0],
                                             max_delay=max_valid_delay,
                                             index_pattern="a[0-9]+_c(?P<bit>[0-9]+)_")
-        if max_q_ > max_q_delay:
+        if max_q_ > max_q_delay or index == 0:
             max_q_delay = max_q_
             max_write_event = write_event
             max_write_bit_delays = q_delays
     # max_write_event = all_write_events[0]
 
-    print("Q state delay = {:.3g} ps, address = {}, t = {:.3g} ns".
+    print("Q state delay = {:.4g} ps, address = {}, t = {:.4g} ns".
           format(max_q_delay / 1e-12, max_write_event[1], max_write_event[0] * 1e9))
 
     total_write = max(max_precharge, max_decoder_delay) + max_q_delay
@@ -311,7 +319,7 @@ if __name__ == "__main__":
         bank = 0
 
 
-        def get_max_pattern_delay(pattern, *args, edge=None, clk_buf=True):
+        def get_max_pattern_delay(pattern, *args, edge=None, clk_buf=False):
             if not pattern:  # pattern not saved
                 return -1
             net = pattern.format(bank, *args)
@@ -354,10 +362,7 @@ if __name__ == "__main__":
         bank = write_bank
 
         write_en_delay = get_max_pattern_delay(write_en_pattern, max_write_bit, edge=sim_data.RISING_EDGE)
-        if not push:
-            write_en_bar_delay = get_max_pattern_delay(write_en_bar_pattern,
-                                                       max_write_bit, edge=sim_data.FALLING_EDGE)
-            print_max_delay("Write ENB", write_en_bar_delay)
+
         flop_out_delay = get_max_pattern_delay(write_driver_in_pattern, max_write_bit)
         bl_delay = get_max_pattern_delay(bl_pattern, max_write_col, edge=sim_data.FALLING_EDGE)
         br_delay = get_max_pattern_delay(br_pattern, max_write_col, edge=sim_data.FALLING_EDGE)
@@ -366,6 +371,10 @@ if __name__ == "__main__":
         print("\nWrite Critical Path: t = {:.3g}n row={} bit={} bank={}\n".format(max_write_event[0], max_write_row,
                                                                                   max_write_bit, bank))
         print_max_delay("Write EN", write_en_delay)
+        if not push:
+            write_en_bar_delay = get_max_pattern_delay(write_en_bar_pattern,
+                                                       max_write_bit, edge=sim_data.FALLING_EDGE)
+            print_max_delay("Write ENB", write_en_bar_delay)
         print_max_delay("Flop out", flop_out_delay)
         print_max_delay("BL", bl_delay)
         print_max_delay("BR", br_delay)
@@ -431,9 +440,9 @@ if __name__ == "__main__":
         else:
             sense_bit = max_read_bit
 
-        and_out_signal = and_out_pattern.format(bank, sense_bit, max_read_bit)
+        and_out_signal = sense_out_pattern.format(bank, sense_bit, max_read_bit)
         if and_out_signal in sim_analyzer.all_saved_signals:
-            and_out_delay = get_max_pattern_delay(and_out_pattern, sense_bit, max_read_bit)
+            and_out_delay = get_max_pattern_delay(sense_out_pattern, sense_bit, max_read_bit)
             print_max_delay("Sense out", and_out_delay)
 
         # Plots
@@ -470,8 +479,8 @@ if __name__ == "__main__":
                          from_t=start_time, to_t=end_time, label="br_out")
 
             if options.plot == "write":
-                # plot_sig(write_en_pattern.format(bank, max_write_bit),
-                #                                    from_t=start_time, to_t=end_time, label="write_en")
+                plot_sig(write_en_pattern.format(bank, max_write_bit),
+                         from_t=start_time, to_t=end_time, label="write_en")
                 # plot_sig(write_en_bar_pattern.format(bank, max_write_bit),
                 #                                    from_t=start_time, to_t=end_time, label="write_en_bar")
                 if verbose_save:
@@ -484,8 +493,8 @@ if __name__ == "__main__":
                          from_t=start_time, to_t=end_time, label="sample")
                 plot_sig(sense_en_pattern.format(bank, sense_bit),
                          from_t=start_time, to_t=end_time, label="sense_en")
-                plot_sig(and_out_pattern.format(bank, sense_bit, max_read_bit),
-                         from_t=start_time, to_t=end_time, label="and_out")
+                plot_sig(sense_out_pattern.format(bank, sense_bit, max_read_bit),
+                         from_t=start_time, to_t=end_time, label="sense_out")
                 plot_sig(data_pattern.format(bank, max_read_bit),
                          from_t=start_time, to_t=end_time, label="D")
             plot_sig(wordline_pattern.format(bank, row),

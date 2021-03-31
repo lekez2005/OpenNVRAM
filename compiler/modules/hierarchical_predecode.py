@@ -212,7 +212,7 @@ class hierarchical_predecode(design.design):
         self.x_off_inv_2 = self.x_off_nand + self.nand.width
 
         # Height width are computed 
-        self.width = self.x_off_inv_2 + self.inv.width
+        self.width = self.x_off_inv_2 + self.output_buffer.width
         self.height = self.number_of_outputs * self.nand.height
 
     def create_rails(self):

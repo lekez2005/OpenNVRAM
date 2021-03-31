@@ -2,8 +2,6 @@ import debug
 from base import utils
 from base.design import design
 from base.vector import vector
-from globals import OPTS
-from modules.precharge import precharge_tap
 from modules.precharge_array import precharge_array
 from tech import drc
 

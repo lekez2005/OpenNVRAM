@@ -47,7 +47,7 @@ class CmosSram(design):
                                                                              self.num_words))
         self.create_layout()
 
-        self.offset_all_coordinates()
+        # self.offset_all_coordinates()
         sizes = self.find_highest_coords()
         self.width = sizes[0]
         self.height = sizes[1]
@@ -135,6 +135,7 @@ class CmosSram(design):
 
         self.words_per_row = words_per_row
         self.num_rows = int(self.num_words_per_bank / self.words_per_row)
+        self.num_cols = int(self.word_size * self.words_per_row)
 
         self.col_addr_size = int(math.log(self.words_per_row, 2))
         self.row_addr_size = int(math.log(self.num_rows, 2))
@@ -194,13 +195,17 @@ class CmosSram(design):
 
     @staticmethod
     def create_column_decoder_modules(words_per_row):
-        buffer_sizes = [OPTS.predecode_sizes[0]] + OPTS.column_decoder_buffers[1:]
         if words_per_row == 2:
-            column_decoder = FlopBuffer(OPTS.control_flop, OPTS.column_decoder_buffers)
-        elif words_per_row == 4:
-            column_decoder = hierarchical_predecode2x4(use_flops=True, buffer_sizes=buffer_sizes)
+            column_decoder = FlopBuffer(OPTS.control_flop, OPTS.column_decoder_buffers,
+                                        name="col_decoder_flop")
         else:
-            column_decoder = hierarchical_predecode3x8(use_flops=True, buffer_sizes=buffer_sizes)
+            col_buffers = OPTS.column_decoder_buffers
+            buffer_sizes = [OPTS.predecode_sizes[0]] + col_buffers
+            negate = len(col_buffers) % 2 == 0
+            decoder_class = hierarchical_predecode2x4 \
+                if words_per_row == 4 else hierarchical_predecode3x8
+            column_decoder = decoder_class(use_flops=True, buffer_sizes=buffer_sizes,
+                                           negate=negate)
         return column_decoder
 
     def get_col_decoder_connections(self):
@@ -219,8 +224,16 @@ class CmosSram(design):
         self.column_decoder = self.create_column_decoder_modules(self.words_per_row)
         if self.words_per_row == 2:
             # Export internal flop output as layout pin, rearrange pin to match predecoder order
-            self.column_decoder.pins = ["din", "dout", "dout_bar", "clk", "vdd", "gnd"]
-            self.column_decoder.copy_layout_pin(self.column_decoder.buffer_inst, "out_inv", "dout_bar")
+            self.column_decoder.pins = ["din", "dout_bar", "dout", "clk", "vdd", "gnd"]
+            col_decoder_buffer = self.column_decoder.buffer_inst.mod
+            if len(col_decoder_buffer.module_insts) > 1:
+                col_decoder_buffer.copy_layout_pin(col_decoder_buffer.module_insts[-1], "A",
+                                                   "out_buf_input")
+                self.column_decoder.copy_layout_pin(self.column_decoder.buffer_inst, "out_buf_input",
+                                                    "dout_bar")
+            else:
+                self.column_decoder.copy_layout_pin(self.column_decoder.buffer_inst, "in",
+                                                    "dout_bar")
 
         self.add_mod(self.column_decoder)
 
@@ -242,8 +255,10 @@ class CmosSram(design):
             self.add_pin("ADDR[{0}]".format(i))
 
         replacements = {key: val for key, val in self.get_bank_connection_replacements()}
+        self.control_pin_names = []
         for pin_name in self.control_inputs:
             new_pin_name = replacements.get(pin_name, pin_name)
+            self.control_pin_names.append(new_pin_name)
             self.add_pin(new_pin_name)
 
         self.add_pin_list(["vdd", "gnd"])
@@ -382,8 +397,8 @@ class CmosSram(design):
 
     def get_bank_connections(self, bank_num, bank_mod):
 
-        connections = bank_mod.connections_from_mod(bank_mod,
-                                                    self.get_bank_connection_replacements())
+        connections = bank_mod. \
+            connections_from_mod(bank_mod, self.get_bank_connection_replacements())
 
         if self.num_banks == 2 and bank_num == 1:
             if OPTS.independent_banks:
@@ -436,7 +451,9 @@ class CmosSram(design):
         # outputs
         out_pin = self.column_decoder_inst.get_pin("dout")
         out_bar_pin = self.column_decoder_inst.get_pin("dout_bar")
-        y_offsets = [out_pin.cy(), out_pin.cy() + self.bus_pitch]
+        out_bar_y = out_bar_pin.cy()
+        out_y = max(out_bar_y, out_pin.cy()) + self.bus_pitch
+        y_offsets = [out_bar_y, out_y]
         self.col_decoder_outputs = []
 
         self.route_col_decoder_to_rail(output_pins=[out_bar_pin, out_pin], rail_offsets=y_offsets)
@@ -485,7 +502,7 @@ class CmosSram(design):
             x_offset = self.leftmost_m2_rail_x
             rails_x = [x_offset + i * self.bus_pitch for i in range(self.words_per_row)]
         else:
-            base_x = self.leftmost_m2_rail_x
+            base_x = self.leftmost_m2_rail_x - self.bus_pitch * self.words_per_row
             rails_y = []
             rails_x = []
         x_offsets = [base_x + i * self.bus_pitch for i in range(self.words_per_row)]
@@ -496,11 +513,12 @@ class CmosSram(design):
             x_offset = x_offsets[i]
             y_offset = rail_offsets[i]
             if i == 0 and self.words_per_row == 2:
-                self.add_contact_center(m1m2.layer_stack,
-                                        offset=vector(output_pin.cx(),
-                                                      y_offset + 0.5 * self.bus_width))
-                self.add_rect(METAL2, offset=vector(output_pin.cx(), y_offset),
-                              height=self.bus_width, width=x_offset - output_pin.cx())
+                if len(self.column_decoder.buffer_inst.mod.module_insts) > 1:
+                    self.add_contact_center(m1m2.layer_stack,
+                                            offset=vector(output_pin.cx(), y_offset))
+                self.add_rect(METAL2, offset=vector(output_pin.lx(), y_offset - 0.5 * self.m2_width),
+                              height=self.m2_width,
+                              width=x_offset - output_pin.lx() + self.bus_width)
             else:
                 self.add_rect(METAL1, offset=vector(output_pin.cx(), y_offset),
                               width=x_offset - output_pin.cx(),
@@ -622,6 +640,12 @@ class CmosSram(design):
 
     def route_decoder_power(self):
         rails = [self.mid_vdd, self.mid_gnd]
+
+        sample_power_pin = max(self.row_decoder_inst.get_pins("vdd"), key=lambda x: x.uy())
+        m3m4_via = ContactFullStack(start_layer=METAL3, stop_layer=METAL4,
+                                    centralize=True, max_width=self.mid_vdd.width,
+                                    max_height=sample_power_pin.height())
+
         pin_names = ["vdd", "gnd"]
         for i in range(2):
             rail = rails[i]
@@ -634,10 +658,18 @@ class CmosSram(design):
                 else:
                     pin_right = self.bank.wordline_driver_inst.lx()
                     x_offset = rail.lx() if self.single_bank else self.left_bank_inst.rx()
-                self.add_rect(METAL1, offset=vector(x_offset, power_pin.by()),
+                self.add_rect(power_pin.layer, offset=vector(x_offset, power_pin.by()),
                               width=pin_right - x_offset, height=power_pin.height())
-                self.add_contact_center(m1m2.layer_stack, offset=vector(center_rail_x, power_pin.cy()),
-                                        size=[2, 1], rotate=90)
+                if power_pin.layer == METAL1:
+                    vias = [m1m2]
+                    sizes = [[1, 2]]
+                else:
+                    vias = [m2m3, m3m4]
+                    sizes = [[1, 2], m3m4_via.dimensions]
+                for via, size in zip(vias, sizes):
+                    self.add_contact_center(via.layer_stack,
+                                            offset=vector(center_rail_x, power_pin.cy()),
+                                            size=size, rotate=90)
 
         via_offsets, fill_height = self.evaluate_left_power_rail_vias()
         self.add_left_power_rail_vias(via_offsets, self.mid_vdd.uy(), fill_height)
@@ -653,6 +685,12 @@ class CmosSram(design):
         via_pitch = via_spacing + max(m2m3.height, fill_height)
 
         m2_m3_blockages = []
+
+        for pin_name in ["vdd", "gnd"]:
+            power_pins = self.row_decoder_inst.get_pins(pin_name)
+            power_pins = [x for x in power_pins if x.layer == METAL3]
+            for power_pin in power_pins:
+                m2_m3_blockages.append((power_pin.by(), power_pin.uy()))
 
         if self.num_banks == 2 and self.column_decoder_inst is not None:
             # prevent select pins clash
@@ -810,6 +848,26 @@ class CmosSram(design):
                     self.add_rect_center(METAL2, offset=wl_in.center(), width=fill_width,
                                          height=fill_height)
 
+    def join_control(self, pin_name, y_offset):
+        via_extension = 0.5 * (cross_m2m3.height - cross_m2m3.contact_width)
+        left_pin = self.bank_insts[1].get_pin(pin_name)
+        right_pin = self.bank_insts[0].get_pin(pin_name)
+        for pin in [left_pin, right_pin]:
+            self.add_cross_contact_center(cross_m2m3,
+                                          offset=vector(pin.cx(),
+                                                        y_offset + 0.5 * self.bus_width))
+            rail_bottom = y_offset + 0.5 * self.bus_width - 0.5 * cross_m2m3.height
+            if rail_bottom < pin.by():
+                self.add_rect(pin.layer, offset=vector(pin.lx(), rail_bottom),
+                              width=pin.width(), height=pin.by() - rail_bottom)
+        join_rail = self.add_rect(METAL3,
+                                  offset=vector(left_pin.lx() - via_extension,
+                                                y_offset),
+                                  height=self.bus_width,
+                                  width=right_pin.rx() - left_pin.lx() +
+                                        2 * via_extension)
+        setattr(self, pin_name + "_rail", join_rail)
+
     def join_bank_controls(self):
         control_inputs = self.control_inputs
         if self.single_bank:
@@ -827,26 +885,9 @@ class CmosSram(design):
                                    vdd_pin.by() - self.get_parallel_space(METAL3))
 
         y_offset = (cross_clk_rail_y - (len(control_inputs) * self.bus_pitch))
-        via_extension = 0.5 * (cross_m2m3.height - cross_m2m3.contact_width)
-        for i in range(len(control_inputs)):
-            left_pin = self.bank_insts[1].get_pin(control_inputs[i])
-            right_pin = self.bank_insts[0].get_pin(control_inputs[i])
-            for pin in [left_pin, right_pin]:
-                self.add_cross_contact_center(cross_m2m3,
-                                              offset=vector(pin.cx(),
-                                                            y_offset + 0.5 * self.bus_width))
-                rail_bottom = y_offset + 0.5 * self.bus_width - 0.5 * cross_m2m3.height
-                if rail_bottom < pin.by():
-                    self.add_rect(pin.layer, offset=vector(pin.lx(), rail_bottom),
-                                  width=pin.width(), height=pin.by() - rail_bottom)
-            join_rail = self.add_rect(METAL3,
-                                      offset=vector(left_pin.lx() - via_extension,
-                                                    y_offset),
-                                      height=self.bus_width,
-                                      width=right_pin.rx() - left_pin.lx() +
-                                            2 * via_extension)
-            setattr(self, control_inputs[i] + "_rail", join_rail)
 
+        for i in range(len(control_inputs)):
+            self.join_control(control_inputs[i], y_offset)
             y_offset += self.bus_pitch
 
     def fill_decoder_wordline_space(self):

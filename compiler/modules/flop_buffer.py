@@ -14,14 +14,16 @@ class FlopBuffer(design, metaclass=Unique):
     Flop a signal and buffer given input buffer sizes
     """
     @classmethod
-    def get_name(cls, _, buffer_stages, negate=False):
+    def get_name(cls, _, buffer_stages, negate=False, name=None):
+        if name is not None:
+            return name
         name = "flop_buffer_{}".format("_".join(
             ["{:.3g}".format(x).replace(".", "_") for x in buffer_stages]))
         if negate:
             name += "_neg"
         return name
 
-    def __init__(self, flop_module_name, buffer_stages, negate=False):
+    def __init__(self, flop_module_name, buffer_stages, negate=False, name=None):
 
         if buffer_stages is None or len(buffer_stages) < 1:
             debug.error("There should be at least one buffer stage", 1)

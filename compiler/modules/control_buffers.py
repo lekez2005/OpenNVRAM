@@ -18,6 +18,7 @@ from modules.horizontal.pgate_horizontal import pgate_horizontal
 from pgates.pgate import pgate
 from pgates.pinv import pinv
 from pgates.pnand2 import pnand2
+from pgates.pnand3 import pnand3
 from pgates.pnor2 import pnor2
 
 ModOffset = collections.namedtuple("ModOffset", "inst_name x_offset mirror")
@@ -172,6 +173,7 @@ class ControlBuffers(design, ABC):
     def create_common_modules(self):
         self.nand = self.create_mod(pnand2)
         self.nand_x2 = self.create_mod(pnand2, size=2)
+        self.nand3 = self.create_mod(pnand3, size=1)
         self.nor = self.create_mod(pnor2)
         self.inv = self.create_mod(pinv)
 

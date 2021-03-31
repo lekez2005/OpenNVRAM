@@ -60,6 +60,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             'GdsLibImport',
             'ms_flop',
             'ms_flop_horz_pitch',
+            'FlopBuffer',
             'bitcell',
             'body_tap',
             'cam_bitcell',

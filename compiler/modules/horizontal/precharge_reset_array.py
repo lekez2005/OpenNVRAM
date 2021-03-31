@@ -22,6 +22,7 @@ class PrechargeResetArray(precharge_array):
     def add_pins(self):
         super().add_pins()
         self.add_pin("br_reset")
+        self.add_pin("gnd")
 
     def create_layout(self):
         self.add_insts()

@@ -1,9 +1,9 @@
 from modules.horizontal.wordline_buffer import WordlineBuffer
-from modules.horizontal.wordline_buffer_array import wordline_buffer_array
+from modules.horizontal.wordline_buffer_array_horizontal import wordline_buffer_array_horizontal
 from modules.horizontal.wordline_pgate_tap import wordline_pgate_tap
 
 
-class wordline_buffer_no_enable_array(wordline_buffer_array):
+class wordline_buffer_no_enable_array(wordline_buffer_array_horizontal):
 
     def connect_inst(self, args, check=True):
         if "en" in args:

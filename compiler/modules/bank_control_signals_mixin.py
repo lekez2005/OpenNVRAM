@@ -73,9 +73,13 @@ class ControlSignalsMixin:
             self.control_rail_offsets[bottom_pins[i]] = y_offset
             y_offset += self.bus_pitch
 
+    @staticmethod
+    def get_default_left_rails():
+        return ["wordline_en"]
+
     def calculate_mid_array_rail_x_offsets(self, control_outputs):
         """Compute x offset of rails that go in between bitcell arrays"""
-        left_rails = ["wordline_en"]
+        left_rails = self.get_default_left_rails()
         if self.use_decoder_clk:
             left_rails.append("decoder_clk")
         elif not self.is_left_bank:
@@ -149,6 +153,9 @@ class ControlSignalsMixin:
             if rail_name in self.left_control_rails:
                 self.control_rail_offsets[rail_name] = self.control_rail_offsets[rail_name].y_offset
 
+    def get_control_rails_base_x(self):
+        return self.mid_vdd_offset - self.wide_m1_space
+
     def add_control_rails(self):
         """Add rails from control logic buffers to appropriate peripherals"""
 
@@ -160,8 +167,7 @@ class ControlSignalsMixin:
 
         destination_pins = self.get_control_rails_destinations()
         num_rails = len(self.left_control_rails)
-        x_offset = (self.mid_vdd_offset - (num_rails * self.control_rail_pitch)
-                    - (self.wide_m1_space - self.line_end_space))
+        x_offset = self.get_control_rails_base_x() - (num_rails * self.control_rail_pitch) + self.line_end_space
         rail_names = list(sorted(destination_pins.keys(),
                                  key=lambda x: (-self.control_buffers_inst.get_pin(x).uy(),
                                                 get_top_destination_pin_y(x)),
@@ -180,6 +186,10 @@ class ControlSignalsMixin:
                                  key=lambda x: x.lx())
         self.rightmost_rail = max([getattr(self, x + "_rail") for x in rail_names],
                                   key=lambda x: x.rx())
+
+    @staticmethod
+    def get_default_wordline_enables():
+        return ["wordline_en"]
 
     def add_left_control_rail(self, rail_name, dest_pins, x_offset, y_offset):
         """Routes the rail from control logic buffer pin with name 'rail_name' to the destinations 'dest_pins'.
@@ -207,7 +217,7 @@ class ControlSignalsMixin:
                                  width=self.bus_width)
             self.m2_rails.append(rail)
         setattr(self, rail_name + "_rail", rail)
-        if rail_name == "wordline_en":
+        if rail_name in self.get_default_wordline_enables():
             return
 
         for dest_pin in dest_pins:

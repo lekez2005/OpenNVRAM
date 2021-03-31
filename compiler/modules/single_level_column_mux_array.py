@@ -100,10 +100,9 @@ class single_level_column_mux_array(design.design):
             for source_pin, dest_pin in pin_names:
                 self.copy_layout_pin(child_insts, source_pin, "{}[{}]".format(dest_pin, col_num))
 
-        cell_gnd_pin = self.child_insts[0].get_pin("gnd")
-        self.add_layout_pin("gnd", "metal1", offset=cell_gnd_pin.ll(),
-                            width=self.width - cell_gnd_pin.lx(),
-                            height=cell_gnd_pin.height())
+        for pin in self.child_insts[0].get_pins("gnd"):
+            self.add_layout_pin("gnd", pin.layer, offset=pin.ll(),
+                                width=self.width - pin.lx(), height=pin.height())
 
     def add_routing(self):
         self.add_horizontal_input_rail()

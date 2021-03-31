@@ -70,7 +70,7 @@ class precharge(design.design):
         active_to_poly_top = max(self.get_line_end_space(METAL1),
                                  self.get_line_end_space(METAL2))  # space to the en metal1
         active_to_poly_top += 0.5 * max(contact.poly.second_layer_width,
-                                        m1m2.second_layer_width) # space to middle of poly contact
+                                        m1m2.second_layer_width)  # space to middle of poly contact
         self.active_to_poly_cont_mid = active_to_poly_top
         self.poly_top_space = active_to_poly_top = self.active_to_poly_cont_mid + 0.5 * contact.poly.first_layer_height
 
@@ -94,6 +94,10 @@ class precharge(design.design):
         # ensure enough space for bitlines
         min_bitline_height = 2 * self.m2_width
         self.bottom_space = max(self.bottom_space, min_bitline_height)
+        # enough space for sense amp/col mux via
+        self.bottom_space = max(self.bottom_space, max(m2m3.height, m3m4.height) +
+                                self.get_line_end_space(METAL2) + 0.5 * self.m2_width -
+                                0.5 * self.ptx_width)
 
         self.poly_height = (self.poly_extend_active + self.poly_top_space + self.ptx_width)
         self.poly_y_offset = max(poly_enclosure, self.bottom_space - self.poly_extend_active)
@@ -117,7 +121,10 @@ class precharge(design.design):
         self.active_mid_y = self.active_bot_y + 0.5 * self.ptx_width
         self.active_top = self.active_bot_y + self.ptx_width
 
-        self.poly_contact_mid_y = self.active_top + self.active_to_poly_cont_mid
+        self.poly_contact_mid_y = max(self.active_top + self.active_to_poly_cont_mid,
+                                      self.active_mid_y + 0.5 * m1m2.height +
+                                      self.get_line_end_space(METAL2) +
+                                      0.5 * max(m1m2.width, self.en_rail_height))
 
         self.contact_pitch = 2 * self.contact_to_gate + self.contact_width + self.poly_width
         self.contact_space = self.contact_pitch - self.contact_width
@@ -169,10 +176,10 @@ class precharge(design.design):
         # adjust contact positions such that there will be space for m1 to vdd
         left_contact_mid = max(self.mid_x - self.poly_pitch,
                                0.5 * self.m1_width + self.line_end_space +
-                               0.5*contact.poly.second_layer_height)
+                               0.5 * contact.poly.second_layer_height)
         right_contact_mid = min(self.mid_x + self.poly_pitch,
                                 self.width - 0.5 * self.m1_width - self.line_end_space -
-                                0.5*contact.poly.second_layer_height)
+                                0.5 * contact.poly.second_layer_height)
 
         gate_pos = [left_contact_mid, self.mid_x, right_contact_mid]
 
@@ -185,22 +192,21 @@ class precharge(design.design):
                 self.add_rect_center("contact", offset=vector(x_offset, self.poly_contact_mid_y))
 
         offset = vector(self.mid_x, self.poly_contact_mid_y)
+        via_mid_y = self.poly_contact_mid_y
 
-        via_y = max(offset.y, self.active_rect.uy() + self.get_parallel_space(METAL2) +
-                    0.5 * m1m2.second_layer_width)
-
-        self.add_contact_center(m1m2.layer_stack, offset=vector(offset.x, via_y), rotate=90)
+        self.add_contact_center(m1m2.layer_stack, offset=vector(offset.x, via_mid_y), rotate=90)
         _, fill_width = self.calculate_min_area_fill(self.en_rail_height, layer=METAL2)
         if fill_width:
-            self.add_rect_center(METAL2, offset=vector(offset.x, via_y), width=fill_width,
+            fill_width = max(fill_width, m1m2.height)
+            self.add_rect_center(METAL2, offset=vector(offset.x, via_mid_y), width=fill_width,
                                  height=self.en_rail_height)
-        self.add_contact_center(m2m3.layer_stack, offset=vector(offset.x, via_y), rotate=90)
+        self.add_contact_center(m2m3.layer_stack, offset=vector(offset.x, via_mid_y), rotate=90)
 
         m1_poly_extension = 0.5 * contact.poly.second_layer_height
         en_m1_width = 2 * m1_poly_extension + gate_pos[2] - gate_pos[0]
         self.en_m1_rect = self.add_rect_center(METAL1, offset=offset, width=en_m1_width)
 
-        y_offset = self.active_rect.uy() + self.get_line_end_space(METAL2)
+        y_offset = via_mid_y - 0.5 * self.en_rail_height
         self.add_layout_pin("en", METAL3, offset=vector(0, y_offset),
                             width=self.width, height=self.en_rail_height)
 

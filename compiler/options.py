@@ -146,6 +146,7 @@ class options(optparse.Values):
 
     precharge_size = 4
     max_precharge_size = 10
+    max_column_decoder_buffers = 8
     column_mux_size = 8
 
     # bitcell config

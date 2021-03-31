@@ -9,7 +9,7 @@ from modules.horizontal.wordline_pgate_tap import wordline_pgate_tap
 from modules.wordline_driver_array import wordline_driver_array
 
 
-class wordline_buffer_array(wordline_driver_array):
+class wordline_buffer_array_horizontal(wordline_driver_array):
     rotation_for_drc = GDS_ROT_270
 
     def get_reference_mod(self):

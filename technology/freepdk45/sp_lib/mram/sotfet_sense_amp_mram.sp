@@ -32,7 +32,7 @@ MM2 VOUT VIN VDD VDD PMOS_VTG W=200n L=50n m=1
 * View Name:    schematic
 ************************************************************************
 
-.SUBCKT sotfet_sense_amp_mram bl dout dout_bar en gnd sampleb vdd vref
+.SUBCKT sotfet_sense_amp_mram bl br dout dout_bar en vref sampleb vdd gnd
 XI0 gnd vdd out_int outb_int en / inv_en
 XI1 gnd vdd outb_int out_int en / inv_en
 MM14 dout_bar out_int gnd gnd NMOS_VTG W=150.0n L=50n m=2

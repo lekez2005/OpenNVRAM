@@ -167,8 +167,9 @@ class hierarchical_decoder(design.design):
         else:
             nand_width = self.nand3.width 
         self.routing_width = self.metal2_pitch*self.total_number_of_predecoder_outputs
-        self.row_decoder_width = nand_width  + self.routing_width + self.inv.width
-        self.row_decoder_height = self.inv.height * self.rows
+        self.row_decoder_width = nand_width + self.routing_width + self.inv.width
+
+        self.row_decoder_height = self.bitcell_offsets[-1] + self.bitcell_height
 
         # Calculates height and width of hierarchical decoder 
         self.height = self.predecoder_height + self.row_decoder_height
@@ -406,13 +407,14 @@ class hierarchical_decoder(design.design):
         top_predecoder_inst = (self.pre2x4_inst + self.pre3x8_inst)[-1]
         predec_module = top_predecoder_inst.mod
 
-        predecoder_inv = predec_module.inv_inst[0].mod
+        predecoder_inv_inst = predec_module.inv_inst[0].mod.module_insts[-1]
+        predecoder_inv = predecoder_inv_inst.mod
         row_decoder_nand = self.nand_inst[0].mod
 
         pre_inv_implant = max(predecoder_inv.get_layer_shapes(PIMP), key=lambda x: x.by())
         row_nand_implant = min(row_decoder_nand.get_layer_shapes(PIMP), key=lambda x: x.uy())
-        implant_x = min(top_predecoder_inst.lx() +
-                        (predec_module.width - predec_module.inv_inst[0].rx()) +
+        implant_x = min(top_predecoder_inst.rx() -
+                        (predecoder_inv_inst.lx() + predec_module.inv_inst[0].rx()) +
                         (predecoder_inv.width - pre_inv_implant.rx()),
                         self.nand_inst[0].lx() + row_nand_implant.lx())
         # add extra implant width for cases when this implant overlaps with wordline driver implant

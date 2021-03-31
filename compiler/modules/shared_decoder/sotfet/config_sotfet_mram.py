@@ -35,7 +35,6 @@ br_reset_buffers = [3.1, 9.65, 30]
 
 num_wordline_en_stages = 3
 wordline_en_buffers = [3.56, 12.6, 45]
-wwl_en_buffers = [3.56, 12.6, 45]
 
 
 def configure_sense_amp(mirror: bool, OPTS):

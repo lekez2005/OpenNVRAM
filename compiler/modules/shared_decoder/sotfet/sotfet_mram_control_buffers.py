@@ -47,15 +47,14 @@ class SotfetMramControlBuffers(BaseLatchedControlBuffers):
         self.rwl_en = self.create_mod(LogicBuffer, buffer_stages="wordline_en_buffers",
                                       logic="pnand3")
 
-        assert len(OPTS.wwl_en_buffers) % 2 == 1, "Number of wwl buffers should be odd"
-        self.wwl_en = self.create_mod(BufferStage, buffer_stages="wwl_en_buffers")
+        assert len(OPTS.wordline_en_buffers) % 2 == 1, "Number of wwl buffers should be odd"
+        self.wwl_en = self.create_mod(BufferStage, buffer_stages="wordline_en_buffers")
 
     def create_write_buf(self):
         assert len(OPTS.write_buffers) % 2 == 1, "Number of write buffers should be odd"
         self.write_buf = self.create_mod(BufferStage, buffer_stages="write_buffers")
 
     def create_schematic_connections(self):
-        sense_conns = ["sample_en_bar", "sense_trig", "bank_sel", "sense_en_bar", "sense_en"]
         connections = [
             ("nor_trig_clk", self.nor, ["sense_trig", "clk", "nor_trig_clk"]),
             ("rwl_buf", self.rwl_en, ["nor_trig_clk", "read", "bank_sel", "rwl_en", "rwl_en_bar"]),

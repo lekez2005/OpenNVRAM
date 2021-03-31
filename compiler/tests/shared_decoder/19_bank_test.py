@@ -15,11 +15,12 @@ class BankTest(TestBase):
     def get_bank_class():
         from globals import OPTS
         from modules.shared_decoder.cmos_bank import CmosBank
+        from modules.shared_decoder.sotfet.sotfet_mram_bank_thin import SotfetMramBankThin
         from modules.shared_decoder.sotfet.sotfet_mram_bank import SotfetMramBank
         if OPTS.baseline:
             bank_class = CmosBank
         else:
-            bank_class = SotfetMramBank
+            bank_class = SotfetMramBankThin
         return bank_class, {}
 
     def sweep_all(self, rows=None, cols=None, words_per_row=None, default_row=64, default_col=64):

@@ -37,10 +37,10 @@ class tgate_column_mux_array(single_level_column_mux_array):
 
     def add_layout_pins(self):
         super().add_layout_pins()
-        for pin_name in ["vdd", "gnd"]:
-            pin = self.child_insts[0].get_pin(pin_name)
-            self.add_layout_pin(pin_name, pin.layer, offset=vector(0, pin.by()),
-                                width=self.child_insts[-1].rx(), height=pin.height())
+        for pin_name in ["vdd"]:
+            for pin in self.child_insts[0].get_pins(pin_name):
+                self.add_layout_pin(pin_name, pin.layer, offset=vector(0, pin.by()),
+                                    width=self.child_insts[-1].rx(), height=pin.height())
 
     def add_body_contacts(self):
         y_offset = self.child_insts[0].by()

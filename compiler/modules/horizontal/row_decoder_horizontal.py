@@ -14,7 +14,7 @@ from tech import drc
 class row_decoder_horizontal(hierarchical_decoder):
 
     def create_modules(self):
-        self.inv = pinv_wordline(size=1, mirror=True)
+        self.inv = pinv_wordline(size=2, mirror=True)
         self.add_mod(self.inv)
 
         self.nand2 = pnand2_wordline(mirror=False)

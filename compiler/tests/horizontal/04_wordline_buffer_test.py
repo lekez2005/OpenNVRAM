@@ -38,8 +38,8 @@ class WordlineBufferTest(TestBase):
     def test_buffer_array(self):
         from  globals import OPTS
         debug.info(1, "Testing wordline buffer array")
-        from modules.horizontal.wordline_buffer_array import wordline_buffer_array
-        buffer_array = wordline_buffer_array(32, OPTS.wordline_buffers)
+        from modules.horizontal.wordline_buffer_array_horizontal import wordline_buffer_array_horizontal
+        buffer_array = wordline_buffer_array_horizontal(32, OPTS.wordline_buffers)
         self.local_check(buffer_array)
 
     def test_buffer_no_enable_array(self):

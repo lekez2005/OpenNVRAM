@@ -18,8 +18,10 @@ class wordline_driver_array(design.design):
 
     inv1 = None
 
-    def __init__(self, rows, buffer_stages):
-        design.design.__init__(self, "wordline_driver")
+    def __init__(self, rows, buffer_stages, name=None):
+        if name is None:
+            name = "wordline_driver"
+        design.design.__init__(self, name)
 
         self.rows = rows
         self.buffer_stages = buffer_stages

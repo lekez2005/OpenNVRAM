@@ -74,9 +74,11 @@ class BitcellAlignedArray(design, ABC):
         """List of pins for which [{}] will be appended e.g. bl, br"""
         raise NotImplementedError
 
-    def get_bitcell_offsets(self) -> Tuple[List[float], List[float]]:
+    def get_bitcell_offsets(self) -> Tuple[List[float], List[float], List[float]]:
         """x offsets of of instances and taps """
-        return utils.get_tap_positions(self.num_columns)
+        bitcell_array_cls = self.import_mod_class_from_str(OPTS.bitcell_array)
+        offsets = bitcell_array_cls.calculate_x_offsets(num_cols=self.num_columns)
+        return offsets
 
     def get_horizontal_pins(self):
         """Pins that span from left to right"""
@@ -106,7 +108,7 @@ class BitcellAlignedArray(design, ABC):
 
     def create_array(self):
         """Add child instances"""
-        self.bitcell_offsets, self.tap_offsets = self.get_bitcell_offsets()
+        self.bitcell_offsets, self.tap_offsets, _ = self.get_bitcell_offsets()
         self.child_insts = []
         for word in range(self.word_size):
             col = word * self.words_per_row

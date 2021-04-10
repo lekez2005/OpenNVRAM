@@ -66,9 +66,9 @@ class ms_flop_array(BitcellAlignedArray):
 
     def get_bitcell_offsets(self):
         if self.align_bitcell:
-            return utils.get_tap_positions(self.columns)
+            return super().get_bitcell_offsets()
         else:
-            return [i * self.ms.width for i in range(self.columns)], []
+            return [i * self.ms.width for i in range(self.columns)], [], []
 
     def create_modules(self):
         self.child_mod = self.ms = self.create_mod_from_str(OPTS.ms_flop, self.flop_mod)

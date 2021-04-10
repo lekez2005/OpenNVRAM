@@ -7,11 +7,12 @@ from base.design import design, METAL1, PO_DUMMY, ACTIVE, POLY, PIMP, NIMP, NWEL
 from base.hierarchy_layout import GDS_ROT_90
 from base.vector import vector
 from base.well_implant_fills import calculate_tx_metal_fill
+from pgates.pgates_characterization_base import pgates_characterization_base
 from pgates.ptx_spice import ptx_spice
 from tech import drc, parameter, layer as tech_layers
 
 
-class pgate_horizontal(design):
+class pgate_horizontal(pgates_characterization_base, design):
     rotation_for_drc = GDS_ROT_90
     contraints_initialized = False
     num_instances = 1

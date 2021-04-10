@@ -116,9 +116,8 @@ class OpenRamTest(unittest.TestCase):
     @staticmethod
     def load_class_from_opts(mod_name):
         config_mod_name = getattr(OPTS, mod_name)
-        class_file = reload(__import__(config_mod_name))
-        mod_class = getattr(class_file, config_mod_name)
-        return mod_class
+        from base.design import design
+        return design.import_mod_class_from_str(config_mod_name)
 
     @staticmethod
     def create_class_from_opts(opt_name, *args, **kwargs):

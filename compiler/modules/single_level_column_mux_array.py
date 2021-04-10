@@ -5,7 +5,6 @@ from base.design import METAL2, METAL1
 from base.hierarchy_layout import GDS_ROT_90
 from base.vector import vector
 from globals import OPTS
-from modules.bitcell_array import bitcell_array
 from modules.single_level_column_mux import single_level_column_mux
 
 
@@ -67,7 +66,9 @@ class single_level_column_mux_array(design.design):
     def create_array(self):
         self.child_insts = []
 
-        offsets = bitcell_array.calculate_x_offsets(num_cols=self.columns)
+        bitcell_array_cls = self.import_mod_class_from_str(OPTS.bitcell_array)
+        offsets = bitcell_array_cls.calculate_x_offsets(num_cols=self.columns)
+
         (self.bitcell_offsets, self.tap_offsets, _) = offsets
 
         # For every column, add a pass gate

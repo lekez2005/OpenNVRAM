@@ -415,7 +415,7 @@ class bitcell_array(design.design):
         # offset by num_dummies so real cells stay grouped
         tap_indices = [x - num_dummies for x in tap_indices]
         # normalize by cells_per_group
-        tap_indices = [x - ((x + 1) % cell_grouping) for x in tap_indices]
+        tap_indices = [x - (x % cell_grouping) for x in tap_indices]
         # add back the dummies to get back to regular indexing
         tap_indices = [x + num_dummies for x in tap_indices]
 
@@ -446,7 +446,7 @@ class bitcell_array(design.design):
         closest_offset = bitcell_offsets[closest_index]
         outputs = []
         for offset_list in all_offsets:
-            outputs.append([x if x <= closest_offset else x + space for x in offset_list])
+            outputs.append([x if x < closest_offset else x + space for x in offset_list])
         return closest_offset, outputs
 
     @staticmethod

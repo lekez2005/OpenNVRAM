@@ -47,7 +47,7 @@ class CmosSram(design):
                                                                              self.num_words))
         self.create_layout()
 
-        # self.offset_all_coordinates()
+        self.offset_all_coordinates()
         sizes = self.find_highest_coords()
         self.width = sizes[0]
         self.height = sizes[1]

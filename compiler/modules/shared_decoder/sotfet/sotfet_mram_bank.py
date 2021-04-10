@@ -1,4 +1,4 @@
-from base.contact import m2m3, m1m2, cross_m2m3, m3m4, contact
+from base.contact import m2m3, m1m2, cross_m2m3, m3m4
 from base.design import POLY, METAL1, METAL3, METAL2
 from base.vector import vector
 from base.well_implant_fills import create_wells_and_implants_fills
@@ -38,18 +38,21 @@ class SotfetMramBank(CmosBank):
                                                      columns=self.num_cols,
                                                      bank=self)
 
-    def connect_inst(self, args, check=True):
-        last_mod = self.insts[-1].mod
-        if last_mod.name == "bitcell_array":
-            args = []
-            for col in range(self.num_cols):
-                args.append("bl[{0}]".format(col))
-                args.append("br[{0}]".format(col))
-            for row in range(self.num_rows):
-                args.append("rwl[{0}]".format(row))
-                args.append("wwl[{0}]".format(row))
-            args.append("gnd")
-        super().connect_inst(args, check)
+    def create_optimizer(self):
+        from modules.shared_decoder.sotfet.sotfet_control_buffers_optimizer import \
+            SotfetControlBuffersOptimizer
+        self.optimizer = SotfetControlBuffersOptimizer(self)
+
+    def get_bitcell_array_connections(self):
+        args = []
+        for col in range(self.num_cols):
+            args.append("bl[{0}]".format(col))
+            args.append("br[{0}]".format(col))
+        for row in range(self.num_rows):
+            args.append("rwl[{0}]".format(row))
+            args.append("wwl[{0}]".format(row))
+        args.append("gnd")
+        return args
 
     def add_precharge_array(self):
         y_offset = self.get_precharge_y()
@@ -150,6 +153,7 @@ class SotfetMramBank(CmosBank):
             insts.append(inst)
             self.connect_inst(connections[i])
         self.wordline_driver_inst = min(insts, key=lambda x: x.lx())
+        self.wordline_driver = self.wordline_driver_inst.mod
         self.rwl_driver_inst, self.wwl_driver_inst = sorted(insts, key=lambda x: x.lx(),
                                                             reverse=reverse)
 
@@ -208,17 +212,23 @@ class SotfetMramBank(CmosBank):
         else:
             super().route_sense_amp()
 
+    def route_external_control_pin(self, pin_name, inst, x_offset, inst_pin_name=None):
+        if inst_pin_name is None:
+            inst_pin_name = pin_name
+        inst_pin = inst.get_pin(inst_pin_name)
+        y_offset = self.mid_vdd.by()
+        pin = self.add_layout_pin(pin_name, METAL2, offset=vector(x_offset, y_offset),
+                                  height=inst_pin.cy() - y_offset,
+                                  width=self.bus_width)
+        self.add_cross_contact_center(cross_m2m3, offset=vector(pin.cx(), inst_pin.cy()))
+        rect_height = min(self.bus_width, inst_pin.height())
+        self.add_rect(METAL3, offset=vector(pin.cx(), inst_pin.cy() - 0.5 * rect_height),
+                      width=inst_pin.lx() - pin.cx(), height=rect_height)
+
     def add_vref_pin(self):
         x_offset = self.vref_x_offset
-        sense_pin = self.sense_amp_array_inst.get_pin("vref")
-        y_offset = self.mid_vdd.by()
-        pin = self.add_layout_pin("vref", METAL2, offset=vector(x_offset, y_offset),
-                                  height=sense_pin.cy() - y_offset,
-                                  width=self.bus_width)
-        self.add_cross_contact_center(cross_m2m3, offset=vector(pin.cx(), sense_pin.cy()))
-        rect_height = min(self.bus_width, sense_pin.height())
-        self.add_rect(METAL3, offset=vector(pin.cx(), sense_pin.cy() - 0.5 * rect_height),
-                      width=sense_pin.lx() - pin.cx(), height=rect_height)
+        self.route_external_control_pin("vref", inst=self.sense_amp_array_inst,
+                                        x_offset=x_offset)
 
     def route_wordline_driver(self):
 

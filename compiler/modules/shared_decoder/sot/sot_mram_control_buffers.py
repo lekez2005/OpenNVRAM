@@ -1,0 +1,39 @@
+from globals import OPTS
+from modules.baseline_latched_control_buffers import LatchedControlBuffers
+from modules.buffer_stage import BufferStage
+from modules.logic_buffer import LogicBuffer
+from modules.shared_decoder.sotfet.sotfet_mram_control_buffers import SotfetMramControlBuffers
+
+
+class SotMramControlBuffers(SotfetMramControlBuffers):
+
+    def create_sample_bar(self):
+        pass
+
+    def create_sense_amp_buf(self):
+        self.sense_en_bar = self.create_mod(LogicBuffer, buffer_stages="sense_en_bar_buffers",
+                                            logic="pnor2")
+        assert len(OPTS.sense_amp_buffers) % 2 == 1, "Number of sense_en buffers should be odd"
+        self.sense_amp_buf = self.create_mod(BufferStage, buffer_stages="sense_amp_buffers")
+
+    def create_tri_en_buf(self):
+        self.tri_en_buf = self.create_mod(BufferStage, buffer_stages="tri_en_buffers")
+
+    def add_sense_amp_connections(self, connections):
+        connections.extend([
+            ("read_bar", self.inv, ["read", "read_bar"]),
+            ("sense_en_bar", self.sense_en_bar,
+             ["read_bar", "bank_sel_cbar", "sense_en_bar_buf", "sense_en_bar"]),
+            ("sense_en_int", self.nand, ["sense_trig", "bank_sel", "sense_en_int_bar"]),
+            ("sense_amp_buf", self.sense_amp_buf,
+             ["sense_en_int_bar", "sense_en_buf_bar", "sense_en"]),
+            ("tri_en_buf", self.tri_en_buf,
+             ["sense_en_int_bar", "tri_en_bar", "tri_en"])
+        ])
+
+    def get_schematic_pins(self):
+        in_pins, out_pins = LatchedControlBuffers.get_schematic_pins(self)
+        out_pins.remove("wordline_en")
+        out_pins.remove("sample_en_bar")
+        out_pins.extend(["rwl_en", "wwl_en", "br_reset", "sense_en_bar"])
+        return in_pins, out_pins

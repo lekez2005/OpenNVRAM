@@ -12,12 +12,13 @@ from base.vector import vector
 from base.well_active_contacts import calculate_contact_width
 from base.well_implant_fills import calculate_tx_metal_fill
 from globals import OPTS
+from pgates.pgates_characterization_base import pgates_characterization_base
 from pgates.ptx_spice import ptx_spice
 from tech import drc, parameter, info
 from tech import layer as tech_layers
 
 
-class pgate(design.design):
+class pgate(pgates_characterization_base, design.design):
     """
     This is a module that implements some shared functions for parameterized gates.
     """
@@ -614,58 +615,3 @@ class pgate(design.design):
             name = "{}{}".format(mos.tx_type, index + 1)
             self.add_inst(name=name, mod=mos, offset=offset)
             self.connect_inst(conn)
-
-    def is_delay_primitive(self):
-        """Whether to descend into this module to evaluate sub-modules for delay"""
-        return True
-
-    def get_char_data_file_suffixes(self, **kwargs):
-        return [("beta", parameter["beta"]),
-                ("contacts", int(self.contact_nwell))]
-
-    def get_char_data_size_suffixes(self, **kwargs):
-        """
-        Get filters for characterized size look up table
-        :return: list of (filter_name, filter_value) tuples
-        """
-        return [("height", self.height)]
-
-    def get_pin_dir(self, name):
-        if name.lower() in ["a", "b", "c"]:
-            return INPUT
-        elif name.lower() == "z":
-            return OUTPUT
-        return super().get_pin_dir(name)
-
-    def get_char_data_name(self, **kwargs) -> str:
-        return self.__class__.__name__
-
-    def get_char_data_size(self):
-        return self.size
-
-    def get_input_cap(self, pin_name, num_elements: int = 1, wire_length: float = 0.0,
-                      interpolate=None, **kwargs):
-        total_cap, cap_per_unit = super().get_input_cap(pin_name=pin_name, num_elements=self.size,
-                                                        wire_length=wire_length, **kwargs)
-        return total_cap * num_elements, cap_per_unit
-
-    def get_input_cap_from_instances(self, pin_name, wire_length: float = 0.0, **kwargs):
-        total_cap, cap_per_unit = super().get_input_cap_from_instances(pin_name, wire_length, **kwargs)
-        # super class method doesn't consider size in calculating
-        cap_per_unit /= self.size
-        return total_cap, cap_per_unit
-
-    def compute_input_cap(self, pin_name, wire_length: float = 0.0):
-        total_cap = super().compute_input_cap(pin_name, wire_length)
-        # super class method doesn't consider size in calculating
-        cap_per_unit = total_cap / self.size
-        return total_cap, cap_per_unit
-
-    def get_driver_resistance(self, pin_name, use_max_res=False, interpolate=None, corner=None):
-        if interpolate is None:
-            interpolate = OPTS.interpolate_characterization_data
-        resistance = self.get_input_cap_from_char("resistance", interpolate=interpolate,
-                                                  corner=corner)
-        if resistance:
-            return resistance / self.size
-        return super().get_driver_resistance(pin_name, use_max_res, interpolate, corner)

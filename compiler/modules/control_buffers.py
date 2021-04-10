@@ -138,7 +138,15 @@ class ControlBuffers(design, ABC):
         self.add_pin_list(["vdd", "gnd"])
 
     def create_connections_mapping(self):
-        schematic_connections = self.create_schematic_connections()
+        schematic_connections_ = self.create_schematic_connections()
+        # split off modules that are defined as ()
+        schematic_connections = []
+        self.buffer_str_dict = {}
+        for definition in schematic_connections_:
+            if isinstance(definition[1], tuple):
+                self.buffer_str_dict[definition[0]] = definition[1][1]
+                definition = (definition[0], definition[1][0], definition[2])
+            schematic_connections.append(definition)
 
         self.schematic_connections = [SchemConnection(*x) for x in schematic_connections]
         self.connections_dict = {connection.inst_name: connection
@@ -167,7 +175,7 @@ class ControlBuffers(design, ABC):
         mod = mod_class(**args)
         self.add_mod(mod)
         if buffer_stages_key is not None:
-            mod.buffer_stages_str = buffer_stages_key
+            return mod, buffer_stages_key
         return mod
 
     def create_common_modules(self):

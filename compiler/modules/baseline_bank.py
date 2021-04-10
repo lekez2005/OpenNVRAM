@@ -71,9 +71,10 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         self.calculate_rail_offsets()
         debug.info(1, "Add modules")
         self.add_modules()
+        self.add_pins()
         debug.info(1, "Route bank layout")
         self.route_layout()
-        self.add_pins()
+
         self.calculate_dimensions()
         self.add_lvs_correspondence_points()
         debug.info(1, "Offset bank coordinates to origin")
@@ -496,7 +497,6 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
 
         # ensure no clash with rails above control_buffer
         control_flops_top = y_offset + total_flop_height
-        control_top = self.control_buffers_inst.uy()
         rails = self.m2_rails
         decoder_clk_rail = getattr(self, "decoder_clk_rail", None)
         if decoder_clk_rail:
@@ -671,14 +671,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                                                          self.sense_amp_array, num_rails=0)
         return self.sense_amp_array_inst.uy() + y_space
 
-    def add_column_mux_array(self):
-        if self.col_addr_size == 0:
-            self.col_mux_array_inst = None
-            return
-
-        y_offset = self.get_column_mux_array_y()
-        self.col_mux_array_inst = self.add_inst(name="column_mux_array", mod=self.column_mux_array,
-                                                offset=vector(self.sense_amp_array_inst.lx(), y_offset))
+    def get_col_mux_connections(self):
         temp = []
         for i in range(self.num_cols):
             temp.append("bl[{0}]".format(i))
@@ -691,7 +684,18 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         temp.append("gnd")
         if "vdd" in self.column_mux_array.pins:
             temp.append("vdd")
-        self.connect_inst(temp)
+        return temp
+
+    def add_column_mux_array(self):
+        if self.col_addr_size == 0:
+            self.col_mux_array_inst = None
+            return
+
+        y_offset = self.get_column_mux_array_y()
+        self.col_mux_array_inst = self.add_inst(name="column_mux_array", mod=self.column_mux_array,
+                                                offset=vector(self.sense_amp_array_inst.lx(), y_offset))
+
+        self.connect_inst(self.get_col_mux_connections())
 
     def get_precharge_y(self):
         if self.col_mux_array_inst is None:
@@ -739,6 +743,16 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                                                   offset=vector(0, y_offset))
         self.connect_inst(self.get_precharge_connections())
 
+    def get_bitcell_array_connections(self):
+        temp = []
+        for i in range(self.num_cols):
+            temp.append("bl[{0}]".format(i))
+            temp.append("br[{0}]".format(i))
+        for j in range(self.num_rows):
+            temp.append("wl[{0}]".format(j))
+        temp.extend(["vdd", "gnd"])
+        return temp
+
     def add_bitcell_array(self):
         """ Adding Bitcell Array """
         if hasattr(tech, "bitcell_precharge_space"):
@@ -752,14 +766,8 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         self.bitcell_array_inst = self.add_inst(name="bitcell_array",
                                                 mod=self.bitcell_array,
                                                 offset=vector(0, y_offset))
-        temp = []
-        for i in range(self.num_cols):
-            temp.append("bl[{0}]".format(i))
-            temp.append("br[{0}]".format(i))
-        for j in range(self.num_rows):
-            temp.append("wl[{0}]".format(j))
-        temp.extend(["vdd", "gnd"])
-        self.connect_inst(temp)
+
+        self.connect_inst(self.get_bitcell_array_connections())
 
     def get_wordline_driver_connections(self):
         temp = []
@@ -1229,7 +1237,11 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         else:
             top_inst = self.data_in_flops_inst
 
-        data_template = "dout" if "dout[0]" in self.sense_amp_array.pins else "data"
+        if ("dout[0]" in self.sense_amp_array.pins or
+                "dout_bar[0]" in self.sense_amp_array.pins):
+            data_template = "dout"
+        else:
+            data_template = "data"
 
         if "in_bar[0]" in self.tri_gate_array.pins:
             sense_pin_name, tri_pin_name = data_template + "_bar[{}]", "in_bar[{}]"

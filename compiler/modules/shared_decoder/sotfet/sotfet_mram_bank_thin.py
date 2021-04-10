@@ -11,16 +11,14 @@ class SotfetMramBankThin(SotfetMramBank):
 
     def create_modules(self):
         assert self.words_per_row > 1, "1 word per row not supported"
+        if not self.is_left_bank:
+            self.rwl_driver = self.create_module("rwl_driver", name="rwl_driver",
+                                                 rows=self.num_rows,
+                                                 buffer_stages=OPTS.wordline_buffers)
+            self.wwl_driver = self.create_module("wwl_driver", name="wwl_driver",
+                                                 rows=self.num_rows,
+                                                 buffer_stages=OPTS.wordline_buffers)
         BaselineBank.create_modules(self)
-        if self.is_left_bank:
-            return
-        self.rwl_driver = self.create_module("rwl_driver", name="rwl_driver",
-                                             rows=self.num_rows,
-                                             buffer_stages=OPTS.wordline_buffers)
-        self.wwl_driver = self.create_module("wwl_driver", name="wwl_driver",
-                                             rows=self.num_rows,
-                                             buffer_stages=OPTS.wordline_buffers)
-        self.wordline_driver = self.rwl_driver
 
     def add_precharge_array(self):
         BaselineBank.add_precharge_array(self)

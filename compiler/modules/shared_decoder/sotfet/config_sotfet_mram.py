@@ -4,6 +4,8 @@ python_path = ["modules/shared_decoder", "modules/shared_decoder/sotfet"]
 baseline = False
 mram = "sotfet"
 
+cells_per_group = 2
+
 cache_optimization_prefix = "mram_"
 
 bitcell_name_template = "Xbitcell_b{bank}_r{row}_c{col}"
@@ -30,11 +32,17 @@ wordline_beta = [1, 0.9, 2.2]  # critical path is for Low to High
 
 num_write_en_stages = 3
 write_buffers = [3.56, 12.6, 45]
+sense_en_bar_buffers = [3.56, 12.6, 45]
 
 br_reset_buffers = [3.1, 9.65, 30]
 
 num_wordline_en_stages = 3
-wordline_en_buffers = [3.56, 12.6, 45]
+
+wwl_en_buffers = [3.56, 12.6, 45]
+rwl_en_buffers = [3.56, 12.6, 45]
+
+wwl_buffers = [1, 5, 20]
+rwl_buffers = [1, 5, 20]
 
 
 def configure_sense_amp(mirror: bool, OPTS):

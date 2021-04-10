@@ -18,12 +18,16 @@ class SramTest(TestBase):
 
     def get_sram_class(self):
         from globals import OPTS
-        from modules.shared_decoder.cmos_sram import CmosSram
-        from modules.shared_decoder.sotfet.sotfet_mram import SotfetMram
-        if OPTS.mram == "sotfet":
-            sram_class = SotfetMram
+
+        if hasattr(OPTS, "sram_class"):
+            sram_class = self.load_class_from_opts("sram_class")
         else:
-            sram_class = CmosSram
+            from modules.shared_decoder.cmos_sram import CmosSram
+            from modules.shared_decoder.sotfet.sotfet_mram import SotfetMram
+            if OPTS.mram in ["sotfet", "sot"]:
+                sram_class = SotfetMram
+            else:
+                sram_class = CmosSram
         import tech
         tech.drc_exceptions[sram_class.__name__] = tech.drc_exceptions.get("active_density", [])
         return sram_class

@@ -43,12 +43,12 @@ class SotfetMramControlBuffers(BaseLatchedControlBuffers):
                                             logic="pnand2")
 
     def create_wordline_en(self):
-        assert len(OPTS.wordline_en_buffers) % 2 == 1, "Number of rwl buffers should be odd"
-        self.rwl_en = self.create_mod(LogicBuffer, buffer_stages="wordline_en_buffers",
+        assert len(OPTS.rwl_en_buffers) % 2 == 1, "Number of rwl buffers should be odd"
+        self.rwl_en = self.create_mod(LogicBuffer, buffer_stages="rwl_en_buffers",
                                       logic="pnand3")
 
-        assert len(OPTS.wordline_en_buffers) % 2 == 1, "Number of wwl buffers should be odd"
-        self.wwl_en = self.create_mod(BufferStage, buffer_stages="wordline_en_buffers")
+        assert len(OPTS.wwl_en_buffers) % 2 == 1, "Number of wwl buffers should be odd"
+        self.wwl_en = self.create_mod(BufferStage, buffer_stages="wwl_en_buffers")
 
     def create_write_buf(self):
         assert len(OPTS.write_buffers) % 2 == 1, "Number of write buffers should be odd"
@@ -63,17 +63,8 @@ class SotfetMramControlBuffers(BaseLatchedControlBuffers):
             ("wwl_en_int_bar", self.nand, ["nor_read_clk", "bank_sel", "wwl_en_int_bar"]),
             ("wwl_en", self.wwl_en, ["wwl_en_int_bar", "wwl_en", "wwl_en_bar"]),
             ("write_buf", self.write_buf, ["wwl_en_int_bar", "write_en_bar", "write_en"]),
-            ("sense_trig_bar", self.inv, ["sense_trig", "sense_trig_bar"]),
-
-            ("sample_bar_int", self.nand3, ["bank_sel", "read", "sense_trig_bar", "sample_bar_int"]),
-
-            ("sample_bar", self.sample_bar,
-             ["sample_bar_int", "sample_en_buf", "sample_en_bar"]),
-            ("sense_amp_buf", self.sense_amp_buf,
-             ["sample_bar_int", "sense_trig", "bank_sel", "sense_en_bar", "sense_en"]),
-            ("tri_en_buf", self.tri_en_buf,
-             ["sample_bar_int", "sense_trig", "bank_sel", "tri_en_bar", "tri_en"])
         ]
+        self.add_sense_amp_connections(connections)
         self.add_precharge_buf_connections(connections)
         self.add_decoder_clk_connections(connections)
         self.add_chip_sel_connections(connections)
@@ -84,6 +75,20 @@ class SotfetMramControlBuffers(BaseLatchedControlBuffers):
         nets = ["read"] + [precharge_in, "bank_sel", "precharge_en_bar", "precharge_en"]
         connections.insert(0, ("precharge_buf", self.precharge_buf, nets))
         connections.insert(1, ("br_reset", self.br_reset_buf, ["read", "bank_sel", "br_reset_bar", "br_reset"]))
+
+    def add_sense_amp_connections(self, connections):
+        connections.extend([
+            ("sense_trig_bar", self.inv, ["sense_trig", "sense_trig_bar"]),
+
+            ("sample_bar_int", self.nand3, ["bank_sel", "read", "sense_trig_bar", "sample_bar_int"]),
+
+            ("sample_bar", self.sample_bar,
+             ["sample_bar_int", "sample_en_buf", "sample_en_bar"]),
+            ("sense_amp_buf", self.sense_amp_buf,
+             ["sample_bar_int", "sense_trig", "bank_sel", "sense_en_bar", "sense_en"]),
+            ("tri_en_buf", self.tri_en_buf,
+             ["sample_bar_int", "sense_trig", "bank_sel", "tri_en_bar", "tri_en"])
+        ])
 
     def get_schematic_pins(self):
         in_pins, out_pins = super().get_schematic_pins()

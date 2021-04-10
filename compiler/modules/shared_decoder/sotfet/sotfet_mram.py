@@ -11,6 +11,10 @@ from modules.shared_decoder.cmos_sram import CmosSram
 class SotfetMram(CmosSram):
 
     def create_bank(self):
+        if OPTS.mram == "sotfet":
+            self.fixed_controls = ["vref"]
+        else:
+            self.fixed_controls = ["vclamp"]
         kwargs = {"word_size": self.word_size,
                   "num_words": self.num_words_per_bank,
                   "words_per_row": self.words_per_row,
@@ -79,18 +83,20 @@ class SotfetMram(CmosSram):
         y_offset = min(rails, key=lambda x: x.by()).by()
 
         for bank_inst in self.bank_insts:
-            control_rails = [ getattr(bank_inst.mod, x + "_rail")
-                              for x in bank_inst.mod.left_control_rails]
+            control_rails = [getattr(bank_inst.mod, x + "_rail")
+                             for x in bank_inst.mod.left_control_rails]
             min_y = min(control_rails, key=lambda x: x.by()).by() + bank_inst.by()
             y_offset = min(y_offset, min_y)
 
         y_offset -= self.bus_pitch
-        self.join_control("vref", y_offset)
+        for pin_name in self.fixed_controls:
+            self.join_control(pin_name, y_offset)
 
     def add_pins(self):
         super().add_pins()
-        self.add_pin("vref")
+        self.add_pin_list(self.fixed_controls)
 
     def copy_layout_pins(self):
         super().copy_layout_pins()
-        self.copy_layout_pin(self.right_bank_inst, "vref")
+        for pin_name in self.fixed_controls:
+            self.copy_layout_pin(self.right_bank_inst, pin_name)

@@ -14,26 +14,25 @@ class BankTest(TestBase):
     @staticmethod
     def get_bank_class():
         from globals import OPTS
+        if hasattr(OPTS, "bank_class"):
+            from base.design import design
+            return design.import_mod_class_from_str(OPTS.bank_class), {}
         from modules.shared_decoder.cmos_bank import CmosBank
-        from modules.shared_decoder.sotfet.sotfet_mram_bank_thin import SotfetMramBankThin
         from modules.shared_decoder.sotfet.sotfet_mram_bank import SotfetMramBank
         if OPTS.baseline:
             bank_class = CmosBank
         else:
-            bank_class = SotfetMramBankThin
+            bank_class = SotfetMramBank
         return bank_class, {}
 
     def sweep_all(self, rows=None, cols=None, words_per_row=None, default_row=64, default_col=64):
         import tech
         from base import design
-        from globals import OPTS
 
         bank_class, kwargs = self.get_bank_class()
 
         # tech.drc_exceptions[bank_class.__name__] = tech.drc_exceptions["min_nwell"] + tech.drc_exceptions["latchup"]
         tech.drc_exceptions[bank_class.__name__] = tech.drc_exceptions.get("latchup", [])
-
-        OPTS.run_optimizations = False
 
         if rows is None:
             rows = [16, 32, 64, 128, 256]
@@ -77,21 +76,9 @@ class BankTest(TestBase):
         bank_class, kwargs = self.get_bank_class()
         OPTS.route_control_signals_left = True
         OPTS.independent_banks = True
-        OPTS.num_banks = 2
-        a = bank_class(word_size=64, num_words=64, words_per_row=1,
-                       name="bank1", **kwargs)
-        self.local_check(a)
-
-    def test_left_control_signals_rails(self):
-        """Control rails routed to the left of the peripherals arrays"""
-        from globals import OPTS
-        bank_class, kwargs = self.get_bank_class()
-        OPTS.route_control_signals_left = True
         OPTS.num_banks = 1
-
-        a = bank_class(word_size=64, num_words=64, words_per_row=1,
+        a = bank_class(word_size=64, num_words=64, words_per_row=2,
                        name="bank1", **kwargs)
-
         self.local_check(a)
 
     def test_intra_array_control_signals_rails(self):

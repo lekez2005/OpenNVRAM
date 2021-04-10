@@ -59,7 +59,7 @@ XI9 gnd! mx my mz phi theta i_x gnd! gnd! / sot_llg
 ************************************************************************
 
 .SUBCKT sotfet_mram_small BL BR RWL WWL gnd
-MM1 BL RWL net13 gnd NMOS_VTG W=200n L=50n m=1
+MM1 BL RWL net13 gnd NMOS_VTG W=170n L=50n m=1
 MM0 BL WWL net12 gnd NMOS_VTG W=340.0n L=50n m=1
 XI0 gnd net13 BR net12 BR state / sotfet gate_R=gate_res
 .ENDS

@@ -242,12 +242,15 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         self.create_control_flops()
         self.run_optimizations()
 
+    def create_optimizer(self):
+        from characterizer.control_buffers_optimizer import ControlBufferOptimizer
+        self.optimizer = ControlBufferOptimizer(self)
+
     def run_optimizations(self):
         if self.is_optimized or self.is_left_bank:
             return
         # run optimizations
-        from characterizer.control_buffers_optimizer import ControlBufferOptimizer
-        self.optimizer = ControlBufferOptimizer(self)
+        self.create_optimizer()
         if self.optimizer.run_optimizations():
             self.is_optimized = True
             self.recreate_modules()

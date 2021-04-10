@@ -13,7 +13,6 @@ from globals import OPTS
 from modules.baseline_bank import BaselineBank
 from modules.buffer_stage import BufferStage
 from modules.control_buffers import ControlBuffers
-from modules.flop_buffer import FlopBuffer
 from modules.logic_buffer import LogicBuffer
 
 
@@ -72,7 +71,8 @@ class ControlBufferOptimizer:
             logic_driver_inst, _ = self.control_buffer.get_output_driver(input_net)
             buffer_stages_inst = driver_inst
             parent_mod = self.control_buffer
-        buffer_stages_inst.mod.buffer_stages_str = driver_inst.mod.buffer_stages_str
+        if hasattr(driver_inst.mod, "buffer_stages_str"):
+            buffer_stages_inst.mod.buffer_stages_str = driver_inst.mod.buffer_stages_str
         return buffer_stages_inst, logic_driver_inst, parent_mod
 
     def get_internal_loads(self, driver_conn_index, net):
@@ -105,7 +105,7 @@ class ControlBufferOptimizer:
         driver_loads = self.driver_loads
         buffer_conns = self.control_buffer.conns
         for driver_index, driver_inst in enumerate(self.control_buffer.insts):
-            if not hasattr(driver_inst.mod, "buffer_stages_str"):
+            if driver_inst.name not in self.control_buffer.buffer_str_dict:
                 continue
             _, output_nets = self.control_buffer.get_module_connections(driver_inst.name)
             for output_net in output_nets:
@@ -129,7 +129,8 @@ class ControlBufferOptimizer:
                     if driver_inst.name not in driver_loads:
                         config = self.create_buffer_stages_config(driver_index)
                         load_config = {"config": config, "loads": [],
-                                       "buffer_stages_str": driver_inst.mod.buffer_stages_str}
+                                       "buffer_stages_str":
+                                           self.control_buffer.buffer_str_dict[driver_inst.name]}
                         driver_loads[driver_inst.name] = load_config
                     if isinstance(driver_inst.mod, LogicBuffer):
                         # swap back the pins on the buffer stage
@@ -212,20 +213,26 @@ class ControlBufferOptimizer:
         }
         self.driver_loads["col_decoder"] = driver_load
 
-    def extract_wordline_driver_loads(self):
-        """Create config for optimizing wordline driver"""
-        parent_mod = self.bank.wordline_driver.logic_buffer
+    def extract_wordline_buffer_load(self, driver_mod, net, buffer_stages_str,
+                                     mod_pin_name="out_inv"):
+        parent_mod = driver_mod.logic_buffer
         driver_inst = parent_mod.logic_mod
         buffer_stages_inst = parent_mod.buffer_inst
         config = (buffer_stages_inst, driver_inst, parent_mod)
 
-        output_pin = "out_inv"
-        wl_in_cap, _ = self.bank.bitcell_array.get_input_cap("wl[0]")
+        wl_in_cap, _ = self.bank.bitcell_array.get_input_cap("{}[0]".format(net))
         driver_load = {
-            "loads": [(output_pin, wl_in_cap)],
+            "loads": [(mod_pin_name, wl_in_cap)],
             "config": config,
-            "buffer_stages_str": "wordline_buffers"
+            "buffer_stages_str": buffer_stages_str
         }
+        return driver_load
+
+    def extract_wordline_driver_loads(self):
+        """Create config for optimizing wordline driver"""
+
+        driver_load = self.extract_wordline_buffer_load(self.bank.wordline_driver, "wl",
+                                                        "wordline_buffers")
         self.driver_loads["wordline_driver"] = driver_load
 
     def extract_control_flop_loads(self):
@@ -422,8 +429,43 @@ class ControlBufferOptimizer:
         total_cap = self.eval_load_rail_cap(loads, rails)
         return res, gm, total_cap
 
+    def get_opt_func_map(self):
+        return {
+            "precharge_buffers": self.create_precharge_optimization_func
+        }
+
+    def create_precharge_optimization_func(self, driver_params, driver_config, loads, eval_buffer_stage_delay_slew):
+        penalty = OPTS.buffer_optimization_size_penalty
+
+        precharge_cell = self.bank.precharge_array.child_insts[0].mod
+        self.precharge_cell = precharge_cell
+        precharge_config_key, _, _ = self.get_buffer_mod_key(precharge_cell)
+        bitline_in_cap, _ = self.bank.bitcell_array.get_input_cap("bl[0]")
+
+        num_cols = self.bank.num_cols
+
+        def eval_precharge_delays(stages_list):
+            precharge_size = stages_list[-1]
+            cin, cout, res, gm = self.evaluate_instance_params(precharge_size, precharge_config_key)
+            enable_in = cin * num_cols
+            stage_loads = [x for x in loads]
+            stage_loads[-1] += enable_in
+
+            delays, slew = eval_buffer_stage_delay_slew(stages_list[:-1], stage_loads)
+            tau = res * (bitline_in_cap + cout)
+            beta = 1 / (gm * res)
+            alpha = slew / tau
+            delay, slew = precharge_cell.horowitz_delay(tau, beta, alpha)
+            delays.append(delay)
+            return delays
+
+        def eval_precharge_delay(stage_list):
+            return sum(eval_precharge_delays(stage_list)) * 1e12 + penalty * sum(stage_list)
+
+        return (eval_precharge_delay, eval_precharge_delays), loads
+
     def create_optimization_func(self, initial_stages, slew_in, driver_params,
-                                 buffer_mod, buffer_loads, is_precharge):
+                                 buffer_mod, buffer_loads, driver_config):
         """Create optimization function
         :param initial_stages: initial guess, also used to determine number of stages that will be optimized
         :param slew_in: input slew
@@ -431,7 +473,7 @@ class ControlBufferOptimizer:
         :param buffer_mod: The module that will be optimized, delays/caps/resistance will be evaluated for instance
                             of buffer_mod with variable size
         :param buffer_loads: The fixed loads for each buffer stage
-        :param is_precharge: When is_precharge, additional optimization is run for the precharge size
+        :param driver_config: full driver config
         :returns (optimization_func, delays_func)
             cost_function = sum(delays) + OPTS.buffer_optimization_size_penalty * sum(sizes)
             optimization_func evaluates the cost function
@@ -459,14 +501,6 @@ class ControlBufferOptimizer:
             loads[load_index] += cap_val
 
         config_key, _, _ = self.get_buffer_mod_key(buffer_mod)
-        if is_precharge:
-            precharge_cell = self.bank.precharge_array.child_insts[0].mod
-            self.precharge_cell = precharge_cell
-            precharge_config_key, _, _ = self.get_buffer_mod_key(precharge_cell)
-            bitline_in_cap, _ = self.bank.bitcell_array.get_input_cap("bl[0]")
-        else:
-            precharge_config_key = None
-            bitline_in_cap = None
 
         def eval_buffer_stage_delay_slew(stages_list, stage_loads):
 
@@ -498,31 +532,12 @@ class ControlBufferOptimizer:
         def eval_buffer_stage_delay(stage_list):
             return sum(eval_buffer_stage_delays(stage_list)) * 1e12 + penalty * sum(stage_list)
 
-        num_cols = self.bank.num_cols
-
-        def eval_precharge_delays(stages_list):
-            precharge_size = stages_list[-1]
-            cin, cout, res, gm = self.evaluate_instance_params(precharge_size, precharge_config_key)
-            enable_in = cin * num_cols
-            stage_loads = [x for x in loads]
-            stage_loads[-1] += enable_in
-
-            delays, slew = eval_buffer_stage_delay_slew(stages_list[:-1], stage_loads)
-            tau = res * (bitline_in_cap + cout)
-            beta = 1 / (gm * res)
-            alpha = slew / tau
-            delay, slew = buffer_mod.horowitz_delay(tau, beta, alpha)
-            delays.append(delay)
-            return delays
-
-        def eval_precharge_delay(stage_list):
-            return sum(eval_precharge_delays(stage_list)) * 1e12 + penalty * sum(stage_list)
-
-        if is_precharge:
-            optimization_func, delays_func = eval_precharge_delay, eval_precharge_delays
+        buffer_stages_str = driver_config["buffer_stages_str"]
+        opt_func = self.get_opt_func_map().get(buffer_stages_str, None)
+        if opt_func is not None:
+            return opt_func(driver_params, driver_config, loads, eval_buffer_stage_delay_slew)
         else:
-            optimization_func, delays_func = eval_buffer_stage_delay, eval_buffer_stage_delays
-        return optimization_func, delays_func
+            return (eval_buffer_stage_delay, eval_buffer_stage_delays), loads
 
     def optimize_config(self, optimization_func, buffer_stages_str, initial_stages, is_precharge,
                         method):
@@ -543,13 +558,17 @@ class ControlBufferOptimizer:
         stages = minimize(optimization_func, initial_stages, method=method, bounds=bounds)
         return stages, initial_stages
 
+    def get_sorted_driver_loads(self):
+        """Optimization order may be important so permit re-ordering"""
+        return list(self.driver_loads.values())
+
     def optimize_all(self):
 
         self.create_parameter_convex_spline_fit(num_sizes=60)  # TODO make configurable
 
         inv1_cin, _ = self.control_buffer.inv.get_input_cap("A")  # reference input capacitance
 
-        for driver_config in self.driver_loads.values():
+        for driver_config in self.get_sorted_driver_loads():
             buffer_stages_inst, driver_inst, parent_mod = driver_config["config"]
 
             # find buffer and driver index
@@ -570,8 +589,6 @@ class ControlBufferOptimizer:
             buffer_loads = driver_config["loads"]
             if not buffer_loads:
                 assert False, "Deal with no load"
-            max_load = max(buffer_loads, key=lambda x: x[1])[1]
-            effort = max_load / inv1_cin
 
             buffer_stages_str = driver_config["buffer_stages_str"]
             is_precharge = buffer_stages_str == "precharge_buffers"
@@ -587,17 +604,25 @@ class ControlBufferOptimizer:
                 all_num_stages = {2}
 
             min_criteria, min_stages = np.inf, None
-            debug.info(1, "{}: {}".format(buffer_stages_str, buffer_loads))
-            debug.info(1, "\t Default: {}".format(initial_stages))
 
             def list_format(list_, scale=1.0):
                 return "[{}]".format(", ".join(["{:4.3g}".format(x * scale) for x in list_]))
 
-            for num_stages in sorted(all_num_stages):
+            for iteration, num_stages in enumerate(sorted(all_num_stages)):
+                initial_guess = [1] * num_stages
+
+                funcs, stage_loads = self.create_optimization_func(initial_guess, slew_in,
+                                                                   driver_params, buffer_mod, buffer_loads,
+                                                                   driver_config)
+                max_load = max(stage_loads)
+                effort = max_load / inv1_cin
                 initial_guess = [effort ** ((x + 1) / (num_stages + 1)) for x in range(num_stages)]
-                funcs = self.create_optimization_func(initial_guess, slew_in,
-                                                      driver_params, buffer_mod,
-                                                      buffer_loads, is_precharge)
+
+                if iteration == len(all_num_stages) - 1:
+                    debug.info(1, "{}: {}".format(buffer_stages_str, stage_loads))
+                    debug.info(1, "\t Default: {}".format(initial_stages))
+                    debug.info(2, "\t Initial guess: {}".format(initial_guess))
+
                 optimization_func, delays_func = funcs
                 # run optimization
                 method = 'SLSQP'
@@ -692,7 +717,9 @@ class ControlBufferOptimizer:
                     "contact_pwell": buffer_mod.contact_pwell,
                     "align_bitcell": buffer_mod.align_bitcell,
                     "same_line_inputs": buffer_mod.same_line_inputs}
-        elif class_name in "precharge":
+        elif class_name == "pinv_wordline":
+            args = {"size": size, "beta": buffer_mod.beta}
+        elif class_name in ["precharge", "PrechargeAndReset"]:
             name = "precharge_{:.5g}".format(size)
             args = {"name": name, "size": size}
         else:
@@ -701,6 +728,6 @@ class ControlBufferOptimizer:
 
         cin, _ = mod.get_input_cap(in_pin)
         cout, _ = mod.get_input_cap(out_pin)
-        resistance = mod.get_driver_resistance(pin_name=out_pin)
+        resistance = mod.get_driver_resistance(pin_name=out_pin, use_max_res=True)
         gm = mod.evaluate_driver_gm(pin_name=out_pin)
         return mod.size, cin, cout, resistance, gm

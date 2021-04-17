@@ -25,6 +25,7 @@ class PsfReader:
     def initialize(self):
         self.data = libpsf.PSFDataSet(self.simulation_file)
         self.time = self.data.get_sweep_values()
+        self.all_signal_names = list(self.get_signal_names())
         if self.vdd_name:
             try:
                 self.vdd = self.data.get_signal(self.vdd_name)[0]
@@ -60,6 +61,19 @@ class PsfReader:
         else:
             return array_[from_index:to_index+1]
 
+    def convert_signal_name(self, signal_name):
+        if signal_name in self.all_signal_names:
+            return signal_name
+        # try add v()
+        signal_name_ = "v({})".format(signal_name)
+        if signal_name_ in self.all_signal_names:
+            return signal_name_
+        # try hspice name conversion
+        signal_name = signal_name.lower().replace("v(", "")
+        if signal_name.endswith(")"):
+            signal_name = signal_name[:-1]
+        return signal_name
+
     def get_signal(self, signal_name, from_t=0.0, to_t=None):
 
         if not self.is_open:
@@ -68,7 +82,8 @@ class PsfReader:
             signal = self.cache[signal_name]
         else:
             try:
-                signal = self.data.get_signal(signal_name)
+                real_signal_name = self.convert_signal_name(signal_name)
+                signal = self.data.get_signal(real_signal_name)
             except libpsf.NotFound:
                 raise ValueError("Signal {} not found".format(signal_name))
             self.cache[signal_name] = signal

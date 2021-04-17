@@ -1,11 +1,9 @@
-import json
 import os
 from importlib import reload
 from random import randint
 
-import numpy as np
-
 import characterizer
+from base.utils import write_json
 from characterizer.sequential_delay import SequentialDelay
 from globals import OPTS
 from shared_probe import SharedProbe
@@ -24,14 +22,13 @@ class SimStepsGenerator(SequentialDelay):
         super().__init__(sram, spfile, corner, initialize=initialize)
 
         self.two_bank_push = OPTS.push and self.sram.num_banks == 2
-        self.is_cmos = OPTS.baseline or OPTS.push
 
         for i in range(self.word_size):
             self.bus_sigs.append("mask[{}]".format(i))
 
         self.control_sigs = ["web", "acc_en", "acc_en_inv", "sense_trig", "csb"]
-        if "precharge_trig" in self.sram.pins:
-            self.control_sigs.append("precharge_trig")
+        # if "precharge_trig" in self.sram.pins:
+        self.control_sigs.append("precharge_trig")
 
         self.words_per_row = self.sram.words_per_row
 
@@ -47,17 +44,8 @@ class SimStepsGenerator(SequentialDelay):
         mid_address = int(0.5 * self.sram.num_rows)
         self.address_1 = self.prev_address_1 = self.convert_address(mid_address)
 
-    def write_pwl(self, key, prev_val, curr_val):
-        """Append current time's data to pwl. Transitions from the previous value to the new value using the slew"""
-
-        if prev_val == curr_val and self.current_time > 1.5 * self.period:
-            return
-
-        if key in ["clk"]:
-            setup_time = 0
-        elif key in ["acc_en", "acc_en_inv"]:  # to prevent contention with tri-state buffer
-            setup_time = -0.75 * self.duty_cycle * self.period
-        elif key == "sense_trig":
+    def get_setup_time(self, key, prev_val, curr_val):
+        if key == "sense_trig":
             trigger_delay = OPTS.sense_trigger_delay
             if prev_val == 0:
                 setup_time = -(self.duty_cycle * self.period + trigger_delay)
@@ -72,14 +60,8 @@ class SimStepsGenerator(SequentialDelay):
             else:
                 setup_time = 0
         else:
-            setup_time = self.setup_time
-
-        t2 = max(self.slew, self.current_time + 0.5 * self.slew - setup_time)
-        t1 = max(0.0, self.current_time - 0.5 * self.slew - setup_time)
-        self.v_data[key] += " {0:8.8g}n {1}v {2:8.8g}n {3}v ".format(t1, self.vdd_voltage * prev_val, t2,
-                                                           self.vdd_voltage * curr_val)
-        self.v_comments[key] += " ({0}, {1}) ".format(int(self.current_time / self.period),
-                                                      curr_val)
+            return super().get_setup_time(key, prev_val, curr_val)
+        return setup_time
 
     def initialize_sim_file(self):
         """ Override super class method to use internal logic for pwl voltages and measurement setup
@@ -99,6 +81,9 @@ class SimStepsGenerator(SequentialDelay):
             (self.sram.width * self.sram.height), self.load, self.slew))
 
         self.sf.write("* Probe cols = [{}]\n".format(",".join(map(str, OPTS.probe_cols))))
+        self.sf.write("* Probe bits = [{}]\n".format(",".join(map(str, OPTS.probe_bits))))
+        two_bank_dependent = not OPTS.independent_banks and self.sram.num_banks == 2
+        self.sf.write("* two_bank_dependent = {}\n".format(int(two_bank_dependent)))
 
         self.stim = SpiceDut(self.sf, self.corner)
         self.stim.words_per_row = self.words_per_row
@@ -106,9 +91,10 @@ class SimStepsGenerator(SequentialDelay):
         self.write_generic_stimulus()
 
         self.initialize_output()
+        self.create_probe()
 
+    def create_probe(self):
         self.probe = SharedProbe(self.sram, OPTS.pex_spice)
-        self.probe.bitcell_probes = self.probe.state_probes
 
     def finalize_sim_file(self):
         self.saved_nodes = list(sorted(list(self.probe.saved_nodes) + list(self.dout_probes.values())
@@ -120,7 +106,7 @@ class SimStepsGenerator(SequentialDelay):
 
         for node in self.saved_nodes:
             self.sf.write(".probe tran V({0}) \n".format(node))
-        self.sf.write(".probe v(vvdd)\n")
+        self.sf.write(".probe v(vdd)\n")
         self.sf.write(".probe I(vvdd)\n")
 
         # if OPTS.spice_name == "spectre":
@@ -137,8 +123,8 @@ class SimStepsGenerator(SequentialDelay):
 
         self.finalize_output()
 
+        self.stim.replace_bitcell(self)
         self.stim.write_include(self.trim_sp_file)
-        self.stim.replace_bitcell(self.sram)
 
         # run until the end of the cycle time
         # Note run till at least one half cycle, this is because operations blend into each other
@@ -147,19 +133,9 @@ class SimStepsGenerator(SequentialDelay):
         self.sf.close()
 
         # save state probes
-        state_probe_file = os.path.join(OPTS.openram_temp, "state_probes.json")
-        with open(state_probe_file, "w") as f:
-            json.dump(self.probe.state_probes, f, indent=4, sort_keys=True)
-
-    def probe_bank(self, bank):
-        if self.two_bank_push and bank == 1:
-            self.probe.probe_bitlines(bank, col_offset=self.sram.num_cols)
-        else:
-            self.probe.probe_bitlines(bank)
-        self.probe.probe_write_drivers(bank)
-        self.probe.probe_latched_sense_amps(bank)
-        self.probe.probe_misc_bank(bank)
-        self.probe.probe_bank_currents(bank)
+        write_json(self.probe.state_probes, "state_probes.json")
+        write_json(self.probe.voltage_probes, "voltage_probes.json")
+        write_json(self.probe.current_probes_json, "current_probes.json")
 
     def probe_addresses(self, addresses, bank=0):
 
@@ -175,12 +151,9 @@ class SimStepsGenerator(SequentialDelay):
 
         self.state_probes = self.probe.state_probes
         self.decoder_probes = self.probe.decoder_probes
-        self.clk_buf_probe = self.probe.clk_buf_probe
+        self.clk_buf_probe = self.probe.clk_probe
         self.dout_probes = self.probe.dout_probes
         self.mask_probes = self.probe.mask_probes
-
-        self.bitline_probes = self.probe.bitline_probes
-        self.br_probes = self.probe.br_probes
 
     def generate_energy_stimulus(self):
         num_sims = OPTS.energy
@@ -195,11 +168,11 @@ class SimStepsGenerator(SequentialDelay):
             if op == "read":
                 self.read_address(address)
             else:
-                data = [randint(0, 1) for x in range(self.word_size)]
+                data = [randint(0, 1) for _ in range(self.word_size)]
                 self.write_address(address, data, mask)
             self.sf.write("* -- {}: t = {:.5g} period = {}\n".format(op.upper(), self.current_time - self.period,
                                                                      self.period))
-        self.current_time += 2*self.period  # to cool off from previous event
+        self.current_time += 2 * self.period  # to cool off from previous event
         self.period = max(self.read_period, self.write_period)
         self.chip_enable = 0
         self.update_output()
@@ -236,13 +209,12 @@ class SimStepsGenerator(SequentialDelay):
 
         data_bar = [int(not x) for x in data]
 
+        # initial read to charge up nodes
+        self.read_address(address)
+
         self.setup_write_measurements(address)
         self.write_address(address, data_bar, mask)
 
-        if not self.is_cmos:
-            # give enough time to settle before timed read
-            self.write_address(dummy_address, data, mask)
-            self.write_address(dummy_address, data, mask)
         self.setup_read_measurements(address)
         self.read_address(address)
 
@@ -252,9 +224,6 @@ class SimStepsGenerator(SequentialDelay):
         # write data_bar to force transition on the data bus
         self.write_address(dummy_address, data_bar, mask)
 
-        if not self.is_cmos:
-            # give enough time to settle before timed read
-            self.write_address(dummy_address, data_bar, mask)
         self.setup_read_measurements(address)
         self.read_address(address)
 
@@ -395,19 +364,17 @@ class SimStepsGenerator(SequentialDelay):
                                      targ_name=decoder_label, targ_val=0.5 * self.vdd_voltage, targ_dir="CROSS",
                                      targ_td=self.current_time)
 
-    def setup_precharge_measurement(self):
+    def setup_precharge_measurement(self, bank, col_index):
         time = self.current_time
         # power measurement
         time_suffix = "{:.2g}".format(time).replace('.', '_')
         trig_val = 0.1 * self.vdd_voltage
         targ_val = 0.9 * self.vdd_voltage
         for i in range(self.word_size):
+            col = col_index + i * self.words_per_row
             for bitline in ["bl", "br"]:
-                if bitline == "br":
-                    probe = self.bitline_probes[i]
-                else:
-                    probe = self.br_probes[i]
-                meas_name = "PRECHARGE_DELAY_{}_c{}_t{}".format(bitline, i, time_suffix)
+                probe = self.probe.voltage_probes[bitline][bank][col]
+                meas_name = "PRECHARGE_DELAY_{}_c{}_t{}".format(bitline, col, time_suffix)
                 self.stim.gen_meas_delay(meas_name=meas_name,
                                          trig_name=self.clk_buf_probe, trig_val=trig_val, trig_dir="RISE",
                                          trig_td=time,
@@ -422,7 +389,7 @@ class SimStepsGenerator(SequentialDelay):
             address_int, row, col_index, bank_index, self.current_time, self.read_period,
             self.read_duty_cycle))
 
-        self.setup_precharge_measurement()
+        self.setup_precharge_measurement(bank_index, col_index)
 
         time = self.current_time
         # power measurement
@@ -459,16 +426,3 @@ class SimStepsGenerator(SequentialDelay):
         self.stim.instantiate_sram(sram=self.sram)
 
         self.stim.inst_accesstx(self.word_size)
-
-    def write_ic(self, ic, col_node, col_voltage):
-        if self.is_cmos:
-            ic.write(".ic V({})={} \n".format(col_node, col_voltage))
-        else:
-            phi = 0.1 * OPTS.llg_prescale
-            theta = np.arccos(col_voltage) * OPTS.llg_prescale
-
-            phi_node = col_node.replace(".state", ".I0.phi")
-            theta_node = col_node.replace(".state", ".I0.theta")
-
-            ic.write(".ic V({})={} \n".format(phi_node, phi))
-            ic.write(".ic V({})={} \n".format(theta_node, theta))

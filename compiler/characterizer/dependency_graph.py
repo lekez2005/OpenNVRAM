@@ -402,7 +402,7 @@ def get_instance_module(instance_name: str, parent_module: design):
     if not matches:
         raise ValueError("Invalid instance name {} in module {}".format(instance_name, parent_module.name))
 
-    return matches[0].mod
+    return matches[0]
 
 
 def get_net_hierarchy(net: str, parent_module: design):
@@ -413,14 +413,31 @@ def get_net_hierarchy(net: str, parent_module: design):
     net = net.lower()
     net_split = net.split(".")
     hierarchy = [parent_module]
+    inst_hierarchy = []
 
     current_module = parent_module
     for branch in net_split[:-1]:
-        child_module = get_instance_module(branch, current_module)
+        child_inst = get_instance_module(branch, current_module)
+        child_module = child_inst.mod
         hierarchy.append(child_module)
+        inst_hierarchy.append(child_inst)
         current_module = child_module
 
-    return net_split[-1], hierarchy
+    return net_split[-1], hierarchy, inst_hierarchy
+
+
+def get_all_net_connections(net: str, module: design):
+    net = net.lower()
+    # first check if there is an instance whose output is the pin, otherwise, settle for inout
+    for i in range(len(module.conns)):
+        conn = [x.lower() for x in module.conns[i]]
+        if net not in conn:
+            continue
+        child_module = module.insts[i].mod  # type: design
+        pin_index = conn.index(net)
+        child_pin = child_module.pins[pin_index]
+        pin_dir = child_module.get_pin_dir(child_pin)
+        yield child_pin, child_module, module.conns[i], pin_dir
 
 
 def get_net_driver(net: str, module: design):
@@ -435,25 +452,10 @@ def get_net_driver(net: str, module: design):
     return driver
 
 
-def get_all_net_drivers(net: str, module: design, ):
-    net = net.lower()
-    # first check if there is an instance whose output is the pin, otherwise, settle for inout
-    inout_drivers = []
-    output_drivers = []
-    for i in range(len(module.conns)):
-        conn = [x.lower() for x in module.conns[i]]
-        if net not in conn:
-            continue
-        child_module = module.insts[i].mod  # type: design
-        pin_index = conn.index(net)
-        child_pin = child_module.pins[pin_index]
-        pin_dir = child_module.get_pin_dir(child_pin)
-        candidate = (child_pin, child_module, module.conns[i])
-        if pin_dir == OUTPUT:
-            output_drivers.append(candidate)
-        elif pin_dir == INOUT:
-            inout_drivers.append(candidate)
-
+def get_all_net_drivers(net: str, module: design ):
+    all_connections = list(get_all_net_connections(net, module))
+    output_drivers = [tuple(x[:3]) for x in all_connections if x[3] == OUTPUT]
+    inout_drivers = [tuple(x[:3]) for x in all_connections if x[3] == INOUT]
     if not output_drivers + inout_drivers:
         raise ValueError("net {} not driven by an output or inout pin"
                          " in module {}".format(net, module.name))
@@ -467,7 +469,7 @@ def get_all_drivers_for_pin(net: str, parent_module: design):
     results = []
     for child_pin, child_module, conn in all_drivers:
         if child_module.is_delay_primitive():
-            results.append([parent_module, child_module, (child_pin, net, conn)])
+            results.append([(parent_module, conn), (child_module, child_pin, net)])
         else:
             descendants = get_all_drivers_for_pin(child_pin, child_module)
             for desc_ in descendants:
@@ -503,11 +505,11 @@ def construct_paths(driver_hierarchy, current_depth=0, max_depth=20, max_adjacen
 
     paths = []  # type: List[GraphPath]
 
-    instance_pin_name, output_net, conn = driver_hierarchy[-1]
-    driver_module = driver_hierarchy[-2]  # type: design
-    immediate_parent_module = original_parent = driver_hierarchy[-3]
+    driver_module, instance_pin_name, output_net = driver_hierarchy[-1]  # type: (design, str, str)
+    immediate_parent_module, conn = driver_hierarchy[-2]
+    original_parent = immediate_parent_module
 
-    parent_modules = driver_hierarchy[:-3]  # type: List[Tuple[design, List[str]]]
+    parent_modules = driver_hierarchy[:-2]  # type: List[Tuple[design, List[str]]]
 
     input_pins = driver_module.get_input_pins()
     for pin in input_pins:
@@ -620,10 +622,10 @@ def create_graph(destination_net, module: design, driver_exclusions=None):
     """
     if driver_exclusions is None:
         driver_exclusions = []
-    destination_net, dest_hierarchy = get_net_hierarchy(destination_net, module)
+    destination_net, dest_hierarchy, _ = get_net_hierarchy(destination_net, module)
     all_paths = []
     for driver_hierarchy in get_all_drivers_for_pin(destination_net, dest_hierarchy[-1]):
-        if driver_hierarchy[-2].name not in driver_exclusions:
+        if driver_hierarchy[-1][0].name not in driver_exclusions:
             all_paths.extend(construct_paths(driver_hierarchy, driver_exclusions=driver_exclusions))
 
     return all_paths

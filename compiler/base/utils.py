@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import math
 import os
 import random
@@ -377,12 +378,26 @@ def get_sorted_metal_layers():
     return list(layers), layer_numbers
 
 
+def write_json(data, file_name):
+    if not os.path.isabs(file_name):
+        file_name = os.path.join(OPTS.openram_temp, file_name)
+    with open(file_name, "w") as f:
+        json.dump(data, f, indent=4, sort_keys=True)
+
+
+def load_module(path):
+    """Load module given absolute path"""
+    mod_name = os.path.splitext(os.path.basename(path))[0]
+    spec = importlib.util.spec_from_file_location(mod_name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def to_cadence(gds_file):
     abs_path = os.path.dirname(os.path.abspath(__file__))
     file_dir = os.path.join(abs_path, '..', '..', 'technology', 'scripts')
     file_path = os.path.join(file_dir, 'to_cadence.py')
-    spec = importlib.util.spec_from_file_location("to_cadence", file_path)
-    to_cadence = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(to_cadence)
-    to_cadence.export_gds(gds_file)
+    to_cadence_ = load_module(file_path)
+    to_cadence_.export_gds(gds_file)
 

@@ -120,6 +120,7 @@ class SequentialDelay(delay):
         self.existing_data = existing_data
 
         ic_file = getattr(OPTS, "ic_file", os.path.join(OPTS.openram_temp, "sram.ic"))
+        OPTS.ic_file = ic_file
 
         with open(ic_file, "w") as ic:
 
@@ -231,18 +232,26 @@ class SequentialDelay(delay):
             self.sf.write(self.v_comments[key][:-1] + " ] \n")
             self.sf.write(self.v_data[key] + " )\n")
 
-    def write_pwl(self, key, prev_val, curr_val):
-        """Append current time's data to pwl. Transitions from the previous value to the new value using the slew"""
+    def get_setup_time(self, key, prev_val, curr_val):
         if key in ["clk"]:
             setup_time = 0
         elif key in ["acc_en", "acc_en_inv"]:  # to prevent contention with tri-state buffer
             setup_time = -0.75 * self.duty_cycle * self.period
         else:
             setup_time = self.setup_time
+        return setup_time
+
+    def write_pwl(self, key, prev_val, curr_val):
+        """Append current time's data to pwl. Transitions from the previous value to the new value using the slew"""
+
+        if prev_val == curr_val and self.current_time > 1.5 * self.period:
+            return
+
+        setup_time = self.get_setup_time(key, prev_val, curr_val)
+        t2 = max(self.slew, self.current_time + 0.5 * self.slew - setup_time)
         t1 = max(0.0, self.current_time - 0.5 * self.slew - setup_time)
-        t2 = max(0.0, self.current_time + 0.5 * self.slew - setup_time)
-        self.v_data[key] += " {0}n {1}v {2}n {3}v ".format(t1, self.vdd_voltage * prev_val, t2,
-                                                           self.vdd_voltage * curr_val)
+        self.v_data[key] += " {0:8.8g}n {1}v {2:8.8g}n {3}v ". \
+            format(t1, self.vdd_voltage * prev_val, t2, self.vdd_voltage * curr_val)
         self.v_comments[key] += " ({0}, {1}) ".format(int(self.current_time / self.period),
                                                       curr_val)
 
@@ -256,7 +265,7 @@ class SequentialDelay(delay):
         """Generate voltage at current time for each pwl voltage supply"""
         # control signals
         for key in self.control_sigs:
-            if key in ["precharge_trig", "sense_trig", "diff", "diffb"]:
+            if key in ["write_trig", "precharge_trig", "sense_trig", "diff", "diffb"]:
                 continue
             self.write_pwl_from_key(key)
 

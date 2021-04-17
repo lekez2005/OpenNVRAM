@@ -143,7 +143,6 @@ class SpiceParser:
     def deduce_hierarchy_for_pin(self, pin_name, module_name):
         pin_name = pin_name.lower()
         module = self.get_module(module_name)
-        hierarchy = []
         nested_hierarchy = []
         # breadth first and then go deep in each
         for line in module.contents:
@@ -154,7 +153,7 @@ class SpiceParser:
 
             if not line.startswith("x"):  # end of hierarchy
                 pin_index = line.split().index(pin_name) - 1
-                hierarchy.append([(["d", "g", "s", "b"][pin_index], line)])
+                yield [(["d", "g", "s", "b"][pin_index], line)]
             else:
                 child_module_name = line.split()[-1]
                 child_module = self.get_module(child_module_name)
@@ -166,11 +165,8 @@ class SpiceParser:
         # Now go deep into each branch
         for branch in nested_hierarchy:
             instance_name, child_module_name, child_pin_name = branch
-            branch_hierarchy = self.deduce_hierarchy_for_pin(child_pin_name, child_module_name)
-            for child in branch_hierarchy:
-                hierarchy.append([instance_name] + child)
-
-        return hierarchy
+            for child in self.deduce_hierarchy_for_pin(child_pin_name, child_module_name):
+                yield [instance_name] + child
 
     def deduce_hierarchy_for_node(self, node_name, module_name):
         node_name = node_name.lower()
@@ -212,7 +208,6 @@ class SpiceParser:
         :return: dict for each of nmos, pmos for gate/drain with list: [total, [(m, nf, w)]]
         """
 
-        hierarchy = self.deduce_hierarchy_for_pin(pin_name, module_name)
         results = {
             "n": {
                 "d": [0, []],
@@ -223,7 +218,7 @@ class SpiceParser:
                 "g": [0, []]
             }
         }
-        for child in hierarchy:
+        for child in self.deduce_hierarchy_for_pin(pin_name, module_name):
             spice_statement = child[-1][1]
             if not spice_statement.startswith("m"):
                 continue

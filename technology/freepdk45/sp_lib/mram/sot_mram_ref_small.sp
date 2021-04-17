@@ -20,7 +20,7 @@
 * View Name:    schematic_for_lvs
 ************************************************************************
 
-.SUBCKT sot_mram_small BL BR RWL WWL gnd
+.SUBCKT sot_mram_ref_small BL BR RWL WWL gnd
 *.PININFO RWL:I WWL:I BL:B BR:B gnd:B
 MM0 BL WWL sot_p gnd NMOS_VTG W=170.0n L=50n m=2
 MM1 BL RWL BR gnd NMOS_VTG W=170.0n L=50n m=1

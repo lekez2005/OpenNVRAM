@@ -51,7 +51,7 @@ class PrechargeResetArray(precharge_array):
 
         self.child_insts = []
         for i in range(self.columns):
-            name = "pre_column_{0}".format(i)
+            name = "mod_{0}".format(i)
             mod, offset, mirror = self.get_col_mod(i)
             inst = self.add_inst(name=name, mod=mod, offset=offset,
                                  mirror=mirror)

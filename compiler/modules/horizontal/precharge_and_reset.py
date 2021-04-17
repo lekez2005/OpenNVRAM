@@ -241,3 +241,9 @@ class PrechargeAndReset(design):
             self.add_rect(well_layer, offset=vector(well_x, bottom_y),
                           width=self.width + self.well_enclose_active - well_x,
                           height=top_y - bottom_y)
+
+    def is_delay_primitive(self):
+        return True
+
+    def get_driver_resistance(self, pin_name, use_max_res=False, interpolate=None, corner=None):
+        return self.pmos.get_driver_resistance("d", use_max_res, interpolate=True, corner=corner)

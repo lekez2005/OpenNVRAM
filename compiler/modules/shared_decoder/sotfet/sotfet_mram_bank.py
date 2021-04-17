@@ -88,6 +88,12 @@ class SotfetMramBank(CmosBank):
         self.control_buffers = SotfetMramControlBuffers(self)
         self.add_mod(self.control_buffers)
 
+    def get_non_flop_control_inputs(self):
+        """Get control buffers inputs that don't go through flops"""
+        precharge_trigger = ["precharge_trig"] * self.control_buffers.use_precharge_trigger
+        write_trigger = ["write_trig"] * ("write_trig" in self.control_buffers.pins)
+        return ["sense_trig"] + precharge_trigger + write_trigger
+
     def get_control_rails_base_x(self):
         self.vref_x_offset = self.mid_vdd_offset - self.wide_m1_space - self.bus_width
         return self.vref_x_offset - self.bus_pitch

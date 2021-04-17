@@ -42,6 +42,7 @@ class pinv_wordline(wordline_pgate_horizontal, metaclass=unique_meta.Unique):
             finger_width = min(nmos_width, pmos_width) / num_fingers
             num_fingers -= 1
         self.num_fingers = max(num_fingers, 1)
+        self.tx_mults = self.num_fingers
 
         self.nmos_finger_width = utils.round_to_grid(nmos_width / self.num_fingers)
         self.pmos_finger_width = utils.round_to_grid(pmos_width / self.num_fingers)

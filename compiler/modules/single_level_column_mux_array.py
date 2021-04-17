@@ -73,7 +73,7 @@ class single_level_column_mux_array(design.design):
 
         # For every column, add a pass gate
         for col_num in range(self.columns):
-            name = "MUX{0}".format(col_num)
+            name = "mod_{0}".format(col_num)
             offset = vector(self.bitcell_offsets[col_num], self.route_height)
 
             if (col_num + OPTS.num_dummies) % 2 == 0 and self.mirror:

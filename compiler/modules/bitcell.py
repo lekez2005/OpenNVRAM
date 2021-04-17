@@ -13,7 +13,7 @@ class bitcell(design.design):
     library.
     """
 
-    pin_names = ["BL", "BR", "WL", "vdd", "gnd"]
+    pin_names = ["BL", "BR", "WL", "Q", "QBAR", "vdd", "gnd"]
     lib_name = OPTS.bitcell_mod
 
     def get_nwell_top(self):

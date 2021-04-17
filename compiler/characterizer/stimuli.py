@@ -320,7 +320,7 @@ usim_opt  rcr_fmax=20G
             for item in list(includes):
                 if len(item) == 2:
                     (item, corner) = item
-                    self.sf.write(".lib {0} {1} \n".format(item, corner))
+                    self.sf.write(".lib \"{0}\" {1} \n".format(item, corner))
                 elif os.path.isfile(item):
                     self.sf.write(".include \"{0}\"\n".format(item))
                 else:

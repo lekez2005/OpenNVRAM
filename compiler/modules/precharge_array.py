@@ -60,9 +60,9 @@ class precharge_array(design.design):
         (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
         self.child_insts = []
         for i in range(self.columns):
-            name = "pre_column_{0}".format(i)
+            name = "mod_{0}".format(i)
             offset = vector(self.bitcell_offsets[i], 0)
-            inst=self.add_inst(name=name, mod=self.pc_cell, offset=offset)
+            inst = self.add_inst(name=name, mod=self.pc_cell, offset=offset)
             self.child_insts.append(inst)
             self.copy_layout_pin(inst, "bl", "bl[{0}]".format(i))
             self.copy_layout_pin(inst, "br", "br[{0}]".format(i))

@@ -22,6 +22,9 @@ class sot_bitcell_array(sotfet_mram_bitcell_array):
 
     def add_bitcell_cells(self):
         super().add_bitcell_cells()
+
+        self.ref_cell = self.create_mod_from_str(OPTS.bitcell, mod_name=OPTS.ref_bitcell)
+
         reference_cell_x = OPTS.reference_cell_x
         cell_width = self.cell.width
         valid_offsets = [x for x in self.bitcell_offsets if x < reference_cell_x]
@@ -39,7 +42,8 @@ class sot_bitcell_array(sotfet_mram_bitcell_array):
                 x_offset = reference_cell_x + i * cell_width
                 if "Y" in mirror:
                     x_offset += cell_width
-                cell_inst = self.add_inst(name=name, mod=self.cell,
+                mod = self.cell if i % 2 == 0 else self.ref_cell
+                cell_inst = self.add_inst(name=name, mod=mod,
                                           offset=vector(x_offset, y_offset),
                                           mirror=mirror)
                 conns = self.get_bitcell_connections(row, col)

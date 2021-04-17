@@ -21,6 +21,7 @@ class SharedDecoderSimulator(TestBase):
         import debug
 
         from sim_steps_generator import SimStepsGenerator
+        from mram_sim_steps_generator import MramSimStepsGenerator
         from base import utils
 
         OPTS.use_pex = not options.schematic
@@ -46,16 +47,19 @@ class SharedDecoderSimulator(TestBase):
 
         OPTS.pex_spice = OPTS.pex_spice.replace(custom_suffix, "")
 
-        if mode == CMOS_MODE:
-            from modules.shared_decoder.cmos_sram import CmosSram
-            sram_class = CmosSram
-        elif mode == PUSH_MODE:
-            from modules.push_rules.horizontal_sram import HorizontalSram
-            sram_class = HorizontalSram
+        if hasattr(OPTS, "sram_class"):
+            sram_class = self.load_class_from_opts("sram_class")
         else:
-            from modules.shared_decoder.sotfet.sotfet_mram import SotfetMram
-            OPTS.configure_sense_amp(not options.latched, OPTS)
-            sram_class = SotfetMram
+            if mode == CMOS_MODE:
+                from modules.shared_decoder.cmos_sram import CmosSram
+                sram_class = CmosSram
+            elif mode == PUSH_MODE:
+                from modules.push_rules.horizontal_sram import HorizontalSram
+                sram_class = HorizontalSram
+            else:
+                from modules.shared_decoder.sotfet.sotfet_mram import SotfetMram
+                OPTS.configure_sense_amp(not options.latched, OPTS)
+                sram_class = SotfetMram
 
         self.sram = sram_class(word_size=OPTS.word_size, num_words=OPTS.num_words,
                                num_banks=OPTS.num_banks, words_per_row=OPTS.words_per_row,
@@ -67,8 +71,12 @@ class SharedDecoderSimulator(TestBase):
             # words span both banks so having two banks doesn't increase address space
             self.sram.addr_size -= 1
 
-        delay = SimStepsGenerator(self.sram, spfile=OPTS.spice_file,
-                                  corner=self.corner, initialize=False)
+        if OPTS.mram:
+            delay = MramSimStepsGenerator(self.sram, spfile=OPTS.spice_file,
+                                          corner=self.corner, initialize=False)
+        else:
+            delay = SimStepsGenerator(self.sram, spfile=OPTS.spice_file,
+                                      corner=self.corner, initialize=False)
 
         delay.trimsp = OPTS.trim_netlist = False
 
@@ -81,8 +89,10 @@ class SharedDecoderSimulator(TestBase):
             cols = [math.floor(i * spacing) for i in range(points)]
         # align cols to nearest col mux
         cols = [int(x / OPTS.words_per_row) * OPTS.words_per_row for x in cols]
+        cols.append(1)
 
         OPTS.probe_cols = list(sorted(set(cols)))
+        OPTS.probe_bits = [int(x / self.sram.words_per_row) for x in OPTS.probe_cols]
 
         first_read, first_write, second_read, second_write = OPTS.configure_timing(options, self.sram,
                                                                                    OPTS)
@@ -121,7 +131,7 @@ class SharedDecoderSimulator(TestBase):
         else:
             # probe sram
             for i in range(options.num_banks):
-                delay.probe_bank(i)
+                delay.probe.probe_bank(i)
 
             max_bank = 0 if options.num_banks == 1 else 1
             max_bank = 0 if two_bank_push else max_bank
@@ -136,6 +146,7 @@ class SharedDecoderSimulator(TestBase):
 
         # run extraction and retrieve probes
         if not OPTS.run_drc:
+            self.sram.gds_write(OPTS.gds_file)
             utils.to_cadence(OPTS.gds_file)
         delay.run_pex_and_extract()
 

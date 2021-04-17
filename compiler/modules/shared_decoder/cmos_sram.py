@@ -502,7 +502,7 @@ class CmosSram(design):
             x_offset = self.leftmost_m2_rail_x
             rails_x = [x_offset + i * self.bus_pitch for i in range(self.words_per_row)]
         else:
-            base_x = self.leftmost_m2_rail_x - self.bus_pitch * self.words_per_row
+            base_x = self.bank.leftmost_rail.offset.x - self.bus_pitch * self.words_per_row
             rails_y = []
             rails_x = []
         x_offsets = [base_x + i * self.bus_pitch for i in range(self.words_per_row)]

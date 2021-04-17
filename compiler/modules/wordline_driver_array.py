@@ -118,7 +118,7 @@ class wordline_driver_array(design.design):
             y_offset, mirror = self.get_row_y_offset(row)
 
             # add logic buffer
-            buffer_inst = self.add_inst("driver{}".format(row), mod=self.logic_buffer,
+            buffer_inst = self.add_inst("mod_{}".format(row), mod=self.logic_buffer,
                                         offset=vector(x_offset, y_offset), mirror=mirror)
             self.connect_inst(["en", "in[{}]".format(row), "wl_bar[{}]".format(row), "wl[{}]".format(row),  "vdd",
                                "gnd"])

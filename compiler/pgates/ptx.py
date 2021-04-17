@@ -96,6 +96,9 @@ class ptx(design.design):
         self.spice.append("\n* ptx " + self.spice_device)
         # self.spice.append(".ENDS {0}".format(self.name))
 
+    def get_input_pins(self):
+        return ["G"]
+
     def setup_layout_constants(self):
         """
         Pre-compute some handy layout parameters.

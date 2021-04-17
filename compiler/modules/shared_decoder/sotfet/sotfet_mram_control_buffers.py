@@ -57,12 +57,15 @@ class SotfetMramControlBuffers(BaseLatchedControlBuffers):
     def create_schematic_connections(self):
         connections = [
             ("nor_trig_clk", self.nor, ["sense_trig", "clk", "nor_trig_clk"]),
-            ("rwl_buf", self.rwl_en, ["nor_trig_clk", "read", "bank_sel", "rwl_en", "rwl_en_bar"]),
+            ("rwl_buf", self.rwl_en, ["nor_trig_clk", "read", "bank_sel", "rwl_en_bar",
+                                      "rwl_en"]),
             ("clk_buf", self.clk_buf, ["bank_sel", "clk", "clk_bar", "clk_buf"]),
             ("nor_read_clk", self.nor, ["read", "clk", "nor_read_clk"]),
-            ("wwl_en_int_bar", self.nand, ["nor_read_clk", "bank_sel", "wwl_en_int_bar"]),
+            ("wwl_en_int_bar", self.nand3, ["nor_read_clk", "write_trig", "bank_sel",
+            # ("wwl_en_int_bar", self.nand, ["nor_read_clk", "bank_sel",
+                                            "wwl_en_int_bar"]),
             ("wwl_en", self.wwl_en, ["wwl_en_int_bar", "wwl_en", "wwl_en_bar"]),
-            ("write_buf", self.write_buf, ["wwl_en_int_bar", "write_en_bar", "write_en"]),
+            ("write_buf", self.write_buf, ["wwl_en_int_bar", "write_en", "write_en_bar"]),
         ]
         self.add_sense_amp_connections(connections)
         self.add_precharge_buf_connections(connections)
@@ -92,6 +95,7 @@ class SotfetMramControlBuffers(BaseLatchedControlBuffers):
 
     def get_schematic_pins(self):
         in_pins, out_pins = super().get_schematic_pins()
+        in_pins.append("write_trig")
         out_pins.remove("wordline_en")
         out_pins.extend(["rwl_en", "wwl_en", "br_reset"])
         return in_pins, out_pins

@@ -8,7 +8,8 @@ cells_per_group = 2
 
 cache_optimization_prefix = "mram_"
 
-bitcell_name_template = "Xbitcell_b{bank}_r{row}_c{col}"
+bitcell_name_template = "Xbank{bank}_Xbitcell_array_{name}_r{row}_c{col}"
+pex_replacement_pattern = r"mXbank(?P<bank>[0-9]+)_Xbitcell_array_(?P<name>\S+)_r(?P<row>[0-9]+)_c(?P<col>[0-9]+)_mm(?P<tx_num>\S+)"
 
 bitcell = "sotfet_mram_bitcell"
 mram_bitcell = "sotfet_mram_small"

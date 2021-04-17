@@ -1,3 +1,5 @@
+pex_tx_prefix = "m"
+
 bitcell_mod = "cell_6t_4_fingers"
 use_x_body_taps = False
 

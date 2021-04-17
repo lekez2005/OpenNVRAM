@@ -122,6 +122,8 @@ class options(optparse.Values):
     control_flop = "ms_flop_horz_pitch"
     flop_buffer = "flop_buffer.FlopBuffer"
 
+    pex_tx_prefix = "m"  # m for regular bsim model, X for subckt model definitions
+
     # buffer stages
     max_buf_size = 40
     # Penalize large buffer sizes. Add 'penalty'*(sum(sizes)) ps to delays

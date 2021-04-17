@@ -122,9 +122,6 @@ class CamProbe(SramProbe):
         else:
             self.probe_labels.add("Xsram.Xbank{}.Xcam_block{}.tag[{}]".format(bank_index, col_index, row))
 
-    def add_misc_bank_probes(self, bank_inst, bank_index):
-        pass
-
     def add_misc_addr_probes(self, addresses):
         address = self.address_to_vector(addresses[0])
         bank_index, bank_inst, row, col_index = self.decode_address(address)

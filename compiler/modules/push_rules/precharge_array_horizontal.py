@@ -24,7 +24,7 @@ class PrechargeArray(precharge_array):
             else:
                 mirror = ""
                 bl_pin, br_pin = "bl", "br"
-            name = "pre_column_{0}".format(i)
+            name = "mod_{0}".format(i)
             inst = self.add_inst(name=name, mod=self.pc_cell, offset=vector(x_offset, 0),
                                  mirror=mirror)
             self.connect_inst(["bl[{0}]".format(i), "br[{0}]".format(i),

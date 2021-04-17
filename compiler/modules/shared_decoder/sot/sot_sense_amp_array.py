@@ -14,7 +14,7 @@ class sot_sense_amp(design):
 
 @library_import
 class sot_sense_ref(design):
-    pin_names = "bl_zero br_zero bl_one br_one en_bar vclamp vref".split()
+    pin_names = "bl br en_bar vclamp vref".split()
     lib_name = OPTS.sense_amp_ref
 
 
@@ -22,9 +22,6 @@ class SotSenseAmpArray(sense_amp_array):
     @property
     def bus_pins(self):
         return ["bl", "br", "dout", "dout_bar"]
-
-    def add_pins(self):
-        super().add_pins()
 
     def create_array(self):
         super().create_array()
@@ -40,12 +37,10 @@ class SotSenseAmpArray(sense_amp_array):
         inst = self.add_inst("ref_mux", self.sense_ref, vector(x_offset, 0),
                              mirror=mirror)
         self.sense_ref_inst = inst
-        self.connect_inst("ref_bl[0] ref_bl[1] en_bar vclamp vref vdd gnd".split())
+        self.connect_inst("ref_bl en_bar gnd vclamp vdd vref".split())
 
     def add_layout_pins(self):
         super().add_layout_pins()
-        self.add_pin_list(["ref_bl[0]", "ref_br[0]", "ref_bl[1]", "ref_br[1]"])
-        self.copy_layout_pin(self.sense_ref_inst, "bl_zero", "ref_bl[0]")
-        self.copy_layout_pin(self.sense_ref_inst, "br_zero", "ref_br[0]")
-        self.copy_layout_pin(self.sense_ref_inst, "bl_one", "ref_bl[1]")
-        self.copy_layout_pin(self.sense_ref_inst, "br_one", "ref_br[1]")
+        self.add_pin_list(["ref_bl", "ref_br"])
+        self.copy_layout_pin(self.sense_ref_inst, "bl", "ref_bl")
+        self.copy_layout_pin(self.sense_ref_inst, "br", "ref_br")

@@ -654,7 +654,7 @@ class ControlBuffers(design, ABC):
 
     def route_pin_connections(self):
         """Route all module input pins"""
-        self.indirect_m3_connections = {}
+        self.indirect_m3_connections = []
 
         for pin_connection in self.pin_connections:
             if pin_connection.conn_type == PinConnection.DIRECT_HORZ:
@@ -769,44 +769,45 @@ class ControlBuffers(design, ABC):
         m3_end_x = original_x_offset + max(0.5 * self.m2_width + 0.5 * m2m3.height, min_m3_width)
         m3_width = m3_end_x - m3_x_offset
 
-        # find unoccupied m3 rail y offset
-        rail_indices = list(sorted(self.indirect_m3_connections.keys()))
-        if not rail_indices:
-            min_rail_y = min(self.min_rail_y + 0.5 * self.bus_width - 0.5 * m2m3.contact_width -
+        # join with original rail
+        if m3_x_offset < original_rail.lx():  # TODO should have calculated when creating rails
+            self.add_rect(METAL3, offset=vector(m3_x_offset, original_rail.by()),
+                          width=original_rail.lx() - m3_x_offset,
+                          height=original_rail.height)
+
+        rail_x_space = self.get_line_end_space(METAL3)
+
+        def is_overlap_rail(rail_):
+            if isinstance(rail_, Rail):
+                rail_min_x, rail_max_x = rail_.rect.lx(), rail_.rect.rx()
+            else:
+                rail_min_x, rail_max_x, _ = rail_
+
+            if rail_min_x < m3_x_offset - rail_x_space:
+                return rail_max_x > m3_x_offset - rail_x_space
+            else:
+                return rail_min_x < m3_end_x + rail_x_space
+
+        overlapping_indirect_rails = list(filter(is_overlap_rail,
+                                                 self.indirect_m3_connections))
+        if overlapping_indirect_rails:
+            min_rail = min(overlapping_indirect_rails, key=lambda x: x[2])
+            rail_pitch = self.get_line_end_space(METAL2) + cross_m2m3.first_layer_height
+            rail_y = min_rail[2] - rail_pitch
+        else:
+            overlapping_rails = list(filter(is_overlap_rail, self.rails.values()))
+            if overlapping_rails:
+                min_rail_y = min(overlapping_rails, key=lambda x: x.rect.by()).rect.by()
+                rail_y = min(min_rail_y + 0.5 * self.bus_width - 0.5 * m2m3.contact_width -
                              self.get_space("via2") - m2m3.contact_width,
-                             self.min_rail_y + 0.5 * self.bus_width - 0.5 * m2m3.height -  # to bottom via
+                             min_rail_y + 0.5 * self.bus_width - 0.5 * m2m3.height -  # to bottom via
                              self.get_line_end_space(METAL2) -  # to top via
                              0.5 * m2m3.height - 0.5 * self.m3_width)
-            rail_y = min_rail_y
-            rail_index = 0
-        else:
-            rail_pitch = self.get_line_end_space(METAL2) + cross_m2m3.first_layer_height
-            rail_x_space = self.get_line_end_space(METAL3)
-            rail_index = 0
-            while True:
-                if rail_index not in self.indirect_m3_connections:
-                    # starting new rail index
-                    rail_y = self.indirect_m3_connections[rail_index - 1][0][2] - rail_pitch
-                    break
-                # loop through existing rails
-                existing_rails = self.indirect_m3_connections[rail_index]
-                # look for clashes
-                clash = False
-                for min_x, max_x, _ in existing_rails:
-                    if min_x - rail_x_space < m3_x_offset < max_x + rail_x_space:
-                        clash = True
-                        break
-                    elif min_x - rail_x_space < m3_end_x < max_x + rail_x_space:
-                        clash = True
-                        break
-                if clash:
-                    rail_index += 1
-                else:
-                    rail_y = self.indirect_m3_connections[rail_index][0][2]
-                    break
-        if rail_index not in self.indirect_m3_connections:
-            self.indirect_m3_connections[rail_index] = []
-        self.indirect_m3_connections[rail_index].append((m3_x_offset, m3_end_x, rail_y))
+            else:
+                max_rail = max(self.rails, key=lambda x: x.rect.by())
+                rail_y = max_rail.by()
+
+        self.indirect_m3_connections.append((m3_x_offset, m3_end_x, rail_y))
 
         # add m2 to new rail
         _, min_m2_height = self.calculate_min_area_fill(self.m2_width, layer=METAL2)

@@ -1,7 +1,7 @@
 import debug
 from base import design
-from base.contact import m1m2, cross_m1m2
-from base.design import METAL2, METAL1
+from base.contact import m1m2, cross_m1m2, cross_m2m3, m2m3
+from base.design import METAL2, METAL1, METAL3
 from base.hierarchy_layout import GDS_ROT_90
 from base.vector import vector
 from globals import OPTS
@@ -148,7 +148,7 @@ class single_level_column_mux_array(design.design):
         if self.mirror:
             bl_out_y, br_out_y = br_out_y, bl_out_y
 
-        cross_via_extension = 0.5 * cross_m1m2.height
+        cross_via_extension = max(0.5 * cross_m1m2.height, 0.5 * cross_m2m3.width)
 
         for j in range(self.columns):
             bl_out, br_out = self.get_output_bitlines(j)
@@ -173,13 +173,18 @@ class single_level_column_mux_array(design.design):
                 # add m1 rect to extend from beginning to end of bitline connected to it
                 bl_width = last_bl_out.cx() - bl_out.cx() + 2 * cross_via_extension
                 br_width = last_br_out.cx() - br_out.cx() + 2 * cross_via_extension
-                for rect_offset, width in zip([bl_out_offset, br_out_offset], [bl_width, br_width]):
-                    self.add_rect(METAL1, offset=rect_offset, width=width, height=self.bus_width)
+                for rect_offset, width in zip([bl_out_offset, br_out_offset],
+                                              [bl_width, br_width]):
+                    for layer in [METAL1, METAL3]:
+                        self.add_rect(layer, offset=rect_offset, width=width,
+                                      height=self.bus_width)
 
                 if self.mirror:
                     # prevent clash with bl pin below it
                     self.add_via_center(m1m2.layer_stack, bl_via_offset, rotate=GDS_ROT_90)
+                    self.add_via_center(m2m3.layer_stack, bl_via_offset, rotate=GDS_ROT_90)
                     self.add_via_center(m1m2.layer_stack, br_via_offset, rotate=GDS_ROT_90)
+                    self.add_via_center(m2m3.layer_stack, br_via_offset, rotate=GDS_ROT_90)
 
                     _, adjacent_br_pin = self.get_output_bitlines(j + 1)
                     bl_top_y = bl_via_offset.y
@@ -191,29 +196,38 @@ class single_level_column_mux_array(design.design):
                                   width=adjacent_br_pin.width(), height=br_out_y - br_top_y)
                     self.add_cross_contact_center(cross_m1m2, rotate=True,
                                                   offset=vector(adjacent_br_pin.cx(), br_top_y))
+                    self.add_cross_contact_center(cross_m2m3, rotate=False,
+                                                  offset=vector(adjacent_br_pin.cx(), br_top_y))
 
                     for bitline_pin, pin_top, adj_pin in zip([br_out, bl_out], [bl_top_y, br_top_y],
                                                              [bl_out, adjacent_br_pin]):
                         rect_x = bitline_pin.cx() - cross_via_extension
-                        self.add_rect(METAL1, offset=vector(rect_x, pin_top - 0.5 * self.bus_width),
-                                      height=self.bus_width,
-                                      width=adj_pin.cx() + cross_via_extension - rect_x)
-                        via_offset = vector(bitline_pin.cx(), pin_top)
-                        self.add_via_center(m1m2.layer_stack, via_offset, rotate=GDS_ROT_90)
+                        for layer, via in zip([METAL1, METAL3], [m1m2, m2m3]):
+                            self.add_rect(layer, offset=vector(rect_x,
+                                                               pin_top - 0.5 * self.bus_width),
+                                          height=self.bus_width,
+                                          width=adj_pin.cx() + cross_via_extension - rect_x)
+                            via_offset = vector(bitline_pin.cx(), pin_top)
+                            self.add_via_center(via.layer_stack, via_offset, rotate=GDS_ROT_90)
 
                 else:
                     self.add_cross_contact_center(cross_m1m2, bl_via_offset, rotate=True)
+                    self.add_cross_contact_center(cross_m2m3, bl_via_offset, rotate=False)
                     bl_top_y = bl_via_offset.y
                     br_top_y = br_via_offset.y
                     bl_x_offset = bl_out.lx()
                     br_x_offset = br_out.lx()
                     self.add_cross_contact_center(cross_m1m2, br_via_offset, rotate=True)
+                    self.add_cross_contact_center(cross_m2m3, br_via_offset, rotate=False)
                 for top_y, pin_x, pin_name in zip([bl_top_y, br_top_y], [bl_x_offset, br_x_offset],
                                                   ["bl_out", "br_out"]):
                     pin_name += "[{}]".format(int(j / self.words_per_row))
-                    self.add_layout_pin(pin_name,  METAL2, offset=vector(pin_x, 0),
+                    self.add_rect(METAL3, offset=vector(pin_x, 0),
+                                  width=bl_out.width(), height=top_y)
+                    self.add_layout_pin(pin_name, METAL2, offset=vector(pin_x, 0),
                                         width=bl_out.width(), height=top_y)
             else:
                 # add via to the connection rect
                 for via_offset in [bl_via_offset, br_via_offset]:
                     self.add_cross_contact_center(cross_m1m2, rotate=True, offset=via_offset)
+                    self.add_cross_contact_center(cross_m2m3, rotate=False, offset=via_offset)

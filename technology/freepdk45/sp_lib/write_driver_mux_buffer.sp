@@ -1,10 +1,10 @@
 ************************************************************************
 * auCdl Netlist:
 * 
-* Library Name:  openram_sot
+* Library Name:  openram
 * Top Cell Name: write_driver_mux_buffer
 * View Name:     schematic
-* Netlisted on:  Apr 22 01:19:08 2021
+* Netlisted on:  Apr 23 18:37:05 2021
 ************************************************************************
 
 *.EQUATION
@@ -15,7 +15,7 @@
 
 
 ************************************************************************
-* Library Name: openram_sot
+* Library Name: openram
 * Cell Name:    write_driver_mux_logic
 * View Name:    schematic
 ************************************************************************
@@ -47,16 +47,16 @@ MM17 br_n data_bar net053 vdd PMOS_VTG W=400n L=50n m=1
 .ENDS
 
 ************************************************************************
-* Library Name: openram_sot
+* Library Name: openram
 * Cell Name:    write_driver_mux_buffer
 * View Name:    schematic
 ************************************************************************
 
 .SUBCKT write_driver_mux_buffer bl br data data_bar en gnd mask vdd
-XI0 bl_n bl_p br_n br_p data data_bar en gnd mask vdd / write_driver_mux_logic
 MM0 br br_n gnd gnd NMOS_VTG W=600n L=50n m=1
 MM3 bl bl_n gnd gnd NMOS_VTG W=600n L=50n m=1
 MM1 br br_p vdd vdd PMOS_VTG W=900n L=50n m=1
 MM2 bl bl_p vdd vdd PMOS_VTG W=900n L=50n m=1
+XI0 bl_n bl_p br_n br_p data data_bar en gnd mask vdd / write_driver_mux_logic
 .ENDS
 

@@ -601,7 +601,10 @@ class ControlBufferOptimizer:
             if default_num_stages >= 4 and len(buffer_loads) == 2:
                 all_num_stages.update(range(3, default_num_stages))
             if buffer_stages_str == "column_decoder_buffers":
-                all_num_stages = {2}
+                if self.bank.words_per_row > 2:
+                    all_num_stages = {1}
+                else:
+                    all_num_stages = {2}
 
             min_criteria, min_stages = np.inf, None
 
@@ -618,7 +621,7 @@ class ControlBufferOptimizer:
                 effort = max_load / inv1_cin
                 initial_guess = [effort ** ((x + 1) / (num_stages + 1)) for x in range(num_stages)]
 
-                if iteration == len(all_num_stages) - 1:
+                if iteration == 0:
                     debug.info(1, "{}: {}".format(buffer_stages_str, stage_loads))
                     debug.info(1, "\t Default: {}".format(initial_stages))
                     debug.info(2, "\t Initial guess: {}".format(initial_guess))

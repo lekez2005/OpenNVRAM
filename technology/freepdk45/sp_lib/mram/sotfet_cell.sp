@@ -1,5 +1,6 @@
 simulator lang=spectre
 
+ahdl_include "$CDSHOME/tools/dfII/samples/artist/ahdlLib/soft_voltage_clamp/veriloga/veriloga.va"
 include "$CADENCE_WORK_DIR/shared_spin/sot_llg/spectre/spectre.scs"
 ahdl_include "$CADENCE_WORK_DIR/shared_spin/p_to_vg/veriloga/veriloga.va"
 include "$CADENCE_WORK_DIR/shared_spin/p_to_vg/model_params/{tech_name}/p_to_vg.scs"
@@ -10,9 +11,11 @@ include "$CADENCE_WORK_DIR/shared_spin/p_to_vg/model_params/{tech_name}/p_to_vg.
 // View name: schematic
 subckt p_to_ids B D S VG p_z
 parameters delta_vt=0 reference_vt=130.00m ferro_ratio=0.5
+    I0 (net07 vg_nfet 0) soft_voltage_clamp vclamp_upper=2 \
+        vclamp_lower=-0.5 exp_frac=0.4
     M0 (D vg_nfet S B) NMOS_VTG w=200n l=50n as=2.1e-14 ad=2.1e-14 \
         ps=410.0n pd=410.0n m=1
-    V0 (vg_nfet net13) vsource dc=delta_vt type=dc
+    V0 (net07 net13) vsource dc=delta_vt type=dc
     I2 (p_z VG net13) p_to_vg reference_vt=reference_vt \
         ferro_ratio=ferro_ratio
 ends p_to_ids

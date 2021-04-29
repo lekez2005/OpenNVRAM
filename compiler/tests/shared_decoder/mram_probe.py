@@ -11,41 +11,29 @@ class MramProbe(SharedProbe):
         super().__init__(sram, pex_file)
         self.wwl_probes = self.voltage_probes["wwl"] = {}
 
-    def probe_bitcell_currents(self, address):
-        bank, _, row, col_index = self.decode_address(address)
+    def get_bank_bitcell_current_probes(self, bank, bits, row, col_index):
+        if OPTS.use_pex:
+            template = "Xsram.Xbank{}_Xbitcell_array_Xbit_r{}_c{}_XI0.VIY"
+        else:
+            template = "Xsram.Xbank{}.Xbitcell_array.Xbit_r{}_c{}.XI0.VIY"
+        results = []
+        for bit in bits:
+            col = col_index + bit * self.sram.words_per_row
+            results.append((bit, template.format(bank, row, col)))
+        return results
 
-        cols = [col_index + bit * self.sram.words_per_row for bit in OPTS.probe_bits]
-        probes = {}
-
-        for col in cols:
-            if OPTS.use_pex:
-                write_tx = "Xsram.Xbank{}_Xbitcell_array_Xbit_r{}_c{}_XI0.VIY".format(bank, row, col)
-            else:
-                write_tx = "Xsram.Xbank{}.Xbitcell_array.Xbit_r{}_c{}.XI0.VIY".format(bank, row, col)
-            probes[col] = write_tx
-
-        if "bitcell_array" not in self.current_probes_json:
-            self.current_probes_json["bitcell_array"] = {}
-
-        self.current_probes.update(probes.values())
-        self.current_probes_json["bitcell_array"][address] = probes
-
-    def get_control_buffers_probe_bits(self, destination_inst):
+    def get_control_buffers_probe_bits(self, destination_inst, bank):
         name = destination_inst.name
         if name in ["wwl_driver", "rwl_driver"]:
             return [self.sram.bank.num_rows - 1]
         else:
-            return super().get_control_buffers_probe_bits(destination_inst)
+            return super().get_control_buffers_probe_bits(destination_inst, bank)
 
     def get_sense_amp_internal_nets(self):
-        probes = ["dout", "dout_bar", "bl"]
+        probes = ["dout", "dout_bar", "bl", "vref"]
         if OPTS.mram == "sot":
-            probes.extend(["vdata", "vref"])
+            probes.extend(["vdata"])
         return probes
-
-    def get_write_driver_internal_nets(self):
-        pin_names = ["bl_bar", "br_bar", "vdd", "data", "mask_bar", "br"]
-        return pin_names
 
     def get_wordline_nets(self):
         return ["wwl", "rwl"]
@@ -75,6 +63,8 @@ class MramProbe(SharedProbe):
             for key in self.state_probes:
                 self.extract_nested_probe(key, self.state_probes, existing_mappings)
 
+        if not OPTS.mram == "sot":
+            return
         # add ref probes
         pattern = self.get_storage_node_pattern()
         for key in self.state_probes:
@@ -103,4 +93,9 @@ class MramProbe(SharedProbe):
         # add wwl probe
         col = self.sram.num_cols - 1
         self.wwl_probes[address_int] = self.get_wwl_label(bank_index, row, col)
+
+        if self.two_bank_dependent:
+            self.probe_labels.add(self.wwl_probes[address_int])
+            self.wwl_probes[address_int] = self.get_wwl_label(1, row, col)
+
         self.probe_labels.add(self.wwl_probes[address_int])

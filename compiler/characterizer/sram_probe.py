@@ -4,7 +4,6 @@ from subprocess import check_output, CalledProcessError
 import numpy as np
 
 import debug
-from base import utils
 from characterizer.dependency_graph import get_instance_module, get_net_driver
 from characterizer.probe_utils import get_current_drivers, get_all_tx_fingers, format_bank_probes, \
     get_voltage_connections, get_extracted_prefix
@@ -78,9 +77,12 @@ class SramProbe(object):
         self.bitcell_probes[pin_name][address_int] = pin_labels
 
     def get_bitcell_label(self, bank_index, row, col, pin_name):
-        return "Xsram.Xbank{}.Xbitcell_array.Xbit_r{}_c{}.{}".format(bank_index, row, col, pin_name)
+        label = "Xbank{}.Xbitcell_array.Xbit_r{}_c{}".format(bank_index, row, col)
+        if OPTS.use_pex:
+            label = label.replace(".", "_")
+        return "Xsram.{}.{}".format(label, pin_name)
 
-    def probe_bitlines(self, bank, row=None, col_offset=0):
+    def probe_bitlines(self, bank, row=None):
         for pin_name in ["bl", "br"]:
             if pin_name not in self.voltage_probes:
                 self.voltage_probes[pin_name] = {}
@@ -93,7 +95,7 @@ class SramProbe(object):
             for pin_name in ["bl", "br"]:
                 pin_label = self.get_bitline_label(bank, col, pin_name, row)
                 self.probe_labels.add(pin_label)
-                self.voltage_probes[pin_name][bank][col + col_offset] = pin_label
+                self.voltage_probes[pin_name][bank][col] = pin_label
 
     def get_bitline_label(self, bank, col, label, row):
         if OPTS.use_pex:  # select top right bitcell
@@ -247,12 +249,8 @@ class SramProbe(object):
                                              suffix="")
         self.update_current_probes(probes, "precharge_array", bank)
 
-    def probe_bitcell_currents(self, address):
-        bank, _, row, col_index = self.decode_address(address)
-
+    def get_bank_bitcell_current_probes(self, bank, bits, row, col_index):
         cols = [col_index + bit * self.sram.words_per_row for bit in OPTS.probe_bits]
-        # TODO fix two dependent banks
-
         template = "Xbank{bank}.Xbitcell_array.Xbit_r" + str(row) + "_c{bit}.{net}"
         nets = ["q", "qbar"]
         replacements = [("r([0-9]+)_c([0-9]+)", "r\g<1>_c{bit}")]
@@ -260,11 +258,33 @@ class SramProbe(object):
                                             modules=["bitcell_array"],
                                             replacements=replacements)
         probes = format_bank_probes(probes, bank)
-        self.current_probes.update([x[1] for x in probes])
+        probes = [(int(col / self.sram.words_per_row), probe) for col, probe in probes]
+        return probes
+
+    def probe_bitcell_currents(self, address):
 
         if "bitcell_array" not in self.current_probes_json:
             self.current_probes_json["bitcell_array"] = {}
-        self.current_probes_json["bitcell_array"][address] = probes
+
+        self.current_probes_json["bitcell_array"][address] = {}
+
+        bank, _, row, col_index = self.decode_address(address)
+
+        if self.two_bank_dependent:
+            banks = [0, 1]
+            all_bits = [self.offset_bits_by_bank(OPTS.probe_bits, 0, self.word_size),
+                        self.offset_bits_by_bank(OPTS.probe_bits, 1, self.word_size)]
+            bit_shifts = [0, self.sram.bank.word_size]
+        else:
+            banks = [bank]
+            all_bits = [OPTS.probe_bits]
+            bit_shifts = [0]
+        for bank, bits, bit_shift in zip(banks, all_bits, bit_shifts):
+            probes = self.get_bank_bitcell_current_probes(bank, bits, row, col_index)
+            self.current_probes.update([x[1] for x in probes])
+            for bit, probe in probes:
+                bit_ = bit + bit_shift
+                self.current_probes_json["bitcell_array"][address][bit_] = probe
 
     def get_control_buffers_probe_pins(self, bank):
         bank_name = 'bank{}'.format(bank)
@@ -288,7 +308,11 @@ class SramProbe(object):
 
     def control_buffers_current_probes(self, bank):
         visited_insts = []
-        self.current_probes_json["control_buffers"] = control_probes = {}
+        if "control_buffers" not in self.current_probes:
+            self.current_probes_json["control_buffers"] = {}
+        control_probes = self.current_probes_json["control_buffers"]
+        if bank not in control_probes:
+            control_probes[bank] = {}
         for net in self.get_control_buffers_probe_pins(bank):
             driver = self.get_control_buffers_net_driver(bank, net)
             bank_inst, buffer_inst, control_conn_index = driver
@@ -302,51 +326,66 @@ class SramProbe(object):
             all_tx = [(0, "X{}.X{}".format(control_name, buffer_inst.name) + x) for x in all_tx]
             all_tx = [x[1] for x in format_bank_probes(all_tx, bank)]
             self.current_probes.update(all_tx)
-            control_probes[net] = all_tx
+            control_probes[bank][net] = all_tx
 
-    def get_control_buffers_probe_bits(self, destination_inst):
+    def offset_bits_by_bank(self, elements, bank, max_val):
+        """Get portions of bits located in a bank"""
+        if self.two_bank_dependent:
+            if bank == 0:
+                return [x for x in elements if x < max_val]
+            else:
+                return [x - max_val for x in elements if x >= max_val]
+        else:
+            return elements
+
+    def get_control_buffers_probe_bits(self, destination_inst, bank):
         name = destination_inst.name
         if name in ["wordline_driver"]:
             return [self.sram.bank.num_rows - 1]
         elif name in ["precharge_array"]:
-            return OPTS.probe_cols
+            return self.offset_bits_by_bank(OPTS.probe_cols, bank, self.sram.bank.num_cols)
         else:
-            return OPTS.probe_bits
+            return self.offset_bits_by_bank(OPTS.probe_bits, bank, self.word_size)
 
     def get_wordline_nets(self):
         return ["wl"]
 
     def wordline_driver_currents(self, address):
         bank, _, row, col_index = self.decode_address(address)
-        bank_name = 'bank{}'.format(bank)
-        bank_inst = get_instance_module(bank_name, self.sram)
-        bank_mod = bank_inst.mod
+        if self.two_bank_dependent:
+            banks = [0, 1]
+        else:
+            banks = [bank]
+        for bank in banks:
+            bank_name = 'bank{}'.format(bank)
+            bank_inst = get_instance_module(bank_name, self.sram)
+            bank_mod = bank_inst.mod
 
-        for net in self.get_wordline_nets():
-            # get wordline driver array
-            full_net = net + "[{}]".format(row)
-            driver = get_net_driver(full_net, bank_mod)
-            _, wordline_driver_array, conns = driver
-            conn_index = bank_mod.conns.index(conns)
-            driver_inst = bank_mod.insts[conn_index]
+            for net in self.get_wordline_nets():
+                # get wordline driver array
+                full_net = net + "[{}]".format(row)
+                driver = get_net_driver(full_net, bank_mod)
+                _, wordline_driver_array, conns = driver
+                conn_index = bank_mod.conns.index(conns)
+                driver_inst = bank_mod.insts[conn_index]
 
-            # get pin driver within wordline driver array
-            pin_index = conns.index(full_net)
-            pin_name = wordline_driver_array.pins[pin_index]
-            driver = get_net_driver(pin_name, wordline_driver_array)
-            _, buffer, conns = driver
-            conn_index = wordline_driver_array.conns.index(conns)
-            inst = wordline_driver_array.insts[conn_index]
-            all_tx = self.get_buffer_stages_probes(buffer)
+                # get pin driver within wordline driver array
+                pin_index = conns.index(full_net)
+                pin_name = wordline_driver_array.pins[pin_index]
+                driver = get_net_driver(pin_name, wordline_driver_array)
+                _, buffer, conns = driver
+                conn_index = wordline_driver_array.conns.index(conns)
+                inst = wordline_driver_array.insts[conn_index]
+                all_tx = self.get_buffer_stages_probes(buffer)
 
-            all_tx = [(0, "X{}.X{}".format(driver_inst.name, inst.name) + x) for x in all_tx]
-            all_tx = [x[1] for x in format_bank_probes(all_tx, bank)]
+                all_tx = [(0, "X{}.X{}".format(driver_inst.name, inst.name) + x) for x in all_tx]
+                all_tx = [x[1] for x in format_bank_probes(all_tx, bank)]
 
-            if net not in self.current_probes_json:
-                self.current_probes_json[net] = {}
-            self.current_probes_json[net][address] = all_tx
+                if net not in self.current_probes_json:
+                    self.current_probes_json[net] = {}
+                self.current_probes_json[net][address] = all_tx
 
-            self.current_probes.update(all_tx)
+                self.current_probes.update(all_tx)
 
     def probe_address_currents(self, address):
         self.probe_bitcell_currents(address)
@@ -368,10 +407,7 @@ class SramProbe(object):
     def probe_bank(self, bank):
         self.probe_bank_currents(bank)
 
-        if self.two_bank_dependent and bank == 1:
-            self.probe_bitlines(bank, col_offset=self.sram.num_cols)
-        else:
-            self.probe_bitlines(bank)
+        self.probe_bitlines(bank)
         self.probe_write_drivers(bank)
         self.probe_sense_amps(bank)
         self.control_buffers_voltage_probes(bank)
@@ -430,7 +466,7 @@ class SramProbe(object):
 
             template = full_net.replace("Xmod_0", "Xmod_{bit}")
             template = template.replace("[0]", "[{bit}]")
-            for bit in self.get_control_buffers_probe_bits(array_inst):
+            for bit in self.get_control_buffers_probe_bits(array_inst, bank_):
                 full_net = template.format(bit=bit)
                 net_probes[bit] = full_net
                 self.probe_labels.add(full_net)
@@ -454,7 +490,7 @@ class SramProbe(object):
             if not OPTS.use_pex:
                 probes[-1] = "Xsram.{}".format(bank_net)
                 for inst, _ in bank_mod.get_net_loads(net):
-                    for bit in self.get_control_buffers_probe_bits(inst):
+                    for bit in self.get_control_buffers_probe_bits(inst, bank):
                         probes[bit] = probes[-1]
                 self.probe_labels.update(probes.values())
                 continue
@@ -471,8 +507,8 @@ class SramProbe(object):
                 prefix, parent_net, suffix = self.get_extracted_net(net, destination_inst=inst,
                                                                     parent_mod=bank_mod)
                 full_net = self.get_full_bank_net(parent_net, prefix, suffix, bank_inst)
-                full_net = re.sub(r"mod_[0-9]+([_\.])", r"mod_{bit}\g<1>", full_net)
-                bits = self.get_control_buffers_probe_bits(inst)
+                full_net = re.sub(r"mod_[0-9]+([_\.])?", r"mod_{bit}\g<1>", full_net)
+                bits = self.get_control_buffers_probe_bits(inst, bank)
                 for bit in bits:
                     probes[bit] = full_net.format(bit=bit)
 
@@ -594,9 +630,15 @@ class SramProbe(object):
 
     @staticmethod
     def grep_file(pattern, pex_file, regex=True):
-        flags = "-iE" if regex else "-iF"
+        rg = True
+        if rg:
+            executable = "rg"
+            flags = "-ie" if regex else "-iF"
+        else:
+            executable = "grep"
+            flags = "-iE" if regex else "-iF"
         try:
-            match = check_output(["grep", "-m1", "-o", flags, pattern, pex_file])
+            match = check_output([executable, "-m1", "-o", flags, pattern, pex_file])
             return match.decode().strip()
         except CalledProcessError as ex:
             if ex.returncode == 1:  # mismatch
@@ -604,28 +646,21 @@ class SramProbe(object):
             else:
                 raise ex
 
-    def get_bank_col(self, bank, bit, col_index=0):
-        if self.two_bank_dependent:
-            bank = int(bit >= self.word_size)
-            bit = bit - self.word_size if bit >= self.word_size else bit
-        col = bit * self.sram.words_per_row + col_index
-        return bank, bit, col
-
     def decode_address(self, address):
         if isinstance(address, int):
             address = self.address_to_vector(address)
         if self.sram.num_banks == 4:
             bank_index = 2 ** address[0] + address[1]
-            bank_inst = self.sram.bank_inst[bank_index]
             address = address[2:]
+        elif self.two_bank_dependent:
+            bank_index = 0
         elif self.sram.num_banks == 2:
             bank_index = address[0]
-            bank_inst = self.sram.bank_insts[bank_index]
             address = address[1:]
         else:
             bank_index = 0
-            bank_inst = self.sram.bank_inst
 
+        bank_inst = self.sram.bank_insts[bank_index]
         address_int = self.address_to_int(address)
 
         words_per_row = self.sram.words_per_row

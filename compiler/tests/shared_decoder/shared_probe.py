@@ -19,6 +19,8 @@ class SharedProbe(SramProbe):
 
         self.external_probes.extend(["dout", "mask"])
 
+        self.half_word = int(0.5 * self.word_size)
+
         for i in range(sram.word_size):
             self.dout_probes[i] = "D[{}]".format(i)
             self.mask_probes[i] = "mask[{}]".format(i)
@@ -50,12 +52,22 @@ class SharedProbe(SramProbe):
     def get_wordline_label(self, bank_index, row, col):
         return self.get_w_label(bank_index, row, col)
 
+    @staticmethod
+    def filter_internal_nets(child_mod, candidate_nets):
+        netlist = child_mod.get_spice_parser().get_module(child_mod.name).contents
+        netlist = "\n".join(netlist)
+
+        results = []
+        for net in candidate_nets:
+            if " {} ".format(net) in netlist:
+                results.append(net)
+        return results
+
     def get_write_driver_internal_nets(self):
-        if OPTS.push:
-            pin_names = ["bl_p", "bl_n", "mask_en", "vdd", "data", "mask"]
-        else:
-            pin_names = ["bl_bar", "br_bar", "vdd", "data", "mask_bar"]
-        return pin_names
+        child_mod = self.sram.bank.write_driver_array.child_mod
+        pin_names = ["vdd"]
+        candidate_nets = ["bl_bar", "br_bar", "data", "mask", "mask_bar", "bl_p", "br_p"]
+        return pin_names + self.filter_internal_nets(child_mod, candidate_nets)
 
     def get_sense_amp_internal_nets(self):
         if OPTS.push:
@@ -135,7 +147,8 @@ class SharedProbe(SramProbe):
             col = bit * self.sram.words_per_row + col_index
             pin_labels[bit] = self.get_bitcell_label(bank_index, row, col, pin_name)
             if self.two_bank_dependent:
-                pin_labels[bit + self.word_size] = self.get_bitcell_label(1, row, col, pin_name)
+                pin_labels[bit + self.word_size] = self.get_bitcell_label(1, row,
+                                                                          col, pin_name)
 
         if not OPTS.mram or not OPTS.use_pex:
             self.probe_labels.update(pin_labels)

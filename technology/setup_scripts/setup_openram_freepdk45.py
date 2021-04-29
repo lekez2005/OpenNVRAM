@@ -24,6 +24,7 @@ export_library_name = "generated"
 import_library_name = "openram"
 pdk_library_name = "NCSU_TechLib_FreePDK45"
 cadence_work_dir = os.path.abspath(os.path.join(PDK_DIR, "..", "cadence"))
+os.environ["CADENCE_WORK_DIR"] = cadence_work_dir
 
 ###########################
 #OpenRAM Paths

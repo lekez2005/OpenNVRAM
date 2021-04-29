@@ -277,7 +277,7 @@ usim_opt  rcr_fmax=20G
                 self.sf.write("simulatorOptions options gmin={0}\n".
                               format(tech.spice["gmin"]))
 
-            self.sf.write('dcOp dc write="spectre.dc" readns="spectre.dc" maxiters=150 maxsteps=10000 annotate=status\n')
+            # self.sf.write('dcOp dc write="spectre.dc" readns="spectre.dc" maxiters=150 maxsteps=10000 annotate=status\n')
             tran_options = OPTS.tran_options if hasattr(OPTS, "tran_options") else ""
             self.sf.write('tran tran step={} stop={}n ic={} write=spectre.dc'
                           ' annotate=status maxiters=5 {}\n'.format("5p", end_time,

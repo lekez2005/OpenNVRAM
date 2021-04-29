@@ -314,7 +314,7 @@ def import_tech():
     standardize_tech_config()
 
 def standardize_tech_config():
-    """Add defaults for properties defined in tech.py """
+    """Add defaults for properties that should be defined in tech.py """
     import tech
     from tech import drc, info
     # Set some default options now based on the technology...
@@ -359,6 +359,12 @@ def standardize_tech_config():
             from characterizer.base_delay_strategy import BaseDelayStrategy
             return BaseDelayStrategy
         tech.delay_strategy_class = delay_strategy_class
+
+    # CDSHOME
+    virtuoso_exe = find_exe("virtuoso")
+    if virtuoso_exe:
+        cds_home = os.path.dirname(os.path.dirname(virtuoso_exe))
+        os.environ["CDSHOME"] = cds_home
 
 
 def initialize_classes():

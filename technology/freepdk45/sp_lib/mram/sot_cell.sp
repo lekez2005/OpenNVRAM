@@ -1,7 +1,7 @@
 simulator lang=spectre
 
-ahdl_include "$FREEPDK45/../cadence/shared_spin/tmr_resistance/veriloga/veriloga.va"
-include "$FREEPDK45/../cadence/shared_spin/sot_llg/spectre/spectre.scs"
+ahdl_include "$CADENCE_WORK_DIR/shared_spin/tmr_resistance/veriloga/veriloga.va"
+include "$CADENCE_WORK_DIR/shared_spin/sot_llg/spectre/spectre.scs"
 
 // Library name: shared_spin
 // Cell name: sot_cell

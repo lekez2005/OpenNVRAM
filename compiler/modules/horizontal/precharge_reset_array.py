@@ -7,6 +7,13 @@ from modules.precharge_array import precharge_array
 
 class PrechargeResetArray(precharge_array):
 
+    def connect_inst(self, args, check=True):
+        if not self.pc_cell.precharge_bl:
+            for pin_name in ["en", "vdd"]:
+                if pin_name in args:
+                    args.remove(pin_name)
+        super().connect_inst(args, check)
+
     def create_modules(self):
         self.pc_cell = PrechargeAndReset(name="precharge", size=self.size)
         self.add_mod(self.pc_cell)
@@ -19,13 +26,21 @@ class PrechargeResetArray(precharge_array):
             self.pc_cell_mirror = self.pc_cell
 
     def add_pins(self):
-        super().add_pins()
-        self.add_pin("br_reset")
+        for i in range(self.columns):
+            self.add_pin("bl[{0}]".format(i))
+            self.add_pin("br[{0}]".format(i))
+        if "en" in self.pc_cell.pins:
+            self.add_pin("en")
+        if "vdd" in self.pc_cell.pins:
+            self.add_pin("vdd")
+        self.add_pin_list(["bl_reset", "br_reset"])
         self.add_pin("gnd")
 
     def create_layout(self):
         self.add_insts()
-        for pin_name in ["vdd", "gnd", "br_reset", "en"]:
+        for pin_name in ["vdd", "gnd", "bl_reset", "br_reset", "en"]:
+            if pin_name not in self.pc_cell.pins:
+                continue
             for pin in self.pc_cell.get_pins(pin_name):
                 self.add_layout_pin(pin_name, pin.layer, pin.ll(),
                                     width=self.width - pin.lx(),
@@ -59,6 +74,6 @@ class PrechargeResetArray(precharge_array):
             self.copy_layout_pin(inst, "bl", "bl[{0}]".format(i))
             self.copy_layout_pin(inst, "br", "br[{0}]".format(i))
             self.connect_inst(["bl[{0}]".format(i), "br[{0}]".format(i),
-                               "en", "br_reset", "vdd", "gnd"])
+                               "en", "bl_reset",  "br_reset", "vdd", "gnd"])
             self.child_insts.append(inst)
         self.width = inst.rx()

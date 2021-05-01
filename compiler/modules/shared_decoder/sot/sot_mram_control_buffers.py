@@ -23,12 +23,12 @@ class SotMramControlBuffers(SotfetMramControlBuffers):
         connections.extend([
             ("clk_bar_int", self.inv, ["clk", "clk_bar_int"]),
             ("sense_en_bar", self.sense_en_bar,
-             ["read", "bank_sel", "clk_bar_int", "sense_en_bar_buf", "sense_en_bar"]),
+             ["read", "bank_sel", "clk_bar_int", "sense_en_bar", "sense_en_bar_buf"]),
             ("sense_en_int", self.nand, ["sense_trig", "bank_sel", "sense_en_int_bar"]),
             ("sense_amp_buf", self.sense_amp_buf,
-             ["sense_en_int_bar", "sense_en_buf_bar", "sense_en"]),
+             ["sense_en_int_bar", "sense_en", "sense_en_buf_bar"]),
             ("tri_en_buf", self.tri_en_buf,
-             ["sense_en_int_bar", "tri_en_bar", "tri_en"])
+             ["sense_en_int_bar", "tri_en", "tri_en_bar"])
         ])
 
     def get_schematic_pins(self):
@@ -36,5 +36,7 @@ class SotMramControlBuffers(SotfetMramControlBuffers):
         in_pins.append("write_trig")
         out_pins.remove("wordline_en")
         out_pins.remove("sample_en_bar")
-        out_pins.extend(["rwl_en", "wwl_en", "br_reset", "sense_en_bar"])
+        if not OPTS.precharge_bl:
+            out_pins.remove("precharge_en_bar")
+        out_pins.extend(["rwl_en", "wwl_en", "bl_reset", "br_reset"])
         return in_pins, out_pins

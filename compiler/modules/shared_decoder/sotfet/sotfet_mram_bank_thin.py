@@ -39,8 +39,8 @@ class SotfetMramBankThin(SotfetMramBank):
 
     def get_control_rails_destinations(self):
         destinations = super().get_control_rails_destinations()
-        destinations["wwl_en"] = destinations["precharge_en_bar"]
-        destinations["rwl_en"] = destinations["precharge_en_bar"]
+        destinations["wwl_en"] = destinations["br_reset"]
+        destinations["rwl_en"] = destinations["br_reset"]
         return destinations
 
     @staticmethod

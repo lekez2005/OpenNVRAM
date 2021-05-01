@@ -21,7 +21,7 @@ class SotPrechargeArray(PrechargeResetArray):
             offset.x = x_offset
             inst = self.add_inst(name=name, mod=mod, offset=offset, mirror=mirror)
             self.connect_inst("ref_bl[{0}] ref_br[{0}]".format(i).split() +
-                              ["en", "br_reset", "vdd", "gnd"])
+                              ["en", "bl_reset", "br_reset", "vdd", "gnd"])
 
             self.copy_layout_pin(inst, "bl", "ref_bl[{0}]".format(i))
             self.copy_layout_pin(inst, "br", "ref_br[{0}]".format(i))

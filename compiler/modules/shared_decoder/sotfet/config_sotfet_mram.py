@@ -36,6 +36,7 @@ write_buffers = [3.56, 12.6, 45]
 sense_en_bar_buffers = [3.56, 12.6, 45]
 
 br_reset_buffers = [3.1, 9.65, 30]
+bl_reset_buffers = [3.1, 9.65, 30]
 
 num_wordline_en_stages = 3
 

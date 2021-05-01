@@ -80,7 +80,7 @@ class SotfetMramBank(CmosBank):
         self.connect_inst(temp)
 
     def route_vdd_pin(self, pin, add_via=True, via_rotate=90):
-        if pin in self.precharge_array_inst.get_pins("vdd"):
+        if "vdd" in self.precharge_array.pins and pin in self.precharge_array_inst.get_pins("vdd"):
             via_rotate = 90
         super().route_vdd_pin(pin, add_via, via_rotate)
 
@@ -407,8 +407,6 @@ class SotfetMramBank(CmosBank):
             self.add_rect(METAL2, offset=vector(enable_in.lx(), y_offset), width=enable_in.width(),
                           height=enable_in.by() - y_offset)
             self.add_cross_contact_center(cross_m2m3, offset=vector(enable_in.cx(), y_offset))
-
-            setattr(self, control_rails[i], rail)
 
     def join_wordline_power(self):
         left_inst = min([self.wwl_driver_inst, self.rwl_driver_inst], key=lambda x: x.lx())

@@ -49,8 +49,6 @@ class LatchedControlLogic(LatchedControlBuffers):
         pins = super().get_schematic_pins()
         if self.is_left_bank:
             pins[1].remove("wordline_en")
-        pins[1].remove("write_en_bar")
-        pins[1].remove("tri_en_bar")
         return pins
 
     def create_schematic_connections(self):

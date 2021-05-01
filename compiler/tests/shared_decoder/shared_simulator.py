@@ -35,6 +35,16 @@ class SharedDecoderSimulator(TestBase):
         OPTS.words_per_row = int(options.num_cols / options.word_size)
         OPTS.num_words = OPTS.words_per_row * options.num_rows * options.num_banks
 
+        if mode == SOT_MODE:
+            OPTS.precharge_bl = False
+        elif mode == SOTFET_MODE:
+            if options.precharge:
+                OPTS.precharge_bl = True
+                OPTS.sense_amp_mod = "mram/sotfet_sense_amp_mram"
+            else:
+                OPTS.precharge_bl = False
+                OPTS.sense_amp_mod = "mram/sotfet_discharge_sense_amp"
+
         OPTS.run_optimizations = not options.fixed_buffers
         OPTS.energy = options.energy
 
@@ -203,6 +213,7 @@ def create_arg_parser():
     parser.add_argument("--simulator", dest="spice_name", help="Simulator name", default="spectre")
     parser.add_argument("--fixed_buffers", action="store_true")
     parser.add_argument("--latched", action="store_true")
+    parser.add_argument("--precharge", action="store_true")
     parser.add_argument("--small", action="store_true")
     parser.add_argument("--large", action="store_true")
     parser.add_argument("--schematic", action="store_true")
@@ -245,6 +256,8 @@ def get_sim_directory(options_, mode_):
     else:
         word_size_suffix = ""
     schem_suffix = "_schem" if options_.schematic else ""
+    if options_.precharge:
+        schem_suffix = "_precharge" + schem_suffix
 
     energy_suffix = "_energy" if options_.energy else ""
 

@@ -13,7 +13,8 @@ class sot_bitcell_array(sotfet_mram_bitcell_array):
         cell_grouping = OPTS.cells_per_group
         space = num_reference_cells * bitcell.width
 
-        res = sot_bitcell_array.insert_space_in_offsets(space, relative_offset=0.5,
+        # TODO temp hack to prevent ref_write_driver clash
+        res = sot_bitcell_array.insert_space_in_offsets(space, relative_offset=0.48,
                                                         all_offsets=x_offsets,
                                                         cell_grouping=cell_grouping)
         closest_offset, x_offsets = res

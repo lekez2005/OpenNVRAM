@@ -7,7 +7,7 @@ from modules.write_driver_array import write_driver_array
 
 @library_import
 class sot_write_driver_ref(design):
-    pin_names = "bl br en en_bar gnd vdd".split()
+    pin_names = "bl br en gnd vdd".split()
     lib_name = OPTS.write_driver_ref_mod
 
 
@@ -21,7 +21,9 @@ class SotWriteDriverArray(write_driver_array):
         x_offset = OPTS.reference_cell_x
         self.ref_driver_inst = self.add_inst("ref_driver", self.ref_write_driver,
                                              vector(x_offset, 0))
-        self.connect_inst("ref_bl ref_br en en_bar gnd vdd".split())
+        connections = (" ".join(self.ref_write_driver.pins).replace("bl", "ref_bl")
+                       .replace("br", "ref_br"))
+        self.connect_inst(connections.split())
 
     def add_layout_pins(self):
         super().add_layout_pins()

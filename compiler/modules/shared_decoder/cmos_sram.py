@@ -201,11 +201,10 @@ class CmosSram(design):
         else:
             col_buffers = OPTS.column_decoder_buffers
             buffer_sizes = [OPTS.predecode_sizes[0]] + col_buffers
-            negate = len(col_buffers) % 2 == 0
             decoder_class = hierarchical_predecode2x4 \
                 if words_per_row == 4 else hierarchical_predecode3x8
             column_decoder = decoder_class(use_flops=True, buffer_sizes=buffer_sizes,
-                                           negate=negate)
+                                           negate=False)
         return column_decoder
 
     def get_col_decoder_connections(self):
@@ -302,7 +301,7 @@ class CmosSram(design):
                                 for x in self.bank_flop_inputs]
             left_most_rail_x = min(flop_inputs_pins, key=lambda x: x.lx()).lx()
         else:
-            left_most_rail_x = self.bank.leftmost_rail.offset.x
+            left_most_rail_x = self.bank.leftmost_control_rail.offset.x
 
         column_decoder_y = (lowest_control_flop.by() +
                             (self.bank.col_decoder_y - self.bank.control_flop_y))  # account for offset_all_coordinates
@@ -502,7 +501,8 @@ class CmosSram(design):
             x_offset = self.leftmost_m2_rail_x
             rails_x = [x_offset + i * self.bus_pitch for i in range(self.words_per_row)]
         else:
-            base_x = self.bank.leftmost_rail.offset.x - self.bus_pitch * self.words_per_row
+            base_x = (self.bank.leftmost_control_rail.offset.x -
+                      self.bus_pitch * self.words_per_row)
             rails_y = []
             rails_x = []
         x_offsets = [base_x + i * self.bus_pitch for i in range(self.words_per_row)]

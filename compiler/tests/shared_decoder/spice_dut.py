@@ -1,6 +1,7 @@
 import os
 import re
 
+import debug
 from base.utils import load_module
 from characterizer.stimuli import stimuli
 from globals import OPTS
@@ -16,7 +17,7 @@ class SpiceDut(stimuli):
     def instantiate_sram(self, sram: CmosSram):
         abits = sram.addr_size
         dbits = sram.word_size
-        num_banks = sram.num_banks
+        num_banks = sram.num_banks if OPTS.independent_banks else 1
         sram_name = sram.name
 
         self.sf.write("Xsram ")
@@ -25,8 +26,9 @@ class SpiceDut(stimuli):
             for i in range(dbits):
                 self.sf.write("D[{0}] ".format(i))
                 self.sf.write("mask[{0}] ".format(i))
-        actual_a_bits = abits if num_banks == 1 else abits - 1
-        for i in range(actual_a_bits):
+        if OPTS.independent_banks and num_banks == 2:
+            abits -= 1
+        for i in range(abits):
             self.sf.write("A[{0}] ".format(i))
 
         self.sf.write(" {0} {1} {2} ".format(" ".join(sram.control_pin_names),
@@ -71,6 +73,7 @@ class SpiceDut(stimuli):
         for key in dir(OPTS):
             if key in params:
                 params[key] = getattr(OPTS, key)
+        params["tech_name"] = OPTS.tech_name
 
         def include_model(source_file):
             model_path = os.path.join(OPTS.openram_tech, "sp_lib", source_file)
@@ -89,6 +92,7 @@ class SpiceDut(stimuli):
     def replace_bitcell(self, delay_obj):
         if not OPTS.use_pex or not getattr(OPTS, "mram", False):
             return
+        debug.info(1, "Replacing bitcells in pex file")
         # derive replacement file
         pex_file = delay_obj.trim_sp_file
         basename = os.path.splitext(os.path.basename(pex_file))[0]
@@ -128,25 +132,32 @@ class SpiceDut(stimuli):
                         replacement_f.write(line)
 
     def process_tx_definition(self, tx_definition, replacement_f):
-        if OPTS.mram == "sot":
-            self.replace_sot_cells(tx_definition, replacement_f)
 
-    def replace_sot_cells(self, tx_definition, replacement_f):
         split = tx_definition.split()
         tx_name = split[0]  # type: str
-        drain, gate, source, body = split[1:5]
         parameters = split[5:]
 
         def format_tx():
+            drain, gate, source, body = split[1:5]
             tx_terminals = "\n+ ".join([tx_name, drain, gate, source, body])
             return tx_terminals + "\n+ " + " ".join(parameters) + "\n"
 
         regex_pattern = re.compile(OPTS.pex_replacement_pattern)
 
         match_groups = regex_pattern.search(tx_name).groupdict()
-        tx_num = match_groups["tx_num"]
+
+        if OPTS.mram == "sot":
+            self.replace_sot_cells(split, match_groups, replacement_f, format_tx)
+        elif OPTS.mram == "sotfet":
+            self.replace_sotfet_cells(split, match_groups, replacement_f, format_tx)
+
+    @staticmethod
+    def replace_sot_cells(definition_split, match_groups, replacement_f, format_tx):
+
+        drain, gate, source, body = definition_split[1:5]
 
         name_template = OPTS.bitcell_name_template
+        tx_num = match_groups["tx_num"]
 
         if tx_num[0] == "0":
             replacement_f.write(format_tx())
@@ -155,7 +166,7 @@ class SpiceDut(stimuli):
             mtj_top = (name_template + "_mtj_top").format(**match_groups)
             assert "br[" in source, "Sanity check to confirm br[ is connected to source"
             br_net = source
-            source = mtj_top
+            definition_split[3] = mtj_top  # source
             replacement_f.write(format_tx())
             sot_cell_name = "{}_XI0".format(name_template.format(**match_groups))
             # only sot model add to first finger
@@ -170,31 +181,20 @@ class SpiceDut(stimuli):
                                     format(sot_cell_name,
                                            mtj_top, br_net, sot_p, model_name))
 
-    def replace_sotfet_cells(self, sram: CmosSram):
-        f_name = os.path.join(OPTS.openram_temp, "bitcell_fix.sp")
-        vgate_tie_count = 0
-        with open(f_name, "w") as f:
-            for bank in range(sram.num_banks):
-                for row in range(sram.bank.num_rows):
-                    for col in range(sram.bank.num_cols):
-                        # tie vgate to ground
-                        vgate_node = "Xsram.Xbank{}_Xbitcell_array_Xbit_r{}" \
-                                     "_c{}_vgate_tie_gnd".format(bank, row, col)
-                        f.write("r_vgate_tie_{} {} 0 1\n".format(vgate_tie_count, vgate_node))
-                        vgate_tie_count += 1
-
-                        # add bitcell
-                        bl_node = "Xsram.N_Xbank{0}_bl[{1}]_Xbank{0}_Xbitcell_array_Xbit_" \
-                                  "r{2}_c{1}_MM1_d".format(bank, col, row)
-                        br_node = "Xsram.N_Xbank{0}_br[{1}]_Xbank{0}_Xbitcell_array_Xbit_" \
-                                  "r{2}_c{1}_MM2_s".format(bank, col, row)
-                        wwl_node = "Xsram.N_Xbank{0}_wwl[{2}]_Xbank{0}_Xbitcell_array_Xbit_" \
-                                   "r{2}_c{1}_MM1_g".format(bank, col, row)
-                        rwl_node = "Xsram.N_Xbank{0}_rwl[{2}]_Xbank{0}_Xbitcell_array_Xbit_" \
-                                   "r{2}_c{1}_MM0_g".format(bank, col, row)
-                        gnd_node = "0"
-                        cell_name = OPTS.bitcell_name_template.format(bank=bank, row=row, col=col)
-                        f.write("{} {} {} {} {} {} sotfet_mram_small\n".
-                                format(cell_name, bl_node, br_node, rwl_node, wwl_node, gnd_node))
-
-        self.sf.write(".include \"{0}\"\n".format(f_name))
+    @staticmethod
+    def replace_sotfet_cells(definition_split, match_groups, replacement_f, format_tx):
+        tx_num = match_groups["tx_num"]
+        if tx_num[0] in ["0", "2"]:
+            replacement_f.write(format_tx())
+        else:
+            drain, gate, source, body = definition_split[1:5]
+            name_template = OPTS.bitcell_name_template
+            sf_drain = (name_template + "_sf_drain").format(**match_groups)
+            sot_p = gate
+            br_net = source
+            sot_cell_name = "{}_XI0".format(name_template.format(**match_groups))
+            assert sf_drain == drain, "Sanity check to confirm sf_drain"
+            assert sot_p == gate, "Sanity check to confirm sot_p"
+            assert "br[" in source.lower(), "Sanity check to confirm br[ is connected to source"
+            replacement_f.write("{} {} {} {} {} {} {}\n".format(sot_cell_name, sf_drain, sot_p,
+                                                              br_net, br_net, body, "sotfet"))

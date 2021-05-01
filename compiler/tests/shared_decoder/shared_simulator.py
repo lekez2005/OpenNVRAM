@@ -5,6 +5,8 @@ import math
 import os
 import sys
 
+import numpy as np
+
 from test_base import TestBase
 from globals import OPTS
 
@@ -48,9 +50,15 @@ class SharedDecoderSimulator(TestBase):
         OPTS.run_optimizations = not options.fixed_buffers
         OPTS.energy = options.energy
 
+        OPTS.independent_banks = False
+
+        # TODO multi stage buffer for predecoder col mux. pnor3 too large for 3x8 buffer
+        if OPTS.words_per_row > 2:
+            OPTS.column_decoder_buffers = [4]  # use single stage
+
         setattr(OPTS, "push", getattr(OPTS, "push", False))
 
-        two_bank_push = OPTS.push and options.num_banks == 2
+        two_bank_dependent = not OPTS.independent_banks and options.num_banks == 2
 
         if options.energy:
             OPTS.pex_spice = OPTS.pex_spice.replace("_energy", "")
@@ -77,10 +85,6 @@ class SharedDecoderSimulator(TestBase):
         debug.info(1, "Write netlist to file")
         self.sram.sp_write(OPTS.spice_file)
 
-        if two_bank_push:
-            # words span both banks so having two banks doesn't increase address space
-            self.sram.addr_size -= 1
-
         if OPTS.mram:
             delay = MramSimStepsGenerator(self.sram, spfile=OPTS.spice_file,
                                           corner=self.corner, initialize=False)
@@ -89,20 +93,6 @@ class SharedDecoderSimulator(TestBase):
                                       corner=self.corner, initialize=False)
 
         delay.trimsp = OPTS.trim_netlist = False
-
-        # probe these cols
-        if options.energy:
-            cols = [OPTS.word_size - 1]
-        else:
-            points = 5
-            spacing = (options.num_cols - 1) / (points - 1)
-            cols = [math.floor(i * spacing) for i in range(points)]
-        # align cols to nearest col mux
-        cols = [int(x / OPTS.words_per_row) * OPTS.words_per_row for x in cols]
-        cols.append(1)
-
-        OPTS.probe_cols = list(sorted(set(cols)))
-        OPTS.probe_bits = [int(x / self.sram.words_per_row) for x in OPTS.probe_cols]
 
         first_read, first_write, second_read, second_write = OPTS.configure_timing(options, self.sram,
                                                                                    OPTS)
@@ -128,28 +118,54 @@ class SharedDecoderSimulator(TestBase):
 
         delay.current_time = delay.duty_cycle * delay.period
 
+        # probe these cols
+        if options.energy:
+            cols = [self.sram.bank.num_cols - 1]
+        elif OPTS.verbose_save:
+            cols = list(range(0, self.sram.bank.num_cols, OPTS.words_per_row))
+        else:
+            # mix even and odd cols
+            points = 5
+            bits = np.linspace(0, options.word_size - 1, points)
+            cols = []
+            for i in range(points):
+                bit = int(bits[i])
+                if i == points - 1:
+                    bit = options.word_size - 1
+                elif not bit % 2 == i % 2:
+                    bit -= 1
+                bits[i] = bit
+                col = bit * OPTS.words_per_row
+                cols.append(col)
+
+        # align cols to nearest col mux
+        cols = [int(x / OPTS.words_per_row) * OPTS.words_per_row for x in cols]
+
+        OPTS.probe_cols = list(sorted(set(cols)))
+        OPTS.probe_bits = [int(x / self.sram.words_per_row) for x in OPTS.probe_cols]
+
         delay.initialize_sim_file()
-        if two_bank_push:
-            self.sram.num_banks = 1  # to trick decode address
 
         addresses = banks = []
         dummy_address = 1
 
         if OPTS.energy:
-            delay.probe.probe_clk_buf(bank=0)
             delay.probe.probe_address(address=0)
+            for i in range(options.num_banks):
+                delay.probe.probe_bank(i)
         else:
             # probe sram
             for i in range(options.num_banks):
                 delay.probe.probe_bank(i)
 
             max_bank = 0 if options.num_banks == 1 else 1
-            max_bank = 0 if two_bank_push else max_bank
-            addresses = [(options.num_rows * self.sram.words_per_row - 1), 0]
+            max_bank = 0 if two_bank_dependent else max_bank
+            num_words = int(self.sram.bank.num_rows * self.sram.bank.num_cols
+                            / options.word_size * self.sram.num_banks)
+            addresses = [num_words - 1, 0]
             banks = [0, max_bank]
 
-            if not OPTS.baseline and not OPTS.push:
-                delay.probe_addresses([dummy_address], 0)
+            delay.probe_addresses([dummy_address], 0)
 
             for i in range(len(addresses)):
                 delay.probe_addresses([addresses[i]], banks[i])
@@ -160,7 +176,7 @@ class SharedDecoderSimulator(TestBase):
             utils.to_cadence(OPTS.gds_file)
         delay.run_pex_and_extract()
 
-        if two_bank_push:
+        if two_bank_dependent:
             self.sram.num_words = int(self.sram.num_words / 2)
             delay.word_size = self.sram.word_size
         delay.initialize_sram(delay.probe, existing_data={})

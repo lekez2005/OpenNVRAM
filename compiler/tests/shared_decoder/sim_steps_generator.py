@@ -21,7 +21,7 @@ class SimStepsGenerator(SequentialDelay):
     def __init__(self, sram, spfile, corner, initialize=False):
         super().__init__(sram, spfile, corner, initialize=initialize)
 
-        self.two_bank_push = OPTS.push and self.sram.num_banks == 2
+        self.two_bank_dependent = not OPTS.independent_banks and self.sram.num_banks == 2
 
         for i in range(self.word_size):
             self.bus_sigs.append("mask[{}]".format(i))
@@ -164,7 +164,8 @@ class SimStepsGenerator(SequentialDelay):
         for i in range(num_sims):
             address = randint(0, self.sram.num_words - 1)
 
-            op = ops[randint(0, 1)]
+            # op = ops[randint(0, 1)]
+            op = ops[i % 2]
             if op == "read":
                 self.read_address(address)
             else:
@@ -178,14 +179,14 @@ class SimStepsGenerator(SequentialDelay):
         self.update_output()
 
         # clock gating
-        leakage_cycles = 10
+        leakage_cycles = 10000
         start_time = self.current_time
         end_time = leakage_cycles * self.read_period + start_time
         self.current_time = end_time
 
         self.sf.write("* -- LEAKAGE start = {:.5g} end = {:.5g}\n".format(start_time, self.current_time))
 
-        self.sf.write("* --clk_buf_probe={}--\n".format(self.probe.clk_buf_probe))
+        self.sf.write("* --clk_buf_probe={}--\n".format(self.probe.clk_probe))
 
     def test_address(self, address, bank, dummy_address=None, data=None, mask=None):
         address = self.offset_address_by_bank(address, bank)
@@ -229,7 +230,7 @@ class SimStepsGenerator(SequentialDelay):
 
     def offset_address_by_bank(self, address, bank):
         assert type(address) == int and bank < self.num_banks
-        if OPTS.push and self.num_banks == 2:
+        if self.two_bank_dependent:
             return address
         address += bank * int(2 ** self.sram.bank_addr_size)
         return address
@@ -370,10 +371,17 @@ class SimStepsGenerator(SequentialDelay):
         time_suffix = "{:.2g}".format(time).replace('.', '_')
         trig_val = 0.1 * self.vdd_voltage
         targ_val = 0.9 * self.vdd_voltage
+        half_word = int(0.5 * self.word_size)
         for i in range(self.word_size):
             col = col_index + i * self.words_per_row
+            if self.two_bank_dependent and i >= half_word:
+                bank_col = col - half_word * self.words_per_row
+                bank_ = bank + 1
+            else:
+                bank_ = bank
+                bank_col = col
             for bitline in ["bl", "br"]:
-                probe = self.probe.voltage_probes[bitline][bank][col]
+                probe = self.probe.voltage_probes[bitline][bank_][bank_col]
                 meas_name = "PRECHARGE_DELAY_{}_c{}_t{}".format(bitline, col, time_suffix)
                 self.stim.gen_meas_delay(meas_name=meas_name,
                                          trig_name=self.clk_buf_probe, trig_val=trig_val, trig_dir="RISE",

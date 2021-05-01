@@ -55,7 +55,7 @@ class PsfReader:
         from_index, to_index = self.get_time_indices(from_t, to_t)
 
         if from_index == to_index:
-            return np.asarray(array_[from_index])
+            return array_[from_index: from_index + 1]
         elif to_index == array_.size - 1:
             return array_[from_index:]
         else:

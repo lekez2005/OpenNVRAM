@@ -122,7 +122,7 @@ class hierarchical_predecode(design.design):
                                   contact_pwell=False,
                                   height=self.module_height, same_line_inputs=False)
                 return nand
-            except AssertionError:
+            except (AssertionError, AttributeError):
                 nand_size *= 0.98
             finally:
                 debug.error = debug_error

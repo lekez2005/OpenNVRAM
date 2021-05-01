@@ -1162,7 +1162,11 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
 
     def get_write_driver_mask_in(self, word):
         """Get pin name for mask input. Either mask or mask_bar"""
-        return self.write_driver_array_inst.get_pin("mask_bar[{}]".format(word))
+        if "mask[{}]".format(word) in self.write_driver_array.pins:
+            mask_name = "mask"
+        else:
+            mask_name = "mask_bar"
+        return self.write_driver_array_inst.get_pin("{}[{}]".format(mask_name, word))
 
     def get_mask_flop_out(self, word):
         pin_name = "dout" if "mask" in self.write_driver_array.child_mod.pins else "dout_bar"
@@ -1338,6 +1342,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
             x_offset += self.bus_pitch
 
         self.m2_rails.extend(flop_output_rails)
+        self.leftmost_control_rail = self.leftmost_rail
         self.leftmost_rail = min([self.leftmost_rail] + flop_output_rails,
                                  key=lambda x: x.lx())
         return x_offset

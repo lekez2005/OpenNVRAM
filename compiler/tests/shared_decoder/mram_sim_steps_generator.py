@@ -41,12 +41,12 @@ class MramSimStepsGenerator(SimStepsGenerator):
             ic.flush()
 
     def update_output(self, increment_time=True):
-        if increment_time:
+        if increment_time and not self.read:
             self.write_pwl("write_trig", 0, 1)
 
         super().update_output(increment_time)
 
-        if increment_time:
+        if increment_time and not self.read:
             self.write_pwl("write_trig", 1, 0)
 
     def get_setup_time(self, key, prev_val, curr_val):
@@ -67,8 +67,8 @@ class MramSimStepsGenerator(SimStepsGenerator):
         phi = 0.1 * OPTS.llg_prescale
         theta = np.arccos(col_voltage) * OPTS.llg_prescale
 
-        phi_node = col_node.replace(".state", ".I0.phi")
-        theta_node = col_node.replace(".state", ".I0.theta")
+        phi_node = col_node.replace(".state", ".phi")
+        theta_node = col_node.replace(".state", ".theta")
 
         ic.write(".ic V({})={} \n".format(phi_node, phi))
         ic.write(".ic V({})={} \n".format(theta_node, theta))

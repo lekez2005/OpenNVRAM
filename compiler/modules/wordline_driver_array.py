@@ -94,7 +94,7 @@ class wordline_driver_array(design.design):
                                      layer="metal2",
                                      offset=[en_pin_x, 0],
                                      width=self.m2_width,
-                                     height=self.height)
+                                     height=self.get_height())
         return en_pin, en_pin_x
 
     def add_in_pin(self, buffer_inst, row):

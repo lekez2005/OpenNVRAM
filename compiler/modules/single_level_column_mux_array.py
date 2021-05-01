@@ -222,9 +222,9 @@ class single_level_column_mux_array(design.design):
                 for top_y, pin_x, pin_name in zip([bl_top_y, br_top_y], [bl_x_offset, br_x_offset],
                                                   ["bl_out", "br_out"]):
                     pin_name += "[{}]".format(int(j / self.words_per_row))
-                    self.add_rect(METAL3, offset=vector(pin_x, 0),
-                                  width=bl_out.width(), height=top_y)
-                    self.add_layout_pin(pin_name, METAL2, offset=vector(pin_x, 0),
+                    # self.add_rect(METAL3, offset=vector(pin_x, 0),
+                    #               width=bl_out.width(), height=top_y)
+                    self.add_layout_pin(pin_name, METAL3, offset=vector(pin_x, 0),
                                         width=bl_out.width(), height=top_y)
             else:
                 # add via to the connection rect

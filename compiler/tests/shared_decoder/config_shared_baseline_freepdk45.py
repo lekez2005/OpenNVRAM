@@ -6,7 +6,10 @@ setup_time = 0.04  # in nanoseconds
 precharge_size = 6
 max_precharge_buffers = 60
 
-use_precharge_trigger = True
+write_driver_mod = "write_driver_mux_buffer"
+write_buffers = [1, 3.42, 11.7, 40]
+
+use_precharge_trigger = False
 
 def configure_timing(_, sram, OPTS):
     num_rows = sram.bank.num_rows
@@ -35,9 +38,9 @@ def configure_timing(_, sram, OPTS):
             second_write = 1.5
         else:
             OPTS.sense_trigger_delay = 0.5
-            OPTS.precharge_trigger_delay = 0.1
-            first_read = first_write = 0.6
-            second_read = 0.6
-            second_write = 0.6
+            first_read = first_write = 0.75
+            OPTS.precharge_trigger_delay = first_read + 0.1
+            second_read = OPTS.sense_trigger_delay + 0.2
+            second_write = 0.7
 
     return first_read, first_write, second_read, second_write

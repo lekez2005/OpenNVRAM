@@ -8,6 +8,7 @@ from pgates.pinv import pinv
 from pgates.pnand2 import pnand2
 from pgates.pnand3 import pnand3
 from pgates.pnor2 import pnor2
+from pgates.pnor3 import pnor3
 
 
 class LogicBuffer(design.design, metaclass=Unique):
@@ -85,6 +86,8 @@ class LogicBuffer(design.design, metaclass=Unique):
             logic_class = pnor2
         elif self.logic == self.PNAND_3:
             logic_class = pnand3
+        elif self.logic == "pnor3":
+            logic_class = pnor3
         else:
             raise Exception("Invalid logic selected")
         self.logic_mod = logic_class(size=1, height=self.height, contact_nwell=self.contact_nwell,

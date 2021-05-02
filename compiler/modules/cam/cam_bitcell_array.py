@@ -39,8 +39,8 @@ class cam_bitcell_array(bitcell_array.bitcell_array):
 
         for row in range(self.row_size):
             # add ml_pin
-            left_ml_pin = self.cell_inst[row, 0].get_pin("ML")
-            right_ml_pin = self.cell_inst[row, self.column_size-1].get_pin("ML")
+            left_ml_pin = self.cell_inst[row][0].get_pin("ML")
+            right_ml_pin = self.cell_inst[row][self.column_size-1].get_pin("ML")
             # add ml pin label and offset
             self.add_layout_pin(text="ml[{0}]".format(row),
                                 layer=right_ml_pin.layer,

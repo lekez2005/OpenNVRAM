@@ -110,7 +110,7 @@ class WordlineDriverOptimizer(CharTestBase):
                 stim_file.write("Xdut {} {} \n".format(" ".join(wl_driver.pins), wl_driver.name))
 
                 # driver
-                stim_file.write("Xdriver gnd {} float en vdd gnd {} \n".format(in_pin_name, wordline_buf.name))
+                stim_file.write("Xdriver gnd {} en float vdd gnd {} \n".format(in_pin_name, wordline_buf.name))
 
                 # bitcell
                 # replace wl[0] with wl[N-1]

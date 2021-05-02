@@ -1,4 +1,4 @@
-from base.contact import m2m3, m1m2, cross_m2m3, m3m4, contact
+from base.contact import m2m3, m1m2, cross_m2m3, m3m4
 from base.design import POLY, METAL1, METAL3, METAL2
 from base.vector import vector
 from base.well_implant_fills import create_wells_and_implants_fills
@@ -21,7 +21,7 @@ class SotfetMramBank(CmosBank):
     def get_module_list():
         modules = CmosBank.get_module_list()
         modules = [x for x in modules if x not in ["wordline_driver"]]
-        modules.extend(["rwl_driver", "wwl_driver", "br_precharge_array"])
+        modules.extend(["rwl_driver", "wwl_driver"])
         return modules
 
     def create_modules(self):
@@ -38,22 +38,21 @@ class SotfetMramBank(CmosBank):
                                                      columns=self.num_cols,
                                                      bank=self)
 
-    def connect_inst(self, args, check=True):
-        last_mod = self.insts[-1].mod
-        if last_mod.name == "sense_amp_array":
-            args = args[:-2] + ["br_reset", "vref", "vdd", "gnd"]
-        elif last_mod.name == "bitcell_array":
-            args = []
-            for col in range(self.num_cols):
-                args.append("bl[{0}]".format(col))
-                args.append("br[{0}]".format(col))
-            for row in range(self.num_rows):
-                args.append("rwl[{0}]".format(row))
-                args.append("wwl[{0}]".format(row))
-            args.append("gnd")
-        elif self.insts[-1].name == "wordline_driver":
-            args = [x.replace("wl", "rwl") for x in args]
-        super().connect_inst(args, check)
+    def create_optimizer(self):
+        from modules.shared_decoder.sotfet.sotfet_control_buffers_optimizer import \
+            SotfetControlBuffersOptimizer
+        self.optimizer = SotfetControlBuffersOptimizer(self)
+
+    def get_bitcell_array_connections(self):
+        args = []
+        for col in range(self.num_cols):
+            args.append("bl[{0}]".format(col))
+            args.append("br[{0}]".format(col))
+        for row in range(self.num_rows):
+            args.append("rwl[{0}]".format(row))
+            args.append("wwl[{0}]".format(row))
+        args.append("gnd")
+        return args
 
     def add_precharge_array(self):
         y_offset = self.get_precharge_y()
@@ -81,59 +80,23 @@ class SotfetMramBank(CmosBank):
         self.connect_inst(temp)
 
     def route_vdd_pin(self, pin, add_via=True, via_rotate=90):
-        if pin == self.precharge_array_inst.get_pin("vdd"):
+        if "vdd" in self.precharge_array.pins and pin in self.precharge_array_inst.get_pins("vdd"):
             via_rotate = 90
         super().route_vdd_pin(pin, add_via, via_rotate)
 
     def create_control_buffers(self):
-        self.control_buffers = SotfetMramControlBuffers()
+        self.control_buffers = SotfetMramControlBuffers(self)
         self.add_mod(self.control_buffers)
 
-    def connect_control_buffers(self):
-        connections = ["bank_sel_buf", "read_buf", "clk", "sense_trig", "clk_buf", "clk_bar",
-                       "rwl_en", "wwl_en", "precharge_en_bar", "br_precharge_en_bar",
-                       "write_en", "write_en_bar",
-                       "sense_en", "tri_en", "tri_en_bar", "br_reset",
-                       "vdd", "gnd"]
-        if OPTS.mirror_sense_amp:
-            connections.append("sense_en_bar")
-        else:
-            connections.append("sample_en_bar")
-        self.connect_inst(connections)
+    def get_non_flop_control_inputs(self):
+        """Get control buffers inputs that don't go through flops"""
+        precharge_trigger = ["precharge_trig"] * self.control_buffers.use_precharge_trigger
+        write_trigger = ["write_trig"] * ("write_trig" in self.control_buffers.pins)
+        return ["sense_trig"] + precharge_trigger + write_trigger
 
-    def get_control_rails_destinations(self):
-        destination_pins = {
-            "sense_en": self.sense_amp_array_inst.get_pins("en"),
-            "tri_en": self.tri_gate_array_inst.get_pins("en"),
-            "tri_en_bar": self.tri_gate_array_inst.get_pins("en_bar"),
-            "br_reset": self.sense_amp_array_inst.get_pins("br_reset"),
-            "precharge_en_bar": self.precharge_array_inst.get_pins("en"),
-            "br_precharge_en_bar": self.br_precharge_array_inst.get_pins("en"),
-            "clk_buf": self.mask_in_flops_inst.get_pins("clk"),
-            "clk_bar": self.data_in_flops_inst.get_pins("clk"),
-            "write_en": self.write_driver_array_inst.get_pins("en"),
-            "write_en_bar": self.write_driver_array_inst.get_pins("en_bar"),
-            "rwl_en": [],
-            "wwl_en": [],
-        }
-        if OPTS.mirror_sense_amp:
-            destination_pins["sense_en_bar"] = self.sense_amp_array_inst.get_pins("en_bar")
-        else:
-            destination_pins["sample_en_bar"] = self.sense_amp_array_inst.get_pins("sampleb")
-            destination_pins["precharge_en_bar"] += self.sense_amp_array_inst.get_pins("preb")
-
-        return destination_pins
-
-    def get_control_names(self):
-        control_names = ["sense_en", "tri_en", "tri_en_bar", "br_reset",
-                         "br_precharge_en_bar", "precharge_en_bar", "clk_buf",
-                         "clk_bar", "write_en", "write_en_bar",
-                         "rwl_en", "wwl_en"]
-        if OPTS.mirror_sense_amp:
-            control_names.append("sense_en_bar")
-        else:
-            control_names.append("sample_en_bar")
-        return control_names
+    def get_control_rails_base_x(self):
+        self.vref_x_offset = self.mid_vdd_offset - self.wide_m1_space - self.bus_width
+        return self.vref_x_offset - self.bus_pitch
 
     def add_control_rails(self):
         super().add_control_rails()
@@ -154,9 +117,6 @@ class SotfetMramBank(CmosBank):
         fill_space = (self.get_parallel_space(METAL2) + self.fill_width +
                       self.get_wide_space(METAL2))
 
-        wwl_x_offset = self.mid_vdd_offset - (self.wwl_driver.width + fill_space)
-        rwl_x_offset = wwl_x_offset - self.wide_m1_space - self.rwl_driver.width
-
         rwl_connections = []
         wwl_connections = []
         for i in range(self.num_rows):
@@ -171,9 +131,26 @@ class SotfetMramBank(CmosBank):
         wwl_connections.extend(["vdd", "gnd"])
 
         names = ["rwl_driver", "wwl_driver"]
-        x_offsets = [rwl_x_offset, wwl_x_offset]
         connections = [rwl_connections, wwl_connections]
         modules = [self.rwl_driver, self.wwl_driver]
+
+        # arrange based on order of wwl, rwl bitcell pins
+        wwl_pin = self.bitcell_array_inst.get_pin("wwl[0]")
+        rwl_pin = self.bitcell_array_inst.get_pin("rwl[0]")
+
+        if wwl_pin.cy() > rwl_pin.cy():
+            reverse = False
+        else:
+            names = list(reversed(names))
+            connections = list(reversed(connections))
+            modules = list(reversed(modules))
+            reverse = True
+
+        left_mod, right_mod = modules
+        right_x_offset = self.mid_vdd_offset - (right_mod.width + fill_space)
+        left_x_offset = right_x_offset - self.wide_m1_space - left_mod.width
+        x_offsets = [left_x_offset, right_x_offset]
+
         insts = []
 
         for i in range(2):
@@ -181,8 +158,10 @@ class SotfetMramBank(CmosBank):
                                  offset=vector(x_offsets[i], self.bitcell_array_inst.by()))
             insts.append(inst)
             self.connect_inst(connections[i])
-        self.wordline_driver_inst = insts[0]
-        self.rwl_driver_inst, self.wwl_driver_inst = insts
+        self.wordline_driver_inst = min(insts, key=lambda x: x.lx())
+        self.wordline_driver = self.wordline_driver_inst.mod
+        self.rwl_driver_inst, self.wwl_driver_inst = sorted(insts, key=lambda x: x.lx(),
+                                                            reverse=reverse)
 
     def route_bitcell(self):
         pass
@@ -218,7 +197,7 @@ class SotfetMramBank(CmosBank):
                 self.add_contact(m2m3.layer_stack, offset=via_offset)
                 self.add_contact(m3m4.layer_stack, offset=via_offset)
                 fill_y = sense_pin.uy() - self.fill_height
-                via_extension = drc["min_wide_metal_via_extension"]
+                via_extension = drc["wide_metal_via_extension"]
                 if pin_name == "bl":
                     x_offset = bitcell_pin.lx() - via_extension
                 else:
@@ -230,7 +209,7 @@ class SotfetMramBank(CmosBank):
                                   height=top_pin.by() - bottom_pin.uy())
 
     def route_sense_amp(self):
-        self.copy_layout_pin(self.sense_amp_array_inst, "vref", "vref")
+        self.add_vref_pin()
         if OPTS.mirror_sense_amp:
             for pin in self.sense_amp_array_inst.get_pins("vdd"):
                 self.route_vdd_pin(pin, via_rotate=0)
@@ -239,22 +218,31 @@ class SotfetMramBank(CmosBank):
         else:
             super().route_sense_amp()
 
+    def route_external_control_pin(self, pin_name, inst, x_offset, inst_pin_name=None):
+        if inst_pin_name is None:
+            inst_pin_name = pin_name
+        inst_pin = inst.get_pin(inst_pin_name)
+        y_offset = self.mid_vdd.by()
+        pin = self.add_layout_pin(pin_name, METAL2, offset=vector(x_offset, y_offset),
+                                  height=inst_pin.cy() - y_offset,
+                                  width=self.bus_width)
+        self.add_cross_contact_center(cross_m2m3, offset=vector(pin.cx(), inst_pin.cy()))
+        rect_height = min(self.bus_width, inst_pin.height())
+        self.add_rect(METAL3, offset=vector(pin.cx(), inst_pin.cy() - 0.5 * rect_height),
+                      width=inst_pin.lx() - pin.cx(), height=rect_height)
+
+    def add_vref_pin(self):
+        x_offset = self.vref_x_offset
+        self.route_external_control_pin("vref", inst=self.sense_amp_array_inst,
+                                        x_offset=x_offset)
+
     def route_wordline_driver(self):
 
         self.route_wwl_in()
         self.route_rwl_in()
         self.route_decoder_in()
         self.route_decoder_enable()
-
-        pin_names = ["gnd", "vdd"]
-        dest_rail = [self.mid_gnd, self.mid_vdd]
-        for i in range(2):
-            pin_name = pin_names[i]
-            for pin in self.rwl_driver_inst.get_pins(pin_name):
-                self.add_rect(pin.layer, offset=vector(self.rwl_driver_inst.lx(), pin.by()),
-                              height=pin.height(),
-                              width=dest_rail[i].cx() - self.rwl_driver_inst.lx())
-                self.add_power_via(pin, dest_rail[i], via_rotate=0)
+        self.join_wordline_power()
 
         # fill between rwl and wwl
         fill_rects = create_wells_and_implants_fills(
@@ -383,30 +371,51 @@ class SotfetMramBank(CmosBank):
                               width=bitcell_x - x_offset)
 
     def route_decoder_in(self):
+        left_inst, right_inst = sorted([self.wwl_driver_inst, self.rwl_driver_inst],
+                                       key=lambda x: x.lx())
         for row in range(self.num_rows):
-            wwl_in = self.wwl_driver_inst.get_pin("in[{}]".format(row))
-            rwl_in = self.rwl_driver_inst.get_pin("in[{}]".format(row))
-            self.add_rect(METAL3, offset=rwl_in.lr(), width=wwl_in.lx() - rwl_in.rx())
-            self.copy_layout_pin(self.rwl_driver_inst, "in[{}]".format(row),
-                                 "dec_out[{}]".format(row))
+            left_in = left_inst.get_pin("in[{}]".format(row))
+            right_in = right_inst.get_pin("in[{}]".format(row))
+            self.add_rect(METAL3, offset=vector(left_in.lx(), right_in.cy() - 0.5 * self.m3_width),
+                          width=right_in.lx() - left_in.lx())
+            self.copy_layout_pin(left_inst, "in[{}]".format(row), "dec_out[{}]".format(row))
+
+    def get_decoder_enable_y(self):
+        m3_pins = [x for x in self.wwl_driver_inst.get_pins("vdd") if x.layer == METAL3]
+        if m3_pins:
+            m3_pin = min(m3_pins, key=lambda x: x.by())
+            return m3_pin.by() - self.bus_pitch
+        else:
+            return self.wwl_driver_inst.get_pin("en").by() - self.m3_width
 
     def route_decoder_enable(self):
         control_rails = ["wwl_en_rail", "rwl_en_rail"]
         driver_instances = [self.wwl_driver_inst, self.rwl_driver_inst]
+        if self.rwl_driver_inst.lx() < self.wwl_driver_inst.lx():
+            control_rails = list(reversed(control_rails))
+            driver_instances = list(reversed(driver_instances))
+        base_y = self.get_decoder_enable_y()
         for i in range(2):
             control_rail = getattr(self, control_rails[i])
             enable_in = driver_instances[i].get_pin("en")
-            y_offset = enable_in.by() - self.m3_width - i * (self.m3_width + self.get_parallel_space(METAL3))
-            self.add_contact(m2m3.layer_stack, offset=control_rail.ll())
-            rail = self.add_rect(METAL2, offset=control_rail.ll(),
-                                 height=y_offset - control_rail.by())
+            y_offset = base_y - i * self.bus_pitch + 0.5 * self.bus_width
+            self.add_cross_contact_center(cross_m2m3, offset=vector(control_rail.cx(), y_offset))
+            rail = self.add_rect(METAL2, control_rail.ul(), width=control_rail.width,
+                                 height=y_offset - control_rail.uy())
+            self.add_rect(METAL3, offset=vector(enable_in.cx(), y_offset - 0.5 * self.bus_width),
+                          height=self.bus_width, width=control_rail.cx() - enable_in.cx())
+            self.add_rect(METAL2, offset=vector(enable_in.lx(), y_offset), width=enable_in.width(),
+                          height=enable_in.by() - y_offset)
+            self.add_cross_contact_center(cross_m2m3, offset=vector(enable_in.cx(), y_offset))
 
-            self.add_contact(m2m3.layer_stack, offset=vector(control_rail.lx(),
-                                                             y_offset + self.m2_width - m2m3.height))
-            self.add_rect(METAL3, offset=vector(enable_in.lx(), y_offset),
-                          width=control_rail.lx() - enable_in.lx())
-            if i == 1:
-                self.add_rect(METAL3, offset=vector(enable_in.lx(), y_offset),
-                              height=enable_in.by() - y_offset)
-
-            setattr(self, control_rails[i], rail)
+    def join_wordline_power(self):
+        left_inst = min([self.wwl_driver_inst, self.rwl_driver_inst], key=lambda x: x.lx())
+        pin_names = ["gnd", "vdd"]
+        dest_rail = [self.mid_gnd, self.mid_vdd]
+        for i in range(2):
+            pin_name = pin_names[i]
+            for pin in left_inst.get_pins(pin_name):
+                self.add_rect(pin.layer, offset=vector(left_inst.lx(), pin.by()),
+                              height=pin.height(),
+                              width=dest_rail[i].rx() - left_inst.lx())
+                self.add_power_via(pin, dest_rail[i], via_rotate=90)

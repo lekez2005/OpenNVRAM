@@ -422,7 +422,7 @@ class bank(design.design):
         heights = [contact_implant_height, contact_implant_height, inv.pimplant_height, inv.nimplant_height,
                    inv.nwell_height, inv.nwell_height]
 
-        if OPTS.use_body_taps:
+        if OPTS.use_x_body_taps:
             layers_index = range(2, len(layers))
         else:
             layers_index = range(len(layers))
@@ -441,7 +441,7 @@ class bank(design.design):
                 else:
                     mid_y = y_offset + inv.height - y_mids[i]
                 self.add_rect_center(layers[i], offset=vector(mid_x, mid_y), width=fill_width, height=heights[i])
-            if OPTS.use_body_taps:
+            if OPTS.use_x_body_taps:
                 # extend nwell to bitcells
                 body_tap = self.bitcell_array.body_tap
                 x_offset = self.wordline_x_offset + self.wordline_driver.width

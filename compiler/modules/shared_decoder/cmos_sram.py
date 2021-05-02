@@ -1,25 +1,73 @@
+import datetime
+import math
+import re
+
+import debug
+import tech
 from base import utils
-from base.contact import m1m2, m2m3
-from base.design import METAL1, METAL2, NWELL, METAL3
+from base.contact import m1m2, m2m3, cross_m2m3, cross_m1m2, m3m4
+from base.contact_full_stack import ContactFullStack
+from base.design import METAL1, METAL2, METAL3, METAL4, METAL5, design, PWELL, ACTIVE, NIMP
+from base.geometry import NO_MIRROR, MIRROR_Y_AXIS
 from base.vector import vector
-from globals import OPTS
+from base.well_implant_fills import create_wells_and_implants_fills, get_default_fill_layers
+from globals import OPTS, print_time
 from modules.flop_buffer import FlopBuffer
 from modules.hierarchical_predecode2x4 import hierarchical_predecode2x4
 from modules.hierarchical_predecode3x8 import hierarchical_predecode3x8
 from modules.shared_decoder.cmos_bank import CmosBank
-from sram import sram
 
 
-class CmosSram(sram):
+class CmosSram(design):
     wide_space = None
     bank_insts = bank = row_decoder = None
-    column_decoder = column_decoder_inst = col_decoder_connections = None
+    column_decoder = column_decoder_inst = None
     row_decoder_inst = None
+
+    def __init__(self, word_size, num_words, num_banks, name, words_per_row=None,
+                 add_power_grid=True):
+        """Words will be split across banks in case of two banks"""
+        assert num_banks in [1, 2], "Only one or two banks supported"
+        if num_banks == 2 and not OPTS.independent_banks:
+            assert word_size % 2 == 0, "Word-size must be even when word is spread across two banks"
+            word_size = int(word_size / 2)
+        if words_per_row is not None:
+            assert words_per_row in [1, 2, 4, 8], "Max 8 words per row supported"
+
+        self.add_power_grid = add_power_grid
+
+        start_time = datetime.datetime.now()
+
+        design.__init__(self, name)
+
+        self.bitcell = self.create_mod_from_str(OPTS.bitcell)
+
+        self.compute_sizes(word_size, num_words, num_banks, words_per_row)
+        debug.info(2, "create sram of size {0} with {1} num of words".format(self.word_size,
+                                                                             self.num_words))
+        self.create_layout()
+
+        self.offset_all_coordinates()
+        sizes = self.find_highest_coords()
+        self.width = sizes[0]
+        self.height = sizes[1]
+
+        self.DRC_LVS(final_verification=True)
+
+        if not OPTS.is_unit_test:
+            print_time("SRAM creation", datetime.datetime.now(), start_time)
+
+        # restore word-size
+        self.word_size = num_banks * self.word_size
 
     def create_layout(self):
         self.single_bank = self.num_banks == 1
         self.wide_space = self.get_wide_space(METAL1)
+        self.m1_pitch = self.m1_width + self.get_parallel_space(METAL1)
+        self.m2_pitch = self.m2_width + self.get_parallel_space(METAL2)
+        self.m3_pitch = self.m3_width + self.get_parallel_space(METAL3)
         self.create_modules()
+        self.add_pins()
         self.add_modules()
 
         self.min_point = min(self.row_decoder_inst.by(), self.bank_insts[0].by())
@@ -27,184 +75,244 @@ class CmosSram(sram):
         self.route_layout()
 
     def create_modules(self):
+        debug.info(1, "Create sram modules")
         self.create_bank()
         self.row_decoder = self.bank.decoder
         self.min_point = self.bank.min_point
         self.fill_width = self.bank.fill_width
         self.fill_height = self.bank.fill_height
+        self.row_decoder_y = self.bank.bitcell_array_inst.uy() - self.row_decoder.height
         self.create_column_decoder()
 
+        bank_flop_connections = [x[0] for x in self.bank.
+            get_control_flop_connections().values()]
+        control_inputs = (self.bank.get_non_flop_control_inputs() +
+                          ["clk"] + bank_flop_connections)
+        self.control_inputs = control_inputs
+        self.bank_flop_inputs = bank_flop_connections
+
     def add_modules(self):
-        self.right_bank_inst = self.bank_inst = self.add_bank(0, vector(0, 0), x_flip=0, y_flip=0)
+        debug.info(1, "Add sram modules")
+        self.right_bank_inst = self.bank_inst = self.add_bank(0, vector(0, 0))
         self.bank_insts = [self.right_bank_inst]
-        if self.num_banks == 1:
-            self.add_right_col_decoder()
+        self.add_col_decoder()
         self.add_row_decoder()
         self.add_power_rails()
         if self.num_banks == 2:
-            self.add_left_col_decoder()
             x_offset = self.get_left_bank_x()
-            self.left_bank_inst = self.add_bank(1, vector(x_offset, 0), x_flip=0, y_flip=-1)
-            self.bank_inst = [self.right_bank_inst, self.left_bank_inst]
-            self.bank_insts.append(self.left_bank_inst)
+            # align bitcell array
+            y_offset = self.right_bank_inst.by() + (self.bank.bitcell_array_inst.by() -
+                                                    self.left_bank.bitcell_array_inst.by())
+            self.left_bank_inst = self.add_bank(1, vector(x_offset, y_offset))
+            self.bank_insts = [self.right_bank_inst, self.left_bank_inst]
 
     def route_layout(self):
+        debug.info(1, "Route sram")
         self.route_column_decoder()
         self.route_row_decoder_clk()
-        self.join_decoder_wells()
         self.route_decoder_power()
         self.route_decoder_outputs()
         self.join_bank_controls()
+        self.fill_decoder_wordline_space()
+        self.route_left_bank_power()
 
-        self.join_bank_power_grid()
         self.copy_layout_pins()
+        self.route_power_grid()
+
+    def compute_sizes(self, word_size, num_words, num_banks, words_per_row):
+        self.num_banks = num_banks
+        self.num_words = num_words
+        self.word_size = word_size
+        OPTS.num_banks = num_banks
+
+        if self.num_banks == 2 and OPTS.independent_banks:
+            self.num_words_per_bank = int(num_words / num_banks)
+        else:  # for non-independent banks, put half word per bank, total number of words remains the same
+            self.num_words_per_bank = num_words
+
+        if words_per_row is None:
+            words_per_row = self.estimate_words_per_row(word_size, self.num_words_per_bank)
+
+        self.words_per_row = words_per_row
+        self.num_rows = int(self.num_words_per_bank / self.words_per_row)
+        self.num_cols = int(self.word_size * self.words_per_row)
+
+        self.col_addr_size = int(math.log(self.words_per_row, 2))
+        self.row_addr_size = int(math.log(self.num_rows, 2))
+        self.bank_addr_size = self.col_addr_size + self.row_addr_size
+        self.addr_size = int(math.log(num_words, 2))
+
+    def estimate_words_per_row(self, word_size, num_words):
+        area = math.inf
+        all_words_per_row = [1, 2, 4, 8]
+        for i in range(len(all_words_per_row)):
+            words_per_row = all_words_per_row[i]
+            if not num_words % words_per_row == 0:  # not divisible
+                return all_words_per_row[i - 1]
+            num_rows = num_words / words_per_row
+            # heuristic extra 16 for decoder/wordline, extra 25 for peripherals below array
+            tentative_area = (((words_per_row * word_size + 16) * self.bitcell.width) *
+                              ((num_rows + 25) * self.bitcell.height))
+            if tentative_area > area:  # previous config has lower area, terminate
+                return all_words_per_row[i - 1]
+            else:
+                area = tentative_area
+        return all_words_per_row[-1]
+
+    @staticmethod
+    def get_bank_class():
+        return CmosBank
 
     def create_bank(self):
-        self.bank = CmosBank(name="bank", word_size=self.word_size, num_words=self.num_words_per_bank,
-                             words_per_row=self.words_per_row, num_banks=self.num_banks)
+        bank_class = self.get_bank_class()
+        self.bank = bank_class(name="bank", word_size=self.word_size, num_words=self.num_words_per_bank,
+                               words_per_row=self.words_per_row, num_banks=self.num_banks)
         self.add_mod(self.bank)
+        if self.num_banks == 2:
+            debug.info(1, "Creating left bank")
+            self.left_bank = bank_class(name="left_bank", word_size=self.word_size,
+                                        num_words=self.num_words_per_bank,
+                                        words_per_row=self.words_per_row,
+                                        num_banks=self.num_banks,
+                                        adjacent_bank=self.bank)
+            self.add_mod(self.left_bank)
+
+    def add_bank(self, bank_num, position):
+        if bank_num == 0:
+            bank_mod = self.bank
+            mirror = NO_MIRROR
+        else:
+            bank_mod = self.left_bank
+            mirror = MIRROR_Y_AXIS
+            position.x += bank_mod.width
+        bank_inst = self.add_inst(name="bank{0}".format(bank_num),
+                                  mod=bank_mod,
+                                  offset=position,
+                                  mirror=mirror)
+
+        self.connect_inst(self.get_bank_connections(bank_num, bank_mod))
+        return bank_inst
+
+    @staticmethod
+    def create_column_decoder_modules(words_per_row):
+        if words_per_row == 2:
+            column_decoder = FlopBuffer(OPTS.control_flop, OPTS.column_decoder_buffers,
+                                        name="col_decoder_flop")
+        else:
+            col_buffers = OPTS.column_decoder_buffers
+            buffer_sizes = [OPTS.predecode_sizes[0]] + col_buffers
+            decoder_class = hierarchical_predecode2x4 \
+                if words_per_row == 4 else hierarchical_predecode3x8
+            column_decoder = decoder_class(use_flops=True, buffer_sizes=buffer_sizes,
+                                           negate=False)
+        return column_decoder
+
+    def get_col_decoder_connections(self):
+        col_address_bits = [i + self.row_addr_size for i in reversed(range(self.col_addr_size))]
+        col_decoder_connections = []
+        for i in col_address_bits:
+            col_decoder_connections.append("ADDR[{}]".format(i))
+        for i in range(self.words_per_row):
+            col_decoder_connections.append("sel[{}]".format(i))
+        col_decoder_connections.extend(["decoder_clk", "vdd", "gnd"])
+        return col_decoder_connections
 
     def create_column_decoder(self):
         if self.words_per_row < 2:
             return
-        assert self.words_per_row <= 8, "Maximum of 8 words per row supported"
-        col_decoder_clk = "clk_buf_1" if self.num_banks == 1 else "clk_buf_2"
+        self.column_decoder = self.create_column_decoder_modules(self.words_per_row)
         if self.words_per_row == 2:
-            self.column_decoder = column_decoder = FlopBuffer(OPTS.control_flop, OPTS.column_decoder_buffers)
-            column_decoder.pins = ["din", "clk", "dout", "dout_bar", "vdd", "gnd"]
-            column_decoder.copy_layout_pin(column_decoder.buffer_inst, "out_inv", "dout_bar")
-            self.col_decoder_connections = ["ADDR[{}]".format(self.bank_addr_size - 1), col_decoder_clk,
-                                            "sel[1]", "sel[0]", "vdd", "gnd"]
-        else:
-
-            buffer_sizes = [OPTS.predecode_sizes[0]] + OPTS.column_decoder_buffers[1:]
-            self.col_decoder_connections = []
-            for i in reversed(range(self.col_addr_size)):
-                self.col_decoder_connections.append("ADDR[{}]".format(self.bank_addr_size - 1 - i))
-            for i in range(self.words_per_row):
-                self.col_decoder_connections.append("sel[{}]".format(i))
-            self.col_decoder_connections.extend([col_decoder_clk, "vdd", "gnd"])
-
-            if self.words_per_row == 4:
-                self.column_decoder = hierarchical_predecode2x4(use_flops=True, buffer_sizes=buffer_sizes)
+            # Export internal flop output as layout pin, rearrange pin to match predecoder order
+            self.column_decoder.pins = ["din", "dout_bar", "dout", "clk", "vdd", "gnd"]
+            col_decoder_buffer = self.column_decoder.buffer_inst.mod
+            if len(col_decoder_buffer.module_insts) > 1:
+                col_decoder_buffer.copy_layout_pin(col_decoder_buffer.module_insts[-1], "A",
+                                                   "out_buf_input")
+                self.column_decoder.copy_layout_pin(self.column_decoder.buffer_inst, "out_buf_input",
+                                                    "dout_bar")
             else:
-                self.column_decoder = hierarchical_predecode3x8(use_flops=True, buffer_sizes=buffer_sizes)
+                self.column_decoder.copy_layout_pin(self.column_decoder.buffer_inst, "in",
+                                                    "dout_bar")
+
         self.add_mod(self.column_decoder)
 
     def add_pins(self):
-        for j in range(self.num_banks):
-            for i in range(self.word_size):
-                self.add_pin("DATA_{0}[{1}]".format(j + 1, i))
-                self.add_pin("MASK_{0}[{1}]".format(j + 1, i))
+        if self.num_banks == 2 and not OPTS.independent_banks:
+            word_size = self.word_size * 2
+        else:
+            word_size = self.word_size
+        for i in range(word_size):
+            self.add_pin("DATA[{0}]".format(i))
+            if OPTS.independent_banks and self.num_banks == 2:
+                self.add_pin("DATA_1[{0}]".format(i))
+            if self.bank.has_mask_in:
+                self.add_pin("MASK[{0}]".format(i))
+                if OPTS.independent_banks and self.num_banks == 2:
+                    self.add_pin("MASK_1[{0}]".format(i))
+
         for i in range(self.bank_addr_size):
             self.add_pin("ADDR[{0}]".format(i))
-        bank_sel_2 = ["bank_sel_2"] * int(self.num_banks == 2)
-        for pin in ["read", "clk", "bank_sel"] + bank_sel_2 + ["sense_trig", "vdd", "gnd"]:
-            self.add_pin(pin)
+
+        replacements = {key: val for key, val in self.get_bank_connection_replacements()}
+        self.control_pin_names = []
+        for pin_name in self.control_inputs:
+            new_pin_name = replacements.get(pin_name, pin_name)
+            self.control_pin_names.append(new_pin_name)
+            self.add_pin(new_pin_name)
+
+        self.add_pin_list(["vdd", "gnd"])
 
     def copy_layout_pins(self):
-        for bank_inst in self.bank_insts:
-            self.copy_layout_pin(bank_inst, "vdd")
-            self.copy_layout_pin(bank_inst, "gnd")
+
+        replacements = {key: val for key, val in self.get_bank_connection_replacements()}
+
         right_bank = self.bank_insts[0]
-        for pin_name in ["clk", "sense_trig", "read", "bank_sel"]:
-            self.copy_layout_pin(right_bank, pin_name)
-        if not self.single_bank:
-            self.copy_layout_pin(self.bank_insts[1], "bank_sel", "bank_sel_2")
+        for pin_name in self.control_inputs:
+            new_pin_name = replacements.get(pin_name, pin_name)
+            if self.num_banks == 1:
+                self.copy_layout_pin(right_bank, pin_name, new_pin_name)
+            else:
+                rail = getattr(self, pin_name + "_rail")
+                self.add_layout_pin(new_pin_name, METAL3, vector(rail.cx(), rail.by()),
+                                    width=rail.height, height=rail.height)
+
         for i in range(self.row_addr_size):
             self.copy_layout_pin(self.row_decoder_inst, "A[{}]".format(i), "ADDR[{}]".format(i))
-        for j in range(self.num_banks):
-            for i in range(self.word_size):
-                for pin_name in ["DATA", "MASK"]:
-                    self.copy_layout_pin(self.bank_insts[j], pin_name + "[{}]".format(i),
-                                         "{0}_{1}[{2}]".format(pin_name, j + 1, i))
 
-    def get_col_decoder_y(self):
-        if self.words_per_row == 2:
-            max_y_offset = self.bank.wordline_driver_inst.by() - self.wide_space
-        else:
+        # copy DATA and MASK pins
+        for i in range(self.num_banks):
+            bank_inst = self.bank_insts[i]
+            bank_connections = None
+            for index, inst in enumerate(self.insts):
+                if inst.name == bank_inst.name:
+                    bank_connections = self.conns[index]
+                    break
+            for pin_index, net in enumerate(bank_connections):
+                if net.startswith("DATA") or net.startswith("MASK"):
+                    pin_name = bank_inst.mod.pins[pin_index]
+                    self.copy_layout_pin(bank_inst, pin_name, net)
 
-            # prevent clash with rails sel rails above decoder
-            sel_rails_based_max_y = (self.bank.wordline_driver_inst.by() -
-                                     self.bank.col_decoder_rail_space
-                                     - self.column_decoder.height)
-
-            # find flop nwell extension
-            flop_nwells = self.column_decoder.flop.get_layer_shapes(NWELL, recursive=True)
-            top_nwell = max(flop_nwells, key=lambda x: x.uy())
-            flop_nwell_extension = top_nwell.uy() - self.column_decoder.flop.height
-
-            wl_driver_buffer = self.bank.wordline_driver.logic_buffer.logic_mod
-            wl_driver_nwell = max(wl_driver_buffer.get_layer_shapes(NWELL), key=lambda x: x.uy())
-            wl_nwell_extension = wl_driver_nwell.uy() - wl_driver_buffer.height
-            parallel_nwell_space = self.get_parallel_space(NWELL)
-
-            max_y_offset = (self.bank.wordline_driver_inst.by() - self.column_decoder.height
-                            - flop_nwell_extension - wl_nwell_extension - parallel_nwell_space -  # space above decoder
-                            self.wide_space)  # space below decoder
-            max_y_offset = min(max_y_offset, sel_rails_based_max_y)
-
-        # bring it closer to the sel pins
-        sel_pin_y = [self.bank.get_pin("sel[{}]".format(x)).cy() for x in range(self.words_per_row)]
-        middle_y = sum(sel_pin_y) / self.words_per_row
-        max_y_offset = min(middle_y - 0.5 * self.column_decoder.height, max_y_offset)
-        if self.words_per_row > 2:
-            # align one of the sel pins with the closest decoder output
-            # find closest decoder output to sel_pins
-            decoder_mux_pins = [(self.column_decoder.get_pin("out[{}]".format(x)),
-                                 self.bank.get_pin("sel[{}]".format(x)), x)
-                                for x in range(self.words_per_row)]
-            # because we're shifting down, only decoder outputs above sel pins are candidates
-            decoder_height = self.column_decoder.height  # subtract height because flipped vertically
-            valid_pins = list(filter(lambda x: max_y_offset + (decoder_height - x[0].by()) > x[1].uy(),
-                                     decoder_mux_pins))
-            closest_pair = min(valid_pins, key=lambda x: abs(max_y_offset + (decoder_height - x[0].cy())
-                                                             - x[1].cy()))
-            decoder_pin, mux_pin, self.closest_decoder_pin_index = closest_pair
-            # align bottom of pins if there is a mismatch
-            if max_y_offset + (decoder_height - decoder_pin.uy()) > mux_pin.by():
-                max_y_offset -= (max_y_offset + (decoder_height - decoder_pin.uy()) - mux_pin.by())
-            max_y_offset += decoder_height  # for mirror
-        return max_y_offset
-
-    def add_right_col_decoder(self):
-        if self.words_per_row < 2:
+    def add_col_decoder(self):
+        if self.words_per_row == 1:
             return
-
-        decoder_y_offset = self.get_col_decoder_y()
-
-        # given the y_offset, find the minimum x offset such that decoder doesn't clash with bank's control rails
-        max_x_offset = self.bank.width
-        for i in range(len(self.bank.rail_names)):
-            rail_name = self.bank.rail_names[i] + "_rail"
-            rail = getattr(self.bank, rail_name)
-            if rail.uy() > decoder_y_offset:
-                max_x_offset = min(max_x_offset, rail.offset.x)
-
-        rails_x_offset = (max_x_offset - (self.words_per_row - 1) * self.m2_pitch)
-        decoder_x_offset = rails_x_offset - self.get_wide_space(METAL2) - self.column_decoder.width
-
-        mirror = "MX" if self.words_per_row > 2 else "R0"
-        self.column_decoder_inst = self.add_inst("col_decoder", mod=self.column_decoder,
-                                                 offset=vector(decoder_x_offset, decoder_y_offset),
-                                                 mirror=mirror)
-        self.connect_inst(self.col_decoder_connections)
-
-    def add_left_col_decoder(self):
-        if self.words_per_row < 2:
-            return
-        decoder_y = self.get_col_decoder_y()
-        decoder_x = self.mid_gnd.lx() - self.wide_space
-        if self.words_per_row == 2:
-            decoder_x -= 2 * self.m2_pitch
+        lowest_control_flop = min(self.bank.control_flop_insts, key=lambda x: x[2].by())[2]
+        if self.bank.col_decoder_is_left:
+            flop_inputs_pins = [self.right_bank_inst.get_pin(x)
+                                for x in self.bank_flop_inputs]
+            left_most_rail_x = min(flop_inputs_pins, key=lambda x: x.lx()).lx()
         else:
-            decoder_x -= (2 * self.wide_space + self.rail_height)
+            left_most_rail_x = self.bank.leftmost_control_rail.offset.x
 
-        mirror = "XY" if self.words_per_row > 2 else "MY"
+        column_decoder_y = (lowest_control_flop.by() +
+                            (self.bank.col_decoder_y - self.bank.control_flop_y))  # account for offset_all_coordinates
 
+        column_decoder = self.column_decoder
+
+        col_decoder_x = (left_most_rail_x - (1 + self.words_per_row) * self.bus_pitch -
+                         column_decoder.width)
         self.column_decoder_inst = self.add_inst("col_decoder", mod=self.column_decoder,
-                                                 offset=vector(decoder_x, decoder_y), mirror=mirror)
-        self.connect_inst(self.col_decoder_connections)
+                                                 offset=vector(col_decoder_x, column_decoder_y))
+        self.connect_inst(self.get_col_decoder_connections())
 
     def get_left_bank_x(self):
         x_offset_by_wordline_driver = self.mid_gnd.lx() - self.wide_space - self.bank.width
@@ -220,90 +328,113 @@ class CmosSram(sram):
 
     def add_row_decoder(self):
 
-        wordline_driver_x = self.bank.wordline_driver_inst.lx()
-        left_most_rail_x = self.bank.leftmost_rail.offset.x
+        top_flop_inst = max(self.bank.control_flop_insts, key=lambda x: x[2].by())[2]
+        min_y = self.row_decoder_y
+        if self.bank.col_decoder_is_left:
+            self.col_sel_rails_y = (top_flop_inst.uy() + self.bank.rail_space_above_controls
+                                    - self.words_per_row * self.bus_pitch)
+            min_y = min(min_y, self.col_sel_rails_y)
 
+        bank_m2_rails = self.bank.m2_rails
+        valid_rails = [x for x in bank_m2_rails if x.uy() + self.get_line_end_space(METAL2) > min_y]
+        # always include decoder clk
+        leftmost_rail = min(valid_rails + [self.get_decoder_clk_pin()], key=lambda x: x.lx())
+        left_most_rail_x = leftmost_rail.lx()
         if self.column_decoder_inst is not None:
-            if self.words_per_row == 2:
-                # leave room for ADDR pin
-                max_x_offset = self.column_decoder_inst.lx() - self.wide_space - self.m2_pitch
-            else:
-                # leave room for vdd and gnd pins to the left
-                vdd_pins = self.row_decoder.get_pins("vdd")
-                vdd_below_bitcells = list(filter(lambda x: x.by() < self.row_decoder.predecoder_height,
-                                                 vdd_pins))
-                vdd_extension = max(vdd_below_bitcells, key=lambda x: x.rx()).rx() - self.row_decoder.width
-                max_x_offset = (self.column_decoder_inst.lx() - vdd_extension -
-                                2 * self.wide_space - self.rail_height)
-        else:
-            max_x_offset = left_most_rail_x - self.wide_space
+            left_most_rail_x -= self.words_per_row * self.bus_pitch
+        self.leftmost_m2_rail_x = left_most_rail_x
 
-        # avoid clash with control_flops
-        if self.bank.height - self.row_decoder.height - self.wide_space < self.bank.read_buf_inst.uy():
-            max_x_offset = min(max_x_offset, self.bank.get_pin("read").lx() - self.m2_pitch - self.wide_space)
-
-        x_offset = min(wordline_driver_x - self.row_decoder.row_decoder_width,
-                       max_x_offset - self.row_decoder.width)
-        y_offset = self.bank.wordline_driver_inst.by() - self.row_decoder.predecoder_height
+        max_predecoder_x = (left_most_rail_x - self.get_wide_space(METAL2) -
+                            self.row_decoder.width)
+        max_row_decoder_x = self.bank.wordline_driver_inst.lx() - self.row_decoder.row_decoder_width
+        x_offset = min(max_predecoder_x, max_row_decoder_x)
 
         self.row_decoder_inst = self.add_inst(name="row_decoder", mod=self.row_decoder,
-                                              offset=vector(x_offset, y_offset))
+                                              offset=vector(x_offset, self.row_decoder_y))
+
+        self.connect_inst(self.get_row_decoder_connections())
+
+    def get_row_decoder_connections(self):
         temp = []
         for i in range(self.row_addr_size):
             temp.append("ADDR[{0}]".format(i))
         for j in range(self.num_rows):
             temp.append("dec_out[{0}]".format(j))
-        temp.extend(["clk_buf_1", "vdd", "gnd"])
-        self.connect_inst(temp)
+        temp.extend(["decoder_clk", "vdd", "gnd"])
+        return temp
 
     def add_power_rails(self):
         bank_vdd = self.bank.mid_vdd
         y_offset = bank_vdd.by()
-        x_offset = self.row_decoder_inst.lx() - self.wide_space - bank_vdd.width()
+        min_decoder_x = self.row_decoder_inst.lx()
+        if self.column_decoder_inst is not None:
+            min_decoder_x = min(min_decoder_x, self.column_decoder_inst.lx() - 2 * self.bus_pitch)
+        x_offset = min_decoder_x - self.wide_space - bank_vdd.width()
         self.mid_vdd = self.add_rect(METAL2, offset=vector(x_offset, y_offset), width=bank_vdd.width(),
-                                     height=self.row_decoder_inst.uy() - y_offset)
+                                     height=bank_vdd.height())
 
         x_offset -= (self.get_wide_space(METAL2) + bank_vdd.width())
         self.mid_gnd = self.add_rect(METAL2, offset=vector(x_offset, y_offset), width=bank_vdd.width(),
-                                     height=self.row_decoder_inst.uy() - y_offset)
+                                     height=bank_vdd.height())
 
-    def get_bank_connections(self, bank_num):
-        connections = []
-        for i in range(self.word_size):
-            connections.append("DATA_{0}[{1}]".format(bank_num + 1, i))
-            connections.append("MASK_{0}[{1}]".format(bank_num + 1, i))
+    @staticmethod
+    def shift_bits(prefix, bit_shift, conns_):
+        for index, conn in enumerate(conns_):
+            pattern = r"{}\[([0-9]+)\]".format(prefix)
+            match = re.match(pattern, conn)
+            if match:
+                digit = int(match.group(1))
+                conns_[index] = "{}[{}]".format(prefix, bit_shift + digit)
 
-        if self.words_per_row > 1:
-            for i in range(self.words_per_row):
-                connections.append("sel[{}]".format(i))
-        for i in range(self.num_rows):
-            connections.append("dec_out[{}]".format(i))
+    def get_bank_connection_replacements(self):
+        address_msb = "ADDR[{}]".format(self.addr_size - 1)
+        return [
+            ("read", "Web"),
+            ("addr_msb", address_msb),
+            ("clk_buf", "decoder_clk")
+        ]
 
-        bank_sel = "bank_sel" if bank_num == 0 else "bank_sel_2"
-        connections.extend([bank_sel, "read", "clk", "sense_trig",
-                            "clk_buf_{}".format(bank_num + 1), "clk_bar_{}".format(bank_num + 1),
-                            "vdd", "gnd"])
+    def get_bank_connections(self, bank_num, bank_mod):
+
+        connections = bank_mod. \
+            connections_from_mod(bank_mod, self.get_bank_connection_replacements())
+
+        if self.num_banks == 2 and bank_num == 1:
+            if OPTS.independent_banks:
+                connections = bank_mod.connections_from_mod(connections, [("DATA[", "DATA_1["),
+                                                                          ("MASK[", "MASK_1[")])
+            else:
+                self.shift_bits("DATA", self.word_size, connections)
+                self.shift_bits("MASK", self.word_size, connections)
         return connections
 
+    def get_decoder_clk_pin(self):
+        clk_pin_name = "decoder_clk" if "decoder_clk" in self.bank.pins else "clk_buf"
+        return self.right_bank_inst.get_pin(clk_pin_name)
+
     def route_row_decoder_clk(self):
-        clk_rail = self.bank.clk_buf_rail
-        mask_flop_clk_in = self.bank.mask_in_flops_inst.get_pin("clk")
+        clk_pin = self.get_decoder_clk_pin()
 
-        if self.column_decoder_inst is None:
-            via_y = mask_flop_clk_in.uy()
-        else:
-            via_y = min(mask_flop_clk_in.uy(), self.column_decoder_inst.by()) - m2m3.height
         decoder_clk_pins = self.row_decoder_inst.get_pins("clk")
-        valid_decoder_pins = list(filter(lambda x: x.uy() > via_y, decoder_clk_pins))
-        closest_clk = min(valid_decoder_pins, key=lambda x: min(abs(via_y - x.by()), abs(via_y - x.uy())))
+        valid_decoder_pins = list(filter(lambda x: x.by() > clk_pin.by(), decoder_clk_pins))
+        closest_clk = min(valid_decoder_pins, key=lambda x: abs(clk_pin.by() - x.by()))
 
-        self.add_contact(m2m3.layer_stack, offset=vector(clk_rail.offset.x, via_y))
-        self.add_rect(METAL3, offset=vector(closest_clk.lx(), via_y),
-                      width=clk_rail.offset.x - closest_clk.lx())
+        predecoder_mod = (self.row_decoder.pre2x4_inst + self.row_decoder.pre3x8_inst)[0]
+        predecoder_vdd_height = predecoder_mod.get_pins("vdd")[0].height()
+        wide_space = self.get_line_end_space(METAL3)
 
-        self.add_contact(m2m3.layer_stack, offset=vector(closest_clk.lx(), via_y))
-        if via_y < closest_clk.by():
-            self.add_rect("metal2", offset=vector(closest_clk.lx(), via_y), height=closest_clk.by() - via_y)
+        y_offset = closest_clk.by() + 0.5 * predecoder_vdd_height + wide_space
+
+        self.add_rect(METAL2, offset=clk_pin.ll(), width=clk_pin.width(),
+                      height=y_offset + m1m2.height - clk_pin.by())
+        if clk_pin.layer == METAL3:
+            self.add_cross_contact_center(cross_m2m3, clk_pin.center())
+        via_y = y_offset + 0.5 * m1m2.height
+        self.add_contact_center(m1m2.layer_stack, offset=vector(clk_pin.cx(), via_y))
+        m1_y = y_offset + 0.5 * m1m2.height - 0.5 * self.m1_width
+        self.add_rect(METAL1, offset=vector(closest_clk.lx(), m1_y),
+                      width=clk_pin.cx() - closest_clk.lx())
+        self.add_contact_center(m1m2.layer_stack, offset=vector(closest_clk.cx(), via_y))
 
     def route_column_decoder(self):
         if self.words_per_row < 2:
@@ -314,105 +445,156 @@ class CmosSram(sram):
             self.route_predecoder_column_decoder()
 
     def route_flop_column_decoder(self):
-        # route vdd to wordline driver vdd
+        self.route_col_decoder_clock()
 
-        for pin_name in ["vdd", "gnd"]:
-            col_decoder_pin = self.column_decoder_inst.get_pin(pin_name)
-            row_decoder_pins = self.row_decoder_inst.get_pins(pin_name)
+        # outputs
+        out_pin = self.column_decoder_inst.get_pin("dout")
+        out_bar_pin = self.column_decoder_inst.get_pin("dout_bar")
+        out_bar_y = out_bar_pin.cy()
+        out_y = max(out_bar_y, out_pin.cy()) + self.bus_pitch
+        y_offsets = [out_bar_y, out_y]
+        self.col_decoder_outputs = []
 
-            def filter_pins():
-                if pin_name == "vdd":
-                    return filter(lambda x: x.by() > col_decoder_pin.by(), row_decoder_pins)
-                else:
-                    return filter(lambda x: x.uy() < col_decoder_pin.uy(), row_decoder_pins)
+        self.route_col_decoder_to_rail(output_pins=[out_bar_pin, out_pin], rail_offsets=y_offsets)
 
-            closest_row_pin = min(filter_pins(), key=lambda x: abs(col_decoder_pin.cy() - x.cy()))
-            if self.single_bank:
-                self.add_rect(METAL1, offset=vector(col_decoder_pin.lx(), col_decoder_pin.by()),
-                              width=col_decoder_pin.height(),
-                              height=closest_row_pin.by() - col_decoder_pin.by())
-                self.add_rect(METAL1, offset=closest_row_pin.lr(), height=closest_row_pin.height(),
-                              width=col_decoder_pin.height() + col_decoder_pin.lx() - closest_row_pin.rx())
-            else:
-                x_offset = col_decoder_pin.rx() - col_decoder_pin.height()
-                height = closest_row_pin.cy() - col_decoder_pin.cy()
-                if abs(height) > self.m1_width:
-                    self.add_rect(METAL1, offset=vector(x_offset, col_decoder_pin.cy()),
-                                  width=col_decoder_pin.height(),
-                                  height=closest_row_pin.cy() - col_decoder_pin.cy())
-                rail = getattr(self, "mid_" + pin_name)
-                self.add_rect(METAL1, offset=vector(x_offset, closest_row_pin.by()),
-                              height=closest_row_pin.height(), width=rail.rx() - x_offset)
-        # clk
-        row_decoder_clks = self.row_decoder_inst.get_pins("clk")
+        self.route_col_decoder_outputs()
+        self.route_col_decoder_power()
+        self.copy_layout_pin(self.column_decoder_inst, "din", self.get_col_decoder_connections()[0])
+
+    def route_col_decoder_clock(self):
+        # route clk
+        row_decoder_clk = min(self.row_decoder_inst.get_pins("clk"), key=lambda x: x.cy())
+        row_decoder_vdd = min(self.row_decoder_inst.get_pins("vdd"), key=lambda x: x.cy())
+        decoder_clk_y = row_decoder_vdd.by() - self.bus_pitch
+        self.add_rect(METAL2, offset=vector(row_decoder_clk.lx(), decoder_clk_y), width=row_decoder_clk.width(),
+                      height=row_decoder_clk.by() - decoder_clk_y)
+        self.add_cross_contact_center(cross_m2m3, offset=vector(row_decoder_clk.cx(),
+                                                                decoder_clk_y + 0.5 * self.bus_width))
+        x_offset = self.column_decoder_inst.lx() - self.bus_pitch
+        self.add_rect(METAL3, offset=vector(x_offset, decoder_clk_y), height=self.bus_width,
+                      width=row_decoder_clk.cx() - x_offset)
         col_decoder_clk = self.column_decoder_inst.get_pin("clk")
-        if self.single_bank:
-            closest_clk = min(row_decoder_clks, key=lambda x: abs(col_decoder_clk.cy() - x.cy()))
-            self.add_contact(m1m2.layer_stack, offset=col_decoder_clk.ll(), rotate=90)
-            self.add_rect(METAL2, offset=vector(closest_clk.lx(), col_decoder_clk.by()),
-                          width=col_decoder_clk.lx() - closest_clk.lx())
-        else:
-            # find clk rail
-            clk_rail = getattr(self.bank, "clk_buf_rail")
-            clk_rail_x = self.bank_insts[1].rx() - (clk_rail.rx())
-            mask_in_pin = self.bank.mask_in_flops_inst.get_pin("clk")
-            y_offset = mask_in_pin.cy() - 0.5 * m2m3.height
-            x_offset = self.column_decoder_inst.rx() + self.wide_space
-            self.add_contact(m2m3.layer_stack, offset=vector(clk_rail_x, y_offset))
-
-            self.add_rect(METAL3, offset=vector(clk_rail_x, mask_in_pin.by()), width=x_offset - clk_rail_x)
-            self.add_contact(m2m3.layer_stack, offset=vector(x_offset, y_offset))
-            self.add_rect(METAL2, offset=vector(x_offset, y_offset),
-                          height=col_decoder_clk.uy() - y_offset)
-            self.add_contact_center(m1m2.layer_stack,
-                                    offset=vector(x_offset + 0.5 * self.m1_width, col_decoder_clk.cy()))
-            self.add_rect(METAL1, offset=col_decoder_clk.lr(), width=x_offset - col_decoder_clk.rx())
-        # address in
-        addr_in = self.column_decoder_inst.get_pin("din")
-        if self.single_bank:
-            x_offset = self.bank.get_pin("read").lx() - self.m2_pitch
-            y_bend = self.bank.read_buf_inst.get_pin("gnd").uy() + self.get_parallel_space(METAL2)
-            self.add_layout_pin("ADDR[{}]".format(self.addr_size - 1), METAL2,
-                                offset=vector(x_offset, self.min_point), height=y_bend - self.min_point)
-            self.add_rect(METAL2, offset=vector(x_offset, y_bend), width=addr_in.lx() - x_offset)
-            self.add_rect(METAL2, offset=vector(addr_in.lx(), y_bend), height=addr_in.by() - y_bend)
-        else:
-            self.add_layout_pin("ADDR[{}]".format(self.addr_size - 1), METAL2,
-                                offset=vector(addr_in.rx() - self.m2_width, self.min_point),
-                                height=addr_in.by() - self.min_point)
-
-        # sel[1]
-        sel_1_in = self.bank_insts[self.num_banks - 1].get_pin("sel[1]")
-        sel_1_out = self.column_decoder_inst.get_pin("dout")
-        x_offset = sel_1_in.lx() if self.single_bank else sel_1_in.rx()
-        self.add_rect(METAL1, offset=vector(sel_1_out.rx(), sel_1_in.by()),
-                      width=x_offset - sel_1_out.rx())
-
-        # sel[0]
-        sel_0_in = self.bank_insts[self.num_banks - 1].get_pin("sel[0]")
-        sel_0_out = self.column_decoder_inst.get_pin("dout_bar")
-        y_bend = self.column_decoder_inst.uy() + self.wide_space
-        if self.single_bank:
-            x_bend = self.bank.mid_vdd.lx() - self.wide_space - self.m1_pitch
-            x_end = sel_0_in.lx()
-        else:
-            x_bend = self.column_decoder_inst.lx() - self.wide_space - 2 * self.m2_pitch
-            x_end = sel_0_in.rx()
-        self.add_rect(METAL2, offset=sel_0_out.ul(), height=y_bend - sel_0_out.uy())
-        self.add_contact(m1m2.layer_stack, offset=vector(sel_0_out.lx() + m1m2.height, y_bend),
-                         rotate=90)
-        self.add_rect(METAL1, offset=vector(sel_0_out.lx(), y_bend), width=x_bend - sel_0_out.lx())
-        self.add_contact_center(m1m2.layer_stack, offset=vector(x_bend + 0.5 * m1m2.width,
-                                                                y_bend + 0.5 * self.m1_width))
-        self.add_rect(METAL2, offset=vector(x_bend, sel_0_in.by()), height=y_bend - sel_0_in.by())
-        self.add_contact(m1m2.layer_stack, offset=vector(x_bend, sel_0_in.by()))
-        self.add_rect(METAL1, offset=vector(x_bend, sel_0_in.by()), width=x_end - x_bend)
-
-        if not self.single_bank:
-            offsets = [x_bend, x_bend - self.m2_pitch]
-            self.add_contact(m1m2.layer_stack, offset=vector(offsets[1] + self.m2_width, sel_1_in.by()),
+        self.add_cross_contact_center(cross_m2m3, offset=vector(x_offset + 0.5 * self.bus_width,
+                                                                decoder_clk_y + 0.5 * self.bus_width))
+        y_offset = col_decoder_clk.uy() - self.bus_width
+        self.add_rect(METAL2, offset=vector(x_offset, y_offset), height=decoder_clk_y - y_offset,
+                      width=self.bus_width)
+        self.add_rect(METAL2, offset=vector(x_offset, y_offset), height=self.bus_width,
+                      width=col_decoder_clk.lx() - x_offset)
+        if col_decoder_clk.layer == METAL1:
+            self.add_contact(m1m2.layer_stack, offset=vector(col_decoder_clk.lx(),
+                                                             col_decoder_clk.cy() - 0.5 * m1m2.width),
                              rotate=90)
-            self.route_right_bank_sel_in(offsets)
+
+    def route_col_decoder_to_rail(self, output_pins=None, rail_offsets=None):
+        if output_pins is None:
+            output_pins = [self.column_decoder_inst.get_pin("out[{}]".format(i)) for i in range(self.words_per_row)]
+        if rail_offsets is None:
+            rail_offsets = [x.cy() for x in output_pins]
+
+        if self.bank.col_decoder_is_left:
+            base_x = self.column_decoder_inst.rx() + self.bus_pitch
+            # using by() because mirror
+            base_y = self.col_sel_rails_y
+            rails_y = [base_y + i * self.bus_pitch for i in range(self.words_per_row)]
+
+            x_offset = self.leftmost_m2_rail_x
+            rails_x = [x_offset + i * self.bus_pitch for i in range(self.words_per_row)]
+        else:
+            base_x = (self.bank.leftmost_control_rail.offset.x -
+                      self.bus_pitch * self.words_per_row)
+            rails_y = []
+            rails_x = []
+        x_offsets = [base_x + i * self.bus_pitch for i in range(self.words_per_row)]
+
+        self.col_decoder_outputs = []
+        for i in range(self.words_per_row):
+            output_pin = output_pins[i]
+            x_offset = x_offsets[i]
+            y_offset = rail_offsets[i]
+            if i == 0 and self.words_per_row == 2:
+                if len(self.column_decoder.buffer_inst.mod.module_insts) > 1:
+                    self.add_contact_center(m1m2.layer_stack,
+                                            offset=vector(output_pin.cx(), y_offset))
+                self.add_rect(METAL2, offset=vector(output_pin.lx(), y_offset - 0.5 * self.m2_width),
+                              height=self.m2_width,
+                              width=x_offset - output_pin.lx() + self.bus_width)
+            else:
+                self.add_rect(METAL1, offset=vector(output_pin.cx(), y_offset),
+                              width=x_offset - output_pin.cx(),
+                              height=self.bus_width)
+                self.add_cross_contact_center(cross_m1m2,
+                                              offset=vector(x_offset + 0.5 * self.bus_width,
+                                                            y_offset + 0.5 * self.bus_width),
+                                              rotate=True)
+            if not self.bank.col_decoder_is_left:
+                self.col_decoder_outputs.append(self.add_rect(METAL2,
+                                                              offset=vector(x_offset, y_offset),
+                                                              width=self.bus_width,
+                                                              height=self.bus_width))
+            else:
+                _, fill_height = self.calculate_min_area_fill(self.bus_width, layer=METAL2)
+                rail_y = rails_y[i]
+                m2_height = rail_y - y_offset
+                self.add_rect(METAL2, offset=vector(x_offset, y_offset),
+                              height=m2_height, width=self.bus_width)
+
+                if abs(m2_height) < fill_height:
+                    self.add_rect(METAL2, offset=vector(x_offset, y_offset), height=fill_height, width=self.bus_width)
+
+                self.add_cross_contact_center(cross_m2m3, offset=vector(x_offset + 0.5 * self.bus_width,
+                                                                        rail_y + 0.5 * self.bus_width))
+                self.add_rect(METAL3, offset=vector(x_offset, rail_y), width=rails_x[i] - x_offset,
+                              height=self.bus_width)
+                self.add_cross_contact_center(cross_m2m3, offset=vector(rails_x[i] + 0.5 * self.bus_width,
+                                                                        rail_y + 0.5 * self.bus_width))
+                self.col_decoder_outputs.append(self.add_rect(METAL2, offset=vector(rails_x[i], rail_y),
+                                                              width=self.bus_width, height=self.bus_width))
+
+    def route_col_decoder_outputs(self):
+        if self.num_banks == 2:
+            top_predecoder_inst = max(self.row_decoder.pre2x4_inst + self.row_decoder.pre3x8_inst,
+                                      key=lambda x: x.uy())
+            # place rails just above the input flops
+            num_flops = top_predecoder_inst.mod.number_of_inputs
+            y_space = top_predecoder_inst.get_pins("vdd")[0].height() + self.get_wide_space(METAL3) + self.bus_space
+            self.left_col_mux_select_y = (self.row_decoder_inst.by() + top_predecoder_inst.by()
+                                          + num_flops * top_predecoder_inst.mod.flop.height + y_space)
+
+        for i in range(self.words_per_row):
+            sel_pin = self.right_bank_inst.get_pin("sel[{}]".format(i))
+            rail = self.col_decoder_outputs[i]
+            self.add_rect(METAL2, offset=rail.ul(), width=self.bus_width,
+                          height=sel_pin.cy() - rail.uy())
+            self.add_rect(METAL1, offset=vector(rail.lx(), sel_pin.cy() - 0.5 * self.bus_width),
+                          width=sel_pin.lx() - rail.lx(), height=self.bus_width)
+            self.add_cross_contact_center(cross_m1m2, offset=vector(rail.cx(), sel_pin.cy()),
+                                          rotate=True)
+
+            if self.num_banks == 2:
+                # route to the left
+                x_start = self.left_bank_inst.rx() - self.left_bank.leftmost_rail.offset.x
+                x_offset = x_start + (1 + i) * self.bus_pitch
+
+                y_offset = self.left_col_mux_select_y + i * self.bus_pitch
+                self.add_rect(METAL2, offset=vector(rail.lx(), sel_pin.cy()), width=self.bus_width,
+                              height=y_offset - sel_pin.cy())
+                self.add_cross_contact_center(cross_m2m3,
+                                              offset=vector(rail.cx(),
+                                                            y_offset + 0.5 * self.bus_width))
+                self.add_rect(METAL3, offset=vector(x_offset, y_offset), height=self.bus_width,
+                              width=rail.lx() - x_offset)
+                self.add_cross_contact_center(cross_m2m3,
+                                              offset=vector(x_offset + 0.5 * self.bus_width,
+                                                            y_offset + 0.5 * self.bus_width))
+                sel_pin = self.left_bank_inst.get_pin("sel[{}]".format(i))
+                self.add_rect(METAL2, offset=vector(x_offset, sel_pin.cy()), width=self.bus_width,
+                              height=y_offset - sel_pin.cy())
+                self.add_cross_contact_center(cross_m1m2,
+                                              offset=vector(x_offset + 0.5 * self.bus_width,
+                                                            sel_pin.cy()), rotate=True)
+                self.add_rect(METAL1, offset=sel_pin.lr(), height=sel_pin.height(),
+                              width=x_offset - sel_pin.rx())
 
     def route_right_bank_sel_in(self, sel_offsets):
         """
@@ -443,237 +625,27 @@ class CmosSram(sram):
             x_bend -= self.m2_pitch
 
     def route_predecoder_column_decoder(self):
+        self.route_col_decoder_clock()
 
-        # assumes predecoders are wider than the control_flops below it
         # address pins
-        all_addr_pins = ["ADDR[{}]".format(self.addr_size - 1 - i) for i in range(self.col_addr_size)]
+        all_addr_pins = [x for x in self.get_col_decoder_connections() if x.startswith("ADDR")]
         all_addr_pins = list(reversed(all_addr_pins))
         for i in range(self.col_addr_size):
-            col_decoder_pin = self.column_decoder_inst.get_pin("flop_in[{}]".format(i))
-            self.add_layout_pin(all_addr_pins[i], METAL2, offset=vector(col_decoder_pin.lx(), self.min_point),
-                                height=col_decoder_pin.by() - self.min_point)
+            self.copy_layout_pin(self.column_decoder_inst, "flop_in[{}]".format(i), all_addr_pins[i])
 
-        # sel pins
-        if self.single_bank:
-            x_offset = self.column_decoder_inst.rx() + self.wide_space
-        else:
-            x_offset = self.column_decoder_inst.lx() - self.wide_space - self.m2_width
-
-        sel_offsets = []
-
-        for i in range(self.words_per_row):
-            out_pin = self.column_decoder_inst.get_pin("out[{}]".format(i))
-            in_pin = self.bank_insts[self.num_banks - 1].get_pin("sel[{}]".format(i))
-
-            in_pin_x = in_pin.lx() if self.single_bank else in_pin.rx()
-            if i == self.closest_decoder_pin_index:
-                self.add_rect(METAL1, offset=vector(out_pin.lx(), in_pin.by()),
-                              width=in_pin_x - out_pin.lx())
-            else:
-                y_offset = out_pin.cy() - 0.5 * self.m1_width
-
-                self.add_rect(METAL1, offset=vector(out_pin.rx(), y_offset),
-                              width=x_offset - out_pin.rx() + self.m1_width)
-                self.add_contact_center(m1m2.layer_stack, offset=vector(x_offset + 0.5 * m1m2.width,
-                                                                        y_offset + 0.5 * self.m1_width))
-                m2_height = in_pin.by() - y_offset
-                self.add_rect(METAL2, offset=vector(x_offset, y_offset), height=m2_height)
-
-                if i < self.closest_decoder_pin_index:
-                    self.add_contact(m1m2.layer_stack, offset=vector(x_offset, in_pin.by()))
-                else:
-                    self.add_contact(m1m2.layer_stack, offset=vector(x_offset, in_pin.by() - m1m2.height))
-                rail_x = x_offset if self.single_bank else x_offset + self.m1_width
-                self.add_rect(METAL1, offset=vector(rail_x, in_pin.by()), width=in_pin_x - rail_x)
-            if not self.single_bank:
-                # route to right bank
-                if i == self.closest_decoder_pin_index:
-                    self.add_contact(m1m2.layer_stack,
-                                     offset=vector(x_offset, in_pin.by() + self.m1_width - m1m2.height))
-                sel_offsets.append(x_offset)
-                self.route_right_bank_sel_in(sel_offsets)
-
-            if not self.single_bank or not i == self.closest_decoder_pin_index:
-                x_offset += self.m2_pitch if self.single_bank else -self.m2_pitch
-
-        # clk
-        col_decoder_clk = self.column_decoder_inst.get_pin("clk")
-        if self.single_bank:
-            row_decoder_clks = self.row_decoder_inst.get_pins("clk")
-            closest_clk = list(filter(lambda x: x.by() <= col_decoder_clk.by() <= x.uy(),
-                                      row_decoder_clks))
-            if not closest_clk:
-                closest_clk = min(row_decoder_clks, key=lambda x: x.by())
-            else:
-                closest_clk = closest_clk[0]
-            self.add_rect(METAL2, offset=vector(closest_clk.lx(), col_decoder_clk.by()),
-                          width=col_decoder_clk.lx() - closest_clk.lx())
-        else:
-            # find clk rail
-            clk_rail = getattr(self.bank, "clk_buf_rail")
-            clk_rail_x = self.bank_insts[1].rx() - (clk_rail.rx())
-            mask_in_pin = self.bank.mask_in_flops_inst.get_pin("clk")
-            y_offset = mask_in_pin.cy() - 0.5 * m2m3.height
-            x_offset = col_decoder_clk.lx()
-            self.add_contact(m2m3.layer_stack, offset=vector(clk_rail_x, y_offset))
-
-            self.add_rect(METAL3, offset=vector(clk_rail_x, mask_in_pin.by()), width=x_offset - clk_rail_x)
-            self.add_contact(m2m3.layer_stack, offset=vector(x_offset, y_offset))
-            self.add_rect(METAL2, offset=vector(x_offset, y_offset),
-                          height=col_decoder_clk.by() - y_offset)
-
-        # vdd and gnd
-        col_decoder_vdd_pins = self.column_decoder_inst.get_pins("vdd")
-        row_decoder_vdd = self.row_decoder_inst.get_pins("vdd")
-        top_col_vdd = max(col_decoder_vdd_pins, key=lambda x: x.uy())
-        closest_row_vdd = min(row_decoder_vdd, key=lambda x: abs(x.cy() - top_col_vdd.cy()))
-
-        up = "up"
-        down = "down"
-
-        direction = up if closest_row_vdd.cy() >= top_col_vdd.cy() else down
-
-        def find_closest_row_pin(col_pin, pin_name_):
-            row_decoder_pins = self.row_decoder_inst.get_pins(pin_name_)
-            if direction == up:
-                valid = list(filter(lambda x: x.cy() >= col_pin.cy(), row_decoder_pins))
-            else:
-                valid = list(filter(lambda x: x.cy() < col_pin.cy(), row_decoder_pins))
-            if not valid:
-                return None
-            closest = min(valid, key=lambda x: abs(x.cy() - col_pin.cy()))
-            # predecoder vdd's may overlap, find the rightmost one
-            overlapped_pins = list(filter(lambda x: x.cy() == closest.cy(), row_decoder_pins))
-            return max(overlapped_pins, key=lambda x: x.rx())
-
-        for pin_name in ["vdd", "gnd"]:
-            for pin in self.column_decoder_inst.get_pins(pin_name):
-                closest_row_pin = find_closest_row_pin(pin, pin_name)
-                rail = getattr(self, "mid_" + pin_name)
-
-                if closest_row_pin is None:
-
-                    flop_vdd_extension = max(self.column_decoder.flop.get_pin("vdd").uy() -
-                                             self.column_decoder.flop.height,
-                                             self.column_decoder.inv.get_pin("vdd").uy() -
-                                             self.column_decoder.inv.height)
-                    y_offset = min(pin.by(), self.row_decoder_inst.by() - flop_vdd_extension -
-                                   pin.height() - self.wide_space)
-                    x_offset = pin.lx() if self.single_bank else pin.rx()
-                    self.add_rect(METAL1, offset=vector(rail.lx(), y_offset), height=pin.height(),
-                                  width=x_offset - rail.lx())
-                    if y_offset < pin.by():
-                        self.add_rect(METAL1, offset=vector(x_offset, y_offset), width=pin.height(),
-                                      height=pin.by() - y_offset)
-                    via_x = 0.5 * (rail.lx() + rail.rx())
-                    self.add_contact_center(m1m2.layer_stack, offset=vector(via_x,
-                                                                            y_offset + 0.5 * pin.height()),
-                                            size=[2, 1], rotate=90)
-                    continue
-
-                if closest_row_pin.uy() > self.bank.wordline_driver_inst.by() and pin_name == "vdd":
-                    # this is a vdd, so just add all the way to wordline drivers
-                    self.add_rect(METAL1, offset=pin.ul(),
-                                  height=closest_row_pin.by() - pin.uy(), width=pin.height())
-                    continue
-
-                if self.single_bank:
-                    x_offset = pin.lx() - self.wide_space - pin.height()
-                    self.add_rect(METAL1, offset=vector(x_offset, pin.by()),
-                                  height=pin.height(), width=pin.lx() - x_offset)
-
-                    if direction == up:
-                        y_bend = closest_row_pin.by() - pin.height() - self.wide_space
-                    else:
-                        y_bend = closest_row_pin.uy() + pin.height() + self.wide_space
-
-                    self.add_rect(METAL1, offset=vector(x_offset, pin.by()), height=y_bend - pin.by(),
-                                  width=pin.height())
-                    closest_x = closest_row_pin.rx() - pin.height()
-                    self.add_rect(METAL1, offset=vector(closest_x, y_bend), height=pin.height(),
-                                  width=x_offset + pin.height() - closest_x)
-                    self.add_rect(METAL1, offset=vector(closest_x, y_bend), width=pin.height(),
-                                  height=closest_row_pin.cy() - y_bend)
-                else:
-                    x_offset = pin.rx() + self.wide_space
-                    # add a jut to move away from potential clash to the right
-                    jut = pin.height() + self.wide_space
-                    if abs(pin.cy() - closest_row_pin.cy()) < jut:
-                        jut = 0
-                        y_bend = pin.by()
-                    elif direction == up:
-                        y_bend = pin.uy() + jut
-                    else:
-                        y_bend = pin.by() - jut
-                    jut_x = pin.rx() - pin.height()
-                    if jut > 0:
-                        self.add_rect(METAL1, offset=vector(jut_x, pin.cy()),
-                                      width=pin.height(), height=y_bend - pin.cy())
-                    self.add_rect(METAL1, offset=vector(jut_x, y_bend), height=pin.height(),
-                                  width=x_offset + pin.height() - jut_x)
-                    self.add_rect(METAL1, offset=vector(x_offset, y_bend), width=pin.height(),
-                                  height=closest_row_pin.cy() - y_bend)
-                    self.add_rect(METAL1, offset=vector(x_offset, closest_row_pin.by()),
-                                  height=closest_row_pin.height(), width=rail.lx() - x_offset)
-
-    def join_decoder_wells(self):
-        layers = ["nwell", "pimplant"]
-        purposes = ["drawing", "drawing"]
-
-        decoder_inverter = self.row_decoder.inv_inst[-1].mod
-        driver_nand = self.bank.wordline_driver.logic_buffer.logic_mod
-        decoder_nand = self.row_decoder.nand_inst[0].mod
-        decoder_nand_x = self.row_decoder.nand_inst[0].lx() + self.row_decoder_inst.lx()
-
-        row_decoder_right = self.row_decoder_inst.lx() + self.row_decoder.row_decoder_width
-        x_shift = self.bank.wordline_driver.buffer_insts[-1].lx()
-
-        for i in range(2):
-            logic_rect = max(driver_nand.get_layer_shapes(layers[i], purposes[i]),
-                             key=lambda x: x.height)
-            decoder_rect = max(decoder_inverter.get_layer_shapes(layers[i], purposes[i]),
-                               key=lambda x: x.height)
-            top_most = max([decoder_rect, logic_rect], key=lambda x: x.by())
-            fill_height = driver_nand.height - top_most.by()
-            # extension of rect past top of cell
-            rect_y_extension = top_most.uy() - driver_nand.height
-            fill_width = self.bank.wordline_driver_inst.lx() - row_decoder_right + x_shift
-
-            if not self.single_bank:
-                driver_nand_x = (self.left_bank_inst.rx() -
-                                 self.bank.wordline_driver.buffer_insts[0].lx())
-                decoder_nand_rect = max(decoder_nand.get_layer_shapes(layers[i], purposes[i]),
-                                        key=lambda x: x.height)
-                top_most_left = max([decoder_nand_rect, logic_rect], key=lambda x: x.by())
-                fill_height_left = driver_nand.height - top_most_left.by()
-                rect_y_extension_left = top_most_left.uy() - driver_nand.height
-                fill_width_left = decoder_nand_x - driver_nand_x
-
-            # only add at the vdd pins which is where we have nwells
-            for vdd_pin in self.row_decoder_inst.get_pins("vdd"):
-                if utils.round_to_grid(vdd_pin.cy()) == utils.round_to_grid(
-                        self.bank.wordline_driver_inst.by()):  # bottom row
-                    self.add_rect(layers[i], offset=vector(row_decoder_right, vdd_pin.cy() - rect_y_extension),
-                                  width=fill_width, height=top_most.height)
-                    if not self.single_bank and layers[i] == "nwell":
-                        self.add_rect(layers[i], offset=vector(driver_nand_x, vdd_pin.cy() - rect_y_extension_left),
-                                      width=fill_width_left, height=top_most_left.height)
-                elif utils.round_to_grid(vdd_pin.cy()) == utils.round_to_grid(
-                        self.bank.wordline_driver_inst.uy()):  # top row
-                    self.add_rect(layers[i], offset=vector(row_decoder_right, vdd_pin.cy() - fill_height),
-                                  width=fill_width, height=fill_height + rect_y_extension)
-                    if not self.single_bank and layers[i] == "nwell":
-                        self.add_rect(layers[i], offset=vector(driver_nand_x, vdd_pin.cy() - fill_height_left),
-                                      width=fill_width_left, height=fill_height_left + rect_y_extension_left)
-                elif vdd_pin.cy() > self.bank.wordline_driver_inst.by():  # row decoder
-                    self.add_rect(layers[i], offset=vector(row_decoder_right, vdd_pin.cy() - fill_height),
-                                  width=fill_width, height=2 * fill_height)
-                    if not self.single_bank and layers[i] == "nwell":
-                        self.add_rect(layers[i], offset=vector(driver_nand_x, vdd_pin.cy() - fill_height_left),
-                                      width=fill_width_left, height=2 * fill_height_left)
+        #
+        self.route_col_decoder_to_rail()
+        self.route_col_decoder_outputs()
+        self.route_col_decoder_power()
 
     def route_decoder_power(self):
         rails = [self.mid_vdd, self.mid_gnd]
+
+        sample_power_pin = max(self.row_decoder_inst.get_pins("vdd"), key=lambda x: x.uy())
+        m3m4_via = ContactFullStack(start_layer=METAL3, stop_layer=METAL4,
+                                    centralize=True, max_width=self.mid_vdd.width,
+                                    max_height=sample_power_pin.height())
+
         pin_names = ["vdd", "gnd"]
         for i in range(2):
             rail = rails[i]
@@ -686,102 +658,399 @@ class CmosSram(sram):
                 else:
                     pin_right = self.bank.wordline_driver_inst.lx()
                     x_offset = rail.lx() if self.single_bank else self.left_bank_inst.rx()
-                self.add_rect(METAL1, offset=vector(x_offset, power_pin.by()),
+                self.add_rect(power_pin.layer, offset=vector(x_offset, power_pin.by()),
                               width=pin_right - x_offset, height=power_pin.height())
-                self.add_contact_center(m1m2.layer_stack, offset=vector(center_rail_x, power_pin.cy()),
-                                        size=[2, 1], rotate=90)
+                if power_pin.layer == METAL1:
+                    vias = [m1m2]
+                    sizes = [[1, 2]]
+                else:
+                    vias = [m2m3, m3m4]
+                    sizes = [[1, 2], m3m4_via.dimensions]
+                for via, size in zip(vias, sizes):
+                    self.add_contact_center(via.layer_stack,
+                                            offset=vector(center_rail_x, power_pin.cy()),
+                                            size=size, rotate=90)
+
+        via_offsets, fill_height = self.evaluate_left_power_rail_vias()
+        self.add_left_power_rail_vias(via_offsets, self.mid_vdd.uy(), fill_height)
+
+    def evaluate_left_power_rail_vias(self):
+        # find locations for
+        fill_width = self.mid_vdd.width
+        _, fill_height = self.calculate_min_area_fill(fill_width, min_height=self.m3_width,
+                                                      layer=METAL3)
+
+        wide_space = self.get_wide_space(METAL3)
+        via_spacing = wide_space + self.parallel_via_space
+        via_pitch = via_spacing + max(m2m3.height, fill_height)
+
+        m2_m3_blockages = []
+
+        for pin_name in ["vdd", "gnd"]:
+            power_pins = self.row_decoder_inst.get_pins(pin_name)
+            power_pins = [x for x in power_pins if x.layer == METAL3]
+            for power_pin in power_pins:
+                m2_m3_blockages.append((power_pin.by(), power_pin.uy()))
+
+        if self.num_banks == 2 and self.column_decoder_inst is not None:
+            # prevent select pins clash
+            m2_m3_blockages.append((self.left_col_mux_select_y,
+                                    self.bank.bitcell_array_inst.by()))
+
+        if self.num_banks == 2:
+            # prevent clashes with wl output to left bank
+            row_decoder_gnd = self.row_decoder_inst.get_pins("gnd")
+            row_decoder_gnd = [x for x in row_decoder_gnd
+                               if x.by() > self.bank.bitcell_array_inst.by()]
+            wl_space = self.get_parallel_space(METAL3)
+            for gnd_pin in row_decoder_gnd:
+                m2_m3_blockages.append((gnd_pin.by() - wl_space - self.m3_width,
+                                        gnd_pin.uy() + wide_space + self.m3_width))
+
+        m2_m3_blockages = list(sorted(m2_m3_blockages, key=lambda x: x[0]))
+        via_top = self.mid_vdd.height - via_pitch
+        via_offsets = []
+
+        lowest_flop_inst = min(self.bank.control_flop_insts, key=lambda x: x[2].by())[2]
+        y_offset = lowest_flop_inst.by()
+
+        while y_offset < via_top:
+            if len(m2_m3_blockages) > 0 and m2_m3_blockages[0][0] <= y_offset + via_pitch:
+                y_offset = m2_m3_blockages[0][1] + via_pitch
+                m2_m3_blockages.pop(0)
+            else:
+                via_offsets.append(y_offset)
+                y_offset += via_pitch
+        return via_offsets, fill_height
+
+    def add_left_power_rail_vias(self, via_offsets, rail_top, fill_height):
+        m4_power_pins = self.right_bank_inst.get_pins("vdd") + self.right_bank_inst.get_pins("gnd")
+        if self.num_banks == 2:
+            m4_power_pins.extend(self.left_bank_inst.get_pins("vdd") + self.left_bank_inst.get_pins("gnd"))
+        m4_power_pins = [x for x in m4_power_pins if x.layer == METAL4]
+
+        self.m4_vdd_rects = []
+        self.m4_gnd_rects = []
+        rails = [self.mid_vdd, self.mid_gnd]
+        fill_width = self.mid_vdd.width
+
+        for i in range(2):
+            rail = rails[i]
+            for y_offset in via_offsets:
+                via_offset = vector(rail.cx(), y_offset + 0.5 * fill_height)
+                self.add_contact_center(m2m3.layer_stack, offset=via_offset,
+                                        size=[1, 2], rotate=90)
+                self.add_contact_center(m3m4.layer_stack, offset=via_offset,
+                                        size=[1, 2], rotate=90)
+                self.add_rect_center(METAL3, offset=via_offset, width=fill_width,
+                                     height=fill_height)
+
+            rect = self.add_rect(METAL4, offset=rail.ll(),
+                                 width=rail.width, height=rail_top - rail.by())
+            if i % 2 == 0:
+                self.m4_vdd_rects.append(rect)
+            else:
+                self.m4_gnd_rects.append(rect)
+
+        self.m4_power_pins = m4_power_pins
+
+    def route_col_decoder_power(self):
+        rails = [self.mid_vdd, self.mid_gnd]
+        pin_names = ["vdd", "gnd"]
+        for i in range(2):
+            pin_name = pin_names[i]
+            if self.words_per_row == 2:
+                y_shift = self.column_decoder_inst.by() + self.column_decoder.flop_inst.by()
+                x_shift = self.column_decoder_inst.lx() + self.column_decoder.flop_inst.lx()
+                pins = self.column_decoder.flop.get_pins(pin_name)
+
+                for pin in pins:
+                    via = m2m3 if pin.layer == METAL3 else m1m2
+                    pin_y = pin.by() + y_shift
+                    self.add_rect(pin.layer, offset=vector(rails[i].lx(), pin_y),
+                                  height=pin.height(), width=pin.lx() + x_shift - rails[i].lx())
+                    self.add_contact_center(via.layer_stack,
+                                            offset=vector(rails[i].cx(), pin_y + 0.5 * pin.height()),
+                                            size=[1, 2], rotate=90)
+            else:
+
+                for pin in self.column_decoder_inst.get_pins(pin_name):
+                    self.route_predecoder_col_mux_power_pin(pin, rails[i])
+
+    def route_predecoder_col_mux_power_pin(self, pin, rail):
+        via = m1m2 if pin.layer == METAL1 else m2m3
+        self.add_rect(pin.layer, offset=vector(rail.lx(), pin.by()),
+                      width=pin.lx() - rail.lx(), height=pin.height())
+        self.add_contact_center(via.layer_stack, offset=vector(rail.cx(), pin.cy()),
+                                size=[1, 2], rotate=90)
+
+    def route_left_bank_power(self):
+        if self.num_banks == 1:
+            return
+        debug.info(1, "Route left bank sram power")
+        rails = [self.mid_gnd, self.mid_vdd]
+        pin_names = ["gnd", "vdd"]
+        for i in range(2):
+            rail = rails[i]
+            for pin in self.left_bank.wordline_driver_inst.get_pins(pin_names[i]):
+                pin_x = self.left_bank_inst.rx() - pin.lx()
+                y_offset = self.left_bank_inst.by() + pin.by()
+                self.add_rect(pin.layer, offset=vector(pin_x, y_offset), height=pin.height(),
+                              width=rail.rx() - pin_x)
+                if pin.layer == METAL3:
+                    y_offset = pin.cy() + self.left_bank_inst.by()
+                    self.add_contact_center(m2m3.layer_stack, offset=vector(rail.cx(), y_offset),
+                                            size=[1, 2], rotate=90)
 
     def route_decoder_outputs(self):
         # place m3 rail to the bank wordline drivers just below the power rail
         buffer_mod = self.bank.wordline_driver.logic_buffer
-        vdd_pin = buffer_mod.get_pin("vdd")
-        rail_y = vdd_pin.by() - self.m3_pitch
+        gnd_pin = buffer_mod.get_pin("gnd")
 
-        # find rightmost decoder rail x
-        right_most_rail = (self.row_decoder_inst.lx() + max(self.row_decoder.rail_x_offsets)
-                           + self.m2_pitch - 0.5 * self.m2_width)
-        # find x beside wordline driver enable
-        if not self.single_bank:
-            wl_en_x = (self.left_bank_inst.rx() - self.bank.wordline_driver_inst.get_pin("en").lx() -
-                       self.get_parallel_space(METAL2) - self.fill_width)
+        odd_rail_y = gnd_pin.uy() + self.get_parallel_space(METAL3)
+        even_rail_y = buffer_mod.height - odd_rail_y - self.m3_width
+        fill_height = m2m3.height
+        _, fill_width = self.calculate_min_area_fill(fill_height, layer=METAL2)
 
         for row in range(self.num_rows):
             decoder_out = self.row_decoder_inst.get_pin("decode[{}]".format(row))
             wl_ins = [self.right_bank_inst.get_pin("dec_out[{}]".format(row))]
             if not self.single_bank:
                 wl_ins.append(self.left_bank_inst.get_pin("dec_out[{}]".format(row)))
+
+            if row % 2 == 0:
+                via_y = decoder_out.uy() - 0.5 * m2m3.second_layer_height
+                rail_y = even_rail_y
+            else:
+                via_y = decoder_out.by() - 0.5 * m2m3.second_layer_height
+                rail_y = odd_rail_y
+
+            via_offset = vector(decoder_out.cx() - 0.5 * self.m3_width, via_y)
+
+            self.add_contact(m2m3.layer_stack, offset=via_offset)
+            y_offset = self.bank.wordline_driver_inst.by() + row * buffer_mod.height + rail_y
+            self.add_rect(METAL3, offset=via_offset, height=y_offset - via_offset.y)
+            if self.num_banks == 1:
+                x_offset = via_offset.x
+            else:
+                x_offset = wl_ins[1].cx() - 0.5 * self.m3_width
+            self.add_rect(METAL3, offset=vector(x_offset, y_offset),
+                          width=wl_ins[0].cx() + 0.5 * self.m3_width - x_offset)
+
             for i in range(len(wl_ins)):
                 wl_in = wl_ins[i]
-
-                self.add_contact(m2m3.layer_stack,
-                                 offset=vector(decoder_out.ul() - vector(0, m2m3.second_layer_height)))
-                y_offset = self.bank.wordline_driver_inst.by() + row * buffer_mod.height + rail_y
-                self.add_rect(METAL3, offset=decoder_out.ul(), height=y_offset - decoder_out.uy())
-
-                wl_x = wl_in.cx() - 0.5 * self.m3_width
-                if i == 0:
-                    self.add_rect(METAL3, offset=vector(decoder_out.lx(), y_offset),
-                                  width=wl_x - decoder_out.lx())
-                else:
-                    # decoder to leftmost rail
-                    x_offset = right_most_rail + 0.5 * self.fill_width
-                    self.add_rect(METAL3, offset=vector(x_offset, y_offset),
-                                  width=decoder_out.lx() - x_offset)
-                    via_offset = vector(x_offset - 0.5 * m2m3.width, y_offset + self.m3_width - m2m3.height)
-                    self.add_contact(m1m2.layer_stack, offset=via_offset)
-                    self.add_contact(m2m3.layer_stack, offset=via_offset)
-                    self.add_rect(METAL2,
-                                  offset=vector(right_most_rail,
-                                                via_offset.y + 0.5 * m2m3.height - 0.5 * self.fill_height),
-                                  width=self.fill_width, height=self.fill_height)
-                    # leftmost rail to wl_en_x
-                    self.add_rect(METAL1, offset=vector(wl_en_x, via_offset.y),
-                                  width=x_offset - wl_en_x)
-                    via_offset = vector(wl_en_x - 0.5 * m2m3.width, via_offset.y)
-                    self.add_contact(m1m2.layer_stack, offset=via_offset)
-                    self.add_contact(m2m3.layer_stack, offset=via_offset)
-                    self.add_rect_center(METAL2, offset=vector(wl_en_x, via_offset.y + 0.5 * m2m3.height),
-                                         width=self.fill_width, height=self.fill_height)
-                    self.add_rect(METAL3, offset=vector(wl_x, y_offset), width=via_offset.x - wl_x)
-
-                self.add_rect(METAL3, offset=vector(wl_x, wl_in.cy()),
-                              height=y_offset + self.m3_width - wl_in.cy())
+                x_offset = wl_in.cx() - 0.5 * self.m3_width
+                self.add_rect(METAL3, offset=vector(x_offset, wl_in.cy()),
+                              height=y_offset - wl_in.cy())
                 self.add_contact_center(m2m3.layer_stack, wl_in.center())
                 self.add_contact_center(m1m2.layer_stack, wl_in.center())
+                if fill_width > 0:
+                    self.add_rect_center(METAL2, offset=wl_in.center(), width=fill_width,
+                                         height=fill_height)
 
-                self.add_rect_center("metal2", offset=wl_in.center(), width=self.fill_height,
-                                     height=self.fill_width)
+    def join_control(self, pin_name, y_offset):
+        via_extension = 0.5 * (cross_m2m3.height - cross_m2m3.contact_width)
+        left_pin = self.bank_insts[1].get_pin(pin_name)
+        right_pin = self.bank_insts[0].get_pin(pin_name)
+        for pin in [left_pin, right_pin]:
+            self.add_cross_contact_center(cross_m2m3,
+                                          offset=vector(pin.cx(),
+                                                        y_offset + 0.5 * self.bus_width))
+            rail_bottom = y_offset + 0.5 * self.bus_width - 0.5 * cross_m2m3.height
+            if rail_bottom < pin.by():
+                self.add_rect(pin.layer, offset=vector(pin.lx(), rail_bottom),
+                              width=pin.width(), height=pin.by() - rail_bottom)
+        join_rail = self.add_rect(METAL3,
+                                  offset=vector(left_pin.lx() - via_extension,
+                                                y_offset),
+                                  height=self.bus_width,
+                                  width=right_pin.rx() - left_pin.lx() +
+                                        2 * via_extension)
+        setattr(self, pin_name + "_rail", join_rail)
 
     def join_bank_controls(self):
+        control_inputs = self.control_inputs
         if self.single_bank:
             return
-        pin_names = ["sense_trig", "clk", "read"]
-        y_offset = self.min_point
-        for i in range(len(pin_names)):
-            left_pin = self.bank_insts[1].get_pin(pin_names[i])
-            right_pin = self.bank_insts[0].get_pin(pin_names[i])
-            for pin in [left_pin, right_pin]:
-                self.add_contact(m2m3.layer_stack, offset=vector(pin.lx(), y_offset))
-            self.add_rect(METAL3, offset=vector(left_pin.lx(), y_offset),
-                          width=right_pin.lx() - left_pin.lx())
-            y_offset += self.m3_pitch
 
-    def join_bank_power_grid(self):
-        if not hasattr(self.bank, "gnd_grid_rects"):
+        # find y offset of connecting rails
+        cross_clk_rail_y = self.bank.cross_clk_rail.offset.y
+        if self.num_banks == 2:
+            cross_clk_rail_y = min(cross_clk_rail_y,
+                                   self.left_bank_inst.by() + self.left_bank.cross_clk_rail.offset.y)
+
+        if self.column_decoder_inst is not None:
+            vdd_pin = min(self.column_decoder_inst.get_pins("vdd"), key=lambda x: x.by())
+            cross_clk_rail_y = min(cross_clk_rail_y,
+                                   vdd_pin.by() - self.get_parallel_space(METAL3))
+
+        y_offset = (cross_clk_rail_y - (len(control_inputs) * self.bus_pitch))
+
+        for i in range(len(control_inputs)):
+            self.join_control(control_inputs[i], y_offset)
+            y_offset += self.bus_pitch
+
+    def fill_decoder_wordline_space(self):
+        wordline_logic = self.bank.wordline_driver.logic_buffer.logic_mod
+        decoder_inverter = self.row_decoder.inv_inst[0].mod
+        fill_layers, fill_purposes = [], []
+        for layer, purpose in zip(*get_default_fill_layers()):
+            if layer not in [PWELL, ACTIVE, NIMP]:
+                # No NIMP, PWELL to prevent min spacing to PIMP, NWELL respectively
+                fill_layers.append(layer)
+                fill_purposes.append(purpose)
+        rects = create_wells_and_implants_fills(decoder_inverter,
+                                                wordline_logic, layers=fill_layers,
+                                                purposes=fill_purposes)
+        x_offset = self.row_decoder_inst.lx() + self.row_decoder.inv_inst[0].rx()
+        width = (self.right_bank_inst.lx() + self.bank.wordline_driver_inst.lx() +
+                 self.bank.wordline_driver.buffer_insts[0].lx()) - x_offset
+        bitcell_height = self.bitcell.height
+
+        for row in range(self.num_rows):
+            y_base = self.bank.bitcell_array_inst.by() + row * self.bitcell.height
+            for layer, rect_bottom, rect_top, left_rect, right_rect in rects:
+                if right_rect.uy() > bitcell_height or left_rect.uy() > bitcell_height:
+                    rect_top = max(right_rect.uy(), left_rect.uy())
+                if right_rect.by() < 0 or left_rect.by() < 0:
+                    rect_bottom = min(right_rect.by(), left_rect.by())
+                # cover align with bitcell nwell
+                if row % 2 == 0:
+                    y_offset = y_base + (self.bitcell.height - rect_top)
+                else:
+                    y_offset = y_base + rect_bottom
+                self.add_rect(layer, offset=vector(x_offset, y_offset), width=width,
+                              height=rect_top - rect_bottom)
+
+    def route_power_grid(self):
+        if not self.add_power_grid:
+            for i in range(self.num_banks):
+                self.copy_layout_pin(self.bank_insts[i], "vdd")
+                self.copy_layout_pin(self.bank_insts[i], "gnd")
             return
-        pairs = [(self.mid_gnd, self.bank.gnd_grid_rects), (self.mid_vdd, self.bank.vdd_grid_rects)]
-        if self.single_bank:
-            cross_rail_x = self.row_decoder_inst.lx()
+
+        debug.info(1, "Route sram power grid")
+
+        second_top_layer, top_layer = tech.power_grid_layers
+        debug.check(int(second_top_layer[5:]) > 4 and int(top_layer[5:]) > 5,
+                    "Power grid only supported for > M4")
+
+        # second_top to top layer via
+        m_top_via = ContactFullStack(start_layer=second_top_layer, stop_layer=top_layer,
+                                     centralize=True)
+        # m4 to second_top layer vias
+        all_m4_power_pins = self.m4_power_pins + self.m4_gnd_rects + self.m4_vdd_rects
+        all_m4_power_widths = list(set([utils.round_to_grid(x.rx() - x.lx())
+                                        for x in all_m4_power_pins]))
+
+        if not second_top_layer == METAL5:
+            m5_via = ContactFullStack(start_layer=METAL5, stop_layer=second_top_layer,
+                                      centralize=True, max_width=m_top_via.width)
+            via_m5_height = m5_via.via_insts[0].mod.first_layer_width
         else:
-            cross_rail_x = self.left_bank_inst.lx()
-        for power_rail, grid_rects in pairs:
-            for grid_rect in grid_rects:
-                self.add_inst(self.bank.m2mtop.name, self.bank.m2mtop,
-                              offset=vector(power_rail.lx() + 0.5 * power_rail.width, grid_rect.by()))
+            m5_via = None
+            via_m5_height = None
+
+        all_m4_vias = {}
+        for width in all_m4_power_widths:
+            all_m4_vias[width] = ContactFullStack(start_layer=METAL4, stop_layer=METAL5,
+                                                  centralize=True, max_width=width,
+                                                  max_height=via_m5_height)
+
+        # dimensions of vertical top layer grid
+        left = min(map(lambda x: x.cx(), all_m4_power_pins)) - 0.5 * m_top_via.width
+        right = max(map(lambda x: x.cx(), all_m4_power_pins)) - 0.5 * m_top_via.width
+        bottom = min(map(lambda x: x.by(), all_m4_power_pins))
+        top = max(map(lambda x: x.uy(), all_m4_power_pins)) - m_top_via.height
+
+        # add top layer
+        top_layer_width = m_top_via.width
+        top_layer_space = self.get_wide_space(top_layer)
+        top_layer_pitch = top_layer_width + top_layer_space
+        top_layer_pins = []
+
+        x_offset = left
+        i = 0
+        while x_offset < right:
+            pin_name = "gnd" if i % 2 == 0 else "vdd"
+            top_layer_pins.append(self.add_layout_pin(pin_name, top_layer, offset=vector(x_offset, bottom),
+                                                      width=top_layer_width, height=top - bottom))
+            x_offset += top_layer_pitch
+            i += 1
+        top_gnd = top_layer_pins[0::2]
+        top_vdd = top_layer_pins[1::2]
+
+        # add second_top layer
+        y_offset = bottom
+        rail_height = max(map(lambda x: x.height, [m_top_via] + list(all_m4_vias.values())))
+        rail_space = self.get_wide_space(second_top_layer)
+
+        m4_space = self.get_wide_space(METAL4)
+
+        rail_pitch = rail_height + rail_space
+
+        m4_vdd_rects = self.m4_vdd_rects + [x for x in self.m4_power_pins if x.name == "vdd"]
+        m4_vdd_rects = list(sorted(m4_vdd_rects, key=lambda x: x.lx()))
+        m4_gnd_rects = self.m4_gnd_rects + [x for x in self.m4_power_pins if x.name == "gnd"]
+        m4_gnd_rects = list(sorted(m4_gnd_rects, key=lambda x: x.lx()))
+
+        i = 0
+        while y_offset < top - m_top_via.height:
+            rail_rect = self.add_rect(second_top_layer, offset=vector(left, y_offset),
+                                      height=rail_height,
+                                      width=right + m_top_via.width - left)
+            # connect to top grid
+            top_pins = top_gnd if i % 2 == 0 else top_vdd
+            for top_pin in top_pins:
+                self.add_inst(m_top_via.name, m_top_via,
+                              offset=vector(top_pin.cx(), rail_rect.cy() - 0.5 * m_top_via.height))
                 self.connect_inst([])
 
-                self.add_rect(self.bank.bottom_power_layer, offset=vector(cross_rail_x, grid_rect.by()),
-                              height=grid_rect.height, width=self.right_bank_inst.rx() - cross_rail_x)
+            # connect to m4 below
+            m4_rects = m4_gnd_rects if i % 2 == 0 else m4_vdd_rects
+
+            prev_m4_rect = None
+
+            for m4_rect in m4_rects:
+                if m4_rect.by() < y_offset and m4_rect.uy() > rail_rect.uy():
+                    m4_rect_width = utils.round_to_grid(m4_rect.rx() - m4_rect.lx())
+                    m4_via = all_m4_vias[m4_rect_width]
+
+                    if prev_m4_rect:
+                        if (m4_rect.cx() - 0.5 * m4_via.width <
+                                prev_m4_rect.cx() + 0.5 * m4_via.width + m4_space):
+                            continue
+                    # add m4 via
+                    self.add_inst(m4_via.name, mod=m4_via,
+                                  offset=vector(m4_rect.cx(), rail_rect.cy() - 0.5 * m4_via.height))
+                    self.connect_inst([])
+                    # add m4 via
+                    if m5_via:
+                        m4_m4_via = m4_via.via_insts[0].mod
+                        if prev_m4_rect and (m4_rect.cx() - 0.5 * m5_via.width <
+                                             prev_m4_rect.cx() + 0.5 * m5_via.width + rail_space):
+                            # just connect using M5
+                            rect_height = m4_m4_via.second_layer_width
+                            self.add_rect(METAL5, offset=vector(prev_m4_rect.cx(),
+                                                                rail_rect.cy() - 0.5 * rect_height),
+                                          width=m4_rect.cx() + 0.5 * m4_via.width -
+                                                prev_m4_rect.cx(),
+                                          height=rect_height)
+                        else:
+                            self.add_inst(m5_via.name, mod=m5_via,
+                                          offset=vector(m4_rect.cx(),
+                                                        rail_rect.cy() - 0.5 * m5_via.height))
+                            self.connect_inst([])
+
+                    prev_m4_rect = m4_rect
+
+            y_offset += rail_pitch
+            i += 1
 
     def add_lvs_correspondence_points(self):
         pass
+
+    def add_cross_contact_center(self, cont, offset, rotate=False,
+                                 rail_width=None):
+        super().add_cross_contact_center(cont, offset, rotate)
+        self.add_cross_contact_center_fill(cont, offset, rotate, rail_width)

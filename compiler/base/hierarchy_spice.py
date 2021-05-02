@@ -296,12 +296,13 @@ class spice(verilog.verilog):
 
     def compute_pin_wire_cap(self, pin_name, wire_length=0.0):
         """Computes wire cap due to pin only"""
-        pin = self.get_pin(pin_name)
-        pin_width = min(pin.width(), pin.height())
+        wire_cap = 0
+        for pin in self.get_pins(pin_name):
+            pin_width = min(pin.width(), pin.height())
 
-        pin_length = max(pin.width(), pin.height(), wire_length)
+            pin_length = max(pin.width(), pin.height(), wire_length)
 
-        wire_cap = self.get_wire_cap(pin.layer, pin_width, pin_length)
+            wire_cap += self.get_wire_cap(pin.layer, pin_width, pin_length)
         return wire_cap
 
     def compute_input_cap(self, pin_name, wire_length: float = 0.0):
@@ -311,7 +312,8 @@ class spice(verilog.verilog):
 
         wire_cap = self.compute_pin_wire_cap(pin_name, wire_length)
 
-        transistor_connections = self.get_spice_parser().extract_caps_for_pin(pin_name, self.name)
+        transistor_connections = self.get_spice_parser().extract_caps_for_pin(pin_name,
+                                                                              self.name)
         total_caps = wire_cap
         for tx_type in transistor_connections:
             for terminal in transistor_connections[tx_type]:
@@ -375,22 +377,18 @@ class spice(verilog.verilog):
                                                     0.0, interpolate=False, **kwargs)
             total_cap, _ = module.get_input_cap(instance_pin_name, num_elements, wire_length,
                                                 interpolate=True, **kwargs)
-            total_cap *= num_elements
+            # total_cap *= num_elements
             # characterized data may be more accurate so potentially override computed
             # cap_per_stage if it's less than characterized
             cap_per_stage = max(cap_per_stage, total_cap / num_elements)
             results.append((total_cap, cap_per_stage))
 
         wire_cap = self.compute_pin_wire_cap(pin_name, wire_length)
-        # cap per stage only makes sense if there is only one type of module
-        if len(results) == 0:
-            total_cap, cap_per_stage = wire_cap, 0.0
-        elif len(results) == 1:
-            total_cap, cap_per_stage = results[0][0] + wire_cap, results[0][1]
-        else:
-            total_cap = sum(map(lambda x: x[0], results)) + wire_cap
-            total_cap, cap_per_stage = total_cap, total_cap
-        debug.info(2, "Wire cap for pin {} in module {} = {:.3g} fF".format(pin_name, self.name,
+        total_cap = sum(map(lambda x: x[0], results)) + wire_cap
+        # cap per stage doesn't make sense when calculating from instances
+        total_cap, cap_per_stage = total_cap, total_cap
+        debug.info(2, "Wire cap for pin {} in module {} = {:.3g} fF".format(pin_name,
+                                                                            self.name,
                                                                             wire_cap * 1e15))
         debug.info(2, "Instances cap for pin {} in module {} = {:.3g} fF".format(pin_name, self.name,
                                                                                  (total_cap - wire_cap) * 1e15))
@@ -423,10 +421,12 @@ class spice(verilog.verilog):
 
         if self.conns and next(filter(len, self.conns)):
             # contains instances i.e. probably not an imported custom cell
-            return self.get_input_cap_from_instances(pin_name, wire_length,
-                                                     **kwargs)
+            _, cap_per_stage = self.get_input_cap_from_instances(pin_name, wire_length,
+                                                                 **kwargs)
+            return num_elements * cap_per_stage, cap_per_stage
+
         # compute if not previously characterized
-        cap_value = self.compute_input_cap(pin_name, wire_length)
+        cap_value = num_elements * self.compute_input_cap(pin_name, wire_length)
         return cap_value, cap_value / num_elements
 
     def get_driver_resistance(self, pin_name, use_max_res=False, interpolate=None, corner=None):
@@ -444,6 +444,12 @@ class spice(verilog.verilog):
         if interpolate is None:
             interpolate = OPTS.interpolate_characterization_data
 
+        # try look up from characterization
+        resistance = self.get_input_cap_from_char("resistance", interpolate=interpolate,
+                                                  corner=corner)
+        if resistance:
+            return resistance
+        # compute
         resistance_paths = self.get_spice_parser().extract_res_for_pin(pin_name, self.name)
 
         resistances = {}
@@ -484,7 +490,7 @@ class spice(verilog.verilog):
         return gm
 
     @staticmethod
-    def horiwitz_delay(tau, beta, alpha, switch_threshold=0.5):
+    def horowitz_delay(tau, beta, alpha, switch_threshold=0.5):
         """
         From http://www-vlsi.stanford.edu/people/alum/pdf/8401_Horowitz_TimingModels.pdf Pg 76
         :param tau: time constant (RC)
@@ -509,7 +515,7 @@ class spice(verilog.verilog):
         tau = driver_res * total_c + 0.5 * total_r * total_distributed_c
         beta = 1 / (driver_gm * driver_res)
         alpha = slew_in / tau
-        delay, slew_out = spice.horiwitz_delay(tau, beta, alpha)
+        delay, slew_out = spice.horowitz_delay(tau, beta, alpha)
 
         delay = 0.69 * driver_res * total_c + 0.38 * total_r * total_distributed_c
         slew_out = total_r * total_c

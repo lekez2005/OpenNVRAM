@@ -2,7 +2,7 @@ from base import utils
 from base.contact import contact, m1m2, m2m3, m3m4
 from base.vector import vector
 from globals import OPTS
-from modules.baseline_bank import BaselineBank
+from modules.internal_decoder_bank import InternalDecoderBank
 from modules.sotfet.current_mirror import current_mirror
 from modules.sotfet.sf_bitline_buffer_array import SfBitlineBufferArray
 from modules.sotfet.sf_bitline_logic_array import SfBitlineLogicArray
@@ -11,7 +11,7 @@ from modules.sotfet.sot_wl_driver_array import sot_wl_driver_array
 from tech import drc
 
 
-class SfCamBank(BaselineBank):
+class SfCamBank(InternalDecoderBank):
     separate_vdd = False
     bitcell = bitcell_array = wordline_driver = decoder = search_sense_amp_array = ml_precharge_array = None
     msf_data_in = msf_address = tag_flop_array = bitline_buffer_array = bitline_logic_array = logic_buffers = None

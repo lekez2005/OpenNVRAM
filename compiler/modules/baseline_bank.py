@@ -1,41 +1,57 @@
+import itertools
+import math
+from abc import ABC
+from copy import copy
 from importlib import reload
 from math import log
+from typing import List, Union
 
 import debug
+import tech
 from base import utils
-from base.contact import m2m3, m1m2, m3m4, contact
-from base.contact_full_stack import ContactFullStack
-from base.design import design
+from base.contact import m2m3, m1m2, m3m4, contact, cross_m2m3, cross_m1m2
+from base.design import design, METAL2, METAL3, METAL1, METAL4, DRAWING, NWELL, PWELL
+from base.geometry import NO_MIRROR, MIRROR_X_AXIS
 from base.vector import vector
+from base.well_implant_fills import create_wells_and_implants_fills, evaluate_vertical_metal_spacing, \
+    join_vertical_adjacent_module_wells, evaluate_vertical_module_spacing
 from globals import OPTS
-from modules.bitline_compute.bl_control_buffers_sense_trig import ControlBuffersSenseTrig
-from modules.flop_buffer import FlopBuffer
-from modules.buffer_stage import BufferStage
-from modules.control_buffers import ControlBuffers
-from modules.control_buffers_bank_mixin import ControlBuffersMixin
-from pgates.pgate import pgate
-from tech import delay_strategy_class
-from tech import drc, power_grid_layers
+from modules.bank_control_signals_mixin import ControlSignalsMixin
+from modules.control_buffers_repeaters_mixin import ControlBuffersRepeatersMixin
+
+LEFT_FILL = "left"
+MID_FILL = "mid"
+RIGHT_FILL = "right"
+
+JOIN_TOP_ALIGN = "top"
+JOIN_BOT_ALIGN = "bottom"
+
+EXACT = "exact"
 
 
-class BaselineBank(design, ControlBuffersMixin):
-    control_buffers = control_buffers_inst = data_in_flops_inst = write_driver_array_inst = None
-    sense_amp_array_inst = None
+class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, ABC):
+    control_buffers = None
 
-    external_vdds = ["vdd_buffers", "vdd_data_flops", "vdd_wordline"]
-
-    def __init__(self, word_size, num_words, words_per_row, num_banks=1, name=""):
-        self.set_modules(self.get_module_list())
-
+    def __init__(self, word_size, num_words, words_per_row, num_banks=1, name="", adjacent_bank=None):
         if name == "":
-            name = "bank_{0}_{1}".format(word_size, num_words)
+            name = "bank_{0}_{1}{2}".format(word_size, num_words, "_left" if adjacent_bank else "")
+
+        self.is_left_bank = adjacent_bank is not None
+        self.adjacent_bank = adjacent_bank
         design.__init__(self, name)
-        debug.info(2, "create bank of size {0} with {1} words".format(word_size, num_words))
+        debug.info(2, "create {0} of size {1} with {2} words".format(name, word_size, num_words))
+
+        self.set_modules(self.get_module_list())
 
         self.word_size = word_size
         self.num_words = num_words
         self.words_per_row = words_per_row
         self.num_banks = num_banks
+        self.is_optimized = False
+
+        # to keep track of offsets used for repeaters or inter-array power
+        self.occupied_m4_bitcell_indices = []
+        self.m2_rails = []
 
         # The local control signals are gated when we have bank select logic,
         # so this prefix will be added to all of the input signals.
@@ -44,55 +60,112 @@ class BaselineBank(design, ControlBuffersMixin):
         self.mirror_sense_amp = OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP
 
         self.compute_sizes()
-        self.add_pins()
-        self.create_modules()
-        self.calculate_rail_offsets()
-        self.add_modules()
-        self.route_layout()
-        self.calculate_dimensions()
 
+        debug.info(1, "Create modules")
+        self.create_modules()
+        control_inputs = self.control_buffers.get_input_pin_names()
+        self.use_chip_sel = "chip_sel" in control_inputs
+        self.use_decoder_clk = "decoder_clk" in self.control_buffers.pins
+
+        debug.info(1, "Calculate rail offsets")
+        self.calculate_rail_offsets()
+        debug.info(1, "Add modules")
+        self.add_modules()
+        self.add_pins()
+        debug.info(1, "Route bank layout")
+        self.route_layout()
+
+        self.calculate_dimensions()
+        self.add_lvs_correspondence_points()
+        debug.info(1, "Offset bank coordinates to origin")
         self.offset_all_coordinates()
 
     def set_modules(self, mod_list):
+        """
+        Imports modules in mod_list by name. The name is split into module_name, class_name using . separator
+        If no '.' in name, class_name is the same as module_name.
+        The imported class is set as an instance property with name mod_{mod_name}
+        """
         for mod_name in mod_list:
             config_mod_name = getattr(OPTS, mod_name)
+            if "." in config_mod_name:
+                config_mod_name, class_name = config_mod_name.split(".")
+            else:
+                class_name = config_mod_name
             class_file = reload(__import__(config_mod_name))
-            mod_class = getattr(class_file, config_mod_name)
-            setattr(self, "mod_"+mod_name, mod_class)
+            mod_class = getattr(class_file, class_name)
+            setattr(self, "mod_" + mod_name, mod_class)
 
     @staticmethod
     def get_module_list():
+        """Returns a list of modules that will be imported as specified in OPTS"""
         return ["tri_gate", "bitcell", "decoder", "ms_flop_array", "ms_flop_array_horizontal", "wordline_driver",
-                "bitcell_array", "sense_amp_array", "precharge_array",
+                "bitcell_array", "sense_amp_array", "precharge_array", "flop_buffer",
                 "column_mux_array", "write_driver_array", "tri_gate_array"]
 
+    def add_pins(self):
+        """Add bank pins"""
+        for i in range(self.word_size):
+            self.add_pin("DATA[{0}]".format(i))
+            if self.has_mask_in:
+                self.add_pin("MASK[{0}]".format(i))
+        if self.words_per_row > 1:
+            for i in range(self.words_per_row):
+                self.add_pin("sel[{}]".format(i))
+        for i in range(self.num_rows):
+            self.add_pin("dec_out[{}]".format(i))
+
+        control_inputs = self.control_buffers.get_input_pin_names()
+
+        control_pins = self.connections_from_mod(control_inputs, [("bank_sel", "Csb"),
+                                                                  ("chip_sel", "addr_msb")])
+
+        control_outputs = self.control_buffers.get_output_pin_names()
+        if "decoder_clk" in control_outputs:
+            control_pins.append("decoder_clk")
+        elif not self.is_left_bank:
+            control_pins.append("clk_buf")
+
+        self.add_pin_list(control_pins + ["vdd", "gnd"])
+
     def calculate_dimensions(self):
-        self.width = self.bitcell_array_inst.rx() - self.row_decoder_inst.lx()
-        self.height = self.row_decoder_inst.uy() - min(self.row_decoder_inst.by(), self.control_buffers_inst.by())
+        """Calculate bank width and height"""
+        self.width = self.bitcell_array_inst.rx() - self.wordline_driver_inst.lx()
+        self.height = self.bitcell_array_inst.uy() - self.control_buffers_inst.by()
 
     def add_modules(self):
+        """Add bitcell array and peripherals"""
         self.add_control_buffers()
-        self.add_read_flop()
-
         self.add_tri_gate_array()
         self.add_data_mask_flops()
         self.add_write_driver_array()
         self.add_sense_amp_array()
+        self.add_column_mux_array()
         self.add_precharge_array()
         self.add_bitcell_array()
-
+        self.fill_vertical_module_spaces()
+        self.add_wordline_driver()
         self.add_control_rails()
 
-        self.add_wordline_driver()
-        self.add_row_decoder()
+        self.min_point = min(map(lambda x: x.by(), self.objs))
+        self.min_point = min(self.min_point, min(map(lambda x: x.by(), self.insts)))
+
+        if self.num_banks > 1:
+            # space for joining read, clk, sense_trig
+            space = self.get_wide_space(METAL3)
+            self.min_point -= (space + 3 * self.m3_pitch)
+        self.top = self.bitcell_array_inst.uy()
+
+        self.add_control_flops()
+        self.min_point = min(self.min_point, min(map(lambda x: x.by(), self.insts)))
 
         self.add_vdd_gnd_rails()
 
     def route_layout(self):
-        self.connect_buffer_rails()
-        self.route_control_buffer()
-        self.route_read_buf()
+        self.route_control_buffers()
+        self.route_control_flops()
         self.route_precharge()
+        self.route_column_mux()
         self.route_sense_amp()
         self.route_bitcell()
         self.route_write_driver()
@@ -100,41 +173,33 @@ class BaselineBank(design, ControlBuffersMixin):
         self.route_tri_gate()
         self.route_wordline_driver()
 
-        self.route_decoder()
-        self.route_wordline_in()
-
-        self.calculate_rail_vias()  # horizontal rail vias
-
-        self.add_decoder_power_vias()
-        self.add_right_rails_vias()
-
+        if hasattr(OPTS, "buffer_repeaters_x_offset"):
+            self.create_control_buffer_repeaters()
+            self.route_control_buffer_repeaters()
+        self.add_m2m4_power_rails_vias()
         self.route_body_tap_supplies()
-        self.route_control_buffers_power()
 
-    def add_pins(self):
-        """ Adding pins for Bank module"""
-        for i in range(self.word_size):
-            self.add_pin("DATA[{0}]".format(i))
-            self.add_pin("MASK[{0}]".format(i))
-        for i in range(self.addr_size):
-            self.add_pin("ADDR[{0}]".format(i))
-
-        if self.mirror_sense_amp:
-            control_pins = ["bank_sel", "read", "clk", "vdd", "gnd"]
-        else:
-            control_pins = ["bank_sel", "read", "clk", "sense_trig", "vdd", "gnd"]
-        for pin in control_pins:
-            self.add_pin(pin)
-
-        if OPTS.separate_vdd:
-            self.add_pin_list(self.external_vdds)
-        if self.mirror_sense_amp and OPTS.sense_trigger_delay > 0:
-            self.add_pin("sense_trig")
+        self.route_intra_array_power_grid()
 
     def get_module_exceptions(self):
         return []
 
+    def create_left_bank_modules(self):
+        """Copies modules from the specified adjacent bank"""
+        for module_name in self.get_module_list() + ["msf_mask_in", "msf_data_in"]:
+            if not hasattr(self.adjacent_bank, module_name):
+                continue
+            adjacent_mod = getattr(self.adjacent_bank, module_name)
+            setattr(self, module_name, adjacent_mod)
+            self.add_mod(adjacent_mod)
+        self.create_control_buffers()
+        self.derive_chip_sel_decoder_clk()
+        self.create_control_flops()
+
     def create_modules(self):
+        """Create modules that will be added to bank"""
+        if self.is_left_bank:
+            return self.create_left_bank_modules()
 
         self.msf_mask_in = self.create_module('ms_flop_array', columns=self.num_cols,
                                               word_size=self.word_size, flop_mod=OPTS.mask_in_flop,
@@ -159,53 +224,58 @@ class BaselineBank(design, ControlBuffersMixin):
         self.sense_amp_array = self.create_module('sense_amp_array', word_size=self.word_size,
                                                   words_per_row=self.words_per_row)
 
-        # run optimizations
-
-        run_optimizations = hasattr(OPTS, 'run_optimizations') and OPTS.run_optimizations
-        if hasattr(OPTS, 'configure_sizes'):
-            getattr(OPTS, 'configure_sizes')(self, OPTS)
-        if run_optimizations:
-
-            delay_strategy = delay_strategy_class()(self)
-
-            OPTS.clk_buffers = delay_strategy.get_clk_buffer_sizes()
-
-            OPTS.wordline_buffers = delay_strategy.get_wordline_driver_sizes()
-
-            self.wordline_driver = self.create_module('wordline_driver', rows=self.num_rows,
-                                                      buffer_stages=OPTS.wordline_buffers)
-            if self.wordline_driver:
-                OPTS.wordline_en_buffers = delay_strategy.get_wordline_en_sizes()
-
-            OPTS.write_buffers = delay_strategy.get_write_en_sizes()
-
-            OPTS.sense_amp_buffers = delay_strategy.get_sense_en_sizes()
-
-            precharge_sizes = delay_strategy.get_precharge_sizes()
-            OPTS.precharge_buffers = precharge_sizes[:-1]
-            OPTS.precharge_size = precharge_sizes[-1]
-
-            predecode_sizes = delay_strategy.get_predecoder_sizes()
-            OPTS.predecode_sizes = predecode_sizes[1:]
-        else:
-            self.wordline_driver = self.create_module('wordline_driver', rows=self.num_rows,
-                                                      buffer_stages=OPTS.wordline_buffers)
-        # assert False
-
-        self.precharge_array = self.create_module('precharge_array', columns=self.num_cols, size=OPTS.precharge_size)
-
-        self.create_control_buffers()
+        if self.col_addr_size > 0:
+            self.column_mux_array = self.create_module('column_mux_array', word_size=self.word_size,
+                                                       columns=self.num_cols)
 
         self.decoder = self.create_module('decoder', rows=self.num_rows)
 
-        self.control_flop = FlopBuffer(OPTS.control_flop, OPTS.control_flop_buffers)
-        self.add_mod(self.control_flop)
+        self.wordline_driver = self.create_module('wordline_driver', rows=self.num_rows,
+                                                  buffer_stages=OPTS.wordline_buffers)
 
-        self.m9m10 = ContactFullStack(start_layer=8, stop_layer=-1, centralize=False)
+        self.precharge_array = self.create_module('precharge_array', columns=self.num_cols,
+                                                  size=OPTS.precharge_size)
+
+        self.create_control_buffers()
+        self.derive_chip_sel_decoder_clk()
+
+        self.create_control_flops()
+        self.run_optimizations()
+
+    def create_optimizer(self):
+        from characterizer.control_buffers_optimizer import ControlBufferOptimizer
+        self.optimizer = ControlBufferOptimizer(self)
+
+    def run_optimizations(self):
+        if self.is_optimized or self.is_left_bank:
+            return
+        # run optimizations
+        self.create_optimizer()
+        if self.optimizer.run_optimizations():
+            self.is_optimized = True
+            self.recreate_modules()
+
+    def recreate_modules(self):
+        # temporarily suspend name map conflict check
+        existing_designs = set(design.name_map)
+        self.mods.clear()
+        design.name_map.clear()
+        self.create_modules()
+        existing_designs.update(design.name_map)
+        design.name_map = list(existing_designs)
+
+    def derive_chip_sel_decoder_clk(self):
+        control_inputs = self.control_buffers.get_input_pin_names()
+        self.use_chip_sel = "chip_sel" in control_inputs
+        self.use_decoder_clk = "decoder_clk" in self.control_buffers.pins
 
     def create_module(self, mod_name, *args, **kwargs):
+        """Creates mod from class 'mod_{mod_name}. args, kwargs are passed to class"""
         if mod_name not in self.get_module_list():
             return
+        debug.info(2, "Creating module {} with args {} {}".format(mod_name,
+                                                                  " ".join(map(str, args)),
+                                                                  kwargs))
         mod = getattr(self, 'mod_' + mod_name)(*args, **kwargs)
         self.add_mod(mod)
         return mod
@@ -213,226 +283,352 @@ class BaselineBank(design, ControlBuffersMixin):
     def compute_sizes(self):
         """  Computes the required sizes to create the bank """
 
-        self.num_cols = int(self.words_per_row*self.word_size)
         self.num_rows = int(self.num_words / self.words_per_row)
+        self.num_cols = int(self.words_per_row * self.word_size)
 
         self.row_addr_size = int(log(self.num_rows, 2))
         self.col_addr_size = int(log(self.words_per_row, 2))
         self.addr_size = self.col_addr_size + self.row_addr_size
 
-        debug.check(self.num_rows*self.num_cols==self.word_size*self.num_words,"Invalid bank sizes.")
-        debug.check(self.addr_size==self.col_addr_size + self.row_addr_size,"Invalid address break down.")
+        debug.check(self.addr_size == self.col_addr_size + self.row_addr_size, "Invalid address break down.")
+        debug.check(self.num_rows * self.num_cols == self.word_size * self.num_words, "Invalid bank sizes.")
 
         # Width for left gnd rail
-        self.vdd_rail_width = 5*self.m2_width
-        self.gnd_rail_width = 5*self.m2_width
+        dummy_via = contact(layer_stack=m3m4.layer_stack, dimensions=[1, 2])
+        self.vdd_rail_width = dummy_via.height
+        self.gnd_rail_width = self.vdd_rail_width
 
         # m2 fill width for m1-m3 via
-        min_area = drc["minarea_metal1_contact"]
         self.via_m2_fill_height = m1m2.second_layer_height
-        self.via_m2_fill_width = utils.ceil(min_area/self.via_m2_fill_height)
-
-        # Number of control lines in the bus
-        self.num_control_lines = 6
-        # The order of the control signals on the control bus:
-        self.input_control_signals = ["clk_buf", "tri_en", "w_en", "s_en"]
-        self.control_signals = list(map(lambda x: self.prefix + x,
-                                        ["s_en", "clk_bar", "clk_buf", "tri_en_bar", "tri_en", "w_en"]))
+        _, self.via_m2_fill_width = self.calculate_min_area_fill(width=self.via_m2_fill_height, layer=METAL2)
 
         # The central bus is the column address (both polarities), row address
         self.num_addr_lines = self.row_addr_size
 
         # M1/M2 routing pitch is based on contacted pitch
-        self.m1_pitch = m1m2.width + self.get_parallel_space("metal1")
-        self.m2_pitch = m2m3.width + self.get_parallel_space("metal2")
-        self.m3_pitch = m2m3.width + self.get_parallel_space("metal3")
-
-        # Overall central bus gap. It includes all the column mux lines,
-        # control lines, address flop to decoder lines and a GND power rail in M2
-        # 1.5 pitches on the right on the right of the control lines for vias (e.g. column mux addr lines)
-        self.start_of_right_central_bus = -self.m2_pitch * (self.num_control_lines + 1.5)
-        # one pitch on the right on the addr lines and one on the right of the gnd rail
-
-        self.gnd_x_offset = self.start_of_right_central_bus - self.gnd_rail_width - self.m2_pitch
-
-        self.start_of_left_central_bus = self.gnd_x_offset - self.m2_pitch*(self.num_addr_lines+1)
-        # add a pitch on each end and around the gnd rail
-        self.overall_central_bus_width = - self.start_of_left_central_bus + self.m2_width
+        self.m1_pitch = m1m2.width + self.get_parallel_space(METAL1)
+        self.m2_pitch = m2m3.width + self.get_parallel_space(METAL2)
+        self.m3_pitch = m2m3.width + self.get_parallel_space(METAL3)
 
     def get_wordline_in_net(self):
         return "dec_out[{}]"
 
-    def get_enable_names(self):
-        return []
-
     def create_control_buffers(self):
-        if OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
-            if OPTS.sense_trigger_delay > 0:
-                self.control_buffers = ControlBuffersSenseTrig()
+        """Create control logic buffers"""
+        pass
+
+    def derive_control_flops(self):
+        flop_inputs = ["read", "bank_sel"]
+        negations = [False, True]
+        if self.use_chip_sel:
+            flop_inputs.append("chip_sel")
+            negations.append(True)
+            if self.is_left_bank:
+                negations[1] = False
             else:
-                self.control_buffers = ControlBuffers()
+                negations[1] = True
+        combinations = zip(flop_inputs, negations)
+        # sort by pin y
+        combinations = list(sorted(combinations,
+                                   key=lambda x: self.control_buffers.get_pin(x[0]).by()))
+        return combinations
+
+    def create_control_flops(self):
+        self.control_flop_mods = {}
+        for flop_name, negation in self.derive_control_flops():
+            buffer_stages = getattr(OPTS, flop_name + "_buf_buffers", OPTS.control_flop_buffers)
+            control_flop = self.create_module("flop_buffer", OPTS.control_flop,
+                                              buffer_stages, negate=negation)
+            self.control_flop_mods[flop_name] = control_flop
+            self.control_flop = control_flop  # for height dimension references
+
+    def get_control_flop_connections(self):
+        """When single bank or dependent 2 banks: Csb -> bank_sel
+           When two banks and independent banks: Csb -> chip_sel
+                                                 addr_msb -> bank_sel (0 for right bank, 1 for left bank)
+        """
+        if self.use_chip_sel:
+            bank_sel_in = "addr_msb"
         else:
-            if OPTS.baseline:
-                from modules.baseline_latched_control_buffers import LatchedControlBuffers
-            else:
-                from modules.bitline_compute.bl_latched_control_buffers import LatchedControlBuffers
-            self.control_buffers = LatchedControlBuffers()
-        self.add_mod(self.control_buffers)
+            bank_sel_in = "Csb"
+        connections = [
+            ("read", "read_buf"),
+            (bank_sel_in, "bank_sel_buf"),
+        ]
+        if self.use_chip_sel:
+            connections.append(("Csb", "chip_sel_buf"))
+        connections = {net_out: (net_in, net_out, self.control_flop_mods[net_out[:-4]])
+                       for net_in, net_out in connections}
+        return connections
 
     def get_control_names(self):
-        if self.mirror_sense_amp:
-            return ["precharge_en_bar", "write_en_bar", "write_en", "clk_bar", "clk_buf", "wordline_en",
-                    "sense_en_bar", "sense_en"]
-        else:
-            return ["precharge_en_bar", "write_en_bar", "write_en", "clk_bar", "clk_buf", "wordline_en",
-                    "sense_en", "tri_en", "tri_en_bar", "sample_en_bar"]
+        """Get outputs of control logic buffers"""
+        return self.control_buffers.get_output_pin_names()
 
-    def calculate_rail_offsets(self):
-        self.control_names = self.get_control_names()
-
-        num_horizontal_rails = len(self.control_names)
-        self.control_rail_pitch = self.m3_width + self.line_end_space
-
-        self.logic_buffers_bottom = 0
-
-        self.trigate_y = 0.5*self.rail_height + (self.logic_buffers_bottom +
-                                                 (1+num_horizontal_rails)*self.control_rail_pitch +
-                                                 self.control_buffers.height)
-
-        self.mid_gnd_offset = - 2*self.wide_m1_space - self.vdd_rail_width
-        self.mid_vdd_offset = self.mid_gnd_offset - self.wide_m1_space - self.vdd_rail_width
-
-        fill_height = m2m3.second_layer_height + self.m2_width
-        (self.fill_height, self.fill_width) = self.calculate_min_m1_area(fill_height, self.m2_width)
+    def get_control_logic_top(self, module_space):
+        return self.logic_buffers_bottom + self.control_buffers.height + module_space
 
     def connect_control_buffers(self):
-        vdd_name = "vdd_buffers" if OPTS.separate_vdd else "vdd"
-        if self.mirror_sense_amp:
-            connections = ["bank_sel", "read_buf", "clk", "clk_buf", "clk_bar", "wordline_en", "precharge_en_bar",
-                           "write_en", "write_en_bar",
-                           "sense_en", "sense_en_bar", vdd_name, "gnd"]
-            if OPTS.sense_trigger_delay > 0:
-                connections.append("sense_trig")
-            self.connect_inst(connections)
-        else:
-            if OPTS.baseline:
+        connections = self.connections_from_mod(self.control_buffers, [
+            ("bank_sel", "bank_sel_buf"),
+            ("read", "read_buf"),
+            ("chip_sel", "chip_sel_buf")
+        ])
+        self.connect_inst(connections)
 
-                extra_pins = ["tri_en", "tri_en_bar"]
-            else:
-                extra_pins = ["sense_precharge_bar"]
-            self.connect_inst(["bank_sel", "read_buf", "clk", "sense_trig", "clk_buf", "clk_bar", "wordline_en",
-                               "precharge_en_bar", "write_en", "write_en_bar",
-                               "sense_en"] + extra_pins + ["sample_en_bar", vdd_name, "gnd"])
+    def get_control_buffer_net_pin(self, net):
+        """Get control buffer pin given the net it is connected to in this bank"""
+        inst_index = next(i for i in range(len(self.insts))
+                          if self.insts[i].name == self.control_buffers_inst.name)
+        conn = self.conns[inst_index]
+        pin_index = conn.index(net)
+        return self.control_buffers_inst.get_pin(self.control_buffers_inst.mod.pins[pin_index])
 
     def add_control_buffers(self):
-        offset = vector(self.control_buffers.width, self.logic_buffers_bottom)
+        """Add control logic buffers"""
+        offset = vector(0, self.logic_buffers_bottom)
         self.control_buffers_inst = self.add_inst("control_buffers", mod=self.control_buffers,
-                                                  offset=offset, mirror="MY")
+                                                  offset=offset)
         self.connect_control_buffers()
 
-    def add_operation_flop(self, offset):
-        vdd_name = "vdd_buffers" if OPTS.separate_vdd else "vdd"
-        self.read_buf_inst = self.add_inst("read_buf", mod=self.control_flop, offset=offset, mirror="MY")
-        self.connect_inst(["read", "clk", "read_buf", vdd_name, "gnd"])
+    def add_control_flops(self):
 
-        self.copy_layout_pin(self.read_buf_inst, "din", "read")
+        flop_connections = [(inst_name, *vals)
+                            for inst_name, vals in self.get_control_flop_connections().items()]
 
-    def add_read_flop(self):
+        # sort by pin y_offset
+        flop_connections = list(sorted(flop_connections,
+                                       key=lambda x: self.get_control_buffer_net_pin(x[2]).by()))
 
-        x_offset = self.control_buffers_inst.rx() + self.poly_pitch + self.control_flop.width
-        offset = vector(x_offset, self.logic_buffers_bottom + self.control_buffers.height - self.control_flop.height)
-        self.add_operation_flop(offset)
+        x_offset, y_base = self.get_control_flops_offset()
+        y_offset = y_base
 
-        # fill implants between read_buf and logic_buffers
-        flop_inverter = self.control_flop.buffer.buffer_invs[-1]
-        control_instances = self.control_buffers.insts
-        first_control_instance = min(control_instances, key=lambda x: x.lx())
+        self.control_flop_insts = []
 
-        if isinstance(first_control_instance.mod, pgate):
-            control_mod = first_control_instance.mod
-            control_mod_offset = 0
-        elif isinstance(first_control_instance.mod, BufferStage):
-            control_mod = first_control_instance.mod.module_insts[0].mod
-            control_mod_offset = first_control_instance.mod.module_insts[0].offset.x
+        for i in range(len(flop_connections)):
+            inst_name, net_in, net_out, flop_mod = flop_connections[i]
+            if i % 2 == 0:
+                offset = vector(x_offset, y_offset)
+                mirror = NO_MIRROR
+            else:
+                offset = vector(x_offset, y_offset + flop_mod.height)
+                mirror = MIRROR_X_AXIS
+            inst = self.add_inst(inst_name, mod=flop_mod, offset=offset, mirror=mirror)
+            conn = [net_in, "clk", net_out, "vdd", "gnd"]
+            self.connect_inst(conn)
+            if inst_name == "read_buf":
+                self.read_buf_inst = inst
+            elif inst_name == "bank_sel_buf":
+                self.bank_sel_buf_inst = inst
+            elif inst_name == "chip_sel_buf":
+                self.chip_sel_buf_inst = inst
+            else:
+                raise ValueError("Invalid instance name: {}".format(inst_name))
+            self.control_flop_insts.append((net_in, net_out, inst))
+            y_offset += flop_mod.height
+
+        y_offset = y_base - self.get_wide_space(METAL2) - self.bus_pitch
+        control_buffers_input_pins = [self.control_buffers_inst.get_pin(x)
+                                      for x in
+                                      self.control_buffers.get_input_pin_names()]
+        lowest_pin = min(control_buffers_input_pins, key=lambda x: x.by())
+        self.cross_clk_rail_y = min(y_offset, lowest_pin.by() - self.bus_pitch)
+        self.min_point = min(self.min_point, self.cross_clk_rail_y)
+
+    def get_non_flop_control_inputs(self):
+        """Get control buffers inputs that don't go through flops"""
+        precharge_trigger = ["precharge_trig"] * self.control_buffers.use_precharge_trigger
+        return ["sense_trig"] + precharge_trigger
+
+    def get_row_decoder_control_flop_space(self):
+        flop_vdd = self.control_flop.get_pins("vdd")[0]
+        return flop_vdd.height() + self.get_wide_space(flop_vdd.layer)
+
+    def get_control_flops_offset(self):
+        num_control_flops = len(self.get_control_flop_connections())
+        total_flop_height = num_control_flops * self.control_flop.height
+        wide_space = self.get_wide_space(METAL2)
+        # place below predecoder
+        flop_vdd = self.control_flop.get_pins("vdd")[0]
+        row_decoder_flop_space = self.get_row_decoder_control_flop_space()
+        space = utils.ceil(1.2 * self.bus_space)
+        row_decoder_col_decoder_space = flop_vdd.height() + 2 * space + self.bus_width
+
+        # y offset based on control buffer
+        y_offset_control_buffer = max(self.control_buffers_inst.by() + row_decoder_flop_space,
+                                      self.control_buffers_inst.cy() - 0.5 * total_flop_height)
+
+        row_decoder_y = self.bitcell_array_inst.uy() - self.decoder.height - self.bitcell.height
+        y_offset = min(y_offset_control_buffer,
+                       row_decoder_y - row_decoder_flop_space - total_flop_height)
+
+        # check if we can squeeze column decoder between predecoder and control flops
+        self.col_decoder_is_left = False
+        if self.words_per_row > 1:
+            if self.words_per_row == 2:
+                col_decoder_height = self.control_flop.height
+            elif self.words_per_row == 4:
+                col_decoder_height = self.decoder.pre2_4.height
+            else:
+                col_decoder_height = self.decoder.pre3_8.height
+
+            rail_space_above_controls = row_decoder_flop_space + (1 + self.words_per_row) * self.bus_pitch
+
+            if row_decoder_y - row_decoder_col_decoder_space - col_decoder_height - row_decoder_col_decoder_space > \
+                    y_offset_control_buffer + total_flop_height:
+                # predecoder is above control flops
+                y_offset = y_offset_control_buffer
+                self.col_decoder_y = row_decoder_y - row_decoder_col_decoder_space - col_decoder_height
+            elif row_decoder_y - row_decoder_col_decoder_space - col_decoder_height > \
+                    (y_offset_control_buffer + total_flop_height + rail_space_above_controls):
+                # predecoder is still above control flops but move control flops down
+                # if predecoder had been moved left, the rails above the control flops would have still
+                # required moving control flops down anyway
+                y_offset = (row_decoder_y - row_decoder_col_decoder_space - col_decoder_height -
+                            rail_space_above_controls - total_flop_height)
+                self.col_decoder_y = y_offset + total_flop_height + rail_space_above_controls
+            else:
+                # predecoder will be moved left
+                self.col_decoder_is_left = True
+                y_offset = (row_decoder_y - row_decoder_flop_space - rail_space_above_controls
+                            - total_flop_height)
+                self.col_decoder_y = row_decoder_y - row_decoder_col_decoder_space - col_decoder_height
+                self.rail_space_above_controls = rail_space_above_controls
+            self.min_point = min(self.min_point, self.col_decoder_y - self.rail_height)
+
+        # place to the left of bottom rail
+
+        # ensure no clash with rails above control_buffer
+        control_flops_top = y_offset + total_flop_height
+        rails = self.m2_rails
+        decoder_clk_rail = getattr(self, "decoder_clk_rail", None)
+        if decoder_clk_rail:
+            rails.append(decoder_clk_rail)
+
+        rails_below_control_flops = [x for x in rails if x.by() < control_flops_top]
+
+        if rails_below_control_flops:
+            leftmost_top_rail_x = min(rails_below_control_flops, key=lambda x: x.lx()).lx()
         else:
-            control_mod = first_control_instance.mod.logic_inst.mod
-            control_mod_offset = first_control_instance.mod.logic_inst.offset.x
+            leftmost_top_rail_x = self.mid_vdd_offset
 
-        flop_y_offset = self.read_buf_inst.by() + self.control_flop.buffer_inst.by()
-        flop_x_offset = (self.read_buf_inst.rx() - self.control_flop.buffer_inst.lx()
-                         - self.control_flop.buffer.module_insts[-1].lx())
+        num_control_inputs = len(self.get_non_flop_control_inputs())
+        num_inputs = num_control_inputs + num_control_flops + 1
 
-        control_y_offset = self.control_buffers_inst.by() + first_control_instance.by()
-        control_x_offset = (self.control_buffers_inst.rx() - first_control_instance.lx() - control_mod_offset)
+        bank_sel_out_rail_x = (leftmost_top_rail_x - wide_space - num_inputs * self.bus_pitch
+                               + self.bus_space)
+        x_offset = (bank_sel_out_rail_x - wide_space - self.control_flop.width)
 
-        for layer in ["pimplant", "nimplant"]:
-            flop_rect = self.rightmost_largest_rect(flop_inverter.get_layer_shapes(layer))
-            control_rect = self.rightmost_largest_rect(control_mod.get_layer_shapes(layer))
-
-            bottom = max(flop_rect.by() + flop_y_offset, control_rect.by() + control_y_offset)
-            top = min(flop_rect.uy() + flop_y_offset, control_rect.uy() + control_y_offset)
-
-            left = control_x_offset - control_rect.lx()
-            right = flop_x_offset - flop_rect.rx()
-            self.add_rect(layer, offset=vector(left, bottom), width=right - left, height=top - bottom)
+        self.control_flop_y = y_offset
+        return x_offset, y_offset
 
     def add_tri_gate_array(self):
         """ data tri gate to drive the data bus """
 
-        y_offset = self.trigate_y
+        y_space = evaluate_vertical_module_spacing(
+            top_modules=[self.tri_gate_array.child_mod],
+            bottom_modules=[self.control_buffers.inv], min_space=0)
+        y_offset = max(self.trigate_y, self.control_buffers_inst.uy() + y_space)
 
         self.tri_gate_array_inst = self.add_inst(name="tri_gate_array", mod=self.tri_gate_array,
                                                  offset=vector(0, y_offset))
-        temp = []
-        for i in range(self.word_size):
-            temp.append("and_out[{0}]".format(i))
-        for i in range(self.word_size):
-            temp.append("DATA[{0}]".format(i))
-        temp.extend(["tri_en", "tri_en_bar", "vdd", "gnd"])
-        self.connect_inst(temp)
 
-    def add_data_mask_flops(self):
-        data_connections = []
-        mask_connections = []
-        vdd_name = "vdd_data_flops" if OPTS.separate_vdd else "vdd"
-        for i in range(self.word_size):
-            data_connections.append("DATA[{}]".format(i))
-            mask_connections.append("MASK[{}]".format(i))
-        for i in range(self.word_size):
-            data_connections.extend("data_in[{0}] data_in_bar[{0}]".format(i).split())
-            mask_connections.extend("mask_in[{0}] mask_in_bar[{0}]".format(i).split())
-        data_connections.extend([self.get_data_clk(), vdd_name, "gnd"])
-        mask_connections.extend([self.get_mask_clk(), vdd_name, "gnd"])
+        replacements = [("out[", "DATA["),
+                        ("in_bar[", "sense_out_bar["), ("in[", "sense_out["),
+                        ("en", "tri_en", EXACT), ("en_bar", "tri_en_bar", EXACT)]
+        connections = self.connections_from_mod(self.tri_gate_array, replacements)
+        self.connect_inst(connections)
 
-        y_offset = self.get_mask_flops_y_offset()
+    @staticmethod
+    def connections_from_mod(mod: Union[design, List[str]], replacements=None):
+        if isinstance(mod, list):
+            connections = mod
+        else:
+            connections = copy(mod.pins)
+        if not replacements:
+            return connections
+        for pairs in replacements:
+            if len(pairs) == 2:
+                source, replacement = pairs
+                connections = [x.replace(source, replacement) for x in connections]
+            elif len(pairs) == 3 and pairs[2] == EXACT:
+                source, replacement, _ = pairs
+                connections = [replacement if x == source else x for x in connections]
+        return connections
 
-        self.mask_in_flops_inst = self.add_inst("mask_in", mod=self.msf_mask_in, offset=vector(0, y_offset))
-        self.connect_inst(mask_connections)
+    def calculate_bitcell_aligned_spacing(self, top_module, bottom_module,
+                                          num_rails=0, min_space=None, layers=None):
 
-        y_offset = self.get_data_flops_y_offset()
+        m2_m3_space = evaluate_vertical_metal_spacing(top_module.child_mod,
+                                                      bottom_module.child_mod,
+                                                      num_rails, layers=layers)
+        min_space = max(m2_m3_space, min_space or -bottom_module.height)
 
-        self.data_in_flops_inst = self.add_inst("data_in", mod=self.msf_data_in, offset=vector(0, y_offset))
-        self.connect_inst(data_connections)
+        top_modules = [top_module.child_mod]
+        bottom_modules = [bottom_module.child_mod]
+        if (getattr(top_module, "body_tap", None) and
+                getattr(bottom_module, "body_tap", None)):
+            top_modules.append(top_module.body_tap)
+            bottom_modules.append(bottom_module.body_tap)
+        return evaluate_vertical_module_spacing(top_modules=top_modules,
+                                                bottom_modules=bottom_modules,
+                                                min_space=min_space)
 
-    def get_mask_clk(self): return "clk_buf"
-
-    def get_data_clk(self): return "clk_bar"
-
-    def get_mask_flops_y_offset(self):
-        return self.tri_gate_array_inst.uy()
+    def get_mask_flops_y_offset(self, flop=None, flop_tap=None):
+        y_space = self.calculate_bitcell_aligned_spacing(self.msf_mask_in,
+                                                         self.tri_gate_array, num_rails=2)
+        y_offset = self.tri_gate_array_inst.uy() + y_space
+        return y_offset
 
     def get_data_flops_y_offset(self):
-        gnd_pins = self.msf_mask_in.get_pins("gnd")
-        top_mask_gnd_pin = max(gnd_pins, key=lambda x: x.uy())
+        bottom_mod = self.msf_mask_in if self.has_mask_in else self.tri_gate_array
+        y_space = self.calculate_bitcell_aligned_spacing(self.msf_data_in, bottom_mod,
+                                                         num_rails=2)
+        if self.has_mask_in:
+            y_base = self.mask_in_flops_inst.uy()
+        else:
+            y_base = self.tri_gate_array_inst.uy()
+        return y_base + y_space
 
-        bottom_data_gnd_pin = min(self.msf_data_in.get_pins("gnd"), key=lambda x: x.uy())
+    def add_mask_flops(self):
+        write_driver_mod = self.write_driver_array.child_mod
+        self.has_mask_in = "mask" in write_driver_mod.pins or "mask_bar" in write_driver_mod.pins
+        if not self.has_mask_in:
+            self.mask_in_flops_inst = None
+            return
+        replacements = [("din", "MASK"), ("dout_bar", "mask_in_bar"), ("dout", "mask_in"),
+                        ("clk", "clk_buf")]
+        connections = self.connections_from_mod(self.msf_mask_in, replacements)
+        y_offset = self.get_mask_flops_y_offset()
 
-        implant_space = drc["parallel_implant_to_implant"]
+        self.mask_in_flops_inst = self.add_inst("mask_in", mod=self.msf_mask_in,
+                                                offset=vector(0, y_offset))
+        self.connect_inst(connections)
 
-        return self.mask_in_flops_inst.by() + implant_space + top_mask_gnd_pin.uy() - bottom_data_gnd_pin.by()
+    def add_data_flops(self):
+        replacements = [("din", "DATA"), ("dout_bar", "data_in_bar"), ("dout", "data_in"),
+                        ("clk", "clk_bar")]
+        connections = self.connections_from_mod(self.msf_data_in, replacements)
+        y_offset = self.get_data_flops_y_offset()
+        self.data_in_flops_inst = self.add_inst("data_in", mod=self.msf_data_in,
+                                                offset=vector(0, y_offset))
+        self.connect_inst(connections)
+
+    def add_data_mask_flops(self):
+        self.add_mask_flops()
+        self.add_data_flops()
+
+    def get_mask_clk(self):
+        return "clk_buf"
+
+    def get_data_clk(self):
+        return "clk_bar"
 
     def get_write_driver_offset(self):
-        return self.data_in_flops_inst.ul()
+        y_space = self.calculate_bitcell_aligned_spacing(self.write_driver_array,
+                                                         self.msf_data_in, num_rails=1)
+        y_offset = self.data_in_flops_inst.uy() + y_space
+        return vector(self.data_in_flops_inst.lx(), y_offset)
 
     def add_write_driver_array(self):
         """Temp write driver, replace with mask support"""
@@ -441,70 +637,116 @@ class BaselineBank(design, ControlBuffersMixin):
                                                      mod=self.write_driver_array,
                                                      offset=self.get_write_driver_offset())
 
-        temp = []
-        for i in range(self.word_size):
-            temp.append("data_in[{0}]".format(i))
-            temp.append("data_in_bar[{0}]".format(i))
+        replacements = [("data_bar[", "data_in_bar["), ("data[", "data_in["),
+                        ("mask_bar[", "mask_in_bar["), ("mask[", "mask_in["),
+                        ("en_bar", "write_en_bar", EXACT), ("en", "write_en", EXACT)]
 
         if self.words_per_row > 1:
-            suffix = "_out"
-        else:
-            suffix = ""
-        for i in range(self.word_size):
-            temp.append("bl{0}[{1}]".format(suffix, i))
-            temp.append("br{0}[{1}]".format(suffix, i))
-        for i in range(self.word_size):
-            temp.append("mask_in_bar[{0}]".format(i))
+            replacements.extend([("bl", "bl_out"), ("br", "br_out")])
+        connections = self.connections_from_mod(self.write_driver_array, replacements)
 
-        temp.extend(["write_en", "write_en_bar", "vdd", "gnd"])
-        self.connect_inst(temp)
+        self.connect_inst(connections)
+
+    def get_sense_amp_array_y(self):
+        y_space = self.calculate_bitcell_aligned_spacing(self.sense_amp_array,
+                                                         self.write_driver_array, num_rails=1)
+        return self.write_driver_array_inst.uy() + y_space
 
     def add_sense_amp_array(self):
-        self.sense_amp_array_offset = self.write_driver_array_inst.ul()
+
+        self.sense_amp_array_offset = vector(self.write_driver_array_inst.lx(),
+                                             self.get_sense_amp_array_y())
         self.sense_amp_array_inst = self.add_inst(name="sense_amp_array", mod=self.sense_amp_array,
                                                   offset=self.sense_amp_array_offset)
-        temp = []
+        replacements = [("dout[", "sense_out["), ("dout_bar[", "sense_out_bar["),
+                        ("data[", "sense_out["), ("data_bar[", "sense_out_bar["),
+                        ("sampleb", "sample_en_bar"), ("chb", "precharge_en_bar"),
+                        ("preb", "precharge_en_bar"), ("en", "sense_en", EXACT),
+                        ("en_bar", "sense_en_bar", EXACT)]
+
         if self.words_per_row > 1:
-            suffix = "_out"
-        else:
-            suffix = ""
-        for i in range(self.word_size):
-            temp.append("bl{0}[{1}]".format(suffix, i))
-            temp.append("br{0}[{1}]".format(suffix, i))
+            replacements.extend([("bl", "bl_out"), ("br", "br_out")])
+        connections = self.connections_from_mod(self.sense_amp_array, replacements)
+        self.connect_inst(connections)
 
-            temp.append("and_out[{0}]".format(i))
+    def get_column_mux_array_y(self):
+        y_space = self.calculate_bitcell_aligned_spacing(self.column_mux_array,
+                                                         self.sense_amp_array, num_rails=0)
+        return self.sense_amp_array_inst.uy() + y_space
 
-        if self.mirror_sense_amp:
-            temp.extend(["sense_en", "sense_en_bar", "vdd", "gnd"])
-        else:
-            temp.extend(["sense_en", "precharge_en_bar", "sample_en_bar", "vdd", "gnd"])
-        self.connect_inst(temp)
-
-    def get_precharge_y(self):
-        return self.sense_amp_array_inst.uy() + self.precharge_array.height
-
-    def add_precharge_array(self):
-        """ Adding Precharge """
-        y_offset = self.get_precharge_y()
-        self.precharge_array_inst=self.add_inst(name="precharge_array",
-                                                mod=self.precharge_array,
-                                                mirror="MX",
-                                                offset=vector(0, y_offset))
+    def get_col_mux_connections(self):
         temp = []
         for i in range(self.num_cols):
             temp.append("bl[{0}]".format(i))
             temp.append("br[{0}]".format(i))
-        temp.extend(["precharge_en_bar", "vdd"])
-        self.connect_inst(temp)
+        for k in range(self.words_per_row):
+            temp.append("sel[{0}]".format(k))
+        for j in range(self.word_size):
+            temp.append("bl_out[{0}]".format(j))
+            temp.append("br_out[{0}]".format(j))
+        temp.append("gnd")
+        if "vdd" in self.column_mux_array.pins:
+            temp.append("vdd")
+        return temp
 
-    def add_bitcell_array(self):
-        """ Adding Bitcell Array """
+    def add_column_mux_array(self):
+        if self.col_addr_size == 0:
+            self.col_mux_array_inst = None
+            return
 
-        # TODO fix space hack
-        y_offset = self.precharge_array_inst.uy() + self.wide_m1_space + 0.105
-        self.bitcell_array_inst=self.add_inst(name="bitcell_array",
-                                              mod=self.bitcell_array,
-                                              offset=vector(0, y_offset))
+        y_offset = self.get_column_mux_array_y()
+        self.col_mux_array_inst = self.add_inst(name="column_mux_array", mod=self.column_mux_array,
+                                                offset=vector(self.sense_amp_array_inst.lx(), y_offset))
+
+        self.connect_inst(self.get_col_mux_connections())
+
+    def get_precharge_y(self):
+        if self.col_mux_array_inst is None:
+            bottom_inst = self.sense_amp_array_inst
+        else:
+            bottom_inst = self.col_mux_array_inst
+        bottom_mod = bottom_inst.mod
+        self.precharge_array.child_mod = self.precharge_array.pc_cell
+
+        if self.col_mux_array_inst is None:
+            # we place via below precharge bl pin
+            bl_pin = bottom_mod.get_pin("bl[0]")
+            # find vias and layers used in going from top to bottom pins
+            vias, _, fill_layers = contact.get_layer_vias(bl_pin.layer,
+                                                          METAL2,
+                                                          cross_via=False)
+            layers = list(set(fill_layers + [METAL2, bl_pin.layer]))
+
+            y_space = evaluate_vertical_metal_spacing(self.precharge_array.child_mod,
+                                                      bottom_mod.child_mod,
+                                                      num_rails=0, layers=layers,
+                                                      vias=vias, via_space=False)
+        else:
+            y_space = -bottom_mod.height
+        y_space = self.calculate_bitcell_aligned_spacing(self.precharge_array,
+                                                         bottom_mod, num_rails=0,
+                                                         min_space=y_space)
+        return bottom_inst.uy() + y_space
+
+    def get_precharge_mirror(self):
+        return NO_MIRROR
+
+    def get_precharge_connections(self):
+        replacements = [("en", "precharge_en_bar")]
+        connections = self.connections_from_mod(self.precharge_array,
+                                                replacements)
+        return connections
+
+    def add_precharge_array(self):
+        """ Adding Precharge """
+        y_offset = self.get_precharge_y()
+        self.precharge_array_inst = self.add_inst(name="precharge_array",
+                                                  mod=self.precharge_array,
+                                                  mirror=self.get_precharge_mirror(),
+                                                  offset=vector(0, y_offset))
+        self.connect_inst(self.get_precharge_connections())
+
+    def get_bitcell_array_connections(self):
         temp = []
         for i in range(self.num_cols):
             temp.append("bl[{0}]".format(i))
@@ -512,438 +754,793 @@ class BaselineBank(design, ControlBuffersMixin):
         for j in range(self.num_rows):
             temp.append("wl[{0}]".format(j))
         temp.extend(["vdd", "gnd"])
-        self.connect_inst(temp)
+        return temp
 
-    def add_wordline_driver(self):
-        """ Wordline Driver """
+    def add_bitcell_array(self):
+        """ Adding Bitcell Array """
+        if hasattr(tech, "bitcell_precharge_space"):
+            y_space = tech.bitcell_precharge_space(self.bitcell_array, self.precharge_array)
+        else:
+            self.bitcell_array.child_mod = self.bitcell_array.cell
+            y_space = self.calculate_bitcell_aligned_spacing(self.bitcell_array,
+                                                             self.precharge_array, num_rails=0)
 
-        # The wordline driver is placed to the right of one of the decoders .
+        y_offset = self.precharge_array_inst.uy() + y_space
+        self.bitcell_array_inst = self.add_inst(name="bitcell_array",
+                                                mod=self.bitcell_array,
+                                                offset=vector(0, y_offset))
 
-        # TODO nwell space hack
+        self.connect_inst(self.get_bitcell_array_connections())
 
-        x_offset = self.mid_vdd_offset - (self.wordline_driver.width + self.wide_m1_space + 0.03)
-
-        self.wordline_driver_inst=self.add_inst(name="wordline_driver", mod=self.wordline_driver,
-                                                offset=vector(x_offset, self.bitcell_array_inst.by()))
-
+    def get_wordline_driver_connections(self):
         temp = []
         for i in range(self.num_rows):
             temp.append(self.get_wordline_in_net().format(i))
         for i in range(self.num_rows):
             temp.append("wl[{0}]".format(i))
-        temp.append("wordline_en")
-        vdd_name = "vdd_wordline" if OPTS.separate_vdd else "vdd"
-        temp.append(vdd_name)
-        temp.append("gnd")
-        self.connect_inst(temp)
+        temp.extend(["wordline_en", "vdd", "gnd"])
+        return temp
 
-    def add_row_decoder(self):
-        """  Add the hierarchical row decoder  """
+    def add_wordline_driver(self):
+        """ Wordline Driver """
+        x_offset = self.mid_vdd_offset - (self.wordline_driver.width + self.wide_m1_space)
 
-        enable_rail_space = len(self.get_enable_names()) * self.control_rail_pitch
+        self.wordline_driver_inst = self.add_inst(name="wordline_driver", mod=self.wordline_driver,
+                                                  offset=vector(x_offset, self.bitcell_array_inst.by()))
+        self.connect_inst(self.get_wordline_driver_connections())
 
-        x_offset = min((self.wordline_driver_inst.lx() - self.decoder.row_decoder_width),
-                       self.leftmost_rail.lx() - self.m2_pitch - self.decoder.width - enable_rail_space)
-        offset = vector(x_offset,  self.bitcell_array_inst.by()-self.decoder.predecoder_height)
+    def get_net_loads(self, net):
+        destinations = []
+        for i in range(len(self.conns)):
+            if net in self.conns[i]:
+                pin_index = self.conns[i].index(net)
+                inst = self.insts[i]
+                if inst.name == "control_buffers" or inst.name.startswith("right_buffer"):
+                    continue
+                pin_name = inst.mod.pins[pin_index]
+                destinations.append((inst, pin_name))
+        if net == "decoder_clk":
+            return self.get_decoder_clk_loads()
+        if net == "clk_buf" and not self.use_decoder_clk and not self.is_left_bank:
+            destinations.extend(self.get_decoder_clk_loads())
+        return destinations
 
-        self.row_decoder_inst = self.add_inst(name="right_row_decoder", mod=self.decoder, offset=offset)
-
-        temp = []
-        for i in range(self.row_addr_size):
-            temp.append("ADDR[{0}]".format(i))
-        for j in range(self.num_rows):
-            temp.append("dec_out[{0}]".format(j))
-        vdd_name = "vdd_wordline" if OPTS.separate_vdd else "vdd"
-        temp.extend([self.get_decoder_clk(), vdd_name, "gnd"])
-        self.connect_inst(temp)
-
-        self.min_point = min(self.control_buffers_inst.by(), self.row_decoder_inst.by())
-        self.top = self.bitcell_array_inst.uy()
-
-    def get_decoder_clk(self): return "clk_buf"
+    def get_decoder_clk_loads(self):
+        destinations = []
+        if OPTS.decoder_flops:
+            destinations.append((self.decoder, "clk"))
+        if self.words_per_row > 1:
+            if hasattr(OPTS, "sram_class"):
+                sram_class = self.import_mod_class_from_str(OPTS.sram_class)
+            else:
+                from modules.shared_decoder.cmos_sram import CmosSram
+                sram_class = CmosSram
+            col_decoder = sram_class.create_column_decoder_modules(self.words_per_row)
+            destinations.append((col_decoder, "clk"))
+        return destinations
 
     def get_control_rails_destinations(self):
-        if self.mirror_sense_amp:
-            destination_pins = {
-                "sense_en": self.tri_gate_array_inst.get_pins("en") + self.sense_amp_array_inst.get_pins("en"),
-                "sense_en_bar": self.tri_gate_array_inst.get_pins("en_bar") +
-                                self.sense_amp_array_inst.get_pins("en_bar"),
-                "precharge_en_bar": self.precharge_array_inst.get_pins("en"),
-                "clk_buf": self.mask_in_flops_inst.get_pins("clk"),
-                "clk_bar": self.data_in_flops_inst.get_pins("clk"),
-                "write_en": self.write_driver_array_inst.get_pins("en"),
-                "write_en_bar": self.write_driver_array_inst.get_pins("en_bar"),
-                "wordline_en": self.precharge_array_inst.get_pins("en"),
-            }
-        else:
-            destination_pins = {
-                "sense_en": self.sense_amp_array_inst.get_pins("en"),
-                "tri_en": self.tri_gate_array_inst.get_pins("en"),
-                "tri_en_bar": self.tri_gate_array_inst.get_pins("en_bar"),
-                "sample_en_bar": self.sense_amp_array_inst.get_pins("sampleb"),
-                "precharge_en_bar": self.precharge_array_inst.get_pins("en"),
-                "clk_buf": self.mask_in_flops_inst.get_pins("clk"),
-                "clk_bar": self.data_in_flops_inst.get_pins("clk"),
-                "write_en": self.write_driver_array_inst.get_pins("en"),
-                "write_en_bar": self.write_driver_array_inst.get_pins("en_bar"),
-                "wordline_en": self.precharge_array_inst.get_pins("en"),
-            }
-            if OPTS.baseline:
-                destination_pins["precharge_en_bar"] += \
-                    self.sense_amp_array_inst.get_pins("preb")
+        """Map control logic buffers output pins to peripheral pins"""
+        control_outputs = self.control_buffers.get_output_pin_names()
+        destination_pins = {}
+        for net in control_outputs:
+            if net == "wordline_en":
+                destination_pins[net] = self.precharge_array_inst.get_pins("en")
+                continue
+            elif net == "decoder_clk":
+                destination_pins[net] = []
+                continue
+            destinations = self.get_net_loads(net)
+            if not destinations:
+                debug.warning("Control buffer output {} not connected".format(net))
+            else:
+                pins = [x[0].get_pins(x[1]) for x in destinations]
+                destination_pins[net] = list(itertools.chain.from_iterable(pins))
         return destination_pins
 
-    def add_control_rails(self):
-
-        destination_pins = self.get_control_rails_destinations()
-
-        y_offset = self.control_buffers_inst.get_pin("clk_buf").uy() + 0.5*self.rail_height + self.m2_space
-        x_offset = (self.mid_vdd_offset - (len(self.control_names)*self.control_rail_pitch)
-                    - (self.wide_m1_space-self.line_end_space))
-
-        rail_names = list(sorted(destination_pins.keys(),
-                                 key=lambda x: self.control_buffers_inst.get_pin(x).lx()))
-        self.rail_names = rail_names
-
-        for i in range(len(rail_names)):
-            rail_name = rail_names[i]
-            control_pin = self.control_buffers_inst.get_pin(rail_name)
-            self.add_rect("metal2", offset=control_pin.ul(), height=y_offset-control_pin.uy())
-            self.add_rect("metal3", offset=vector(x_offset, y_offset), width=control_pin.rx()-x_offset)
-
-            self.add_contact_center(m2m3.layer_stack, offset=vector(control_pin.cx(),
-                                                                    y_offset+0.5*self.m2_width), rotate=90)
-
-            dest_pins = destination_pins[rail_name]
-
-            if not dest_pins:
-                rail = self.add_rect("metal3", offset=vector(x_offset, y_offset), height=m2m3.height)
-            else:
-                self.add_contact(m2m3.layer_stack, offset=vector(x_offset, y_offset))
-                top_pin = max(dest_pins, key=lambda x: x.uy())
-                rail = self.add_rect("metal2", offset=vector(x_offset, y_offset), height=top_pin.uy()-y_offset)
-            setattr(self, rail_name+"_rail", rail)
-
-            if not rail_name == "wordline_en":
-                for dest_pin in dest_pins:
-                    if dest_pin.layer == "metal2":
-                        self.add_contact(m2m3.layer_stack, offset=dest_pin.ll(), rotate=90)
-                        self.add_rect("metal3", offset=vector(rail.lx(), dest_pin.by()),
-                                      width=dest_pin.lx()-rail.lx())
-                        self.add_contact(m2m3.layer_stack,
-                                         offset=vector(rail.lx(), dest_pin.cy()-0.5*m2m3.second_layer_height))
-                    else:
-                        if dest_pin.layer == "metal3":
-                            via = m2m3
-                        elif dest_pin.layer == "metal1":
-                            via = m1m2
-                        else:
-                            debug.error("Invalid layer", 1)
-                        self.add_rect(dest_pin.layer, offset=vector(rail.lx(), dest_pin.by()),
-                                      width=dest_pin.lx() - rail.lx())
-                        if rail_name == "write_en" and (self.control_buffers_inst.get_pin("write_en").lx() >
-                            self.control_buffers_inst.get_pin("write_en_bar").lx()):
-                            self.add_contact(via.layer_stack, offset=vector(rail.lx(), dest_pin.by()))
-                        else:
-                            self.add_contact(via.layer_stack,
-                                             offset=vector(rail.lx(), dest_pin.uy()-via.second_layer_height))
-
-            y_offset += self.control_rail_pitch
-            x_offset += self.control_rail_pitch
-
-        self.leftmost_rail = getattr(self, rail_names[0]+"_rail")
+    def add_cross_contact_center(self, cont, offset, rotate=False, rail_width=None, fill=True):
+        """Add a cross contact whose middle is 'offset'.
+        Fills the surrounding metal layer with width 'rail_width' to match extents of the contact"""
+        super().add_cross_contact_center(cont, offset, rotate)
+        if fill:
+            self.add_cross_contact_center_fill(cont, offset, rotate, rail_width)
 
     def get_right_vdd_offset(self):
-        return max(self.control_buffers_inst.rx(), self.bitcell_array_inst.rx(),
-                   self.read_buf_inst.rx()) + self.wide_m1_space
+        """x offset for right vdd rail"""
+        return max(self.bitcell_array_inst.rx(), self.rightmost_rail.rx(),
+                   self.control_buffers_inst.rx()) + self.wide_power_space
+
+    def get_mid_gnd_offset(self):
+        """x offset for middle gnd rail"""
+        return - 2 * self.wide_m1_space - self.vdd_rail_width
 
     def add_vdd_gnd_rails(self):
-        self.height = self.top - self.min_point
+        """Add mid and right power rails"""
+        self.height = self.bitcell_array_inst.uy() - self.min_point
 
         right_vdd_offset = self.get_right_vdd_offset()
-        right_gnd_offset = right_vdd_offset + self.vdd_rail_width + self.wide_m1_space
-        left_vdd_offset = self.row_decoder_inst.lx() - self.wide_m1_space - self.vdd_rail_width
-        left_gnd_offset = left_vdd_offset - self.wide_m1_space - self.vdd_rail_width
+        right_gnd_offset = right_vdd_offset + self.vdd_rail_width + self.wide_power_space
 
-        offsets = [self.mid_gnd_offset, right_gnd_offset, self.mid_vdd_offset, right_vdd_offset,
-                   left_vdd_offset, left_gnd_offset]
-        left_vdd_name = "vdd_wordline" if OPTS.separate_vdd else "vdd"
-        pin_names = ["gnd", "gnd", "vdd", "vdd", left_vdd_name, "gnd"]
+        offsets = [self.mid_gnd_offset, right_gnd_offset, self.mid_vdd_offset, right_vdd_offset]
+        pin_names = ["gnd", "gnd", "vdd", "vdd"]
         pin_layers = self.get_vdd_gnd_rail_layers()
-        attribute_names = ["mid_gnd", "right_gnd", "mid_vdd", "right_vdd", "left_vdd", "left_gnd"]
-        for i in range(6):
+
+        attribute_names = ["mid_gnd", "right_gnd", "mid_vdd", "right_vdd"]
+        for i in range(4):
             pin = self.add_layout_pin(pin_names[i], pin_layers[i],
-                                      vector(offsets[i], self.min_point), height=self.height,
-                                      width=self.vdd_rail_width)
+                                      vector(offsets[i], self.min_point),
+                                      height=self.bitcell_array_inst.uy() - self.min_point +
+                                             m1m2.height, width=self.vdd_rail_width)
             setattr(self, attribute_names[i], pin)
         # for IDE assistance
         self.mid_gnd = getattr(self, "mid_gnd")
         self.right_gnd = getattr(self, "right_gnd")
         self.mid_vdd = getattr(self, "mid_vdd")
         self.right_vdd = getattr(self, "right_vdd")
-        self.left_vdd = getattr(self, "left_vdd")
-        self.left_gnd = getattr(self, "left_gnd")
-
-    def get_sense_amp_dout(self):
-        return "data"
 
     def get_vdd_gnd_rail_layers(self):
-        return ["metal2", "metal1", "metal2", "metal2", "metal2", "metal1"]
+        """Layers for mid and right power rails"""
+        return [METAL2, METAL2, METAL2, METAL2]
 
-    def get_collisions(self):
-        return [
-            (self.control_buffers_inst.by(), self.tri_gate_array_inst.by()),
+    def route_all_instance_power(self, inst, via_rotate=90):
+        """Connect all vdd and gnd pins to mid and right rails"""
+        vdd_pins = [] if "vdd" not in inst.mod.pins else inst.get_pins("vdd")
+        for pin in vdd_pins:
+            self.route_vdd_pin(pin, via_rotate=via_rotate)
 
-            (self.tri_gate_array_inst.get_pin("en").uy(),
-             self.tri_gate_array_inst.get_pin("en_bar").uy()),
-
-            (self.sense_amp_array_inst.by() - m3m4.second_layer_height - self.wide_m1_space,
-             self.sense_amp_array_inst.uy()),
-        ]
+        gnd_pins = [] if "gnd" not in inst.mod.pins else inst.get_pins("gnd")
+        for pin in gnd_pins:
+            self.route_gnd_pin(pin, via_rotate=via_rotate)
+            self.add_power_via(pin, self.right_gnd, via_rotate)
 
     def route_bitcell(self):
+        """wordline driver wordline to bitcell array wordlines"""
+        debug.info(1, "Route bitcells")
         for row in range(self.num_rows):
             wl_in = self.bitcell_array_inst.get_pin("wl[{}]".format(row))
             driver_out = self.wordline_driver_inst.get_pin("wl[{0}]".format(row))
-            self.add_rect("metal1", offset=vector(driver_out.rx(), wl_in.by()),
-                          width=wl_in.lx()-driver_out.rx(), height=wl_in.height())
+            self.add_rect(wl_in.layer, offset=vector(driver_out.rx(), wl_in.by()),
+                          width=wl_in.lx() - driver_out.rx(), height=wl_in.height())
+        self.route_bitcell_array_power()
 
-        for pin in self.bitcell_array_inst.get_pins("vdd"):
-            self.route_vdd_pin(pin)
+    def route_bitcell_array_power(self):
+        self.route_all_instance_power(self.bitcell_array_inst)
 
-        for pin in self.bitcell_array_inst.get_pins("gnd"):
-            self.route_gnd_pin(pin)
+    def join_rects(self, top_rects, top_layer, bottom_rects, bottom_layer, via_alignment,
+                   y_shift=0, rect_align=JOIN_TOP_ALIGN):
+        vias, _, fill_layers = contact.get_layer_vias(bottom_layer,
+                                                      top_layer,
+                                                      cross_via=False)
+        fill_widths, fill_heights, via_extensions = [], [], []
+        for via, fill_layer in zip(vias[1:], fill_layers):
+            fill_height, fill_width = self.calculate_min_area_fill(via.height, layer=fill_layer)
+            fill_heights.append(fill_height)
+            fill_widths.append(fill_width)
+            via_extensions.append(self.get_drc_by_layer(fill_layer, "wide_metal_via_extension")
+                                  or 0.0)
+
+        for bottom_rect, top_rect in zip(bottom_rects, top_rects):
+            additional_height = vias[0].height if vias else 0
+            if top_rect.by() + y_shift + additional_height >= bottom_rect.uy():
+                if rect_align == JOIN_BOT_ALIGN:
+                    rect_width = bottom_rect.rx() - bottom_rect.lx()
+                    x_offset = bottom_rect.lx()
+                else:
+                    rect_width = min(bottom_rect.rx() - bottom_rect.lx(),
+                                     top_rect.rx() - top_rect.lx())
+                    x_offset = top_rect.cx() - 0.5 * rect_width
+
+                height = top_rect.by() - bottom_rect.uy() + y_shift + additional_height
+
+                self.add_rect(bottom_layer, offset=vector(x_offset,
+                                                          bottom_rect.uy()),
+                              width=rect_width, height=height)
+            if not vias:
+                continue
+            for via in vias:
+                if rect_align == JOIN_BOT_ALIGN:
+                    via_x = bottom_rect.cx()
+                else:
+                    via_x = top_rect.cx()
+                via_mid = vector(via_x, top_rect.by() + 0.5 * via.height + y_shift)
+                self.add_contact_center(via.layer_stack, offset=via_mid)
+
+            for fill_layer, fill_width, fill_height, via_extension \
+                    in zip(fill_layers, fill_widths, fill_heights, via_extensions):
+                if rect_align == JOIN_BOT_ALIGN:
+                    reference_rect = bottom_rect
+                else:
+                    reference_rect = top_rect
+                if via_alignment == LEFT_FILL:
+                    x_offset = reference_rect.lx() - via_extension
+                elif via_alignment == MID_FILL:
+                    x_offset = reference_rect.cx() - 0.5 * fill_width
+                else:
+                    x_offset = reference_rect.rx() + via_extension - fill_width
+                self.add_rect(fill_layer, offset=vector(x_offset, top_rect.by() + y_shift),
+                              width=fill_width, height=fill_height)
+
+    def join_bitlines(self, top_instance, top_suffix, bottom_instance,
+                      bottom_suffix, word_size=None, y_shift=0, rect_align=JOIN_TOP_ALIGN):
+        """Join bitlines using given 'top_instance' and 'bottom_instance
+        Pin names are extracted by adding 'top/bottom_suffix to 'bl' and 'br'
+        bl fill is aligned to the left and br fill is aligned to the right"""
+        if word_size is None:
+            word_size = self.word_size
+        pin_names = ["bl", "br"]
+        alignments = [LEFT_FILL, RIGHT_FILL]
+        for i in range(2):
+            pin_name, alignment = pin_names[i], alignments[i]
+            top_pins = [top_instance.get_pin("{}{}[{}]".format(pin_name, top_suffix, i))
+                        for i in range(word_size)]
+            bottom_pins = [bottom_instance.get_pin("{}{}[{}]".format(pin_name, bottom_suffix, i))
+                           for i in range(word_size)]
+            self.join_rects(top_pins, top_pins[0].layer, bottom_pins, bottom_pins[0].layer,
+                            alignment, y_shift=y_shift, rect_align=rect_align)
+
+    def get_closest_bitline_pin(self, x_offset, pin_name):
+        """Get closest bitline pin (bl/br) to x_offset"""
+        mid_x_offsets = [x + 0.5 * self.bitcell.width for x in
+                         self.bitcell_array.bitcell_offsets]
+        bitcell_array_col = min(range(self.num_cols),
+                                key=lambda col: abs(x_offset - mid_x_offsets[col]))
+
+        return self.bitcell_array_inst.get_pin("{}[{}]".format(pin_name, bitcell_array_col))
 
     def route_precharge(self):
-        pin_names = ["bl", "br"]
-        for col in range(self.num_cols):
-            for pin_name in pin_names:
-                precharge_pin = self.precharge_array_inst.get_pin(pin_name + "[{}]".format(col))
-                bitcell_pin = self.bitcell_array_inst.get_pin(pin_name + "[{}]".format(col))
+        """precharge bitlines to bitcell bitlines
+            col_mux or sense amp bitlines to precharge bitlines"""
+        debug.info(1, "Route Precharge")
+        self.join_bitlines(top_instance=self.bitcell_array_inst, top_suffix="",
+                           bottom_instance=self.precharge_array_inst,
+                           bottom_suffix="", word_size=self.num_cols)
 
-                self.add_rect(precharge_pin.layer, offset=precharge_pin.ul(),
-                              height=bitcell_pin.by()-precharge_pin.uy())
+        self.route_all_instance_power(self.precharge_array_inst)
 
-        self.route_vdd_pin(self.precharge_array_inst.get_pin("vdd"), via_rotate=0)
+        if self.col_mux_array_inst is not None:
+            self.join_bitlines(top_instance=self.precharge_array_inst, top_suffix="",
+                               bottom_instance=self.col_mux_array_inst,
+                               bottom_suffix="", word_size=self.num_cols)
+        else:
+            precharge_bl = self.precharge_array_inst.get_pin("bl[0]")
+            sense_bl = self.sense_amp_array_inst.get_pin("bl[0]")
 
-    def route_sense_amp_common(self):
+            vias, _, fill_layers = contact.get_layer_vias(sense_bl.layer,
+                                                          METAL2,
+                                                          cross_via=False)
 
-        for col in range(self.num_cols):
-            # route bitlines
-            for pin_name in ["bl", "br"]:
-                bitcell_pin = self.bitcell_array_inst.get_pin(pin_name+"[{}]".format(col))
-                sense_pin = self.sense_amp_array_inst.get_pin(pin_name+"[{}]".format(col))
-                precharge_pin = self.precharge_array_inst.get_pin(pin_name+"[{}]".format(col))
+            if sense_bl.lx() == precharge_bl.lx() or not vias:
+                rect_align = JOIN_TOP_ALIGN
+            else:
+                rect_align = JOIN_BOT_ALIGN
+            self.join_bitlines(top_instance=self.precharge_array_inst, top_suffix="",
+                               bottom_instance=self.sense_amp_array_inst,
+                               bottom_suffix="", rect_align=rect_align)
 
-                self.add_rect("metal4", offset=sense_pin.ul(), height=precharge_pin.uy()-sense_pin.uy())
-                offset = precharge_pin.ul() - vector(0, m2m3.second_layer_height)
-                self.add_contact(m2m3.layer_stack, offset=offset)
-                self.add_contact(m3m4.layer_stack, offset=offset)
-                via_extension = drc["min_wide_metal_via_extension"]
-                if pin_name == "bl":
-                    x_offset = bitcell_pin.lx() - via_extension
-                else:
-                    x_offset = bitcell_pin.rx() - self.fill_width + via_extension
-                self.add_rect("metal3", offset=vector(x_offset, precharge_pin.uy()-self.fill_height),
-                              width=self.fill_width, height=self.fill_height)
-                self.add_rect("metal2", offset=precharge_pin.ul(), height=bitcell_pin.by()-precharge_pin.uy())
-        # route ground
-        if self.mirror_sense_amp:
-            for pin in self.sense_amp_array_inst.get_pins("gnd"):
-                self.route_gnd_pin(pin)
+    def route_column_mux(self):
+        """Column mux power and copy sel pins, connect sense amp and col mux bitlines"""
+        debug.info(1, "Route column mux")
+        if self.col_mux_array_inst is None:
+            return
+        for i in range(self.words_per_row):
+            self.copy_layout_pin(self.col_mux_array_inst, "sel[{}]".format(i))
+
+        self.join_bitlines(top_instance=self.col_mux_array_inst, top_suffix="_out",
+                           bottom_instance=self.sense_amp_array_inst,
+                           bottom_suffix="", y_shift=self.get_parallel_space(METAL1),
+                           rect_align=JOIN_BOT_ALIGN)
+
+        self.route_all_instance_power(self.col_mux_array_inst)
 
     def route_sense_amp(self):
-        self.route_sense_amp_common()
+        """Routes sense amp power and connects write driver bitlines to sense amp bitlines"""
+        debug.info(1, "Route sense amp")
+        self.route_all_instance_power(self.sense_amp_array_inst)
+        # write driver to sense amp
+        self.join_bitlines(top_instance=self.sense_amp_array_inst, top_suffix="",
+                           bottom_instance=self.write_driver_array_inst,
+                           bottom_suffix="")
 
-        # route vdd
+    def get_m2_m3_below_instance(self, inst, index=0):
+        """Get location below instance where we can insert m2m3 vias.
+        Index=0 is closest, separate by index*via pitch for index greater than 0"""
+        # lowest using child mod
+        # find first instance with connections > 2 (vdd, gnd), this should be the reference model
+        inst_mod = inst.mod
+        child_inst = next(inst_mod.insts[i] for i in range(len(inst_mod.insts)) if len(inst_mod.conns[i]) > 2)
+        child_mod = child_inst.mod
+        m2_m3 = (child_mod.get_layer_shapes(METAL2, recursive=True) +
+                 child_mod.get_layer_shapes(METAL3, recursive=True))
+        lowest_m2_m3 = min(m2_m3, key=lambda x: x.by())
+        y_offset = inst.by() + child_inst.by() + lowest_m2_m3.by()
+        # lowest using shallow m2/m3
+        m2_m3 = (inst_mod.get_layer_shapes(METAL2, recursive=False) +
+                 inst_mod.get_layer_shapes(METAL3, recursive=False))
+        if m2_m3:
+            lowest_m2_m3 = min(m2_m3, key=lambda x: x.by())
+            y_offset = min(y_offset, inst.by() + lowest_m2_m3.by())
 
-        if self.mirror_sense_amp:
-            for pin in self.sense_amp_array_inst.get_pins("vdd"):
-                self.route_vdd_pin(pin, via_rotate=0)
+        via_height = max(m2m3.height, m3m4.height)
+        metal_space = self.get_line_end_space(METAL3)
+        if index > 0:
+            metal_space = max(metal_space, self.get_line_end_space(METAL4))
+        return y_offset - (1 + index) * (metal_space + via_height)
+
+    def route_write_driver_data_bar(self, word):
+        """data flop dout_bar to write driver in"""
+        flop_pin = self.data_in_flops_inst.get_pin("dout_bar[{}]".format(word))
+        driver_pin = self.write_driver_array_inst.get_pin("data_bar[{}]".format(word))
+
+        if flop_pin.layer == METAL2 and driver_pin.layer == METAL2:
+            self.add_rect(METAL2, offset=flop_pin.ul(), width=flop_pin.width(),
+                          height=driver_pin.by() - flop_pin.uy() + self.m2_width)
+            self.add_rect(METAL2, offset=vector(driver_pin.cx(), driver_pin.by()),
+                          width=flop_pin.cx() - driver_pin.cx())
         else:
-            vdd_pins = self.sense_amp_array_inst.get_pins("vdd")
-            pin = max(vdd_pins, key=lambda x: x.uy())
-            self.add_rect("metal1", offset=vector(self.mid_vdd.lx(), pin.by()),
-                          width=self.right_vdd.rx() - self.mid_vdd.lx(), height=pin.height())
+            m2_rect = self.add_rect(METAL2, offset=flop_pin.ul(),
+                                    height=driver_pin.by() - flop_pin.uy())
+            self.join_rects([driver_pin], driver_pin.layer, [m2_rect], METAL2,
+                            via_alignment=RIGHT_FILL)
 
-            self.add_contact(m1m2.layer_stack, offset=vector(self.right_vdd.lx() + 0.2, pin.by()),
-                                    size=[2, 1], rotate=90)
-            self.add_contact(m1m2.layer_stack, offset=vector(self.mid_vdd.lx() + 0.2, pin.by()),
-                             size=[2, 1], rotate=90)
+    def route_write_driver_data(self, word, flop_pin, driver_pin, y_bend):
+        """data flop dout to write driver in"""
+
+        self.add_rect(METAL2, offset=flop_pin.ul(), width=flop_pin.width(),
+                      height=y_bend - flop_pin.uy() + self.m2_width)
+
+        offset = vector(driver_pin.lx(), y_bend)
+        self.add_rect(METAL2, offset=offset, width=flop_pin.rx() - offset.x)
+        m2_rect = self.add_rect(METAL2, offset=offset, height=driver_pin.by() - offset.y)
+        self.join_rects([driver_pin], driver_pin.layer, [m2_rect], METAL2,
+                        via_alignment=LEFT_FILL)
+
+    def route_write_driver_mask_in(self, word, mask_flop_out_via_y, mask_driver_in_via_y):
+        """mask flop output to write driver in"""
+
+        flop_pin = self.get_mask_flop_out(word)
+
+        # align with sense amp bitline
+
+        br_pin = self.sense_amp_array_inst.get_pin("br[{}]".format(word))
+        br_x_offset = self.sense_amp_array_inst.get_pin("br[{}]".format(word)).lx()
+
+        driver_pin = self.get_write_driver_mask_in(word)
+        self.add_rect(METAL2, offset=flop_pin.ul(), width=flop_pin.width(),
+                      height=mask_flop_out_via_y + self.m2_width - flop_pin.uy())
+        self.add_contact(m2m3.layer_stack, offset=vector(flop_pin.lx(), mask_flop_out_via_y))
+
+        # add via to m4
+        via_offset = vector(br_x_offset, mask_flop_out_via_y + 0.5 * m2m3.second_layer_height
+                            - 0.5 * m3m4.height)
+        cont = self.add_contact(m3m4.layer_stack, offset=via_offset)
+        self.join_pins_with_m3(cont, flop_pin, cont.cy(), fill_height=m3m4.first_layer_height)
+
+        # m4 to below write driver
+        self.add_rect(METAL4, offset=via_offset, height=mask_driver_in_via_y - via_offset.y)
+        # m3 to driver in
+        self.add_contact(m3m4.layer_stack,
+                         offset=vector(br_x_offset, mask_driver_in_via_y +
+                                       0.5 * m2m3.second_layer_height -
+                                       0.5 * m3m4.height))
+        offset = vector(driver_pin.lx(), mask_driver_in_via_y)
+        self.add_rect(METAL3, offset=offset, width=br_pin.cx() - driver_pin.lx(),
+                      height=m3m4.first_layer_height)
+        self.add_rect(METAL2, offset=vector(driver_pin.lx(), offset.y),
+                      width=driver_pin.width(),
+                      height=driver_pin.by() - offset.y)
+        self.add_contact(m2m3.layer_stack, offset=offset)
 
     def route_write_driver(self):
-        for col in range(0, int(self.num_cols / self.words_per_row)):
-            # connect bitline to sense amp
-            for pin_name in ["bl", "br"]:
-                driver_pin = self.write_driver_array_inst.get_pin(pin_name + "[{}]".format(col))
-                self.add_contact(m3m4.layer_stack, offset=driver_pin.ul() - vector(0, m3m4.second_layer_height))
+        """Route mask, data and data_bar from flops to write driver"""
+        debug.info(1, "Route write driver")
+        flop = self.msf_data_in.child_mod
+        m2_rects = flop.get_layer_shapes(METAL2)
+        top_out_pin_y = max([flop.get_pin("dout"), flop.get_pin("dout_bar")],
+                            key=lambda x: x.uy()).uy()
+        valid_m2 = [x.uy() for x in m2_rects if x.uy() < top_out_pin_y]
+        max_obstruction_y = max(valid_m2)
+        y_bend = max(top_out_pin_y - self.m2_width, max_obstruction_y +
+                     self.get_line_end_space(METAL2))
+        y_bend += self.data_in_flops_inst.by()
 
-            # route data_bar
-            flop_pin = self.data_in_flops_inst.get_pin("dout_bar[{}]".format(col))
-            driver_pin = self.write_driver_array_inst.get_pin("data_bar[{}]".format(col))
-            self.add_rect("metal2", offset=flop_pin.ul(), height=driver_pin.by() - flop_pin.uy())
-            self.add_contact(m2m3.layer_stack, offset=driver_pin.ll() - vector(0, m2m3.second_layer_height))
+        mask_flop_out_via_y = self.get_m2_m3_below_instance(self.data_in_flops_inst, 0)
+        mask_driver_in_via_y = self.get_m2_m3_below_instance(self.write_driver_array_inst, 0)
 
-            # route data
-            flop_pin = self.data_in_flops_inst.get_pin("dout[{}]".format(col))
-            driver_pin = self.write_driver_array_inst.get_pin("data[{}]".format(col))
-            offset = vector(driver_pin.lx(), flop_pin.uy() - self.m2_width)
-            self.add_rect("metal2", offset=offset, width=flop_pin.rx() - offset.x)
-            self.add_contact(m2m3.layer_stack, offset=offset)
-            self.add_rect("metal3", offset=offset, height=driver_pin.by() - offset.y)
+        pin_combinations = [("dout", "data"), ("dout_bar", "data_bar")]
 
-            # route mask_bar
-            flop_pin = self.mask_in_flops_inst.get_pin("dout_bar[{}]".format(col))
-            driver_pin = self.write_driver_array_inst.get_pin("mask_bar[{}]".format(col))
+        for word in range(0, self.word_size):
+            for flop_name, driver_name in pin_combinations:
+                flop_pin = self.data_in_flops_inst.get_pin("{}[{}]".format(flop_name, word))
+                driver_pin = self.write_driver_array_inst. \
+                    get_pin("{}[{}]".format(driver_name, word))
+                self.route_write_driver_data(word, flop_pin, driver_pin, y_bend)
+            if self.has_mask_in:
+                self.route_write_driver_mask_in(word, mask_flop_out_via_y,
+                                                mask_driver_in_via_y)
 
-            self.add_contact(m2m3.layer_stack, offset=flop_pin.ul())
-            x_offset = driver_pin.rx() + self.parallel_line_space
+        self.route_all_instance_power(self.write_driver_array_inst)
 
-            data_in = self.data_in_flops_inst.get_pin("din[{}]".format(col))
-            y_bend = data_in.by() + m2m3.height + self.line_end_space
+    def get_write_driver_mask_in(self, word):
+        """Get pin name for mask input. Either mask or mask_bar"""
+        if "mask[{}]".format(word) in self.write_driver_array.pins:
+            mask_name = "mask"
+        else:
+            mask_name = "mask_bar"
+        return self.write_driver_array_inst.get_pin("{}[{}]".format(mask_name, word))
 
-            self.add_rect("metal3", offset=flop_pin.ul(), height=y_bend - flop_pin.uy())
-            self.add_rect("metal3", offset=vector(x_offset, y_bend), width=flop_pin.rx()-x_offset)
+    def get_mask_flop_out(self, word):
+        pin_name = "dout" if "mask" in self.write_driver_array.child_mod.pins else "dout_bar"
+        return self.mask_in_flops_inst.get_pin("{}[{}]".format(pin_name, word))
 
-            self.add_rect("metal3", offset=vector(x_offset, y_bend), height=driver_pin.by() - y_bend)
-            self.add_rect("metal3", offset=driver_pin.ll(), width=x_offset + self.m3_width - driver_pin.lx())
+    def join_pins_with_m3(self, pin_a, pin_b, mid_y, min_fill_width=None, fill_height=None):
+        """Join two pins using M3"""
+        if fill_height is None:
+            fill_height = m3m4.height
+        if min_fill_width is None:
+            fill_height, min_fill_width = self.calculate_min_area_fill(fill_height, layer=METAL3)
 
-        # route power, gnd
-
-        for pin in self.write_driver_array_inst.get_pins("vdd"):
-            self.route_vdd_pin(pin, via_rotate=0)
-        gnd_pins = self.write_driver_array_inst.get_pins("gnd")
-        top_gnd = max(gnd_pins, key=lambda x: x.by())  # bottom pin overlaps flop gnds
-        self.route_gnd_pin(top_gnd, via_rotate=0)
+        fill_x = 0.5 * (pin_a.cx() + pin_b.cx())
+        fill_width = max(min_fill_width, abs(pin_a.cx() - pin_b.cx()))
+        self.add_rect_center(METAL3, offset=vector(fill_x, mid_y),
+                             width=fill_width, height=fill_height)
 
     def route_flops(self):
-        if OPTS.separate_vdd:
-            self.copy_layout_pin(self.data_in_flops_inst, "vdd", "vdd_data_flops")
-            self.copy_layout_pin(self.mask_in_flops_inst, "vdd", "vdd_data_flops")
-        else:
-            for pin in self.data_in_flops_inst.get_pins("vdd") + self.mask_in_flops_inst.get_pins("vdd"):
-                self.route_vdd_pin(pin)
-        for pin in self.mask_in_flops_inst.get_pins("gnd"):
-            self.route_gnd_pin(pin, via_rotate=0)
+        """Route input pins for mask flops and data flops"""
+        fill_height = m3m4.first_layer_height
+        fill_height, fill_width = self.calculate_min_area_fill(fill_height, layer=METAL3)
 
-        data_in_gnds = list(sorted(self.data_in_flops_inst.get_pins("gnd"), key=lambda x: x.by()))
-        self.route_gnd_pin(data_in_gnds[0], via_rotate=0)
-        self.route_gnd_pin(data_in_gnds[1], via_rotate=90)
+        if self.has_mask_in:
+            self.route_all_instance_power(self.mask_in_flops_inst)
+        self.route_all_instance_power(self.data_in_flops_inst)
 
-        for col in range(self.num_cols):
-            self.copy_layout_pin(self.mask_in_flops_inst, "din[{}]".format(col), "MASK[{}]".format(col))
+        data_via_y = self.get_m2_m3_below_instance(self.data_in_flops_inst, 1)
+        mask_via_y = self.get_m2_m3_below_instance(self.mask_in_flops_inst, 1)
+
+        for word in range(self.word_size):
+            # align data flop in with br
+            data_in = self.data_in_flops_inst.get_pin("din[{}]".format(word))
+            y_offset = data_via_y
+            x_offset = data_in.lx()
+            offset = vector(x_offset, y_offset)
+            self.add_rect(METAL2, offset=offset, height=data_in.by() - y_offset)
+            cont = self.add_contact(m2m3.layer_stack, offset=offset)
+            br_pin = self.sense_amp_array_inst.get_pin("br[{}]".format(word))
+            x_offset = br_pin.lx()
+            self.join_pins_with_m3(cont, br_pin, cont.cy(), fill_width, fill_height)
+
+            self.add_contact(m3m4.layer_stack, offset=vector(x_offset, y_offset +
+                                                             0.5 * m2m3.second_layer_height -
+                                                             0.5 * m3m4.height))
+
+            self.add_layout_pin("DATA[{}]".format(word), METAL4,
+                                offset=vector(x_offset, self.min_point),
+                                height=y_offset - self.min_point)
+            if not self.has_mask_in:
+                continue
+            # align mask flop in with bl
+            mask_in = self.mask_in_flops_inst.get_pin("din[{}]".format(word))
+            bl_pin = self.sense_amp_array_inst.get_pin("bl[{}]".format(word))
+            y_offset = mask_via_y
+
+            self.add_rect(METAL2, offset=vector(mask_in.lx(), mask_via_y),
+                          height=mask_in.by() - mask_via_y)
+            via_offset = vector(mask_in.lx(), y_offset)
+            cont = self.add_contact(m2m3.layer_stack, offset=via_offset)
+            self.join_pins_with_m3(cont, bl_pin, cont.cy(), fill_width, fill_height)
+
+            via_offset = vector(bl_pin.lx(), y_offset)
+            self.add_contact(m3m4.layer_stack, offset=via_offset)
+            self.add_layout_pin("MASK[{}]".format(word), METAL4,
+                                offset=vector(via_offset.x, self.min_point),
+                                height=via_offset.y - self.min_point)
 
     def route_tri_gate(self):
-        self.route_vdd_pin(self.tri_gate_array_inst.get_pin("vdd"))
-        self.route_gnd_pin(self.tri_gate_array_inst.get_pin("gnd"))
+        """Route sense amp data output to tri-state in, tri-state in to DATA (in)"""
+        debug.info(1, "Route tri state array")
+        self.route_all_instance_power(self.tri_gate_array_inst)
 
-        mid_flop_y = 0.5 * (self.mask_in_flops_inst.by() + self.mask_in_flops_inst.uy())
-
-        for col in range(self.num_cols):
-
-            # route tri-gate output to data flop
-            tri_gate_out = self.tri_gate_array_inst.get_pin("out[{}]".format(col))
-            flop_in = self.data_in_flops_inst.get_pin("din[{}]".format(col))
-
-            self.add_contact(m2m3.layer_stack, offset=flop_in.ll())
-
-            # bypass mask din overlap
-
-            x_offset = tri_gate_out.rx() + self.wide_m1_space
-            self.add_rect("metal3", offset=vector(flop_in.lx(), mid_flop_y), height=flop_in.by() - mid_flop_y)
-            self.add_rect("metal3", offset=vector(flop_in.lx(), mid_flop_y),
-                          width=x_offset + self.m3_width - flop_in.lx())
-
-            y_offset = tri_gate_out.uy() - self.m3_width
-
-            self.add_rect("metal3", offset=vector(x_offset, y_offset), height=mid_flop_y - y_offset)
-            self.add_rect("metal3", offset=vector(tri_gate_out.lx(), y_offset), width=x_offset - tri_gate_out.lx())
-            self.add_contact(m2m3.layer_stack, offset=tri_gate_out.ul() - vector(0, m2m3.second_layer_height))
-
-            self.copy_layout_pin(self.tri_gate_array_inst, "out[{}]".format(col), "DATA[{}]".format(col))
-
-            # route sense amp output to tri-gate input
-            sense_pin = self.sense_amp_array_inst.get_pin(self.get_sense_amp_dout()+"[{}]".format(col))
-            tri_gate_in = self.tri_gate_array_inst.get_pin("in[{}]".format(col))
-            self.add_rect("metal4", offset=vector(tri_gate_in.lx(), sense_pin.by()),
-                          width=sense_pin.rx()-tri_gate_in.lx())
-            self.add_rect("metal4", offset=tri_gate_in.ul(), height=sense_pin.by()-tri_gate_in.uy()+self.m4_width)
-            self.add_contact(m2m3.layer_stack, offset=tri_gate_in.ul()-vector(0, m2m3.second_layer_height))
-            self.add_contact(m3m4.layer_stack, offset=tri_gate_in.ul()-vector(0, m3m4.second_layer_height))
-            self.add_rect("metal3", offset=vector(tri_gate_in.rx()-self.fill_width, tri_gate_in.uy()-self.fill_height),
-                          width=self.fill_width, height=self.fill_height)
-
-    def route_read_buf(self):
-        # route clk in from control_buffers clk in
-        flop_clk_pin = self.read_buf_inst.get_pin("clk")
-        control_clk_pin = self.control_buffers_inst.get_pin("clk")
-        read_pin = self.read_buf_inst.get_pin("din")
-
-        x_offset = max(flop_clk_pin.rx() + m1m2.second_layer_height - self.m2_width,
-                       read_pin.rx() + self.line_end_space)
-
-        self.add_rect("metal3", offset=control_clk_pin.lr(), width=x_offset - control_clk_pin.rx())
-        self.add_contact(m2m3.layer_stack, offset=vector(x_offset, control_clk_pin.by()))
-
-        self.add_rect("metal2", offset=vector(x_offset, control_clk_pin.by()),
-                      height=flop_clk_pin.uy() - control_clk_pin.by())
-        self.add_contact(m1m2.layer_stack, offset=vector(x_offset + self.m2_width, flop_clk_pin.by()),
-                         rotate=90)
-        self.add_rect("metal1", offset=flop_clk_pin.lr(), width=x_offset-flop_clk_pin.rx())
-
-        # read output to control buffers read
-        read_out = self.read_buf_inst.get_pin("dout")
-        read_in = self.control_buffers_inst.get_pin("read")
-        offset = read_in.lr()
-        self.add_rect("metal3", offset=offset, width=read_out.lx() - offset.x)
-        self.add_contact(m2m3.layer_stack, offset=vector(read_out.rx(), offset.y), rotate=90)
-        self.add_rect("metal2", offset=vector(read_out.lx(), offset.y), height=read_out.by()-offset.y)
-
-    def route_control_buffer(self):
-        self.copy_layout_pin(self.control_buffers_inst, "bank_sel", "bank_sel")
-        self.copy_layout_pin(self.control_buffers_inst, "clk", "clk")
-        self.copy_sense_trig_pin()
-
-        # vdd
-        vdd_name = "vdd_buffers" if OPTS.separate_vdd else "vdd"
-
-        if OPTS.separate_vdd:
-            self.copy_layout_pin(self.control_buffers_inst, "vdd", vdd_name)
+        if self.has_mask_in:
+            top_inst = self.mask_in_flops_inst
         else:
-            self.route_vdd_pin(self.control_buffers_inst.get_pin("vdd"))
+            top_inst = self.data_in_flops_inst
 
-        # gnd
-        read_flop_gnd = self.read_buf_inst.get_pin("gnd")
-        control_buffers_gnd = self.control_buffers_inst.get_pin("gnd")
+        if ("dout[0]" in self.sense_amp_array.pins or
+                "dout_bar[0]" in self.sense_amp_array.pins):
+            data_template = "dout"
+        else:
+            data_template = "data"
 
-        # join grounds
-        # control_buffers gnd to read gnd
-        offset = vector(control_buffers_gnd.rx() - read_flop_gnd.height(), read_flop_gnd.by())
-        self.add_rect("metal1", offset=offset, width=read_flop_gnd.lx() - offset.x, height=read_flop_gnd.height())
-        self.add_rect("metal1", offset=offset, width=read_flop_gnd.height(),
-                      height=control_buffers_gnd.by() - read_flop_gnd.by())
+        if "in_bar[0]" in self.tri_gate_array.pins:
+            sense_pin_name, tri_pin_name = data_template + "_bar[{}]", "in_bar[{}]"
+        else:
+            sense_pin_name, tri_pin_name = data_template + "[{}]", "in[{}]"
 
-        # control_buffers to rail
-        self.add_rect("metal1", offset=vector(self.mid_gnd.lx(), control_buffers_gnd.by()),
-                      width=control_buffers_gnd.lx() - self.mid_gnd.lx(), height=control_buffers_gnd.height())
-        self.add_power_via(control_buffers_gnd, self.mid_gnd, via_rotate=90)
+        tri_in_via_y = self.get_m2_m3_below_instance(top_inst, 0)
+        sense_out_y = self.get_m2_m3_below_instance(self.sense_amp_array_inst, 0)
 
-        # read flop gnd to rail
-        self.add_rect("metal1", offset=read_flop_gnd.lr(), height=read_flop_gnd.height(),
-                      width=self.right_gnd.rx() - read_flop_gnd.rx())
+        fill_height = m3m4.height
+        fill_height, fill_width = self.calculate_min_area_fill(fill_height, layer=METAL3)
 
-    def copy_sense_trig_pin(self):
-        if not self.mirror_sense_amp or OPTS.sense_trigger_delay > 0:
-            self.copy_layout_pin(self.control_buffers_inst, "sense_trig", "sense_trig")
+        for word in range(self.word_size):
+            tri_in = self.tri_gate_array_inst.get_pin(tri_pin_name.format(word))
+            bl_pin = self.sense_amp_array_inst.get_pin("bl[{}]".format(word))
+            # tri input to align with bl
+            y_offset = tri_in_via_y
+            x_offset = bl_pin.lx()
+            self.add_rect(METAL2, offset=tri_in.ul(), height=y_offset - tri_in.uy())
+            cont = self.add_contact(m2m3.layer_stack, offset=vector(tri_in.lx(), y_offset))
+
+            self.join_pins_with_m3(cont, bl_pin, cont.cy(), fill_width, fill_height)
+            self.add_contact_center(m3m4.layer_stack, offset=vector(bl_pin.cx(),
+                                                                    cont.cy()))
+            self.add_rect(METAL4, offset=vector(x_offset, y_offset),
+                          height=sense_out_y - y_offset + m3m4.height,
+                          width=bl_pin.width())
+            # sense_out_y to sense amp out
+            sense_out = self.sense_amp_array_inst.get_pin(sense_pin_name.format(word))
+            via_y = sense_out_y + 0.5 * m3m4.height
+            cont = self.add_contact_center(m3m4.layer_stack, offset=vector(bl_pin.cx(), via_y))
+            self.join_pins_with_m3(cont, sense_out, cont.cy(), fill_width, fill_height)
+            self.add_contact_center(m2m3.layer_stack, offset=vector(sense_out.cx(), via_y))
+            self.add_rect(METAL2, offset=vector(sense_out.lx(), sense_out_y),
+                          width=sense_out.width(),
+                          height=sense_out.by() - sense_out_y)
+
+            # tri output to data pin
+            tri_out_pin = self.tri_gate_array_inst.get_pin("out[{}]".format(word))
+            data_pin = self.get_pin("DATA[{}]".format(word))
+
+            via_y = tri_out_pin.by() + 0.5 * m2m3.height
+            cont = self.add_contact_center(m2m3.layer_stack, offset=vector(tri_out_pin.cx(), via_y))
+            self.join_pins_with_m3(cont, data_pin, cont.cy(), fill_width, fill_height)
+            self.add_contact_center(m3m4.layer_stack, offset=vector(data_pin.cx(), via_y))
+
+    def route_control_flop_outputs(self):
+        flop_output_rails = []
+
+        wide_space = self.get_wide_space(METAL1)
+        rail_height = self.bus_width
+        _, fill_height = self.calculate_min_area_fill(rail_height, layer=METAL2)
+
+        control_flop_insts = self.control_flop_insts
+
+        x_offset = control_flop_insts[0][2].rx() + wide_space
+
+        for i in range(len(control_flop_insts)):
+            net_in, net_out, inst = control_flop_insts[i]
+            control_pin = self.get_control_buffer_net_pin(net_out)
+            flop_pin = inst.get_pin("dout")
+
+            mid_x = x_offset + 0.5 * rail_height
+
+            if flop_pin.by() + 0.5 * rail_height <= control_pin.cy() <= \
+                    flop_pin.uy() - 0.5 * rail_height:
+                y_offset = control_pin.cy()
+            elif flop_pin.uy() <= control_pin.cy():
+                y_offset = flop_pin.uy() - 0.5 * rail_height
+            else:
+                y_offset = flop_pin.by() + 0.5 * rail_height
+
+            self.add_rect(METAL1, offset=vector(flop_pin.lx(), y_offset - 0.5 * rail_height),
+                          width=mid_x - flop_pin.lx(), height=rail_height)
+            self.add_cross_contact_center(cross_m1m2, offset=vector(mid_x, y_offset),
+                                          rotate=True)
+
+            if control_pin.cy() > y_offset:
+                height = max(control_pin.cy() - y_offset, fill_height)
+            else:
+                height = min(control_pin.cy() - y_offset, -fill_height)
+            m2_rail = self.add_rect(METAL2, offset=vector(mid_x - 0.5 * rail_height, y_offset),
+                                    width=rail_height, height=height)
+            flop_output_rails.append(m2_rail)
+            self.add_cross_contact_center(cross_m2m3, offset=vector(mid_x, control_pin.cy()),
+                                          rotate=False)
+            m3_height = min(rail_height, control_pin.height())
+            self.add_rect(METAL3, offset=vector(x_offset, control_pin.cy() - 0.5 * m3_height),
+                          height=m3_height, width=control_pin.lx() - x_offset)
+
+            x_offset += self.bus_pitch
+
+        self.m2_rails.extend(flop_output_rails)
+        self.leftmost_control_rail = self.leftmost_rail
+        self.leftmost_rail = min([self.leftmost_rail] + flop_output_rails,
+                                 key=lambda x: x.lx())
+        return x_offset
+
+    def route_control_buffers(self):
+        """Route output of control flops to control logic buffers.
+         Also route non-flop inputs to control logic buffers"""
+        # copy vdd, gnd
+
+        for vdd_pin in self.control_buffers_inst.get_pins("vdd"):
+            self.route_vdd_pin(vdd_pin)
+        for gnd_pin in self.control_buffers_inst.get_pins("gnd"):
+            self.route_gnd_pin(gnd_pin)
+
+        if not self.is_left_bank:
+            if self.use_decoder_clk:
+                rail_name = "decoder_clk"
+                layer = METAL3
+            else:
+                rail_name = "clk"
+                layer = METAL2
+            rail = getattr(self, rail_name + "_rail")
+            self.add_layout_pin(rail_name, layer, offset=rail.ll(), height=rail.height,
+                                width=rail.width)
+
+        rail_height = self.bus_width
+        x_offset = self.route_control_flop_outputs()
+
+        # non flop inputs
+        control_pins = [self.control_buffers_inst.get_pin(x) for x in
+                        self.get_non_flop_control_inputs()]
+        control_pins = list(sorted(control_pins, key=lambda x: x.by()))
+        for pin in control_pins:
+            new_pin = self.add_layout_pin(pin.name, METAL2, offset=vector(x_offset, self.min_point),
+                                          width=rail_height, height=pin.cy() - self.min_point)
+            self.m2_rails.append(new_pin)
+            self.add_cross_contact_center(cross_m2m3,
+                                          offset=vector(x_offset + 0.5 * rail_height,
+                                                        pin.cy()))
+            m3_height = min(rail_height, pin.height())
+            self.add_rect(METAL3, offset=vector(x_offset, pin.cy() - 0.5 * m3_height),
+                          width=pin.lx() - x_offset, height=m3_height)
+            x_offset += self.bus_pitch
+
+    def route_control_flops_power(self):
+        """connect control flops power pins to power rails"""
+
+        def get_power_pins(insts_):
+            power_pins_ = []
+            for inst_ in insts_:
+                power_pins_.extend(inst_.get_pins("vdd") + inst_.get_pins("gnd"))
+            power_pins_ = list(sorted(power_pins_, key=lambda x: x.by()))
+            return power_pins_
+
+        wide_space = self.get_wide_space(METAL1)
+        # find power pins
+        control_power_pins = get_power_pins([x[2] for x in self.control_flop_insts])
+
+        # find pins that can potentially clash with control flop pins
+        pin_instances = [self.control_buffers_inst, self.tri_gate_array_inst, self.data_in_flops_inst]
+        if self.has_mask_in:
+            pin_instances.append(self.mask_in_flops_inst)
+        adjacent_power_pins = get_power_pins(pin_instances)
+
+        non_flop_input_pins = [self.get_pin(x) for x in self.get_non_flop_control_inputs()]
+        x_offset = max(non_flop_input_pins, key=lambda x: x.lx()).lx() + wide_space
+
+        y_offsets = []
+
+        for power_pin in control_power_pins:
+            if power_pin.cy() in y_offsets:
+                continue
+
+            y_offsets.append(power_pin.cy())
+            candidate_power_pins = []
+            for candidate_pin in adjacent_power_pins:
+                if power_pin.name == "vdd" and candidate_pin.name == "gnd":
+                    # gnd rail is to the right so no classes possible
+                    continue
+                if candidate_pin.by() < power_pin.uy() + wide_space:
+                    candidate_power_pins.append(candidate_pin)
+
+            direct = True
+            rect_y = power_pin.by()
+            for candidate_pin in reversed(candidate_power_pins):
+                # check if within "sphere" of influence
+                if ((candidate_pin.by() <= rect_y < candidate_pin.uy() + wide_space) or
+                        (candidate_pin.by() - wide_space < rect_y + power_pin.height() <=
+                         candidate_pin.uy())):
+                    direct = False
+                    rect_y = candidate_pin.by() - wide_space - power_pin.height()
+
+            if not direct:
+                self.add_rect(METAL1, offset=power_pin.lr(),
+                              width=x_offset + power_pin.height() - power_pin.rx(), height=power_pin.height())
+                self.add_rect(METAL1, offset=vector(x_offset, power_pin.cy()),
+                              height=rect_y - power_pin.cy(), width=power_pin.height())
+            rect_x = power_pin.rx() if direct else x_offset
+            rail = self.mid_vdd if power_pin.name == "vdd" else self.mid_gnd
+            self.add_rect(METAL1, offset=vector(rect_x, rect_y), width=rail.rx() - rect_x,
+                          height=power_pin.height())
+            self.add_contact_center(m1m2.layer_stack, offset=vector(rail.cx(),
+                                                                    rect_y + 0.5 * power_pin.height()),
+                                    size=[1, 2], rotate=90)
+
+    def route_control_flops(self):
+        """Route control flop inputs (clk, din) and connect clk to control logic buffers"""
+        debug.info(1, "Route control flops")
+        self.route_control_flops_power()
+
+        control_flop_insts = self.control_flop_insts
+
+        x_base = (control_flop_insts[0][2].lx() - self.get_wide_space(METAL2)
+                  - (1 + len(control_flop_insts)) * self.bus_pitch + self.bus_space)
+        clk_x_offset = x_base + len(control_flop_insts) * self.bus_pitch
+
+        top_clk_pin = max([x[2].get_pin("clk") for x in control_flop_insts], key=lambda x: x.uy())
+
+        clk_pin = self.add_layout_pin("clk", METAL2, vector(clk_x_offset, self.min_point),
+                                      width=self.bus_width,
+                                      height=top_clk_pin.cy() - self.min_point)
+
+        for i in range(len(control_flop_insts)):
+            net_in, net_out, inst = control_flop_insts[i]
+            # connect din and clk
+            x_offset = x_base + i * self.bus_pitch
+            input_pin = inst.get_pin("din")
+            clk_in_pin = inst.get_pin("clk")
+            self.add_layout_pin(net_in, METAL2, vector(x_offset, self.min_point),
+                                width=self.bus_width,
+                                height=input_pin.cy() - self.min_point)
+            x_offsets = [x_offset, clk_pin.lx()]
+            pins = [input_pin, clk_in_pin]
+            for j in range(2):
+                pin = pins[j]
+                if pin.layer == METAL1:
+                    layer = METAL1
+                    via = cross_m1m2
+                    via_rotate = True
+                else:
+                    layer = METAL3
+                    via = cross_m2m3
+                    via_rotate = False
+                    self.add_cross_contact_center(cross_m2m3,
+                                                  offset=vector(pin.lx() - 0.5 * self.bus_width,
+                                                                pin.cy()))
+                height = min(self.bus_width, pin.height())
+                self.add_rect(layer, offset=vector(x_offsets[j], pin.cy() - 0.5 * height),
+                              width=input_pin.lx() - x_offsets[j], height=height)
+                self.add_cross_contact_center(via, offset=vector(x_offsets[j] + 0.5 * self.bus_width,
+                                                                 pin.cy()), rotate=via_rotate)
+
+        # clk to control_buffer
+        non_flop_pins = [self.get_pin(x) for x in self.get_non_flop_control_inputs()]
+        right_most_pin = max(non_flop_pins, key=lambda x: x.rx())
+        rail_x = right_most_pin.lx() + self.bus_pitch
+        y_offset = self.cross_clk_rail_y
+        self.add_cross_contact_center(cross_m2m3, offset=vector(clk_pin.cx(),
+                                                                y_offset + 0.5 * self.bus_width))
+        self.cross_clk_rail = self.add_rect(METAL3,
+                                            offset=vector(clk_pin.cx(), y_offset),
+                                            width=rail_x - clk_pin.cx(),
+                                            height=self.bus_width)
+        self.add_cross_contact_center(cross_m2m3, offset=vector(rail_x + 0.5 * self.bus_width,
+                                                                y_offset + 0.5 * self.bus_width))
+        control_pin = self.control_buffers_inst.get_pin("clk")
+        self.add_rect(METAL2, offset=vector(rail_x, y_offset), width=self.bus_width,
+                      height=control_pin.cy() - y_offset)
+        self.add_cross_contact_center(cross_m2m3, offset=vector(rail_x + 0.5 * self.bus_width,
+                                                                control_pin.cy()))
+        m3_height = min(self.bus_width, control_pin.height())
+        self.add_rect(METAL3, offset=vector(rail_x, control_pin.cy() - 0.5 * m3_height),
+                      width=control_pin.lx() - rail_x, height=m3_height)
+
+    def get_wordline_power_x_offset(self):
+        """ x offset to start power rail to mid power rails"""
+        return self.wordline_driver_inst.rx()
+
+    def route_wordline_in(self):
+        for i in range(self.num_rows):
+            self.copy_layout_pin(self.wordline_driver_inst, "in[{0}]".format(i),
+                                 "dec_out[{0}]".format(i))
 
     def route_wordline_driver(self):
+        """wordline driver out to bitcell wl in + wordline_enable route"""
+        debug.info(1, "Route wordline driver")
+        self.route_wordline_in()
+        self.join_wordline_bitcell_nwell()
         # route enable signal
         en_pin = self.wordline_driver_inst.get_pin("en")
         en_rail = self.wordline_en_rail
-        y_offset = self.wordline_driver_inst.by()
+        y_offset = en_pin.by() - 0.5 * self.bus_width
 
-        self.add_rect("metal2", offset=en_rail.ul(), height=y_offset - en_rail.uy())
-        self.add_rect("metal2", offset=vector(en_pin.lx(), y_offset), width=en_rail.rx() - en_pin.lx())
+        self.add_rect(METAL2, offset=en_rail.ul(), height=y_offset - en_rail.uy(), width=self.bus_width)
+        self.add_cross_contact_center(cross_m2m3, offset=vector(en_rail.cx(), y_offset))
+        self.add_rect(METAL3, offset=vector(en_pin.lx(), y_offset - 0.5 * self.bus_width),
+                      width=en_rail.rx() - en_pin.lx(), height=self.bus_width)
+        self.add_cross_contact_center(cross_m2m3, offset=vector(en_pin.cx(), y_offset))
 
         if OPTS.separate_vdd:
             self.copy_layout_pin(self.wordline_driver_inst, "vdd", "vdd_wordline")
@@ -954,500 +1551,331 @@ class BaselineBank(design, ControlBuffersMixin):
             pin_end = [self.bitcell_array_inst.lx(), self.bitcell_array_inst.rx()]
 
         pin_names = ["gnd", "vdd"]
+        x_offset = self.get_wordline_power_x_offset()
         for i in range(2):
             pin_name = pin_names[i]
+            bitcell_pins = self.bitcell.get_pins(pin_names[i])
+            bitcell_pins = [x for x in bitcell_pins if x.layer == METAL1]
+            sample_bitcell_pin = min(bitcell_pins, key=lambda x: x.height())
             for pin in self.wordline_driver_inst.get_pins(pin_name):
-                self.add_rect(pin.layer, offset=vector(self.row_decoder_inst.rx(), pin.by()),
-                              height=pin.height(),
-                              width=pin_end[i]-self.row_decoder_inst.rx())
+                pin_height = min(sample_bitcell_pin.height(), pin.height())
+                self.add_rect(pin.layer, offset=vector(x_offset, pin.cy() - 0.5 * pin_height),
+                              height=pin_height,
+                              width=pin_end[i] - x_offset)
 
-    def route_decoder(self):
-        self.route_right_decoder_power()
-        self.join_right_decoder_nwell()
-        # route clk
-        clk_rail = self.clk_buf_rail
-        clk_pins = self.row_decoder_inst.get_pins("clk")
-        # find closest
-        target_y = clk_rail.by()+m2m3.second_layer_height
-        clk_pin = min(clk_pins, key=lambda x: min(abs(target_y - x.by() + m2m3.height),
-                                                  abs(target_y - x.uy() - m2m3.height)))
-
-        self.add_rect("metal3", offset=vector(clk_pin.lx(), target_y), width=clk_rail.rx() - clk_pin.lx())
-
-        if target_y < clk_pin.by():
-            self.add_rect("metal2", offset=vector(clk_pin.lx(), target_y), height=clk_pin.by()-target_y)
-
-        # find closest vdd-gnd pin to add via, otherwise via in between cell may clash with decoder address pin via
-        y_offset = clk_rail.by() + m2m3.second_layer_height
-        vdd_gnd = self.row_decoder_inst.get_pins("vdd") + self.row_decoder_inst.get_pins("gnd")
-        valid_vdd_gnd = filter(lambda x: x.by() > y_offset + self.line_end_space, vdd_gnd)
-        closest_vdd_gnd = min(valid_vdd_gnd, key=lambda x: x.by() - y_offset)
-
-        self.add_contact(m2m3.layer_stack, offset=vector(clk_pin.lx(), closest_vdd_gnd.by()))
-        self.add_rect("metal3", offset=vector(clk_pin.lx(), target_y),
-                      height=closest_vdd_gnd.by() - target_y)
-
-        if closest_vdd_gnd.cy() - 0.5*m2m3.height > clk_pin.uy():
-            self.add_rect("metal2", offset=clk_pin.ul(), height=closest_vdd_gnd.cy()-clk_pin.uy())
-
-        # copy address ports
-        for i in range(self.addr_size):
-            self.copy_layout_pin(self.row_decoder_inst, "A[{}]".format(i), "ADDR[{}]".format(i))
-
-    def route_right_decoder_power(self):
-        for pin in self.row_decoder_inst.get_pins("gnd"):
-            self.add_rect("metal1", offset=vector(self.left_gnd.lx(), pin.by()),
-                          width=pin.lx() - self.left_gnd.lx(), height=pin.height())
-            if self.left_gnd.layer == "metal2":
-                self.add_power_via(pin, self.left_gnd)
-
-        for pin in self.row_decoder_inst.get_pins("vdd"):  # ensure decoder vdd is connected to wordline driver's
-            if pin.uy() > self.wordline_driver_inst.by():
-                pin_right = self.wordline_driver_inst.lx()
-            else:
-                pin_right = pin.lx()
-            self.add_rect("metal1", offset=vector(self.left_vdd.lx(), pin.by()),
-                          width=pin_right - self.left_vdd.lx(), height=pin.height())
-            self.add_power_via(pin, self.left_vdd)
-
-    def join_right_decoder_nwell(self):
-
-        layers = ["nwell", "pimplant"]
-        purposes = ["drawing", "drawing"]
-
-        decoder_inverter = self.decoder.inv_inst[-1].mod
-        driver_nand = self.wordline_driver.logic_buffer.logic_mod
-
-        row_decoder_right = self.row_decoder_inst.lx() + self.decoder.row_decoder_width
-        x_shift = self.wordline_driver.buffer_insts[-1].lx()
-
-        for i in range(2):
-            decoder_rect = max(decoder_inverter.get_layer_shapes(layers[i], purposes[i]),
-                               key=lambda x: x.height)
-            logic_rect = max(driver_nand.get_layer_shapes(layers[i], purposes[i]),
-                             key=lambda x: x.height)
-            top_most = max([decoder_rect, logic_rect], key=lambda x: x.by())
-            fill_height = driver_nand.height - top_most.by()
-            # extension of rect past top of cell
-            rect_y_extension = top_most.uy() - driver_nand.height
-            fill_width = self.wordline_driver_inst.lx() - row_decoder_right + x_shift
-
-            for vdd_pin in self.row_decoder_inst.get_pins("vdd"):
-                if utils.round_to_grid(vdd_pin.cy()) == utils.round_to_grid(
-                        self.wordline_driver_inst.by()):  # first row
-                    self.add_rect(layers[i], offset=vector(row_decoder_right, vdd_pin.cy() - rect_y_extension),
-                                  width=fill_width, height=top_most.height)
-                elif vdd_pin.cy() > self.wordline_driver_inst.by():  # row decoder
-                    self.add_rect(layers[i], offset=vector(row_decoder_right, vdd_pin.cy() - fill_height),
-                                  width=fill_width, height=2 * fill_height)
-
-    def route_wordline_in(self):
-        # route decoder in
+    def join_wordline_bitcell_nwell(self):
+        wordline_inverter = self.wordline_driver.logic_buffer.buffer_mod.buffer_invs[-1]
+        layers = [NWELL]
+        purposes = [DRAWING]
+        if self.has_pwell:
+            layers.append(PWELL)
+            purposes.append(DRAWING)
+        rects = create_wells_and_implants_fills(wordline_inverter,
+                                                self.bitcell, layers=layers,
+                                                purposes=purposes)
+        bitcell_nwell = max(self.bitcell.get_layer_shapes(NWELL), key=lambda x: x.height * x.width)
+        wordline_nwell = max(wordline_inverter.get_layer_shapes(NWELL), key=lambda x: x.height * x.width)
+        x_offset = self.wordline_driver_inst.rx()
+        width = self.bitcell_array_inst.get_pin("bl[0]").lx() - x_offset
         for row in range(self.num_rows):
-            decoder_out = self.row_decoder_inst.get_pin("decode[{}]".format(row))
-            wl_in = self.wordline_driver_inst.get_pin("in[{}]".format(row))
+            y_base = self.bitcell_array_inst.by() + row * self.bitcell.height
+            for layer, rect_bottom, rect_top, _, _ in rects:
+                # cover align with bitcell nwell
+                if row in [0, self.num_rows - 1]:
+                    if layer == PWELL:
+                        continue
+                    rect_top = max(bitcell_nwell.uy(), wordline_nwell.uy())
 
-            self.add_contact(m2m3.layer_stack, offset=vector(decoder_out.ul() - vector(0, m2m3.second_layer_height)))
-            x_offset = wl_in.cx() + 0.5 * self.m3_width
-            self.add_rect("metal3", offset=decoder_out.ul(), width=x_offset - decoder_out.lx())
-            self.add_rect("metal3", offset=vector(x_offset - self.m3_width, wl_in.cy()),
-                          height=decoder_out.uy() - wl_in.cy())
-            self.add_contact_center(m2m3.layer_stack, wl_in.center())
-            self.add_contact_center(m1m2.layer_stack, wl_in.center())
-
-            self.add_rect_center("metal2", offset=wl_in.center(), width=self.fill_width, height=self.fill_height)
-
-    def add_power_vias(self):
-        for i in range(len(self.power_grid_vias)):
-            if i % 2 == 0:  # vdd
-                via_x = [self.left_vdd.lx(), self.mid_vdd.lx(),
-                         self.right_vdd.lx()]
-                mirrors = ["R0", "R0", "MY"]
-                via_mods = [self.m2mtop, self.m2mtop, self.m2mtop]
-                for j in range(3):
-                    self.add_inst(via_mods[j].name, via_mods[j],
-                                  offset=vector(via_x[j]+ 0.5 * self.vdd_rail_width, self.power_grid_vias[i]),
-                                  mirror=mirrors[j])
-                    self.connect_inst([])
-                if OPTS.separate_vdd:
-                    start_x = via_x[1]
-                    self.add_rect(self.bottom_power_layer, offset=vector(via_x[0], self.power_grid_vias[i]),
-                                  height=self.grid_rail_height, width=self.vertical_power_rail_offsets[1] - via_x[0])
+                if (row % 2 == 0 and layer == NWELL) or (row % 2 == 0 and layer == PWELL):
+                    y_offset = y_base + (self.bitcell.height - rect_top)
                 else:
-                    start_x = via_x[0]
-                self.vdd_grid_rects.append(self.add_rect(self.bottom_power_layer,
-                                                         offset=vector(start_x, self.power_grid_vias[i]),
-                                                         height=self.grid_rail_height,
-                                                         width=self.right_gnd.rx() - start_x))
-            else:  # gnd
-                via_x = [self.left_gnd.lx(), self.mid_gnd.lx()+0.5*self.vdd_rail_width,
-                         self.right_gnd.rx()]
-                mirrors = ["R0", "R0", "MY"]
-                via_mods = [self.m1mtop, self.m2mtop, self.m1mtop]
-                for j in range(3):
-                    self.add_inst(via_mods[j].name, via_mods[j],
-                                  offset=vector(via_x[j], self.power_grid_vias[i]),
-                                  mirror=mirrors[j])
-                    self.connect_inst([])
-                self.gnd_grid_rects.append(self.add_rect(self.bottom_power_layer,
-                                                         offset=vector(self.left_gnd.lx(), self.power_grid_vias[i]),
-                                                         height=self.grid_rail_height,
-                                                         width=self.right_gnd.rx() - self.left_gnd.lx()))
+                    y_offset = y_base + rect_bottom
+                self.add_rect(layer, offset=vector(x_offset, y_offset), width=width,
+                              height=rect_top - rect_bottom)
 
     def route_gnd_pin(self, pin, add_via=True, via_rotate=90):
-        self.add_rect("metal1", offset=vector(self.mid_gnd.lx(), pin.by()),
-                      width=self.right_gnd.rx()-self.mid_gnd.lx(), height=pin.height())
+        self.add_rect(pin.layer, offset=vector(self.mid_gnd.lx(), pin.by()),
+                      width=self.right_gnd.rx() - self.mid_gnd.lx(), height=pin.height())
         if add_via:
             self.add_power_via(pin, self.mid_gnd, via_rotate)
 
     def route_vdd_pin(self, pin, add_via=True, via_rotate=90):
-        self.add_rect("metal1", offset=vector(self.mid_vdd.lx(), pin.by()),
+        self.add_rect(pin.layer, offset=vector(self.mid_vdd.lx(), pin.by()),
                       width=self.right_vdd.rx() - self.mid_vdd.lx(), height=pin.height())
         if add_via:
             self.add_power_via(pin, self.mid_vdd, via_rotate=via_rotate)
             self.add_power_via(pin, self.right_vdd, via_rotate=via_rotate)
 
-    def add_power_via(self, pin, power_pin, via_rotate=90):
-        self.add_contact_center(m1m2.layer_stack, offset=vector(power_pin.cx(), pin.cy()),
-                                size=[2, 1], rotate=via_rotate)
+    def add_power_via(self, pin, power_pin, via_rotate=90, via_size=None):
+        if via_size is None:
+            via_size = [1, 2]
+        if hasattr(pin, "layer") and pin.layer == METAL1 and power_pin.layer == METAL1:
+            return
+        if hasattr(pin, "layer") and pin.layer == METAL3:
+            via = m2m3
+            if power_pin.layer == METAL1:
+                m2_via = self.add_contact_center(m1m2.layer_stack,
+                                                 offset=vector(power_pin.cx(), pin.cy()),
+                                                 size=via_size, rotate=via_rotate)
+                fill_width = power_pin.width()
+                min_height = m2_via.height if via_rotate == 0 else m2_via.width
+                _, fill_height = self.calculate_min_area_fill(fill_width, min_height=min_height,
+                                                              layer=METAL2)
+                self.add_rect_center(METAL2, offset=vector(power_pin.cx(), pin.cy()),
+                                     width=fill_width, height=fill_height)
 
-    def add_decoder_power_vias(self):
-        self.vdd_grid_rects = []
-        self.gnd_grid_rects = []
-
-        # for leftmost rails, power vias might clash with decoder metal3's
-        m4m10 = ContactFullStack(start_layer=3, stop_layer=-1, centralize=False)
-        max_left_power_y = self.wordline_driver_inst.by() - 3 * self.control_rail_pitch - self.m2mtop.second_layer_height
-        for i in range(len(self.power_grid_vias)):
-            via_y_offset = self.power_grid_vias[i]
-            if i % 2 == 0:  # vdd
-                # add vias to top
-                via_x = [self.left_vdd.lx(), self.mid_vdd.lx()]
-                for j in range(2):
-                    if j == 0 and via_y_offset > max_left_power_y:
-                        self.add_inst(m4m10.name, m4m10, offset=vector(self.left_vdd.lx(), via_y_offset))
-                        self.connect_inst([])
-                    else:
-                        self.add_inst(self.m2mtop.name, self.m2mtop,
-                                      offset=vector(via_x[j] + 0.5 * self.vdd_rail_width, via_y_offset))
-                        self.connect_inst([])
-                # connect rails horizontally
-                if OPTS.separate_vdd:
-                    start_x = via_x[1]
-                    self.add_rect(self.bottom_power_layer, offset=vector(via_x[0], via_y_offset),
-                                  height=self.grid_rail_height, width=self.vertical_power_rail_offsets[1] - via_x[0])
-                else:
-                    start_x = via_x[0]
-                self.vdd_grid_rects.append(self.add_rect(self.bottom_power_layer,
-                                                         offset=vector(start_x, via_y_offset),
-                                                         height=self.grid_rail_height,
-                                                         width=self.right_gnd.rx() - start_x))
-            else:  # gnd
-                via_x = [self.left_gnd.lx()+0.5*self.vdd_rail_width, self.mid_gnd.lx()+0.5*self.vdd_rail_width]
-                for j in range(2):
-                    if j == 0 and via_y_offset > max_left_power_y:
-                        self.add_inst(m4m10.name, m4m10, offset=vector(self.left_gnd.lx(), via_y_offset))
-                        self.connect_inst([])
-                    else:
-                        self.add_inst(self.m2mtop.name, self.m2mtop,
-                                      offset=vector(via_x[j], self.power_grid_vias[i]))
-                        self.connect_inst([])
-                self.gnd_grid_rects.append(self.add_rect(self.bottom_power_layer,
-                                                         offset=vector(self.left_gnd.lx(), self.power_grid_vias[i]),
-                                                         height=self.grid_rail_height,
-                                                         width=self.right_gnd.rx() - self.left_gnd.lx()))
-        # Add m4 rails along existing m2 rails
-        for rail in [self.left_gnd, self.left_vdd]:
-            self.add_rect("metal4", offset=vector(rail.lx(), self.min_point), width=rail.width(),
-                          height=self.wordline_driver_inst.uy()-self.min_point)
-        # add m2-m4 via
-        for row in range(self.num_rows):
-            y_offset = self.wordline_driver_inst.by() + (row + 0.5) * self.bitcell_array.cell.height
-            for x_offset in [self.left_gnd.cx(), self.left_vdd.cx()]:
-                self.add_via_center(m2m3.layer_stack, offset=vector(x_offset, y_offset), size=[2, 2])
-                self.add_via_center(m3m4.layer_stack, offset=vector(x_offset, y_offset), size=[2, 2])
-                if x_offset == self.left_gnd.cx() and row > 0:
-                    self.add_via_center(m1m2.layer_stack, offset=vector(x_offset, y_offset), size=[2, 2])
-
-        # add Mtop vdd/gnd rails within decoder
-        wide_m10_space = drc["wide_metal10_to_metal10"]
-        vdd_x = self.left_vdd.lx() + self.m2mtop.width + wide_m10_space
-        gnd_x = vdd_x + self.grid_rail_width + wide_m10_space
-        vdd_name = "vdd_wordline" if OPTS.separate_vdd else "vdd"
-
-        self.add_layout_pin(vdd_name, layer=self.top_power_layer, offset=vector(vdd_x, self.min_point),
-                            width=self.grid_rail_width, height=self.height)
-
-        # avoid clash with middle vdd vias
-        if gnd_x + self.grid_rail_width + wide_m10_space < self.mid_vdd.cx() - 0.5 * self.m2mtop.width:
-            self.add_layout_pin("gnd", layer=self.top_power_layer, offset=vector(gnd_x, self.min_point),
-                                width=self.grid_rail_width, height=self.height)
-
-            for rect in self.gnd_grid_rects:
-                self.add_inst(self.m9m10.name, mod=self.m9m10,
-                              offset=vector(gnd_x, rect.by()))
-                self.connect_inst([])
-
-        for rect in self.vdd_grid_rects:
-            self.add_inst(self.m9m10.name, mod=self.m9m10,
-                          offset=vector(vdd_x, rect.by()))
-            self.connect_inst([])
-
-    def add_right_rails_vias(self):
-        vdd_x = self.right_vdd.cx()
-        gnd_x = self.right_gnd.rx()
-
-        for rect in self.vdd_grid_rects:
-            self.add_inst(self.m2mtop.name, mod=self.m2mtop,
-                          offset=vector(vdd_x, rect.by()))
-            self.connect_inst([])
-
-        for rect in self.gnd_grid_rects:
-            self.add_inst(self.m1mtop.name, mod=self.m1mtop,
-                          offset=vector(gnd_x, rect.by()), mirror="MY")
-            self.connect_inst([])
-
-    def calculate_rail_vias(self):
-        """Calculates positions of power grid rail to M1/M2 vias. Avoids internal metal3 control pins"""
-        # need to avoid the metal3 control signals
-
-        via_positions = []
-
-        self.m1mtop = m1mtop = ContactFullStack.m1mtop()
-        self.add_mod(m1mtop)
-        self.m2mtop = m2mtop = ContactFullStack.m2mtop()
-        self.add_mod(m2mtop)
-
-        self.bottom_power_layer = power_grid_layers[0]
-        self.top_power_layer = power_grid_layers[1]
-
-        self.grid_rail_height = grid_rail_height = max(m1mtop.first_layer_height, m2mtop.first_layer_height)
-        self.grid_rail_width = m1mtop.second_layer_width
-
-        grid_space = drc["power_grid_space"]
-        grid_pitch = grid_space + grid_rail_height
-        via_space = self.wide_m1_space
-
-        bank_top = self.min_point + self.height
-
-        collisions = list(sorted(self.get_collisions() +
-                                 [(self.min_point, self.min_point + 2*self.wide_m1_space),
-                                  (bank_top - grid_pitch, bank_top)],
-                                 key=lambda x: x[0]))
-
-        # combine/collapse overlapping collisions
-        while True:
-            i = 0
-            num_overlaps = 0
-            num_iterations = len(collisions)
-            new_collisions = []
-            while i < num_iterations:
-
-                collision = collisions[i]
-                if i < num_iterations - 1:
-                    next_collision = collisions[i + 1]
-                    if next_collision[0] <= collision[1]:
-                        collision = (collision[0], max(collision[1], next_collision[1]))
-                        num_overlaps += 1
-                        i += 2
-                    else:
-                        i += 1
-                else:
-                    i += 1
-                new_collisions.append(collision)
-            collisions = new_collisions
-            if num_overlaps == 0:
-                break
-
-        # calculate via positions
-        prev_y = -1.0e100
-        for i in range(len(collisions)-1):
-            collision = collisions[i]
-            current_y = max(collision[1] + self.wide_m1_space, prev_y + grid_pitch)
-            next_collision = collisions[i+1][0]
-            while True:
-                via_top = current_y + grid_rail_height
-                if via_top > bank_top or via_top + via_space > next_collision:
-                    break
-                via_positions.append(current_y)
-                prev_y = current_y
-                current_y += grid_pitch
-
-        self.power_grid_vias = via_positions
-
-    def calculate_body_tap_rails_vias(self):
-        self.m4m9 = ContactFullStack(start_layer=3, stop_layer=-2, centralize=False)
-        self.m5m9 = ContactFullStack(start_layer=4, stop_layer=-2, centralize=False)
-
-        wide_m10_space = drc["wide_metal10_to_metal10"]
-
-        self.bitcell_power_vias = []
-        self.vertical_power_rails_pos = []
-
-        m4_via_width = self.m4m9.first_layer_width
-
-        rails = utils.get_libcell_pins(["vdd", "gnd"], OPTS.body_tap)
-        vdd_rail = rails["vdd"][0]
-        gnd_rail = rails["gnd"][0]
-
-        collisions = list(sorted(self.bitcell_array.tap_offsets))
-
-        for x_offset in collisions:
-            real_x_offset = self.bitcell_array_inst.lx() + x_offset
-            vdd_x_offset = real_x_offset + vdd_rail.rx() - m4_via_width
-            gnd_x_offset = real_x_offset + gnd_rail.lx()
-
-            self.bitcell_power_vias.append((vdd_x_offset, gnd_x_offset))
-
-        max_x_offset = self.right_gnd.rx() - self.m1mtop.width - wide_m10_space
-
-        grid_collisions = self.bitcell_power_vias + [(self.right_vdd.lx(), self.right_gnd.lx())]
-
-        for i in range(len(grid_collisions) - 1):
-            offsets = grid_collisions[i]
-            next_offset = grid_collisions[i+1][0]
-            current_offset = offsets[1] + self.m4m9.width + wide_m10_space
-            while True:
-                rail_right_x = current_offset + self.grid_rail_width
-                if rail_right_x > max_x_offset or rail_right_x > next_offset - wide_m10_space:
-                    break
-                self.vertical_power_rails_pos.append(current_offset)
-                current_offset += wide_m10_space + self.grid_rail_width
-
-        # remove first via since it clashes with middle rails
-        if self.bitcell_power_vias[-1][0] > max_x_offset - wide_m10_space - self.m4m9.width:
-            self.bitcell_power_vias = self.bitcell_power_vias[1:-1]
         else:
-            self.bitcell_power_vias = self.bitcell_power_vias[1:]
+            via = m1m2
+        self.add_contact_center(via.layer_stack, offset=vector(power_pin.cx(), pin.cy()),
+                                size=via_size, rotate=via_rotate)
 
-    def get_body_taps_bottom(self):
-        return self.tri_gate_array_inst.by()
+    def get_all_power_instances(self):
+        instances = [self.wordline_driver_inst, self.precharge_array_inst, self.sense_amp_array_inst,
+                     self.write_driver_array_inst, self.data_in_flops_inst, self.mask_in_flops_inst,
+                     self.tri_gate_array_inst]
+        if self.col_mux_array_inst is not None:
+            instances.append(self.col_mux_array_inst)
+        return instances
+
+    def get_all_power_pins(self):
+        """All power pins except bitcell"""
+        instances = self.get_all_power_instances()
+
+        def get_power_pins(inst):
+            results = inst.get_pins("vdd") if "vdd" in inst.mod.pins else []
+            results += inst.get_pins("gnd") if "gnd" in inst.mod.pins else []
+            return results
+
+        all_power_pins = []
+        for inst_ in instances:
+            all_power_pins.extend(get_power_pins(inst_))
+        return all_power_pins
+
+    def add_m2m4_power_rails_vias(self):
+        all_power_pins = sorted(self.get_all_power_pins(), key=lambda x: x.name)
+        power_groups = {k: list(v) for k, v in itertools.groupby(all_power_pins,
+                                                                 key=lambda x: x.name)}
+        fill_width = self.mid_gnd.width()
+        fill_width, fill_height = self.calculate_min_area_fill(fill_width, layer=METAL3)
+        for rail in [self.mid_vdd, self.right_vdd, self.mid_gnd, self.right_gnd]:
+            self.add_layout_pin(rail.name, METAL4, offset=rail.ll(), width=rail.width(),
+                                height=rail.height())
+            for pin_name, pins in power_groups.items():
+                if not pin_name == rail.name:
+                    continue
+                m3_pins = [x for x in pins if x.layer == METAL3]
+                m3_pin_y = set(map(lambda x: x.cy(), m3_pins))
+                all_pin_y = set(map(lambda x: x.cy(), pins))
+                # only add m3 fill if no m3 vdd exists at that y offset
+                m3_fill_y = all_pin_y.difference(m3_pin_y)
+                m3_fill_y = [x for x in m3_fill_y if x > self.precharge_array_inst.by()]
+
+                y_offsets = list(all_pin_y)
+                for y_offset in y_offsets:
+                    offset = vector(rail.cx(), y_offset)
+
+                    if y_offset in m3_fill_y:
+                        self.add_rect_center(METAL3, offset=offset, width=fill_width,
+                                             height=fill_height)
+                        vias = [m2m3, m3m4]
+                    elif y_offset in m3_pin_y:
+                        vias = [m3m4]
+                    else:
+                        vias = []
+                    for via in vias:
+                        self.add_contact_center(via.layer_stack,
+                                                offset=offset, size=[1, 2], rotate=90)
+
+    def get_m4_rail_x(self):
+        """Gets position of middle m4 rail that goes across"""
+        return 0.5 * self.bitcell.width
+
+    def find_closest_unoccupied_index(self, index):
+        """find closest unoccupied index greater than 'index'"""
+        occupied = self.occupied_m4_bitcell_indices
+        unoccupied = [x for x in range(self.num_cols) if x not in occupied and x > index]
+        if not unoccupied:
+            return None
+        return unoccupied[min(range(len(unoccupied)), key=lambda i: abs(unoccupied[i] - index))]
+
+    def find_closest_unoccupied_mid_x(self, x_offset):
+        bitcell_offsets = self.bitcell_array.bitcell_offsets
+        valid_indices = [i for i, offset in enumerate(bitcell_offsets)
+                         if offset + self.get_m4_rail_x() > x_offset]
+        if not valid_indices:  # control buffers width may exceed bitcell array width
+            return None
+        bitcell_index = self.find_closest_unoccupied_index(valid_indices[0] - 1)
+        return bitcell_index, bitcell_offsets[bitcell_index] + self.get_m4_rail_x()
 
     def route_body_tap_supplies(self):
-        # TODO fix top layer
-
-        self.calculate_body_tap_rails_vias()
-
+        if not OPTS.use_x_body_taps:
+            return
         rails = utils.get_libcell_pins(["vdd", "gnd"], OPTS.body_tap)
-        vdd_rail = rails["vdd"][0]
-        gnd_rail = rails["gnd"][0]
+        if not rails["vdd"] or not rails["gnd"]:
+            return
 
-        for x_offset in self.bitcell_array.tap_offsets:
+        rail_height = self.bitcell_array_inst.uy() - self.min_point
+        for rail_name in ["vdd", "gnd"]:
+            rail = rails[rail_name][0]
+            for x_offset in self.bitcell_array.tap_offsets:
+                pin_x = self.bitcell_array_inst.lx() + x_offset + rail.lx()
+                pin = self.add_layout_pin(rail_name, METAL4, offset=vector(pin_x, self.min_point),
+                                          width=rail.width(),
+                                          height=rail_height)
+                self.connect_control_buffers_power_to_grid(pin)
 
-            # join bitcell body tap power/gnd to bottom module tap power/gnd
-            rail_y = self.get_body_taps_bottom()
+    def get_inter_array_power_grid_indices(self):
+        """Using flop array, get spaces without instances. Mostly useful when words_per_row > 1"""
+        cell_offsets = self.bitcell_array.bitcell_offsets
 
-            rail_height = self.bitcell_array_inst.by() - rail_y
+        mid_x_offsets = [x + 0.5 * self.bitcell.width for x in cell_offsets]
+        # find actual flop instances
+        flop_array = self.data_in_flops_inst.mod
+        flop_instances = [flop_array.insts[i] for i in range(len(flop_array.conns))
+                          if len(flop_array.conns[i]) > 2]
+        # find empty spaces in flop array
+        empty_offset_indices = list(set(range(len(cell_offsets))).difference(set(self.occupied_m4_bitcell_indices)))
+        empty_offset_indices = list(sorted(empty_offset_indices))
+        for i in empty_offset_indices.copy():
+            for flop_instance in flop_instances:
+                if flop_instance.lx() <= mid_x_offsets[i] <= flop_instance.rx():
+                    empty_offset_indices.remove(i)
+                    break
 
-            vdd_rail_x = x_offset + vdd_rail.lx()
-            self.add_rect(vdd_rail.layer, offset=vector(vdd_rail_x, rail_y), width=vdd_rail.width(),
-                          height=rail_height)
+        cell_spacing = OPTS.bitcell_vdd_spacing
+        # make a copy
+        power_grid_indices = []
 
-            gnd_rail_x = x_offset + gnd_rail.lx()
-            self.add_rect(gnd_rail.layer, offset=vector(gnd_rail_x, rail_y), width=gnd_rail.width(),
-                          height=rail_height)
-
-        def get_via(rect):
-            if rect.by() < self.bitcell_array_inst.by():
-                via_mod = self.m5m9
-            else:
-                via_mod = self.m4m9
-            return via_mod
-
-        dummy_contact = contact(layer_stack=("metal4", "via4", "metal5"), dimensions=[1, 5])
-
-        def connect_m4(via_inst, is_vdd):
-            if via_inst.mod == self.m5m9:
-                if is_vdd:
-                    x_offset = via_inst.lx() + 0.11
+        if len(empty_offset_indices) == 0:
+            i = 0
+            while i < self.num_cols - 1:
+                if i in self.occupied_m4_bitcell_indices:
+                    index = self.find_closest_unoccupied_index(i)
+                    i = max(index + 2, int(math.ceil(index / cell_spacing) * cell_spacing))
                 else:
-                    x_offset = via_inst.lx()
-                self.add_contact(layers=dummy_contact.layer_stack, size=dummy_contact.dimensions,
-                                 offset=vector(x_offset, via_inst.by()))
+                    index = i
+                    i += cell_spacing
 
-        for vdd_via_x, gnd_via_x in self.bitcell_power_vias:
+                self.occupied_m4_bitcell_indices.append(index)
+                power_grid_indices.append(index)
+        else:
+            debug.info(2, "Empty spaces: {}".format(empty_offset_indices))
+            # group contiguous spaces
+            empty_groups = [[empty_offset_indices[0]]]
 
-            # add m4m9 via
-            for rect in self.vdd_grid_rects:
-                via = get_via(rect)
-
-                via_inst = self.add_inst(via.name, mod=via, offset=vector(vdd_via_x, rect.by()))
-                self.connect_inst([])
-                connect_m4(via_inst, is_vdd=True)
-
-            for rect in self.gnd_grid_rects:
-                via = get_via(rect)
-                via_inst = self.add_inst(via.name, mod=via, offset=vector(gnd_via_x, rect.by()))
-                self.connect_inst([])
-                connect_m4(via_inst, is_vdd=False)
-
-        # add vertical rails across bitcell array
-        for i in range(len(self.vertical_power_rails_pos)):
-            x_offset = self.vertical_power_rails_pos[i]
-            self.add_rect(self.top_power_layer, offset=vector(x_offset, self.min_point),
-                          width=self.grid_rail_width, height=self.height)
-
-            if i % 2 == 0:
-                for rect in self.vdd_grid_rects:
-
-                    self.add_inst(self.m9m10.name, mod=self.m9m10,
-                                  offset=vector(x_offset, rect.by()))
-                    self.connect_inst([])
-            else:
-                for rect in self.gnd_grid_rects:
-                    self.add_inst(self.m9m10.name, mod=self.m9m10,
-                                  offset=vector(x_offset, rect.by()))
-                    self.connect_inst([])
-
-    def route_control_buffers_power(self):
-        obstructions = [(self.control_buffers_inst.lx() - self.wide_m1_space,
-                         self.read_buf_inst.rx()+self.wide_m1_space)]
-        if hasattr(self, "max_right_buffer_x"):
-            obstructions.append((self.min_right_buffer_x - self.wide_m1_space,
-                                 self.max_right_buffer_x + self.wide_m1_space))
-
-        rails = utils.get_libcell_pins(["vdd", "gnd"], OPTS.body_tap)
-        tap_width = self.bitcell_array.body_tap.width
-        vdd_rail = rails["vdd"][0]
-        gnd_rail = rails["gnd"][0]
-
-        def filter_func(offset):
-            for obstruction in obstructions:
-                if obstruction[0] <= offset <= obstruction[1] or offset <= obstruction[0] <= offset + tap_width:
-                    return False
-            return True
-
-        tap_offsets = [self.bitcell_array_inst.lx() + x for x in self.bitcell_array.tap_offsets]
-        tap_offsets = list(filter(filter_func, tap_offsets))
-        vdd_pin = self.control_buffers.get_pin("vdd")
-        gnd_pin = self.control_buffers.get_pin("gnd")
-
-        via_size = [2, 1]
-        dummy_via = contact(m1m2.layer_stack, dimensions=via_size)
-        fill_width = vdd_rail.width()
-        min_area = drc["minarea_metal1_contact"]
-
-        fill_height = max(utils.ceil(min_area / fill_width), dummy_via.width)
-
-        for tap_offset in tap_offsets:
-            for (pin, rail) in [(vdd_pin, vdd_rail), (gnd_pin, gnd_rail)]:
-                x_offset = rail.lx() + tap_offset
-                self.add_rect("metal4", offset=vector(x_offset, pin.by()),
-                              height=self.data_in_flops_inst.by()-pin.by(), width=rail.width())
-                if rail == vdd_rail:
-                    y_offset = pin.uy() - fill_height
+            for empty_index in empty_offset_indices[1:]:
+                if empty_index - empty_groups[-1][-1] == 1:
+                    empty_groups[-1].append(empty_index)
                 else:
-                    y_offset = pin.by()
+                    empty_groups.append([empty_index])
+            debug.info(2, "Empty spaces groups: {}".format(empty_groups))
+            # find middle space
+            empty_indices = [x[int(len(x) / 2)] for x in empty_groups]
+            debug.info(2, "Empty middle offsets: {}".format(empty_indices))
+
+            for i in range(cell_spacing, self.num_cols - 1, cell_spacing):
+                closest_index = empty_indices[min(range(len(empty_indices)),
+                                                  key=lambda x: abs(empty_indices[x] - i))]
+                self.occupied_m4_bitcell_indices.append(closest_index)
+                power_grid_indices.append(closest_index)
+
+        debug.info(2, "Used cell indices: {}".format(power_grid_indices))
+        return power_grid_indices, mid_x_offsets
+
+    def get_inter_array_power_grid_offsets(self):
+        """Find space to route power rails by looking for empty spaces in flop array
+            If no empty space is found, just use original 'OPTS.bitcell_vdd_spacing'
+            Otherwise, group empty spaces that are contiguous and choose the middle empty space
+             closest to prediction by 'OPTS.bitcell_vdd_spacing'
+        """
+        rail_width = m3m4.height
+
+        power_grid_indices, mid_x_offsets = self.get_inter_array_power_grid_indices()
+        power_groups = {"vdd": [], "gnd": []}
+        for index in power_grid_indices:
+            mid_x = mid_x_offsets[index]
+            power_groups["vdd"].append(mid_x - 0.5 * rail_width)
+            closest_index = self.find_closest_unoccupied_index(index)
+            if not closest_index:
+                continue
+            self.occupied_m4_bitcell_indices.append(closest_index)
+            power_groups["gnd"].append(mid_x_offsets[closest_index] - 0.5 * rail_width)
+
+        return power_groups
+
+    def connect_control_buffers_power_to_grid(self, grid_pin):
+        space = self.get_parallel_space(METAL3)
+        forbidden = [(self.wordline_driver_inst.lx(), self.control_buffers_inst.rx())]
+        if hasattr(self, "repeaters_insts"):
+            forbidden.append((self.repeaters_insts[0].lx(), self.repeaters_insts[-1].rx()))
+        connect_pin = True
+        for (left, right) in forbidden:
+            if left < grid_pin.rx() + space and right > grid_pin.lx() - space:
+                connect_pin = False
+        if connect_pin:
+            control_power = self.control_buffers_inst.get_pins(grid_pin.name)
+            for power_pin in control_power:
+                offset = vector(grid_pin.cx(), power_pin.cy())
                 for via in [m1m2, m2m3, m3m4]:
-                    self.add_contact(via.layer_stack,
-                                     offset=vector(x_offset+0.5*(rail.width()+dummy_via.height),
-                                                   y_offset), size=via_size, rotate=90)
+                    self.add_contact_center(via.layer_stack, offset=offset, rotate=90)
+                for layer in [METAL2, METAL3]:
+                    fill_height, fill_width = self.calculate_min_area_fill(power_pin.height(),
+                                                                           layer=layer)
+                    self.add_rect_center(layer, offset=offset, width=fill_width,
+                                         height=fill_height)
 
-    @staticmethod
-    def rightmost_largest_rect(rects):
-        """Biggest rect to the right of the cell"""
-        right_x = max([x.rx() for x in rects])
-        return max(filter(lambda x: x.rx() >= 0.75 * right_x, rects), key=lambda x: x.height)
+    def get_intra_array_grid_top(self):
+        return self.mid_vdd.uy()
+
+    def route_intra_array_power_grid(self):
+        """Add M4 rails along bitcell arrays columns"""
+        debug.info(1, "Route intra-array power grid")
+
+        all_power_pins = self.get_all_power_pins()
+        for pin_name in ["vdd", "gnd"]:
+            for inst in [self.bitcell_array_inst]:
+                if pin_name in inst.mod.pins:
+                    all_power_pins.extend(inst.get_pins(pin_name))
+
+        rail_top = self.get_intra_array_grid_top()
+
+        all_power_pins = sorted(all_power_pins, key=lambda x: x.name)
+        all_power_pins = [x for x in all_power_pins if x.layer == METAL3 and x.cy() < rail_top]
+
+        if not all_power_pins:
+            return
+
+        power_groups = {k: list(v) for k, v in itertools.groupby(all_power_pins,
+                                                                 key=lambda x: x.name)}
+        rail_width = m3m4.height
+
+        for pin_name, x_offsets in self.get_inter_array_power_grid_offsets().items():
+            instance_power_pins = power_groups[pin_name]
+            for base_offset in x_offsets:
+                x_offset = base_offset + self.bitcell_array_inst.lx()
+                new_pin = self.add_layout_pin(pin_name, METAL4,
+                                              offset=vector(x_offset, self.min_point),
+                                              width=rail_width, height=rail_top - self.min_point)
+                for power_pin in instance_power_pins:
+                    if new_pin.lx() > power_pin.lx() and new_pin.rx() < power_pin.rx():
+                        self.add_contact_center(m3m4.layer_stack,
+                                                offset=vector(new_pin.cx(), power_pin.cy()),
+                                                rotate=90)
+                self.connect_control_buffers_power_to_grid(new_pin)
+
+    def fill_vertical_module_spaces(self):
+        self.control_buffers.child_mod = self.control_buffers.inv
+        self.control_buffers.child_insts = self.control_buffers.top_insts
+        stack = [self.control_buffers_inst, self.tri_gate_array_inst]
+        if getattr(self, "mask_in_flops_inst", None):
+            stack.append(self.mask_in_flops_inst)
+        stack.extend([self.data_in_flops_inst, self.write_driver_array_inst,
+                      self.sense_amp_array_inst])
+        if getattr(self, "col_mux_array_inst", None):
+            stack.append(self.col_mux_array_inst)
+        stack.append(self.precharge_array_inst)
+        for bottom_inst, top_inst in zip(stack[:-1], stack[1:]):
+            join_vertical_adjacent_module_wells(self, bottom_inst, top_inst)
 
     def add_lvs_correspondence_points(self):
         # Add the bitline names

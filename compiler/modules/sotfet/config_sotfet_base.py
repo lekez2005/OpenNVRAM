@@ -27,6 +27,9 @@ bitline_logic_tap = "sot_bitline_logic_tap"
 bitline_buffer = "sf_bitline_buffer.SfBitlineBuffer"
 bitline_buffer_tap = "sf_bitline_buffer.SfBitlineBufferTap"
 
+cam_sl_driver = "cam_sl_driver"
+write_driver = "cam_write_driver"
+
 decoder_flops = True
 predecoder_flop = "ms_flop"
 predecoder_flop_layout = "v"

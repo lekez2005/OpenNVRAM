@@ -9,16 +9,17 @@ from psf_reader import PsfReader
 
 arg_parser = create_arg_parser()
 arg_parser.add_argument("-v", "--verbose", action="count", default=0)
+arg_parser.add_argument("--upstream", action="store_true")
 mode, options = parse_options(arg_parser)
-openram_temp = get_sim_directory(options, mode) + "_next"
+openram_temp = get_sim_directory(options, mode)
+if options.upstream:
+    openram_temp = openram_temp.replace("_energy", "/upstream")
 cmos = mode == CMOS_MODE
 
 stim_file = os.path.join(openram_temp, "stim.sp")
 sim_file = os.path.join(openram_temp, "tran.tran.tran")
-sim_data = PsfReader(sim_file, vdd_name=None)
-sim_data.vdd = 0.9
-
 print("Sim dir = {}".format(openram_temp))
+sim_data = PsfReader(sim_file, vdd_name="v(vdd)")
 
 
 def search_stim(pattern):
@@ -29,7 +30,7 @@ def search_stim(pattern):
 
 
 def measure_energy(start_time, end_time):
-    current = sim_data.get_signal('Vvdd:p', start_time, end_time)
+    current = sim_data.get_signal('i(vvdd)', start_time, end_time)
     time = sim_data.slice_array(sim_data.time, start_time, end_time)
     energy = -np.trapz(current, time) * sim_data.vdd
     return energy
@@ -54,9 +55,12 @@ for op_name, op_events in all_ops:
         op_time = float(op_time) * 1e-9
         op_period = float(op_period) * 1e-9
         max_op_start = op_time + 0.5 * op_period
-        clk_ref_time = sim_data.get_transition_time_thresh(clk_probe, op_time,
-                                                           stop_time=max_op_start,
-                                                           edgetype=sim_data.RISING_EDGE)
+        if options.upstream or True:
+            clk_ref_time = op_time
+        else:
+            clk_ref_time = sim_data.get_transition_time_thresh(clk_probe, op_time,
+                                                               stop_time=max_op_start,
+                                                               edgetype=sim_data.RISING_EDGE)
         op_energy = measure_energy(clk_ref_time, clk_ref_time + op_period)
         op_energies.append(op_energy)
         if op_name == "read":

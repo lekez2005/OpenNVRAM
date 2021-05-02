@@ -214,29 +214,36 @@ class stimuli():
         if OPTS.spice_name == "spectre":
             self.write_control_spectre(end_time)
             return
-        # UIC is needed for ngspice to converge
-        self.sf.write(".TRAN 5p {0}n UIC\n".format(end_time))
+
         if OPTS.spice_name == "ngspice":
+            # UIC is needed for ngspice to converge
+            self.sf.write(".TRAN 5p {0}n UIC\n".format(end_time))
             # ngspice sometimes has convergence problems if not using gear method
             # which is more accurate, but slower than the default trapezoid method
             # Do not remove this or it may not converge due to some "pa_00" nodes
             # unless you figure out what these are.
             self.sf.write(".OPTIONS POST=1 RUNLVL=4 PROBE method=gear TEMP={}\n".format(self.temperature))
         else:
-            self.sf.write(".OPTIONS POST=1 RUNLVL=4 PROBE MEASFAIL=1 MEASFORM=2\n".format(self.temperature))
+            self.sf.write(".TRAN 5p {0}n \n".format(end_time))
+            self.sf.write(".OPTIONS RUNLVL=4 PROBE MEASFAIL=1 MEASFORM=2\n".format(self.temperature))
             self.sf.write(".TEMP={}\n".format(self.temperature))
             self.sf.write(".OPTION GMIN={0} GMINDC={0}\n".format(tech.spice["gmin"]))
+            # only one of POST or PSF should be specified
+            # self.sf.write(".OPTION POST=1\n".format(tech.spice["gmin"]))
+            self.sf.write(".OPTIONS PSF=1 \n")
+            self.sf.write(".OPTIONS HIER_DELIM=1 \n")
 
         # create plots for all signals
         self.sf.write("* probe is used for hspice/xa, while plot is used in ngspice\n")
-        if OPTS.debug_level > 1:
-            if OPTS.spice_name in ["hspice", "xa"]:
-                self.sf.write(".probe V(*)\n")
+        if not OPTS.use_pex:
+            if OPTS.debug_level > 1:
+                if OPTS.spice_name in ["hspice", "xa"]:
+                    self.sf.write(".probe V(*)\n")
+                else:
+                    self.sf.write(".plot V(*)\n")
             else:
-                self.sf.write(".plot V(*)\n")
-        else:
-            self.sf.write("*.probe V(*)\n")
-            self.sf.write("*.plot V(*)\n")
+                self.sf.write("*.probe V(*)\n")
+                self.sf.write("*.plot V(*)\n")
 
         # end the stimulus file
         self.sf.write(".end\n\n")
@@ -262,11 +269,15 @@ usim_opt  rcr_fmax=20G
             self.sf.write(".probe v(*) depth=1 \n")  # save top level signals
         else:
             self.sf.write("simulatorOptions options reltol=1e-3 vabstol=1e-6 iabstol=1e-12 temp={0} try_fast_op=no "
-                          "gmin={1} rforce=10m maxnotes=10 maxwarns=10 "
+                          "rforce=10m maxnotes=10 maxwarns=10 "
                           " preservenode=all topcheck=fixall "
-                          "digits=5 cols=80 dc_pivot_check=yes pivrel=1e-3\n".format(self.temperature,
-                                                                                     tech.spice["gmin"]))
-            self.sf.write('dcOp dc write="spectre.dc" readns="spectre.dc" maxiters=150 maxsteps=10000 annotate=status\n')
+                          "digits=5 cols=80 dc_pivot_check=yes pivrel=1e-3 {1} "
+                          " \n".format(self.temperature, OPTS.spectre_simulator_options))
+            if "gmin" in tech.spice:
+                self.sf.write("simulatorOptions options gmin={0}\n".
+                              format(tech.spice["gmin"]))
+
+            # self.sf.write('dcOp dc write="spectre.dc" readns="spectre.dc" maxiters=150 maxsteps=10000 annotate=status\n')
             tran_options = OPTS.tran_options if hasattr(OPTS, "tran_options") else ""
             self.sf.write('tran tran step={} stop={}n ic={} write=spectre.dc'
                           ' annotate=status maxiters=5 {}\n'.format("5p", end_time,
@@ -309,7 +320,7 @@ usim_opt  rcr_fmax=20G
             for item in list(includes):
                 if len(item) == 2:
                     (item, corner) = item
-                    self.sf.write(".lib {0} {1} \n".format(item, corner))
+                    self.sf.write(".lib \"{0}\" {1} \n".format(item, corner))
                 elif os.path.isfile(item):
                     self.sf.write(".include \"{0}\"\n".format(item))
                 else:
@@ -341,7 +352,7 @@ usim_opt  rcr_fmax=20G
     def write_supply(self):
         """ Writes supply voltage statements """
         self.sf.write("V{0} {0} 0 {1}\n".format(self.vdd_name, self.voltage))
-        self.sf.write("V{0} {0} 0 {1}\n".format(self.gnd_name, 0))
+        # self.sf.write("V{0} {0} 0 {1}\n".format(self.gnd_name, 0))
         # This is for the test power supply
         self.sf.write("V{0} {0} 0 {1}\n".format("test" + self.vdd_name, self.voltage))
         self.sf.write("V{0} {0} 0 {1}\n".format("test" + self.gnd_name, 0))
@@ -375,8 +386,8 @@ usim_opt  rcr_fmax=20G
             if use_ultrasim:
                 cmd = "{0} -64 {1} -raw {2}".format(OPTS.spice_exe, temp_stim, OPTS.openram_temp)
             else:
-                if hasattr(OPTS, "spectre_options"):
-                    extra_options = OPTS.spectre_options
+                if hasattr(OPTS, "spectre_command_options"):
+                    extra_options = OPTS.spectre_command_options
                 else:
                     extra_options = " +aps +mt={} ".format(OPTS.simulator_threads)
                 if OPTS.use_pex:

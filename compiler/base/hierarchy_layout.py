@@ -1,4 +1,5 @@
 import itertools
+import math
 import os
 
 import debug
@@ -17,6 +18,11 @@ except ImportError:
     techpurpose = {}
 
 
+GDS_ROT_0 = 0
+GDS_ROT_90 = 90
+GDS_ROT_180 = 180
+GDS_ROT_270 = 270
+
 class layout(lef.lef):
     """
     Class consisting of a set of objs and instances for a module
@@ -27,16 +33,23 @@ class layout(lef.lef):
     layout/netlist and perform LVS/DRC.
     """
 
+    # technology may require a layer to run in vertical or horizontal
+    # in the event rotation_for_drc is non-zero,
+    # this module will be placed and rotated into a parent module
+    # that parent module is what gets exported to gds
+    rotation_for_drc = GDS_ROT_0
+
     def __init__(self, name):
         lef.lef.__init__(self, ["metal1", "metal2", "metal3"])
         self.name = name
+        self.drc_gds_name = name
         self.width = None
         self.height = None
         self.insts = []      # Holds module/cell layout instances
         self.objs = []       # Holds all other objects (labels, geometries, etc)
         self.pin_map = {}    # Holds name->pin_layout map for all pins
         self.visited = False # Flag for traversing the hierarchy 
-        self.is_library_cell = False # Flag for library cells 
+        self.is_library_cell = False # Flag for library cells
         self.gds_read()
 
     ############################################################
@@ -122,7 +135,7 @@ class layout(lef.lef):
             inst.offset = vector(inst.offset - offset)
             # The instances have a precomputed boundary that we need to update.
             if inst.__class__.__name__ == "instance":
-                inst.compute_boundary(inst.offset)
+                inst.compute_boundary(inst.offset, mirror=inst.mirror)
         for pin_name in self.pin_map.keys():
             # All the pins are absolute coordinates that need to be updated.
             pin_list = self.pin_map[pin_name]
@@ -147,16 +160,24 @@ class layout(lef.lef):
                 return inst
         return None
     
-    def add_rect(self, layer, offset, width=0, height=0):
+    def add_rect(self, layer, offset, width=None, height=None, layer_purpose=None):
         """Adds a rectangle on a given layer,offset with width and height"""
-        if width==0:
-            width=drc["minwidth_{}".format(layer)]
-        if height==0:
-            height=drc["minwidth_{}".format(layer)]
+        if width is None:
+            width = drc["minwidth_{}".format(layer)]
+        if height is None:
+            height = drc["minwidth_{}".format(layer)]
+        tolerance = 0.1 * drc["grid"]
+        if (math.isclose(width, 0.0, abs_tol=tolerance) or
+                math.isclose(height, 0.0, abs_tol=tolerance)):
+            return
         # negative layers indicate "unused" layers in a given technology
         layer_num = techlayer[layer]
         if layer_num >= 0:
-            self.objs.append(geometry.rectangle(layer_num, offset, width, height, layerPurpose=get_purpose(layer)))
+            if layer_purpose is None:
+                layer_purpose = get_purpose(layer)
+            else:
+                layer_purpose = get_purpose(layer_purpose)
+            self.objs.append(geometry.rectangle(layer_num, offset, width, height, layerPurpose=layer_purpose))
             return self.objs[-1]
         return None
 
@@ -306,7 +327,11 @@ class layout(lef.lef):
         """Adds a text label on the given layer,offset, and zoom level"""
         # negative layers indicate "unused" layers in a given technology
         debug.info(5,"add label " + str(text) + " " + layer + " " + str(offset))
-        layer_num, purpose = layer_label_map[layer]
+        if layer in layer_label_map:
+            layer_num, purpose = layer_label_map[layer]
+        else:
+            layer_num = techlayer[layer]
+            purpose = 0
         if layer_num >= 0:
             # FIXME fix by adding mapping for text purpose
             #self.objs.append(geometry.label(text, layer_num, offset, zoom, layerPurpose=get_purpose(layer)))
@@ -424,6 +449,30 @@ class layout(lef.lef):
         # We don't model the logical connectivity of wires/paths
         self.connect_inst([])
         return inst
+
+    def add_cross_contact_center(self, cont, offset, rotate=False):
+        if rotate:
+            via_x = offset.x + 0.5 * cont.height
+            via_y = offset.y - 0.5 * cont.width
+            rotate = 90
+        else:
+            via_x = offset.x - 0.5 * cont.width
+            rotate = 0
+            via_y = offset.y - 0.5 * cont.height
+        self.add_inst(cont.name, cont, offset=vector(via_x, via_y), rotate=rotate)
+        self.connect_inst([])
+
+    def add_cross_contact_center_fill(self, cont, offset, rotate=False, rail_width=None):
+        if rail_width is None:
+            rail_width = self.bus_width
+        if rotate:
+            layers = cont.layer_stack[0], cont.layer_stack[2]
+        else:
+            layers = cont.layer_stack[2], cont.layer_stack[0]
+        self.add_rect_center(layers[1], offset=offset, width=rail_width, height=cont.height)
+        self.add_rect_center(layers[0], offset=offset, width=cont.height, height=rail_width)
+
+
     
     def add_ptx(self, offset, mirror="R0", rotate=0, width=1, mults=1, tx_type="nmos"):
         """Adds a ptx module to the design."""
@@ -489,6 +538,17 @@ class layout(lef.lef):
         """Write the entire gds of the object to the file."""
         debug.info(3, "Writing to {0}".format(gds_name))
 
+        if not self.rotation_for_drc == GDS_ROT_0:
+            if hasattr(self, "wrapped_rot_cell"):
+                wrapped_cell = self.wrapped_rot_cell
+            else:
+                from base.rotation_wrapper import RotationWrapper
+                wrapped_cell = RotationWrapper(self, rotation_angle=self.rotation_for_drc)
+                self.drc_gds_name = wrapped_cell.name
+                self.wrapped_rot_cell = wrapped_cell
+            wrapped_cell.gds_write(gds_name)
+            return
+
         writer = gdsMill.Gds2writer(self.gds)
         # MRG: 3/2/18 We don't want to clear the visited flag since
         # this would result in duplicates of all instances being placed in self.gds
@@ -505,6 +565,9 @@ class layout(lef.lef):
         # This assumes nothing spans outside of the width and height!
         return [vector(0,0), vector(self.width, self.height)]
         #return [self.find_lowest_coords(), self.find_highest_coords()]
+
+    def add_boundary(self):
+        self.add_rect("boundary", offset=vector(0, 0), width=self.width, height=self.height)
 
     def get_blockages(self, layer, top_level=False):
         """ 

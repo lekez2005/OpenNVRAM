@@ -62,6 +62,7 @@ def parse_args():
     # Alias SCMOS to AMI 0.5um
     if OPTS.tech_name == "scmos":
         OPTS.tech_name = "scn3me_subm"
+    os.environ["OPENRAM_TECH_NAME"] = OPTS.tech_name
     global DEFAULT_OPTS
     DEFAULT_OPTS = copy.deepcopy(OPTS)
 
@@ -161,18 +162,19 @@ def read_config(config_file, is_unit_test=True, openram_temp=None):
     # Create a full path relative to current dir unless it is already an abs path
     if not os.path.isabs(config_file):
         config_file = os.path.join(os.getcwd(), config_file)
-    # Make it a python file if the base name was only given
-    config_file = re.sub(r'\.py$', "", config_file)
     # Expand the user if it is used
     config_file = os.path.expanduser(config_file)
     # Import the configuration file of which modules to use
-    debug.info(1, "Configuration file is " + config_file + ".py")
+    debug.info(1, "Configuration file is " + config_file)
     try:
-        spec = importlib.util.spec_from_file_location("config_file", config_file + ".py")
-        config = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(config)
+        if os.path.exists(config_file):
+            spec = importlib.util.spec_from_file_location("config_file", config_file)
+            config = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(config)
+        else:
+            config = importlib.import_module(os.path.basename(config_file))
     except:
-        debug.error("Unable to read configuration file: {0}".format(config_file),2)
+        debug.error("Unable to read configuration file: {0}".format(config_file), 2)
 
     for k,v in config.__dict__.items():
         # The command line will over-ride the config file
@@ -309,14 +311,61 @@ def import_tech():
         debug.error("Nonexistent technology_setup_file: {0}.py".format(filename))
         sys.exit(1)
 
+    standardize_tech_config()
+
+def standardize_tech_config():
+    """Add defaults for properties that should be defined in tech.py """
     import tech
+    from tech import drc, info
     # Set some default options now based on the technology...
-    if (OPTS.process_corners == ""):
+    if OPTS.process_corners == "":
         OPTS.process_corners = tech.spice["fet_models"].keys()
-    if (OPTS.supply_voltages == ""):
+    if OPTS.supply_voltages == "":
         OPTS.supply_voltages = tech.spice["supply_voltages"]
-    if (OPTS.temperatures == ""):
+    if OPTS.temperatures == "":
         OPTS.temperatures = tech.spice["temperatures"]
+
+    def no_op(_):
+        pass
+
+    info["horizontal_poly"] = info.get("horizontal_poly", True)
+
+    if not hasattr(tech, "add_tech_layers"):
+        tech.add_tech_layers = no_op
+
+    if not hasattr(tech, "layer_pin_map"):
+        tech.layer_pin_map = {"text_layers": {}}
+
+    if not hasattr(tech, "purpose"):
+        tech.purpose = {
+            "drawing": 0
+        }
+
+    if not hasattr(tech, "drc_exceptions"):
+        tech.drc_exceptions = {}
+
+    if not hasattr(tech, "layer_label_map"):
+        # for when layer/purpose combination is different for labels (not necessarily the same as pins)
+        tech.layer_label_map = {}
+
+    if "ptx_implant_enclosure_active" not in drc:
+        drc["ptx_implant_enclosure_active"] = 0
+
+    if "implant_enclosure_poly" not in drc:
+        drc["implant_enclosure_poly"] = 0
+
+    if not hasattr(tech, "delay_strategy_class"):
+        def delay_strategy_class():
+            from characterizer.base_delay_strategy import BaseDelayStrategy
+            return BaseDelayStrategy
+        tech.delay_strategy_class = delay_strategy_class
+
+    # CDSHOME
+    virtuoso_exe = find_exe("virtuoso")
+    if virtuoso_exe:
+        cds_home = os.path.dirname(os.path.dirname(virtuoso_exe))
+        os.environ["CDSHOME"] = cds_home
+
 
 def initialize_classes():
     check_lvsdrc = OPTS.check_lvsdrc

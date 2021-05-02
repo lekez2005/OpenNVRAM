@@ -1,6 +1,7 @@
 import debug
 from base import design
 from base import utils
+from base.unique_meta import Unique
 from tech import GDS, layer
 
 
@@ -12,15 +13,21 @@ def library_import(cls):
     :param cls:
     :return:
     """
-    class GdsLibImport(cls):
+    class GdsLibImport(cls, metaclass=Unique):
 
-        def __init__(self, mod_name=None):
+        @classmethod
+        def get_name(cls, mod_name=None):
             if mod_name is None:
                 mod_name = cls.lib_name
+            return mod_name
+
+        def __init__(self, mod_name=None):
+            mod_name = self.get_name(mod_name)
             design.design.__init__(self, mod_name)
             debug.info(2, "Create {}".format(mod_name))
 
             (self.width, self.height) = utils.get_libcell_size(mod_name, GDS["unit"], layer["boundary"])
-            self.pin_map = utils.get_libcell_pins(cls.pin_names, mod_name, GDS["unit"], layer["boundary"])
+            pin_names = getattr(cls, "pin_names", self.pins)
+            self.pin_map = utils.get_libcell_pins(pin_names, mod_name, GDS["unit"], layer["boundary"])
 
     return GdsLibImport

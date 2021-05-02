@@ -9,7 +9,6 @@ import debug
 from characterizer.delay_loads import DistributedLoad, WireLoad, NandLoad
 from characterizer.delay_optimizer import LoadOptimizer
 from globals import OPTS
-from modules.bank import bank as bank_class
 from modules.logic_buffer import LogicBuffer
 from pgates.pinv import pinv
 
@@ -21,7 +20,7 @@ class BaseDelayStrategy(ABC):
     MIN_DELAY = 'min_delay'  # minimize the size given a maximum delay
     FIXED = 'fixed'
 
-    def __init__(self, bank: bank_class):
+    def __init__(self, bank):
         self.bank = bank
 
         self.num_cols = bank.num_cols
@@ -63,6 +62,29 @@ class BaseDelayStrategy(ABC):
     @staticmethod
     def scale_delays(d):
         return [1e12 * x for x in d]
+
+    def run_optimizations(self):
+        run_optimizations = hasattr(OPTS, 'run_optimizations') and OPTS.run_optimizations
+        if hasattr(OPTS, 'configure_sizes'):
+            getattr(OPTS, 'configure_sizes')(self, OPTS)
+        if run_optimizations:
+
+            OPTS.clk_buffers = self.get_clk_buffer_sizes()
+
+            OPTS.wordline_buffers = self.get_wordline_driver_sizes()
+
+            OPTS.wordline_en_buffers = self.get_wordline_en_sizes()
+
+            OPTS.write_buffers = self.get_write_en_sizes()
+
+            OPTS.sense_amp_buffers = self.get_sense_en_sizes()
+
+            precharge_sizes = self.get_precharge_sizes()
+            OPTS.precharge_buffers = precharge_sizes[:-1]
+            OPTS.precharge_size = precharge_sizes[-1]
+
+            predecode_sizes = self.get_predecoder_sizes()
+            OPTS.predecode_sizes = predecode_sizes[1:]
 
     @staticmethod
     def print_optimization_result(solution, optimization_spec, net_names, en_en_bar=True):
@@ -116,20 +138,20 @@ class BaseDelayStrategy(ABC):
     # strategies
 
     def get_clk_strategy(self):
-        return self.MIN_DELAY, OPTS.max_clk_buf_size
+        return self.MIN_DELAY, OPTS.max_clk_buffers
         # return self.MIN_SIZE, OPTS.max_clk_buffer_delay
 
     def get_wordline_en_strategy(self):
-        return self.MIN_DELAY, OPTS.max_wordline_en_size
+        return self.MIN_DELAY, OPTS.max_wordline_en_buffers
 
     def get_wordline_driver_strategy(self):
-        return self.MIN_DELAY, OPTS.max_wordline_en_size
+        return self.MIN_DELAY, OPTS.max_wordline_en_buffers
 
     def get_write_en_strategy(self):
-        return self.MIN_DELAY, OPTS.max_write_en_size
+        return self.MIN_DELAY, OPTS.max_write_buffers
 
     def get_sense_en_strategy(self):
-        return self.MIN_DELAY, OPTS.max_write_en_size
+        return self.MIN_DELAY, OPTS.max_write_buffers
 
     def get_precharge_strategy(self):
         return self.MIN_DELAY, OPTS.max_precharge_en_size

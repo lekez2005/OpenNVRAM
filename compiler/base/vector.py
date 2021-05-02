@@ -1,9 +1,11 @@
+import functools
 import math
 
 import tech
 
 
-class vector():
+@functools.total_ordering
+class vector:
     """
     This is the vector class to represent the coordinate
     vector. It makes the coordinate operations easy and short
@@ -136,17 +138,15 @@ class vector():
         Override round function
         """
         return vector(int(round(self.x)),int(round(self.y)))
-    
-    
+
     def __eq__(self, other):
         """Override the default Equals behavior"""
         if isinstance(other, self.__class__):
-            return self.__dict__ == other.__dict__
+            return math.isclose(self.x, other.x) and math.isclose(self.y, other.y)
         return False
 
-    def __ne__(self, other):
-        """Override the default non-equality behavior"""
-        return not self.__eq__(other)
+    def __lt__(self, other):
+        return self.x < other.x and self.y < other.y
 
     def max(self, other):
         """ Max of both values """

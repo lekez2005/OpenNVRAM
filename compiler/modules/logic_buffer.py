@@ -8,6 +8,7 @@ from pgates.pinv import pinv
 from pgates.pnand2 import pnand2
 from pgates.pnand3 import pnand3
 from pgates.pnor2 import pnor2
+from pgates.pnor3 import pnor3
 
 
 class LogicBuffer(design.design, metaclass=Unique):
@@ -38,7 +39,6 @@ class LogicBuffer(design.design, metaclass=Unique):
 
         self.height = height
 
-        self.add_pins()
         self.create_layout()
         self.DRC_LVS()
 
@@ -61,18 +61,15 @@ class LogicBuffer(design.design, metaclass=Unique):
         return name.replace(".", "_")
 
     def add_pins(self):
-        self.add_pin("A")
-        self.add_pin("B")
-        if self.logic == self.PNAND_3:
-            self.add_pin("C")
+        self.add_pin_list(self.logic_mod.pins[:-3])
         self.add_pin("out_inv")
-        if len(self.buffer_stages) > 1:
-            self.add_pin("out")
+        self.add_pin("out")
         self.add_pin("vdd")
         self.add_pin("gnd")
 
     def create_layout(self):
         self.create_modules()
+        self.add_pins()
         self.add_modules()
 
         self.route_input_pins()
@@ -84,34 +81,45 @@ class LogicBuffer(design.design, metaclass=Unique):
 
     def create_modules(self):
         if self.logic == "pnand2":
-            self.logic_mod = pnand2(size=1, height=self.height, contact_nwell=self.contact_nwell,
-                                    contact_pwell=self.contact_pwell, align_bitcell=self.align_bitcell)
+            logic_class = pnand2
         elif self.logic == "pnor2":
-            self.logic_mod = pnor2(size=1, height=self.height, contact_nwell=self.contact_nwell,
-                                   contact_pwell=self.contact_pwell)
+            logic_class = pnor2
         elif self.logic == self.PNAND_3:
-            self.logic_mod = pnand3(size=1, height=self.height, contact_nwell=self.contact_nwell,
-                                    contact_pwell=self.contact_pwell, align_bitcell=self.align_bitcell)
+            logic_class = pnand3
+        elif self.logic == "pnor3":
+            logic_class = pnor3
         else:
             raise Exception("Invalid logic selected")
+        self.logic_mod = logic_class(size=1, height=self.height, contact_nwell=self.contact_nwell,
+                                     same_line_inputs=self.align_bitcell,
+                                     contact_pwell=self.contact_pwell,
+                                     align_bitcell=self.align_bitcell)
 
         self.add_mod(self.logic_mod)
 
-        self.buffer_mod = BufferStage(self.buffer_stages, height=self.height, route_outputs=self.route_outputs,
-                                      contact_pwell=self.contact_pwell, contact_nwell=self.contact_nwell,
+        self.buffer_mod = BufferStage(self.buffer_stages, height=self.height,
+                                      route_outputs=self.route_outputs,
+                                      contact_pwell=self.contact_pwell,
+                                      contact_nwell=self.contact_nwell,
                                       align_bitcell=self.align_bitcell)
         self.add_mod(self.buffer_mod)
 
     def add_modules(self):
         self.logic_inst = self.add_inst("logic", mod=self.logic_mod, offset=vector(0, 0))
-        if self.logic == self.PNAND_3:
-            self.connect_inst(["A", "B", "C", "logic_out", "vdd", "gnd"])
+        connections = [x for x in self.logic_mod.pins]
+        if len(self.buffer_stages) == 1:
+            intermediate_net = "out_inv"
+            buffer_conns = ["out_inv", "out", "out_inv"]
         else:
-            self.connect_inst(["A", "B", "logic_out", "vdd", "gnd"])
+            intermediate_net = "logic_out"
+            buffer_conns = [intermediate_net, "out", "out_inv"]
+        connections[-3] = intermediate_net
+        self.connect_inst(connections)
 
-        self.buffer_inst = self.add_inst("buffer", mod=self.buffer_mod, offset=self.logic_inst.lr())
+        self.buffer_inst = self.add_inst("buffer", mod=self.buffer_mod,
+                                         offset=self.logic_inst.lr())
 
-        self.connect_inst(["logic_out", "out_inv", "out", "vdd", "gnd"])
+        self.connect_inst(buffer_conns + ["vdd", "gnd"])
 
     def route_input_pins(self):
         # connect input pins
@@ -132,21 +140,24 @@ class LogicBuffer(design.design, metaclass=Unique):
                 self.add_layout_pin(pin.name, "metal2", offset=vector(rail_x, 0), height=pin.cy())
                 rail_x += self.parallel_line_space + self.m2_width
         else:
-            self.copy_layout_pin(self.logic_inst, "A", "A")
-            self.copy_layout_pin(self.logic_inst, "B", "B")
-        if self.logic == self.PNAND_3:
-            self.copy_layout_pin(self.logic_inst, "C", "C")
+            for pin_name in self.logic_mod.pins[:-3]:
+                self.copy_layout_pin(self.logic_inst, pin_name)
 
         # logic output to buffer input
         logic_out = self.logic_inst.get_pin("Z")
         buffer_in = self.buffer_inst.get_pin("in")
+        self.join_logic_out_to_buffer_in(logic_out, buffer_in)
+
+    def join_logic_out_to_buffer_in(self, logic_out, buffer_in):
         self.add_rect("metal1", offset=vector(logic_out.cx(), buffer_in.cy() - 0.5*self.m1_width),
                       width=buffer_in.lx() - logic_out.cx())
 
     def route_out_pins(self):
-        if len(self.buffer_stages) > 1:
-            self.copy_layout_pin(self.buffer_inst, "out", "out")
-        self.copy_layout_pin(self.buffer_inst, "out_inv", "out_inv")
+        if len(self.buffer_stages) == 1:
+            self.copy_layout_pin(self.logic_inst, "Z", "out_inv")
+        else:
+            self.copy_layout_pin(self.buffer_inst, "out", "out_inv")
+        self.copy_layout_pin(self.buffer_inst, "out_inv", "out")
 
     def route_power_pins(self):
         pin_names = ["vdd", "gnd"]

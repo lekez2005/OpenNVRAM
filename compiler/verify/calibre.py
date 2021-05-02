@@ -130,6 +130,9 @@ def run_drc(cell_name, gds_name, exception_group=""):
     errfile = get_temp_file("{0}.drc.err".format(cell_name))
     outfile = get_temp_file("{0}.drc.out".format(cell_name))
 
+    if os.path.exists(drc_runset['drcSummaryFile']):
+        os.remove(drc_runset['drcSummaryFile'])
+
     cmd = "{0} -gui -drc {1} -batch".format(OPTS.drc_exe[1], get_temp_file("drc_runset"))
     debug.info(2, cmd)
     utils.run_command(cmd, outfile, errfile, verbose_level=3, cwd=OPTS.openram_temp)
@@ -221,7 +224,8 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
         'lvsMaskDBFile': get_temp_file(cell_name + ".maskdb"),
         'cmnFDILayerMapFile': drc["layer_map"],
         'cmnFDIUseLayerMap': 1,
-        'lvsRecognizeGates': 'NONE'
+        # TODO NONE vs SIMPLE vs ALL? None -> Simple change fixes an LVS error
+        'lvsRecognizeGates': 'SIMPLE'
         #'cmnVConnectNamesState' : 'ALL', #connects all nets with the same name
     }
     lvs_runset.update(get_lvs_box_cells())
@@ -351,7 +355,7 @@ def run_pex(cell_name, gds_name, sp_name, output=None, run_drc_lvs=True, correct
         'pexPexSeparator': "1",
         'pexPexSeparatorValue': "_",
         'pexPexNetlistNameSource': 'SOURCENAMES',
-        'pexSVRFCmds': '{LVS PRESERVE BOX CELLS YES} {}',
+        'pexSVRFCmds': '{LVS PRESERVE BOX CELLS YES} {SOURCE CASE YES} {LAYOUT CASE YES}',
         'pexIncludeCmdsType': 'SVRF',  # used for preserving lvs box names
     }
     pex_runset.update(get_lvs_box_cells())

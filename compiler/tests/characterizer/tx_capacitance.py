@@ -27,7 +27,7 @@ class TxCapacitance(CharTestBase):
         cls.parser.add_argument("-s", "--size", default=1,
                                 type=float, help="Unit TX size")
         cls.parser.add_argument("--driver_size", default=4, type=float)
-        cls.parser.add_argument("-t", "--tx_type", default=NMOS, choices=[NMOS, PMOS])
+        cls.parser.add_argument("--tx_type", default=NMOS, choices=[NMOS, PMOS])
         cls.parser.add_argument("-f", "--num_fingers", default=4, type=int)
         cls.parser.add_argument("--terminal", default=GATE, choices=[DRAIN, GATE])
         cls.parser.add_argument("-m", "--method", default=TEN_FIFTY_THRESH,
@@ -91,6 +91,7 @@ class TxCapacitance(CharTestBase):
                             terminal, size,
                             cap_per_tx_micron * 1e15))
                         file_suffixes = [("beta", self.options.beta)]
+                        file_suffixes = []
                         size_suffixes = [("nf", num_fingers)]
                         pin_name = "d" if self.options.terminal == DRAIN else "g"
                         self.save_result(self.options.tx_type, pin_name, cap_per_tx_micron, size=size,
@@ -135,6 +136,7 @@ class TxCapacitance(CharTestBase):
         from base import contact
         from base.design import design
         from base.vector import vector
+        from tech import info
 
         class MosWrapper(design):
             def __init__(self, mos: design):
@@ -176,6 +178,7 @@ class TxCapacitance(CharTestBase):
                                                                 + "implant")[0]
                 y_offset = (lowest_implant.by() - contact_implant.height -
                             contact_implant.by())
+                y_offset = min(y_offset, -(body_contact.height + 2 * self.m1_space))
                 contact_offset = vector(0, y_offset)
                 self.add_inst(body_contact.name, mod=body_contact,
                               offset=contact_offset)
@@ -190,14 +193,15 @@ class TxCapacitance(CharTestBase):
                                     height=largest_m1.height)
 
                 # connect nwells
-                if options.tx_type == PMOS:
-                    tx_nwell = mos.get_layer_shapes("nwell")[0]
-                    contact_nwell = body_contact.get_layer_shapes("nwell")[0]
-                    rect_left = min(tx_nwell.lx(), contact_nwell.lx())
-                    rect_right = max(tx_nwell.rx(), contact_nwell.rx())
-                    rect_top = tx_nwell.by()
-                    rect_bottom = contact_nwell.by() + contact_offset.y
-                    self.add_rect("nwell", offset=vector(rect_left, rect_bottom),
+                if info["has_{}well".format(well_type)]:
+                    well_layer = "{}well".format(well_type)
+                    tx_well = mos.get_layer_shapes(well_layer)[0]
+                    contact_well = body_contact.get_layer_shapes(well_layer)[0]
+                    rect_left = min(tx_well.lx(), contact_well.lx())
+                    rect_right = max(tx_well.rx(), contact_well.rx())
+                    rect_top = tx_well.by()
+                    rect_bottom = contact_well.by() + contact_offset.y
+                    self.add_rect(well_layer, offset=vector(rect_left, rect_bottom),
                                   width=rect_right - rect_left,
                                   height=rect_top - rect_bottom)
         return MosWrapper

@@ -24,7 +24,7 @@ class CamProbe(SramProbe):
         (cam_block, col_num) = self.get_col_location(col)
         block_inst = bank_inst.mod.block_insts[cam_block]
         return utils.get_pin_rect(pin, [bank_inst, block_inst, block_inst.mod.bitcell_array_inst,
-                                        block_inst.mod.bitcell_array_inst.mod.cell_inst[row, col_num]])
+                                        block_inst.mod.bitcell_array_inst.mod.cell_inst[row][col_num]])
 
     def get_bitline_label(self, bank_index, pin_name, col):
         (cam_block, col_num) = self.get_col_location(col)
@@ -121,9 +121,6 @@ class CamProbe(SramProbe):
             pass
         else:
             self.probe_labels.add("Xsram.Xbank{}.Xcam_block{}.tag[{}]".format(bank_index, col_index, row))
-
-    def add_misc_bank_probes(self, bank_inst, bank_index):
-        pass
 
     def add_misc_addr_probes(self, addresses):
         address = self.address_to_vector(addresses[0])

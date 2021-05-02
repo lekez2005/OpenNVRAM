@@ -197,7 +197,7 @@ class WordlineEnOptimizer(CharTestBase):
                 stim_file.write("Vin[{}] in[{}] 0 {}\n".format(num_rows-1, num_rows-1, vdd))
 
                 # driver
-                stim_file.write("Xdriver gnd {} float en vdd gnd {} \n".format(in_pin_name, wordline_buf.name))
+                stim_file.write("Xdriver gnd {} en float vdd gnd {} \n".format(in_pin_name, wordline_buf.name))
 
                 stim_file.write("\nsimulator lang=spectre\n")
                 stim_file.write("simulatorOptions options temp={0} preservenode=all dc_pivot_check=yes"

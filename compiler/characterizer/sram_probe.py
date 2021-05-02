@@ -4,9 +4,10 @@ from subprocess import check_output, CalledProcessError
 import numpy as np
 
 import debug
+from characterizer.dependency_graph import get_instance_module, get_net_driver
+from characterizer.probe_utils import get_current_drivers, get_all_tx_fingers, format_bank_probes, \
+    get_voltage_connections, get_extracted_prefix
 from globals import OPTS
-import tech
-from base import utils
 
 
 class SramProbe(object):
@@ -22,19 +23,33 @@ class SramProbe(object):
         else:
             self.pex_file = pex_file
 
-        self.q_pin = utils.get_libcell_pins(["Q"], "cell_6t", tech.GDS["unit"], tech.layer["boundary"]).get("q")[0]
-        self.qbar_pin = \
-        utils.get_libcell_pins(["QBAR"], "cell_6t", tech.GDS["unit"], tech.layer["boundary"]).get("qbar")[0]
+        bitcell = self.sram.create_mod_from_str(OPTS.bitcell)
+        bitcell_pins = [x.lower() for x in bitcell.pin_map.keys()]
+        if "q" in bitcell_pins:
+            self.q_pin = bitcell.get_pin("q")
+        if "qbar" in bitcell_pins:
+            self.qbar_pin = bitcell.get_pin("qbar")
+
+        self.two_bank_dependent = not OPTS.independent_banks and self.sram.num_banks == 2
+        self.word_size = (int(self.sram.word_size / 2)
+                          if self.two_bank_dependent else self.sram.word_size)
+
+        self.net_separator = "_" if OPTS.use_pex else "."
+
+        self.current_probes_json = {}
+        self.current_probes = set()
+
+        self.voltage_probes = {}
+        self.state_probes = {}
 
         self.bitcell_probes = {}
-        self.br_probes = {}
-        self.bitline_probes = {}
-        self.wordline_probes = {}
-        self.sense_amp_probes = {}
         self.word_driver_clk_probes = {}
-        self.decoder_probes = {}
+        self.wordline_probes = self.voltage_probes["wl"] = {}
+        self.decoder_probes = self.voltage_probes["decoder"] = {}
         self.clk_probe = self.get_clk_probe()
-        self.probe_labels = set()
+
+        self.probe_labels = {"clk"}
+        self.external_probes = ["dout"]
 
     def probe_bit_cells(self, address, pin_name="q"):
         """Probe Q, QBAR of bitcell"""
@@ -62,19 +77,25 @@ class SramProbe(object):
         self.bitcell_probes[pin_name][address_int] = pin_labels
 
     def get_bitcell_label(self, bank_index, row, col, pin_name):
-        return "Xsram.Xbank{}.Xbitcell_array.Xbit_r{}_c{}.{}".format(bank_index, row, col, pin_name)
+        label = "Xbank{}.Xbitcell_array.Xbit_r{}_c{}".format(bank_index, row, col)
+        if OPTS.use_pex:
+            label = label.replace(".", "_")
+        return "Xsram.{}.{}".format(label, pin_name)
 
     def probe_bitlines(self, bank, row=None):
+        for pin_name in ["bl", "br"]:
+            if pin_name not in self.voltage_probes:
+                self.voltage_probes[pin_name] = {}
+            if bank not in self.voltage_probes[pin_name]:
+                self.voltage_probes[pin_name][bank] = {}
+
         if row is None:
             row = self.sram.num_rows - 1
         for col in range(self.sram.num_cols):
             for pin_name in ["bl", "br"]:
                 pin_label = self.get_bitline_label(bank, col, pin_name, row)
                 self.probe_labels.add(pin_label)
-                if pin_name == "bl":
-                    self.bitline_probes[col] = pin_label
-                else:
-                    self.br_probes[col] = pin_label
+                self.voltage_probes[pin_name][bank][col] = pin_label
 
     def get_bitline_label(self, bank, col, label, row):
         if OPTS.use_pex:  # select top right bitcell
@@ -106,19 +127,19 @@ class SramProbe(object):
         pattern = self.get_storage_node_pattern()
         for address in range(self.sram.num_words):
             bank_index, bank_inst, row, col_index = self.decode_address(address)
-            address_nodes = [""]*self.sram.word_size
+            address_nodes = [""] * self.sram.word_size
             nodes_map[address] = address_nodes
             for i in range(self.sram.word_size):
                 col = i * self.sram.words_per_row + self.address_to_int(col_index)
-                address_nodes[i] = pattern.format(bank=bank_index, row=row, col=col)
+                address_nodes[i] = pattern.format(bank=bank_index, row=row, col=col, name="Xbit")
         return nodes_map
 
     def get_storage_node_pattern(self):
-        general_pattern = list(self.bitcell_probes.values())[0][0]  # type: str
+        general_pattern = list(self.state_probes.values())[0][0]  # type: str
 
         def sub_specific(pattern, prefix, key):
-            pattern = re.sub(prefix + "\[[0-9]+\]", prefix + "[{" + key + "}]", pattern)
-            delims = ["_", "\."]
+            pattern = re.sub(prefix + r"\[[0-9]+\]", prefix + "[{" + key + "}]", pattern)
+            delims = ["_", r"\."]
             replacements = ["_", "."]
             for i in range(2):
                 delim = delims[i]
@@ -139,102 +160,11 @@ class SramProbe(object):
         else:
             return self.decoder_probes[address]
 
-    def probe_bit_lines(self, address, pin_name="bl"):
-        """add labels to bitlines
-        labels should be unique by bank and col_index
-        """
-
-        address = self.address_to_vector(address)
-        bank_index, bank_inst, _, col_index = self.decode_address(address)
-
-        label_key = "{}_b{}c{}".format(pin_name, bank_index, col_index)
-
-        if label_key in self.bitline_probes:
-            return
-
-        pin_labels = [""] * self.sram.word_size
-        for i in range(self.sram.word_size):
-            col = i * self.sram.words_per_row + self.address_to_int(col_index)
-            if OPTS.use_pex:
-                pin, ll, ur = self.get_bitline_pin(pin_name, bank_inst, col)
-                pin_loc = [0.5 * (ll[0] + ur[0]), 0.5 * (ll[1] + ur[1])]
-                pin_label = "{}_b{}c{}".format(pin_name, bank_index, col)
-                self.sram.add_label(pin_label, pin.layer, pin_loc, zoom=0.05)
-                pin_labels[i] = pin_label
-            else:
-                pin_labels[i] = self.get_bitline_label(bank_index, pin_name, col)
-        pin_labels.reverse()
-        self.probe_labels.update(pin_labels)
-        self.bitline_probes[label_key] = pin_labels
-
     def get_clk_probe(self, bank=0):
         if OPTS.use_pex:
             return "Xsram.Xbank{bank}_clk_buf_Xbank{bank}_Xcontrol_buffers".format(bank=bank)
         else:
             return "Xsram.Xbank{}.clk_buf".format(bank)
-
-    def get_bitline_pin(self, pin_name, bank_inst, col):
-        pin = bank_inst.mod.bitcell_array_inst.get_pin("{}[{}]".format(pin_name, col))
-        ll, ur = utils.get_pin_rect(pin, [bank_inst])
-        return pin, ll, ur
-
-
-    def get_bitline_probes(self, address, pin_name="bl", pex_file=None):
-        """Retrieve simulation probe names based on extracted file"""
-        address = self.address_to_vector(address)
-        bank_index, bank_inst, _, col_index = self.decode_address(address)
-
-        label_key = "{}_b{}c{}".format(pin_name, bank_index, col_index)
-        if label_key not in self.bitline_probes:
-            debug.error("address should be added first")
-
-        pin_labels = self.bitline_probes[label_key]
-        if not OPTS.use_pex:
-            return pin_labels[:]
-        else:
-            extracted_labels = []
-            for label in pin_labels:
-                extracted_labels.append(self.extract_from_pex(label, pex_file))
-            return extracted_labels
-
-    def probe_wordlines(self, address):
-        """add labels to wordlines
-                labels should be unique by bank and row
-                """
-
-        address = self.address_to_vector(address)
-        bank_index, bank_inst, row, col_index = self.decode_address(address)
-
-        label_key = "wl_b{}_r{}".format(bank_index, row)
-
-        if label_key in self.wordline_probes:
-            return
-
-        if OPTS.use_pex:
-            pin, ll, ur = self.get_wordline_pin(bank_inst, row, col_index)
-            pin_loc = [0.5 * (ll[0] + ur[0]), 0.5 * (ll[1] + ur[1])]
-            self.sram.add_label(label_key, pin.layer, pin_loc)
-            self.wordline_probes[label_key] = label_key
-        else:
-            self.wordline_probes[label_key] = self.get_wordline_label(bank_index, row, col_index)
-        self.probe_labels.add(self.wordline_probes[label_key])
-
-    def probe_decoder_outputs(self, address_int):
-        """add labels to wordlines
-                labels should be unique by bank and row
-                """
-
-        address = self.address_to_vector(address_int)
-        bank_index, bank_inst, row, col_index = self.decode_address(address)
-
-        if OPTS.use_pex:
-            decoder_label = "dec_b{}_r{}".format(bank_index, row)
-            decoder_pin = bank_inst.mod.decoder.get_pin("decode[{}]".format(row))
-            self.add_pin_label(decoder_pin, [bank_inst, bank_inst.mod.row_decoder_inst], decoder_label)
-        else:
-            decoder_label = "Xsram.Xbank{}.dec_out[{}]".format(bank_index, row)
-        self.decoder_probes[address_int] = decoder_label
-        self.probe_labels.add(decoder_label)
 
     def get_wordline_label(self, bank_index, row, col):
         if OPTS.use_pex:
@@ -244,72 +174,6 @@ class SramProbe(object):
             wl_label = "Xsram.Xbank{}.wl[{}]".format(bank_index, row)
         return wl_label
 
-    def get_wordline_pin(self, bank_inst, row, col_index):
-        pin = bank_inst.mod.bitcell_array_inst.get_pin("wl[{}]".format(row))
-        ll, ur = utils.get_pin_rect(pin, [bank_inst])
-        return pin, ll, ur
-
-    def get_wordline_probes(self, address, pex_file=None):
-        address = self.address_to_vector(address)
-        bank_index, bank_inst, row, _ = self.decode_address(address)
-
-        label_key = "wl_b{}_r{}".format(bank_index, row)
-        if label_key not in self.wordline_probes:
-            debug.error("address should be added first")
-
-        if OPTS.use_pex:
-            return [self.extract_from_pex(label_key, pex_file)]
-        else:
-            return [self.wordline_probes[label_key]]
-
-    def probe_sense_amps(self, bank_index, bank_inst, pin_name):
-        """Add probes to bl, br or data pins of sense_amp_array """
-        label_key = "sa_b{}_{}".format(bank_index, pin_name)
-        if label_key in self.sense_amp_probes:
-            return
-        pin_labels = []
-        for i in range(self.sram.word_size):
-            if pin_name == "data":
-                col = i
-            else:
-                col = i * self.sram.words_per_row
-            if OPTS.use_pex:
-                pin = bank_inst.mod.sense_amp_array_inst.get_pin("{}[{}]".format(pin_name, col))
-                ll, ur = utils.get_pin_rect(pin, [bank_inst])
-                pin_loc = [0.5 * (ll[0] + ur[0]), 0.5 * (ll[1] + ur[1])]
-                pin_label = "sa_{}_b{}c_{}".format(pin_name, bank_index, col)
-                self.sram.add_label(pin_label, pin.layer, pin_loc)
-                pin_labels.append(pin_label)
-                self.sense_amp_probes[label_key] = label_key
-            else:
-                pin_label = "Xsram.Xbank{}.Xsense_amp_array.{}[{}]".format(bank_index, pin_name, col)
-            self.probe_labels.add(pin_label)
-            pin_labels.append(pin_label)
-        self.sense_amp_probes[label_key] = pin_labels
-
-    def get_sense_amp_probes(self, bank_index, pin_name, pex_file=None):
-        label_key = "sa_b{}_{}".format(bank_index, pin_name)
-        if label_key not in self.sense_amp_probes:
-            debug.error("sense amp probes must be added first")
-        if OPTS.use_pex:
-            return list(map(lambda x: self.extract_from_pex(x, pex_file), self.sense_amp_probes[label_key]))
-        else:
-            return self.sense_amp_probes[label_key]
-
-    def probe_word_driver_clk(self, bank_index, bank_inst):
-        label_key = "dec_b{}_clk".format(bank_index)
-        if label_key in self.word_driver_clk_probes:
-            return
-        if OPTS.use_pex:
-            pin = bank_inst.mod.wordline_driver_inst.get_pin("en")
-            ll, ur = utils.get_pin_rect(pin, [bank_inst])
-            pin_label = label_key
-            self.sram.add_label(pin_label, pin.layer, ll)
-        else:
-            pin_label = "Xsram.Xbank{}.Xwordline_driver.en".format(bank_index)
-        self.probe_labels.add(pin_label)
-        self.word_driver_clk_probes[label_key] = pin_label
-
     def get_word_driver_clk_probes(self, bank_index, pex_file=None):
         label_key = "dec_b{}_clk".format(bank_index)
         probe_name = self.word_driver_clk_probes[label_key]
@@ -318,94 +182,491 @@ class SramProbe(object):
         else:
             return [probe_name]
 
-    def add_misc_bank_probes(self, bank_inst, bank_index):
+    @staticmethod
+    def get_buffer_stages_probes(buf):
+        results = set()
+        buffer_mod = getattr(buf, "buffer_mod", buf)
+        num_stages = len(buffer_mod.buffer_invs)
+        if hasattr(buf, "buffer_mod"):
+            prefix = ".Xbuffer"
+        else:
+            prefix = ""
+
+        for i in range(num_stages):
+            num_fingers = buffer_mod.buffer_invs[i].tx_mults
+            for finger in range(num_fingers):
+                if not OPTS.use_pex or finger == 0:
+                    suffix = ""
+                else:
+                    suffix = "@{}".format(finger + 1)
+                results.add("{}.Xinv{}.Mpmos1{}".format(prefix, i, suffix))
+        return list(results)
+
+    def driver_current_probes(self, net_template, nets, bits, modules, replacements=None):
+        if replacements is None:
+            replacements = [("Xmod_0", "Xmod_{bit}")]
+        results = []
+        for net in nets:
+            sample_net = net_template.format(bank=0, net=net, bit=0)
+            net_drivers = get_current_drivers(sample_net, self.sram,
+                                              candidate_drivers=modules)
+            for driver in net_drivers:
+                drivers = get_all_tx_fingers(driver, replacements)
+                for bit in bits:
+                    for tx_driver in drivers:
+                        results.append((bit, tx_driver.format(bit=bit)))
+        return results
+
+    def bitline_current_probes(self, bank, bits, modules, nets=None, suffix=""):
+        if nets is None:
+            nets = ["bl", "br"]
+        suffix = suffix if self.sram.words_per_row > 1 else ""
+        bitline_template = "Xbank{bank}.{net}" + suffix + "[{bit}]"
+        probes = self.driver_current_probes(bitline_template, nets, bits,
+                                            modules=modules)
+        probes = format_bank_probes(probes, bank)
+        probes = {key: val for key, val in probes}
+        self.current_probes.update(probes.values())
+        return probes
+
+    def update_current_probes(self, probes, inst_name, bank):
+        if inst_name not in self.current_probes_json:
+            self.current_probes_json[inst_name] = {}
+        self.current_probes_json[inst_name][bank] = probes
+
+    def write_driver_current_probes(self, bank, bits):
+        probes = self.bitline_current_probes(bank, bits, modules=["write_driver_array"],
+                                             suffix="_out")
+        self.update_current_probes(probes, "write_driver_array", bank)
+
+    def sense_amp_current_probes(self, bank, bits):
+        probes = self.bitline_current_probes(bank, bits, modules=["sense_amp_array"],
+                                             suffix="_out")
+        self.update_current_probes(probes, "sense_amp_array", bank)
+
+    def precharge_current_probes(self, bank, cols):
+        probes = self.bitline_current_probes(bank, cols, modules=["precharge_array"],
+                                             suffix="")
+        self.update_current_probes(probes, "precharge_array", bank)
+
+    def get_bank_bitcell_current_probes(self, bank, bits, row, col_index):
+        cols = [col_index + bit * self.sram.words_per_row for bit in OPTS.probe_bits]
+        template = "Xbank{bank}.Xbitcell_array.Xbit_r" + str(row) + "_c{bit}.{net}"
+        nets = ["q", "qbar"]
+        replacements = [("r([0-9]+)_c([0-9]+)", "r\g<1>_c{bit}")]
+        probes = self.driver_current_probes(template, nets, cols,
+                                            modules=["bitcell_array"],
+                                            replacements=replacements)
+        probes = format_bank_probes(probes, bank)
+        probes = [(int(col / self.sram.words_per_row), probe) for col, probe in probes]
+        return probes
+
+    def probe_bitcell_currents(self, address):
+
+        if "bitcell_array" not in self.current_probes_json:
+            self.current_probes_json["bitcell_array"] = {}
+
+        self.current_probes_json["bitcell_array"][address] = {}
+
+        bank, _, row, col_index = self.decode_address(address)
+
+        if self.two_bank_dependent:
+            banks = [0, 1]
+            all_bits = [self.offset_bits_by_bank(OPTS.probe_bits, 0, self.word_size),
+                        self.offset_bits_by_bank(OPTS.probe_bits, 1, self.word_size)]
+            bit_shifts = [0, self.sram.bank.word_size]
+        else:
+            banks = [bank]
+            all_bits = [OPTS.probe_bits]
+            bit_shifts = [0]
+        for bank, bits, bit_shift in zip(banks, all_bits, bit_shifts):
+            probes = self.get_bank_bitcell_current_probes(bank, bits, row, col_index)
+            self.current_probes.update([x[1] for x in probes])
+            for bit, probe in probes:
+                bit_ = bit + bit_shift
+                self.current_probes_json["bitcell_array"][address][bit_] = probe
+
+    def get_control_buffers_probe_pins(self, bank):
+        bank_name = 'bank{}'.format(bank)
+        bank_inst = get_instance_module(bank_name, self.sram)
+        return bank_inst.mod.get_control_rails_destinations().keys()
+
+    def get_control_buffers_net_driver(self, bank, net):
+        """Get the driver driving 'net' within bank"""
+        bank_name = 'bank{}'.format(bank)
+        bank_inst = get_instance_module(bank_name, self.sram)
+        bank_mod = bank_inst.mod
+        control_buffers = bank_mod.control_buffers
+        driver = get_net_driver(net, control_buffers)
+
+        _, child_mod, conns = driver
+        control_conn_index = control_buffers.conns.index(conns)
+
+        buffer_inst = control_buffers.insts[control_conn_index]
+
+        return bank_inst, buffer_inst, control_conn_index
+
+    def control_buffers_current_probes(self, bank):
+        visited_insts = []
+        if "control_buffers" not in self.current_probes:
+            self.current_probes_json["control_buffers"] = {}
+        control_probes = self.current_probes_json["control_buffers"]
+        if bank not in control_probes:
+            control_probes[bank] = {}
+        for net in self.get_control_buffers_probe_pins(bank):
+            driver = self.get_control_buffers_net_driver(bank, net)
+            bank_inst, buffer_inst, control_conn_index = driver
+            if control_conn_index in visited_insts:
+                continue
+
+            visited_insts.append(control_conn_index)
+            control_name = bank_inst.mod.control_buffers_inst.name
+
+            all_tx = self.get_buffer_stages_probes(buffer_inst.mod)
+            all_tx = [(0, "X{}.X{}".format(control_name, buffer_inst.name) + x) for x in all_tx]
+            all_tx = [x[1] for x in format_bank_probes(all_tx, bank)]
+            self.current_probes.update(all_tx)
+            control_probes[bank][net] = all_tx
+
+    def offset_bits_by_bank(self, elements, bank, max_val):
+        """Get portions of bits located in a bank"""
+        if self.two_bank_dependent:
+            if bank == 0:
+                return [x for x in elements if x < max_val]
+            else:
+                return [x - max_val for x in elements if x >= max_val]
+        else:
+            return elements
+
+    def get_control_buffers_probe_bits(self, destination_inst, bank):
+        name = destination_inst.name
+        if name in ["wordline_driver"]:
+            return [self.sram.bank.num_rows - 1]
+        elif name in ["precharge_array"]:
+            return self.offset_bits_by_bank(OPTS.probe_cols, bank, self.sram.bank.num_cols)
+        else:
+            return self.offset_bits_by_bank(OPTS.probe_bits, bank, self.word_size)
+
+    def get_wordline_nets(self):
+        return ["wl"]
+
+    def wordline_driver_currents(self, address):
+        bank, _, row, col_index = self.decode_address(address)
+        if self.two_bank_dependent:
+            banks = [0, 1]
+        else:
+            banks = [bank]
+        for bank in banks:
+            bank_name = 'bank{}'.format(bank)
+            bank_inst = get_instance_module(bank_name, self.sram)
+            bank_mod = bank_inst.mod
+
+            for net in self.get_wordline_nets():
+                # get wordline driver array
+                full_net = net + "[{}]".format(row)
+                driver = get_net_driver(full_net, bank_mod)
+                _, wordline_driver_array, conns = driver
+                conn_index = bank_mod.conns.index(conns)
+                driver_inst = bank_mod.insts[conn_index]
+
+                # get pin driver within wordline driver array
+                pin_index = conns.index(full_net)
+                pin_name = wordline_driver_array.pins[pin_index]
+                driver = get_net_driver(pin_name, wordline_driver_array)
+                _, buffer, conns = driver
+                conn_index = wordline_driver_array.conns.index(conns)
+                inst = wordline_driver_array.insts[conn_index]
+                all_tx = self.get_buffer_stages_probes(buffer)
+
+                all_tx = [(0, "X{}.X{}".format(driver_inst.name, inst.name) + x) for x in all_tx]
+                all_tx = [x[1] for x in format_bank_probes(all_tx, bank)]
+
+                if net not in self.current_probes_json:
+                    self.current_probes_json[net] = {}
+                self.current_probes_json[net][address] = all_tx
+
+                self.current_probes.update(all_tx)
+
+    def probe_address_currents(self, address):
+        self.probe_bitcell_currents(address)
+        self.wordline_driver_currents(address)
+
+    def probe_bank_currents(self, bank):
+        if not OPTS.verbose_save:
+            return
+
+        cols = OPTS.probe_cols
+        bits = [int(x / self.sram.words_per_row) for x in cols]
+
+        self.write_driver_current_probes(bank, bits)
+        self.sense_amp_current_probes(bank, bits)
+        self.precharge_current_probes(bank, cols)
+        self.control_buffers_current_probes(bank)
+        self.control_buffers_current_probes(bank)
+
+    def probe_bank(self, bank):
+        self.probe_bank_currents(bank)
+
+        self.probe_bitlines(bank)
+        self.probe_write_drivers(bank)
+        self.probe_sense_amps(bank)
+        self.control_buffers_voltage_probes(bank)
+
+        if bank == 0:
+            clk_probe = self.voltage_probes["control_buffers"][bank]["clk_buf"][-1]
+            self.clk_probe = clk_probe
+
+    @staticmethod
+    def get_full_bank_net(net, prefix, suffix, bank_inst):
+        separator = "_" if OPTS.use_pex else "."
+        if net not in bank_inst.mod.pins:
+            prefix = "{}{}".format(separator, prefix) if prefix else ""
+            prefix = "X{}{}{}{}".format(bank_inst.name, prefix, separator, net)
+        else:
+            prefix = "{}".format(net)
         if OPTS.use_pex:
-            self.probe_pin(bank_inst.mod.sense_amp_array_inst.get_pin("en"), "sense_amp_en_b{}".format(bank_index),
-                            [bank_inst])
-            self.probe_pin(bank_inst.mod.precharge_array_inst.get_pin("en"), "precharge_en_b{}".format(bank_index),
-                            [bank_inst])
-            self.probe_pin(bank_inst.mod.write_driver_array_inst.get_pin("en"), "write_en_b{}".format(bank_index),
-                            [bank_inst])
-            self.probe_pin(bank_inst.mod.tri_gate_array_inst.get_pin("en"), "tri_en_b{}".format(bank_index),
-                            [bank_inst])
-            self.probe_pin(bank_inst.mod.tri_gate_array_inst.get_pin("en_bar"), "tri_en_bar_b{}".format(bank_index),
-                            [bank_inst])
-            if self.sram.words_per_row > 1:
-                self.probe_pin(bank_inst.mod.col_mux_array_inst.get_pin("sel[0]"), "mux_sel_0_b{}".format(bank_index),
-                                [bank_inst])
-            self.probe_pin(bank_inst.mod.write_driver_array_inst.get_pin("data[0]"), "write_d0_b{}".format(bank_index),
-                            [bank_inst])
-            # self.probe_pin(bank_inst.mod.wordline_driver_inst.get_pin("in[0]"), "wl_drv_in0_b{}".format(bank_index),
-            #                 [bank_inst])
-            self.probe_pin(bank_inst.mod.wordline_driver_inst.mod.module_insts[0].get_pin("Z"),
-                            "wl_drv_en_bar_b{}".format(bank_index),
-                            [bank_inst, bank_inst.mod.wordline_driver_inst])
-            self.probe_pin(bank_inst.mod.wordline_driver_inst.mod.module_insts[1].get_pin("Z"),
-                            "wl_drv_net0_b{}".format(bank_index),
-                            [bank_inst, bank_inst.mod.wordline_driver_inst])
-            for i in range(self.sram.bank.row_addr_size):
-                self.probe_pin(bank_inst.mod.row_decoder_inst.get_pin("A[{}]".format(i)), "decoder_in_{}".format(i),
-                               [bank_inst])
+            suffix = "X{}{}{}".format(bank_inst.name, separator, suffix)
+            prefix = "N_{}".format(prefix) if OPTS.use_pex else prefix
+            return "{}{}{}".format(prefix, separator, suffix)
+        else:
+            return "Xsram.{}".format(prefix)
 
-    def add_misc_probes(self, bank_inst):
-        self.probe_pin(bank_inst.get_pin("clk_buf"), "clk_buf", [])
-        self.probe_pin(bank_inst.get_pin("tri_en"), "ctrl_tri_en", [])
-        self.probe_pin(bank_inst.get_pin("w_en"), "ctrl_w_en", [])
-        self.probe_pin(bank_inst.get_pin("s_en"), "ctrl_s_en", [])
+    def probe_internal_nets(self, bank_, sample_net, array_inst, internal_nets):
 
-    def probe_pin(self, pin, label, module_list):
-        ll, ur = utils.get_pin_rect(pin, module_list)
-        self.sram.add_label(label, pin.layer, ll)
-        self.probe_labels.add(label)
+        """Probe write driver internal bl_bar, br_bar"""
+
+        if array_inst.name not in self.voltage_probes:
+            self.voltage_probes[array_inst.name] = {}
+        if bank_ not in self.voltage_probes[array_inst.name]:
+            self.voltage_probes[array_inst.name][bank_] = {}
+
+        bank_name = 'bank{}'.format(bank_)
+        bank_inst = get_instance_module(bank_name, self.sram)
+
+        candidate_drivers = [array_inst.name]
+
+        # find the netlist hierarchy leading to that driver
+        driver = next(get_voltage_connections(sample_net, bank_inst.mod,
+                                              candidate_drivers=candidate_drivers))
+        hierarchy, _, _ = driver
+        hierarchy = ".".join(hierarchy)
+
+        for net in internal_nets:
+            self.voltage_probes[array_inst.name][bank_][net] = net_probes = {}
+            full_net = hierarchy + "." + net
+            res = self.get_extracted_net(full_net,
+                                         destination_inst=array_inst,
+                                         parent_mod=bank_inst.mod)
+            prefix, parent_net, suffix = res
+
+            if OPTS.use_pex:
+                full_net = self.get_full_bank_net(parent_net, prefix, suffix, bank_inst)
+            else:
+                full_net = self.get_full_bank_net(parent_net, prefix, "", bank_inst)
+
+            template = full_net.replace("Xmod_0", "Xmod_{bit}")
+            template = template.replace("[0]", "[{bit}]")
+            for bit in self.get_control_buffers_probe_bits(array_inst, bank_):
+                full_net = template.format(bit=bit)
+                net_probes[bit] = full_net
+                self.probe_labels.add(full_net)
+
+    def control_buffers_voltage_probes(self, bank):
+        key = "control_buffers"
+        if key not in self.voltage_probes:
+            self.voltage_probes[key] = {}
+        if bank not in self.voltage_probes[key]:
+            self.voltage_probes[key][bank] = {}
+
+        bank_name = 'bank{}'.format(bank)
+        bank_inst = get_instance_module(bank_name, self.sram)
+        bank_mod = bank_inst.mod
+        control_buffer_inst = bank_mod.control_buffers_inst
+
+        for net in self.get_control_buffers_probe_pins(bank):
+            self.voltage_probes[key][bank][net] = probes = {}
+
+            bank_net = "Xbank{}.{}".format(bank, net)
+            if not OPTS.use_pex:
+                probes[-1] = "Xsram.{}".format(bank_net)
+                for inst, _ in bank_mod.get_net_loads(net):
+                    for bit in self.get_control_buffers_probe_bits(inst, bank):
+                        probes[bit] = probes[-1]
+                self.probe_labels.update(probes.values())
+                continue
+
+            # control buffer
+            _ = self.get_extracted_net(net, destination_inst=control_buffer_inst,
+                                       parent_mod=bank_mod)
+            prefix, parent_net, suffix = _
+            probes[-1] = self.get_full_bank_net(parent_net, prefix,
+                                                suffix, bank_inst)
+
+            # loads
+            for inst, pin_name in bank_mod.get_net_loads(net):
+                prefix, parent_net, suffix = self.get_extracted_net(net, destination_inst=inst,
+                                                                    parent_mod=bank_mod)
+                full_net = self.get_full_bank_net(parent_net, prefix, suffix, bank_inst)
+                full_net = re.sub(r"mod_[0-9]+([_\.])?", r"mod_{bit}\g<1>", full_net)
+                bits = self.get_control_buffers_probe_bits(inst, bank)
+                for bit in bits:
+                    probes[bit] = full_net.format(bit=bit)
+
+            self.probe_labels.update(probes.values())
+
+    def get_extracted_net(self, net, destination_inst=None, parent_mod=None):
+        if parent_mod is None:
+            parent_mod = self.sram
+        candidate_drivers = [destination_inst.name] if destination_inst else None
+
+        name_hier, inst_hierarchy, child_net = next(get_voltage_connections(
+            net, parent_mod, candidate_drivers=candidate_drivers))
+        suffix = self.net_separator.join(name_hier)
+
+        prefix, internal_net = get_extracted_prefix(child_net, inst_hierarchy)
+        if inst_hierarchy and internal_net in inst_hierarchy[0].mod.pins:
+            inst = inst_hierarchy[0]
+            conn_index = parent_mod.insts.index(inst)
+            parent_net = parent_mod.conns[conn_index][inst.mod.pins.index(internal_net)]
+        else:
+            parent_net = internal_net
+
+        return prefix, parent_net, suffix
+
+    def get_write_driver_internal_nets(self):
+        return ["bl_bar", "br_bar"]
+
+    def probe_write_drivers(self, bank_):
+        """Probe write driver internal bl_bar, br_bar"""
+        # first locate an instance of sense amp driver
+        suffix = "_out" if self.sram.words_per_row > 1 else ""
+        bl_net = "bl{}[0]".format(suffix)
+
+        bank_name = 'bank{}'.format(bank_)
+        bank_inst = get_instance_module(bank_name, self.sram)
+        write_driver_array_inst = bank_inst.mod.write_driver_array_inst
+
+        self.probe_internal_nets(bank_, sample_net=bl_net,
+                                 array_inst=write_driver_array_inst,
+                                 internal_nets=self.get_write_driver_internal_nets())
+
+    def get_sense_amp_internal_nets(self):
+        return ["dout_bar"]
+
+    def probe_sense_amps(self, bank_):
+        """Probe write driver internal bl_bar, br_bar"""
+        # first locate an instance of sense amp driver
+        suffix = "_out" if self.sram.words_per_row > 1 else ""
+        bl_net = "bl{}[0]".format(suffix)
+
+        bank_name = 'bank{}'.format(bank_)
+        bank_inst = get_instance_module(bank_name, self.sram)
+        sense_amp_inst = bank_inst.mod.sense_amp_array_inst
+
+        self.probe_internal_nets(bank_, sample_net=bl_net, array_inst=sense_amp_inst,
+                                 internal_nets=self.get_sense_amp_internal_nets())
+
+    def extract_nested_probe(self, key, container, existing_mappings):
+        # tries to maintain original container to references don't get lost
+        def extract_key(key_):
+            val = existing_mappings.get(key_, self.extract_from_pex(key_))
+            existing_mappings[key_] = val
+            return val
+
+        value = container[key]
+        if isinstance(value, str):
+            container[key] = extract_key(value)
+        elif isinstance(value, list):
+            results = [extract_key(x) for x in value]
+            value.clear()
+            value.extend(results)
+        elif isinstance(value, dict):
+            for sub_key in value:
+                self.extract_nested_probe(sub_key, value, existing_mappings)
+        else:
+            raise ValueError("Invalid value type: {}".format(value))
+
+    def extract_probes(self):
+        if not OPTS.use_pex:
+            self.voltage_probes["clk_probe"] = self.clk_probe
+            # self.probe_labels.add("Xsram.Xbank0.*")
+            self.saved_nodes = set(self.probe_labels)
+            return
+        debug.info(1, "Extracting probes")
+        net_mapping = {key: self.extract_from_pex(key) for key in self.probe_labels}
+        self.saved_nodes = set(net_mapping.values())
+
+        for key in self.voltage_probes:
+            if key in self.external_probes:
+                continue
+            self.extract_nested_probe(key, self.voltage_probes, net_mapping)
+
+        self.extract_state_probes(net_mapping)
+
+        self.clk_probe = self.extract_from_pex(self.clk_probe)
+        self.voltage_probes["clk_probe"] = self.clk_probe
+
+    def extract_state_probes(self, existing_mappings):
+        for key in self.state_probes:
+            self.extract_nested_probe(key, self.state_probes, existing_mappings)
 
     def extract_from_pex(self, label, pex_file=None):
+        if not OPTS.use_pex:
+            return label
         if pex_file is None:
             pex_file = self.pex_file
 
-        match = None
-        try:
-            label_sub = label.replace("Xsram.", "").replace(".", "_")\
-                .replace("[", "\[").replace("]", "\]")
-            pattern = "\sN_{}_[MX]\S+_[gsd]".format(label_sub)
-            match = check_output(["grep", "-m1", "-o", "-E", pattern, pex_file])
+        label_sub = label.replace("Xsram.", "").replace(".", "_") \
+            .replace("[", r"\[").replace("]", r"\]")
+        prefix = "" if label.startswith("N_") else "N_"
+        pattern = r"\s{}{}_[MX]\S+_[gsd]".format(prefix, label_sub)
+        match = (self.grep_file(pattern, pex_file, regex=True) or
+                 self.grep_file(label, pex_file, regex=False))
+        if not match:
+            debug.error("Match not found in pex file for label {} {}".format(label,
+                                                                             pattern))
+            return label
+        return 'Xsram.' + match
 
+    @staticmethod
+    def grep_file(pattern, pex_file, regex=True):
+        rg = True
+        if rg:
+            executable = "rg"
+            flags = "-ie" if regex else "-iF"
+        else:
+            executable = "grep"
+            flags = "-iE" if regex else "-iF"
+        try:
+            match = check_output([executable, "-m1", "-o", flags, pattern, pex_file])
+            return match.decode().strip()
         except CalledProcessError as ex:
             if ex.returncode == 1:  # mismatch
-                try:
-                    # lvs box pins have exact match without mangling so search for exact match without regex
-                    match = check_output(["grep", "-m1", "-Fo", label, pex_file])
-                except CalledProcessError as ex:
-                    if ex.returncode == 1:
-                        debug.error("Match not found in pex file for label {} {}".format(label, pattern))
-                        raise ex
-                    else:
-                        raise ex
+                return None
             else:
                 raise ex
-
-        return 'Xsram.' + match.decode().strip()
 
     def decode_address(self, address):
         if isinstance(address, int):
             address = self.address_to_vector(address)
         if self.sram.num_banks == 4:
             bank_index = 2 ** address[0] + address[1]
-            bank_inst = self.sram.bank_inst[bank_index]
             address = address[2:]
+        elif self.two_bank_dependent:
+            bank_index = 0
         elif self.sram.num_banks == 2:
             bank_index = address[0]
-            bank_inst = self.sram.bank_inst[bank_index]
             address = address[1:]
         else:
             bank_index = 0
-            bank_inst = self.sram.bank_inst
 
+        bank_inst = self.sram.bank_insts[bank_index]
         address_int = self.address_to_int(address)
 
         words_per_row = self.sram.words_per_row
-        no_col_bits = int(np.log2(words_per_row))
-        if no_col_bits > 0:
-            row_address = address[:-no_col_bits]
+        num_col_bits = int(np.log2(words_per_row))
+        if num_col_bits > 0:
+            row_address = address[:-num_col_bits]
         else:
             row_address = address
         row = self.address_to_int(row_address)
@@ -433,10 +694,3 @@ class SramProbe(object):
 
     def clear_labels(self):
         self.sram.objs = list(filter(lambda x: not x.name == "label", self.sram.objs))
-
-    def add_pin_label(self, pin, module_insts, label_key):
-        debug.error("DO NOT USE", -1)
-        ll, ur = utils.get_pin_rect(pin, module_insts)
-        pin_loc = [0.5 * (ll[0] + ur[0]), 0.5 * (ll[1] + ur[1])]
-        # self.sram.add_rect(pin.layer, offset=ll, width=pin.width(), height=pin.height())
-        self.sram.add_label(label_key, pin.layer, pin_loc)

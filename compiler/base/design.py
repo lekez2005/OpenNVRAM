@@ -1,7 +1,4 @@
 import copy
-import math
-from typing import List
-
 import os
 from collections import Iterable
 
@@ -13,12 +10,17 @@ from base import utils
 from base.geometry import rectangle
 from base.vector import vector
 from globals import OPTS
-from tech import drc
+from tech import drc, info
 from tech import layer as tech_layers
 from tech import purpose as tech_purpose
 
+DRAWING = "drawing"
 POLY = "poly"
+PO_DUMMY = "po_dummy"
 NWELL = "nwell"
+PWELL = "pwell"
+ACTIVE = "active"
+CONTACT = "contact"
 NIMP = "nimplant"
 PIMP = "pimplant"
 METAL1 = "metal1"
@@ -34,11 +36,13 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
     Class consisting of a set of modules and instances of these modules
     """
     name_map = []
-    
+    has_dummy = PO_DUMMY in tech_layers
+    has_pwell = info["has_pwell"]
 
     def __init__(self, name):
         self.gds_file = os.path.join(OPTS.openram_tech, "gds_lib", name + ".gds")
         self.sp_file = os.path.join(OPTS.openram_tech, "sp_lib", name + ".sp")
+        name = name.split("/")[-1]
 
         self.name = name
         hierarchy_layout.layout.__init__(self, name)
@@ -51,28 +55,31 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         # These modules ensure unique names or have no changes if they
         # aren't unique
         ok_list = [
-                   'GdsLibImport',
-                   'ms_flop',
-                   'ms_flop_horz_pitch',
-                   'bitcell',
-                   'body_tap',
-                   'cam_bitcell',
-                   'cam_bitcell_12t',
-                   'contact',
-                   'ptx',
-                   'pinv',
-                   'ptx_spice',
-                   'SignalGate',
-                   'sram',
-                   'hierarchical_predecode2x4',
-                   'hierarchical_predecode3x8'
+            'GdsLibImport',
+            'ms_flop',
+            'ms_flop_horz_pitch',
+            'FlopBuffer',
+            'bitcell',
+            'body_tap',
+            'cam_bitcell',
+            'cam_bitcell_12t',
+            'contact',
+            'ptx',
+            'pinv',
+            'ptx_spice',
+            'SignalGate',
+            'sram',
+            'hierarchical_predecode2x4',
+            'hierarchical_predecode3x8',
+            'RotationWrapper'
         ]
         if name not in design.name_map:
             design.name_map.append(name)
         elif self.__class__.__name__ in ok_list:
             pass
         else:
-            debug.error("Duplicate layout reference name {0} of class {1}. GDS2 requires names be unique.".format(name,self.__class__),-1)
+            debug.error("Duplicate layout reference name {0} of class {1}."
+                        " GDS2 requires names be unique.".format(name, self.__class__), -1)
 
     def setup_drc_constants(self):
         """ These are some DRC constants used in many places in the compiler."""
@@ -82,6 +89,11 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.poly_space = drc["poly_to_poly"]
         self.poly_pitch = self.poly_width + self.poly_space
         self.m1_width = drc["minwidth_metal1"]
+
+        self.medium_m1 = self.get_medium_layer_width(METAL1)
+        self.medium_m2 = self.get_medium_layer_width(METAL2)
+        self.medium_m3 = self.get_medium_layer_width(METAL3)
+
         self.m1_space = drc["metal1_to_metal1"]
         self.m2_width = drc["minwidth_metal2"]
         self.m2_space = drc["metal2_to_metal2"]
@@ -89,51 +101,65 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         self.m3_space = drc["metal3_to_metal3"]
         self.m4_width = drc["minwidth_metal4"]
         self.m4_space = drc["metal4_to_metal4"]
-        self.m10_space = drc["metal10_to_metal10"]
         self.active_width = drc["minwidth_active"]
+        self.min_tx_width = drc["minwidth_tx"]
         self.contact_width = drc["minwidth_contact"]
         self.contact_spacing = drc["contact_to_contact"]
-        self.rail_height = drc["rail_height"]
-        
+        self.rail_height = drc["rail_height"]  # height for inverter/logic gates power
+
         self.poly_to_active = drc["poly_to_active"]
-        self.body_contact_active_height = drc["body_contact_active_height"]
         self.poly_extend_active = drc["poly_extend_active"]
         self.poly_to_field_poly = drc["poly_to_field_poly"]
         self.contact_to_gate = drc["contact_to_gate"]
-        self.well_enclose_active = drc["well_enclosure_active"]
+
+        self.well_enclose_active = drc.get("well_enclosure_active")
+        self.well_enclose_ptx_active = drc.get("ptx_well_enclosure_active", self.well_enclose_active)
+
         self.implant_enclose_active = drc["implant_enclosure_active"]
-        self.implant_enclose_ptx_active = drc["ptx_implant_enclosure_active"]
-        self.implant_enclose_poly = drc["implant_enclosure_poly"]
+        self.implant_enclose_ptx_active = drc.get("ptx_implant_enclosure_active", self.implant_enclose_active)
+        self.implant_enclose_poly = drc.get("implant_enclosure_poly")
         self.implant_width = drc["minwidth_implant"]
         self.implant_space = drc["implant_to_implant"]
-        self.well_enclose_implant = drc["well_enclosure_implant"]
 
-        self.minarea_metal1_contact = drc["minarea_metal1_contact"]
+        self.wide_m1_space = self.get_wide_space(METAL1)
+        self.line_end_space = self.get_line_end_space(METAL1)
+        self.parallel_line_space = self.get_parallel_space(METAL1)
+        _, self.metal1_minwidth_fill = self.calculate_min_area_fill(self.m1_width, layer=METAL1)
+        self.poly_vert_space = drc.get("poly_end_to_end")
+        self.parallel_via_space = self.get_space("via1")
 
-        self.wide_m1_space = self.get_wide_space("metal1")
-        self.line_end_space = self.get_line_end_space("metal1")
-        self.parallel_line_space = self.get_parallel_space("metal1")
-        self.metal1_minwidth_fill = utils.ceil(drc["minarea_metal1_minwidth"]/self.m1_width)
-        self.minarea_metal1_minwidth = drc["minarea_metal1_minwidth"]
-        self.poly_vert_space = drc["poly_end_to_end"]
-        self.parallel_via_space = drc["parallel_via_space"]
-        self.metal1_min_enclosed_area = drc["metal1_min_enclosed_area"]
+        self.bus_width = self.get_bus_width() or self.m3_width
+        self.bus_space = drc.get("bus_space", self.get_parallel_space(METAL3))
+        self.bus_pitch = self.bus_width + self.bus_space
 
     @classmethod
     def get_min_layer_width(cls, layer):
+        if layer in [PIMP, NIMP]:
+            layer = "implant"
+        elif layer in [NWELL, PWELL]:
+            layer = "well"
         return drc["minwidth_{}".format(layer)]
+
+    @classmethod
+    def get_medium_layer_width(cls, layer):
+        return cls.get_drc_by_layer(layer, "medium_width")
+
+    @classmethod
+    def get_bus_width(cls):
+        return cls.get_medium_layer_width(METAL3)
 
     @classmethod
     def get_space_by_width_and_length(cls, layer, max_width=None, min_width=None,
                                       run_length=None, heights=None):
+        # TODO more robust lookup table
         if cls.is_thin_implant(layer, min_width):
             return cls.get_space(layer, prefix="thin")
         elif cls.is_line_end(layer, heights):
             return cls.get_line_end_space(layer)
         elif cls.is_above_layer_threshold(layer, "wide", max_width, run_length):
-            return cls.get_space(layer, prefix="wide")
+            return cls.get_wide_space(layer)
         elif cls.is_above_layer_threshold(layer, "parallel", max_width, run_length):
-            return cls.get_space(layer, prefix="parallel")
+            return cls.get_parallel_space(layer)
         else:
             return cls.get_space(layer, prefix=None)
 
@@ -144,7 +170,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             layer_num = int(layer[5:])
             suffixes = ["_metal{}".format(x) for x in range(layer_num, 0, -1)] + [""]
         else:
-            suffixes = ["_"+layer, ""]
+            suffixes = ["_" + layer, ""]
         keys = ["{}{}".format(prefix, suffix) for suffix in suffixes]
         for key in keys:
             if key in drc:
@@ -159,7 +185,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             raise ValueError("heights must be iterable of length 2")
         min_height = min(heights)
         line_end_threshold = cls.get_drc_by_layer(layer, "line_end_threshold")
-        return min_height < line_end_threshold
+        return line_end_threshold and min_height < line_end_threshold
 
     @classmethod
     def is_thin_implant(cls, layer, min_width):
@@ -169,7 +195,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
     @classmethod
     def get_line_end_space(cls, layer):
-        return cls.get_drc_by_layer(layer, "line_end_space")
+        return cls.get_space(layer, "line_end")
 
     @classmethod
     def get_wide_space(cls, layer):
@@ -193,7 +219,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         if max_width is None:
             return False
 
-        width_threshold = cls.get_drc_by_layer(layer, prefix+"_width_threshold")
+        width_threshold = cls.get_drc_by_layer(layer, prefix + "_width_threshold")
         if width_threshold is None or max_width < width_threshold:
             return False
 
@@ -217,6 +243,9 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         :return: parallel space
         """
 
+        if layer == PO_DUMMY:
+            layer = POLY
+
         if "implant" in layer:
             layer_to_layer_space = drc["implant_to_implant"]
         else:
@@ -229,71 +258,93 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             return max(space_for_prefix, layer_to_layer_space)
         return layer_to_layer_space
 
-    def get_layout_pins(self,inst):
+    @classmethod
+    def get_via_space(cls, via):
+        return cls.get_space(via.via_layer_name)
+
+    def get_layout_pins(self, inst):
         """ Return a map of pin locations of the instance offset """
         # find the instance
         for i in self.insts:
             if i.name == inst.name:
                 break
         else:
-            debug.error("Couldn't find instance {0}".format(inst.name),-1)
+            debug.error("Couldn't find instance {0}".format(inst.name), -1)
         inst_map = inst.mod.pin_map
         return inst_map
 
-    def calculate_num_contacts(self, tx_width):
+    def calculate_num_contacts(self, tx_width, return_sample=False):
         """
         Calculates the possible number of source/drain contacts in a finger.
         """
-        from base import contact
-        num_contacts = int(math.ceil(tx_width/(self.contact_width + self.contact_spacing)))
-        while num_contacts > 1:
-            contact_array = contact.contact(layer_stack=("active", "contact", "metal1"),
-                              dimensions=[1, num_contacts],
-                              implant_type=None,
-                              well_type=None)
-            if contact_array.first_layer_height < tx_width and contact_array.second_layer_height < tx_width:
-                break
-            num_contacts -= 1
-        return num_contacts
+        from base.well_active_contacts import calculate_num_contacts as calc_func
+        return calc_func(self, tx_width, return_sample)
 
     @staticmethod
-    def calculate_min_m1_area(width, min_height):
+    def get_min_area(layer, prefix=None):
+        prefix = "_{}".format(prefix) if prefix else ""
+        return design.get_drc_by_layer(layer, "{}minarea".format(prefix))
+
+    @staticmethod
+    def calculate_min_area_fill(width=None, min_height=None, layer=METAL1):
         """Given width calculate the height, if height is less than min_height,
-         set height to min_height and readjust width"""
-        height = max(utils.ceil(drc["minarea_metal1_contact"]/width), drc["minside_metal1_contact"])
-        if height < min_height:
-            height = min_height
-            width = utils.ceil(drc["minarea_metal1_contact"]/height)
+         set height to min_height and re-adjust width"""
+        min_area = design.get_min_area(layer) or 0.0
+        min_side = design.get_drc_by_layer(layer, "minside_contact")
+        min_layer_width = design.get_min_layer_width(layer)
+
+        if width is None:
+            width = min_layer_width
+
+        if min_height is None:
+            min_height = min_layer_width
+
+        height = max(utils.ceil(min_area / width), min_height)
+        if min_side and height < min_side and width < min_side:
+            height = min_side
+
         return width, height
 
-    def get_layer_shapes(self, layer, purpose="drawing", recursive=False):
+    @staticmethod
+    def get_purpose_number(layer, purpose):
+        if purpose is None:
+            return tech_purpose["drawing"] if layer not in tech_purpose else tech_purpose[layer]
+        return tech_purpose[purpose]
+
+    def get_layer_shapes(self, layer, purpose=None, recursive=False):
+
         if self.gds.from_file:
             return self.get_gds_layer_rects(layer, purpose, recursive=recursive)
-        filter_match = lambda x: (
-                    x.__class__.__name__ == "rectangle" and x.layerNumber == tech_layers[layer] and
-                    x.layerPurpose == tech_purpose[purpose])
-        return list(filter(filter_match, self.objs))
 
-    def get_gds_layer_shapes(self, cell, layer, purpose="drawing", recursive=False):
+        def filter_match(x):
+            return ((x.__class__.__name__ == "pin_layout" and x.layer == layer) or
+                    (x.__class__.__name__ == "rectangle" and x.layerNumber == tech_layers[layer] and
+                    (x.layerPurpose == self.get_purpose_number(layer, purpose))))
+
+        all_pins = [x for sublist in self.pin_map.values() for x in sublist]
+        return list(filter(filter_match, self.objs + all_pins))
+
+    def get_gds_layer_shapes(self, cell, layer, purpose=None, recursive=False):
+        purpose_number = self.get_purpose_number(layer, purpose)
         if recursive:
-            return cell.gds.getShapesInLayerRecursive(tech_layers[layer],
-                                                      tech_purpose[purpose])
+            return cell.gds.getShapesInLayerRecursive(tech_layers[layer], purpose_number)
         else:
-            return cell.gds.getShapesInLayer(tech_layers[layer], tech_purpose[purpose])
+            return cell.gds.getShapesInLayer(tech_layers[layer], purpose_number)
 
-    def get_gds_layer_rects(self, layer, purpose="drawing", recursive=False):
+    def get_gds_layer_rects(self, layer, purpose=None, recursive=False):
         def rect(shape):
-            return rectangle(0, shape[0], width=shape[1][0]-shape[0][0],
-                             height=shape[1][1]-shape[0][1])
+            return rectangle(0, shape[0], width=shape[1][0] - shape[0][0],
+                             height=shape[1][1] - shape[0][1])
+
+        purpose_number = self.get_purpose_number(layer, purpose)
         if recursive:
-            boundaries = self.gds.getShapesInLayerRecursive(tech_layers[layer], tech_purpose[purpose])
+            boundaries = self.gds.getShapesInLayerRecursive(tech_layers[layer], purpose_number)
         else:
-            boundaries = self.gds.getShapesInLayer(tech_layers[layer], tech_purpose[purpose])
+            boundaries = self.gds.getShapesInLayer(tech_layers[layer], purpose_number)
         return [rect(x) for x in boundaries]
 
-
     def get_poly_fills(self, cell):
-        poly_dummies = self.get_gds_layer_shapes(cell, "po_dummy", "po_dummy", recursive=True)
+        poly_dummies = self.get_gds_layer_shapes(cell, PO_DUMMY, PO_DUMMY, recursive=True)
         poly_rects = self.get_gds_layer_shapes(cell, "poly", recursive=True)
 
         # only polys with active layer interaction need to be filled
@@ -316,18 +367,16 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             result["right"] = [right]
             return result
 
-
-
-
         fills = []
         for poly_rect in polys:
             x_offset = poly_rect[0][0]
             potential_fills = [-2, 2]  # need -2 and +2 poly pitches from current x offset filled
-            mid_point = 0.5 * (poly_rect[0][1] + poly_rect[1][1]) # y midpoint
+            mid_point = 0.5 * (poly_rect[0][1] + poly_rect[1][1])  # y midpoint
             for candidate in polys + poly_dummies:
                 if not candidate[0][1] < mid_point < candidate[1][1]:  # not on the same row
                     continue
-                integer_space = int(round((candidate[0][0] - x_offset)/self.poly_pitch)) # space away from current poly
+                integer_space = int(
+                    round((candidate[0][0] - x_offset) / self.poly_pitch))  # space away from current poly
                 if integer_space in potential_fills:
                     potential_fills.remove(integer_space)
             for potential_fill in potential_fills:  # fill unfilled spaces
@@ -344,10 +393,11 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             # discard ceils that appear within cell
             if fill[0][0] > 0 and fill[1][0] < cell.width:
                 return
-            if fill[0][0] < 0.5*cell.width:
+            if fill[0][0] < 0.5 * cell.width:
                 merged_fills["left"].append(fill)
             else:
                 merged_fills["right"].append(fill)
+
         if len(fills) > 0:
             current_fill = copy.deepcopy(fills[0])
             x_offset = utils.ceil(current_fill[0][0])
@@ -362,21 +412,22 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             add_to_merged(current_fill)
         return merged_fills
 
-
-
     def get_dummy_poly(self, cell, from_gds=True):
-        if "po_dummy" in tech_layers:
+        if PO_DUMMY in tech_layers:
             if from_gds:
-                rects = cell.gds.getShapesInLayer(tech_layers["po_dummy"], tech_purpose["po_dummy"])
+                rects = cell.gds.getShapesInLayer(tech_layers[PO_DUMMY], tech_purpose[PO_DUMMY])
             else:
-                shapes = self.get_layer_shapes("po_dummy", "po_dummy")
+                shapes = self.get_layer_shapes(PO_DUMMY, PO_DUMMY)
                 rects = list(map(lambda x: x.boundary, shapes))
 
             leftmost = min(map(lambda x: x[0], map(lambda x: x[0], rects)))
             rightmost = max(map(lambda x: x[0], map(lambda x: x[1], rects)))
-            return (leftmost, rightmost)
+            return leftmost, rightmost
+        return []
 
     def add_dummy_poly(self, cell, instances, words_per_row, from_gds=True):
+        if PO_DUMMY not in tech_layers:
+            return
         instances = list(instances)
         cell_fills = self.get_poly_fills(cell)
 
@@ -407,84 +458,49 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                         add_fill(offset - instances[-1].width, "right")
                         add_fill(offset + tap_width, "left")
 
-                if hasattr(OPTS, "right_buffers_offsets") and len(OPTS.right_buffers_offsets) > 0:
-                    add_fill(OPTS.right_buffers_offsets[-1] + tap_width, "left")
-                    add_fill(OPTS.right_buffers_offsets[0] - instances[0].width, "right")
+                if hasattr(OPTS, "repeaters_array_space_offsets") and len(OPTS.repeaters_array_space_offsets) > 0:
+                    add_fill(OPTS.repeaters_array_space_offsets[-1] + tap_width, "left")
+                    add_fill(OPTS.repeaters_array_space_offsets[0] - instances[0].width, "right")
 
-    def fill_array_layer(self, layer, cell, purpose="drawing"):
-        if not (hasattr(self, "tap_offsets") and len(self.tap_offsets) > 0):
-            return
+    @staticmethod
+    def import_mod_class_from_str(module_name, **kwargs):
+        if "class_name" in kwargs and kwargs["class_name"]:
+            class_name = kwargs["class_name"]
+            del kwargs["class_name"]
+        elif '.' in module_name:
+            module_name, class_name = module_name.split('.')
+        else:
+            class_name = module_name
+        module = __import__(module_name)
+        mod_class = getattr(module, class_name)
+        return mod_class
 
-        rects = cell.get_layer_shapes(layer, purpose=purpose, recursive=False)
-        if not rects:
-            rects = cell.get_layer_shapes(layer, purpose=purpose, recursive=True)
+    def create_mod_from_str(self, module_name, *args, **kwargs):
+        mod = self.create_mod_from_str_(module_name, *args, **kwargs)
+        self.add_mod(mod)
+        return mod
 
-        tap_width = utils.get_body_tap_width()
+    @staticmethod
+    def create_mod_from_str_(module_name, *args, **kwargs):
+        """Helper method to create modules from string specification
+        *args and **kwargs are passed to the class instantiation
+        specify class name using .delimiter in module_name or as separate parameter
+        specify rotation as 'rotation' parameter
+        """
+        if 'rotation' in kwargs:
+            rotation = kwargs['rotation']
+            del kwargs['rotation']
+        else:
+            rotation = None
 
-        right_buffer_x_offsets = getattr(OPTS, "right_buffers_offsets", [])
+        mod_class = design.import_mod_class_from_str(module_name, **kwargs)
+        mod = mod_class(*args, **kwargs)
 
-        tap_offsets = []
-        if layer == NWELL:
-            tap_offsets = self.tap_offsets[1:]  # first tap offset doesn't have to be filled
-            if len(right_buffer_x_offsets) > 0:
-                tap_offsets += right_buffer_x_offsets
+        if rotation is not None:
+            from base.rotation_wrapper import RotationWrapper
+            mod = RotationWrapper(mod, rotation_angle=rotation)
 
-        for rect in rects:
-            # only right hand side  needs to be extended
-            if rect.rx() >= cell.width:
-                right_extension = rect.rx() - cell.width
-                for tap_offset in tap_offsets:
-                    self.add_rect(layer, offset=vector(tap_offset, rect.by()), height=rect.height,
-                                  width=tap_width + right_extension)
-                for x_offset in self.bitcell_offsets:
-                    self.add_rect(layer, offset=vector(x_offset+rect.lx(), rect.by()),
-                                  height=rect.height, width=rect.width)
-
-    def evaluate_vertical_module_spacing(self, top_modules: List["design"],
-                                         bottom_modules: List["design"], reference_bottom=None,
-                                         layers=None):
-        if layers is None:
-            layers = [METAL1, METAL2, POLY, NIMP, PIMP]
-
-        if reference_bottom is None:
-            reference_bottom = bottom_modules[0]
-
-        min_space = - top_modules[0].height  # start with overlap
-        for top_module in top_modules:
-            for bottom_module in bottom_modules:
-                for layer in layers:
-                    top_rects = top_module.get_gds_layer_rects(layer, recursive=True)
-                    top_rects = list(sorted(top_rects, key=lambda x: x.by()))
-                    bottom_rects = bottom_module.get_gds_layer_rects(layer, recursive=True)
-                    bottom_rects = list(sorted(bottom_rects, key=lambda x: x.uy(), reverse=True))
-                    wide_space = self.get_wide_space(layer)
-                    for bottom_rect in bottom_rects:
-                        bottom_clearance = reference_bottom.height - bottom_rect.uy()
-                        for top_rect in top_rects:
-                            # don't bother if spacing is greater than wide spacing
-                            top_clearance = top_rect.by()
-                            total_clearance = top_clearance + bottom_clearance + min_space
-                            if total_clearance > wide_space:
-                                continue
-                            # else calculate desired space
-                            widths = [bottom_rect.height, top_rect.height]
-                            heights = [bottom_rect.width, top_rect.width]
-
-                            if bottom_rect.width >= bottom_module.width and top_rect.width >= top_module.width:
-                                num_cols = getattr(self, "num_cols", 1)
-                                run_length = num_cols * bottom_module.width
-                            else:
-                                right_most = max([top_rect, bottom_rect], key=lambda x: x.lx())
-                                left_most = min([top_rect, bottom_rect], key=lambda x: x.lx())
-                                run_length = min(right_most.rx(), left_most.rx()) - right_most.lx()
-
-                            target_space = self.get_space_by_width_and_length(layer,
-                                                                              max_width=max(widths),
-                                                                              min_width=min(widths),
-                                                                              run_length=run_length,
-                                                                              heights=heights)
-                            min_space = max(min_space, -top_clearance + -bottom_clearance + target_space)
-        return min_space
+        return mod
 
     def DRC_LVS(self, final_verification=False):
         """Checks both DRC and LVS for a module"""
@@ -493,8 +509,10 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             tempgds = OPTS.openram_temp + "/temp.gds"
             self.sp_write(tempspice)
             self.gds_write(tempgds)
-            debug.check(verify.run_drc(self.name, tempgds, exception_group=self.__class__.__name__) == 0,"DRC failed for {0}".format(self.name))
-            debug.check(verify.run_lvs(self.name, tempgds, tempspice, final_verification) == 0,"LVS failed for {0}".format(self.name))
+            debug.check(verify.run_drc(self.name, tempgds, exception_group=self.__class__.__name__) == 0,
+                        "DRC failed for {0}".format(self.name))
+            debug.check(verify.run_lvs(self.name, tempgds, tempspice, final_verification) == 0,
+                        "LVS failed for {0}".format(self.name))
             os.remove(tempspice)
             os.remove(tempgds)
 
@@ -503,7 +521,8 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         if OPTS.check_lvsdrc:
             tempgds = OPTS.openram_temp + "/temp.gds"
             self.gds_write(tempgds)
-            debug.check(verify.run_drc(self.name, tempgds, exception_group=self.__class__.__name__) == 0,"DRC failed for {0}".format(self.name))
+            debug.check(verify.run_drc(self.name, tempgds, exception_group=self.__class__.__name__) == 0,
+                        "DRC failed for {0}".format(self.name))
             os.remove(tempgds)
 
     def LVS(self, final_verification=False):
@@ -513,7 +532,8 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             tempgds = OPTS.openram_temp + "/temp.gds"
             self.sp_write(tempspice)
             self.gds_write(tempgds)
-            debug.check(verify.run_lvs(self.name, tempgds, tempspice, final_verification) == 0,"LVS failed for {0}".format(self.name))
+            debug.check(verify.run_lvs(self.name, tempgds, tempspice, final_verification) == 0,
+                        "LVS failed for {0}".format(self.name))
             os.remove(tempspice)
             os.remove(tempgds)
 
@@ -523,13 +543,14 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
     def __repr__(self):
         """ override print function output """
-        text="( design: " + self.name + " pins=" + str(self.pins) + " " + str(self.width) + "x" + str(self.height) + " )\n"
+        text = "( design: " + self.name + " pins=" + str(self.pins) + " " + str(self.width) + "x" + str(
+            self.height) + " )\n"
         for i in self.objs:
-            text+=str(i)+",\n"
+            text += str(i) + ",\n"
         for i in self.insts:
-            text+=str(i)+",\n"
+            text += str(i) + ",\n"
         return text
-     
+
     def analytical_power(self, proc, vdd, temp, load):
         """ Get total power of a module  """
         total_module_power = self.return_power()

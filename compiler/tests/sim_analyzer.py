@@ -21,6 +21,9 @@ stim_str = ""
 period = 1
 duty_cycle = 0.5
 
+measure_file_name = "stim.measure"
+transient_file_name = "tran.tran.tran"
+
 clk_reference = "clk"
 data_flop_in_pattern = data_pattern = "data[{}]"
 mask_pattern = "mask[{}]"
@@ -37,15 +40,15 @@ def setup(num_cols_, num_rows_, sim_dir_):
     sim_dir = sim_dir_
 
     stim_file = os.path.join(sim_dir, "stim.sp")
-    meas_file = os.path.join(sim_dir, "stim.measure")
-    sim_file = os.path.join(sim_dir, 'tran.tran.tran')
+    meas_file = os.path.join(sim_dir, measure_file_name)
+    sim_file = os.path.join(sim_dir, transient_file_name)
 
     sim_data = PsfReader(sim_file)
 
     all_saved_list = list(sim_data.get_signal_names())
-    all_saved_signals = "\n".join(sim_data.get_signal_names())
+    all_saved_signals = "\n".join(sorted(sim_data.get_signal_names()))
 
-    if os.path.exists(meas_str):
+    if os.path.exists(meas_file):
         meas_str = open(meas_file, 'r').read()
     stim_str = open(stim_file, 'r').read()
 
@@ -72,7 +75,7 @@ def measure_energy(times):
         times = float(times) * 1e-9
     if isinstance(times, float):
         times = (times, times + period)
-    current = sim_data.get_signal('Vvdd:p', times[0], times[1])
+    current = sim_data.get_signal('i(vvdd)', times[0], times[1])
     time = sim_data.slice_array(sim_data.time, times[0], times[1])
     power = -np.trapz(current, time) * 0.9
 
@@ -85,7 +88,7 @@ def measure_delay_from_stim_measure(prefix, max_delay=None, event_time=None, ind
     else:
         time_suffix = ""
 
-    pattern_str = r'{}_{}.*{}'.format(prefix, index_pattern, time_suffix) + " = (?P<delay>\S+)\s\n"
+    pattern_str = r'{}_{}.*{}'.format(prefix, index_pattern, time_suffix) + "\s*=\s+(?P<delay>\S+)\s?\n"
 
     pattern = re.compile(pattern_str)
 
@@ -96,7 +99,7 @@ def measure_delay_from_stim_measure(prefix, max_delay=None, event_time=None, ind
             delays[bit_] = delay_
         delays = list(reversed(delays))
     else:
-        delays = [float(x) for x in pattern.findall(meas_str)]
+        delays = [float(x) for x in pattern.findall(meas_str) if not x.lower() == "failed"]
 
     if max_delay is None:
         max_delay = np.inf
@@ -165,9 +168,9 @@ def verify_write_event(write_time, write_address, write_period, write_duty, nega
     settling_time = write_period
     actual_data = get_address_data(write_address, write_time + settling_time)
 
-
-    debug_error("Write failure: At time {:.3g} address {}".format(write_time, write_address),
-                expected_data, actual_data)
+    correct = debug_error("Write failure: At time {:.3g} address {}".format(write_time, write_address),
+                          expected_data, actual_data)
+    return correct
 
 
 def verify_read_event(read_time, read_address, read_period, read_duty, negate=False):
@@ -180,7 +183,9 @@ def verify_read_event(read_time, read_address, read_period, read_duty, negate=Fa
     if negate:
         actual_data = [int(not x) for x in actual_data]
 
-    debug_error("Read failure: At time {:.3g} address {}".format(read_time, read_address), expected_data, actual_data)
+    correct = debug_error("Read failure: At time {:.3g} address {}".format(read_time, read_address),
+                          expected_data, actual_data)
+    return correct
 
 
 def measure_read_delays(read_time, read_duty):
@@ -210,6 +215,7 @@ def debug_error(comment, expected_data, actual_data):
                   format(print_comments[i],
                          " ".join([str_formats[j].format(print_data[i][j]) for j in
                                    range(len(actual_data))])))
+    return np.all(equal_vec)
 
 
 def vector_to_int(vec):
@@ -240,16 +246,22 @@ def ref_to_bus_delay(ref_edge_type, pattern, start_time, end_time, num_bits=-1,
                                   edgetype1=ref_edge_type, edgetype2=edgetype2,
                                   edge1=sim_data.FIRST_EDGE, edge2=sim_data.LAST_EDGE,
                                   num_bits=1, bit=bit)
+    if isinstance(pattern, list):
+        return [internal_delay(x) for x in pattern]
 
     if num_bits == 1 and bit >= 0:
-        return internal_delay(pattern.format(bit))
+        signal_name = sim_data.convert_signal_name(pattern.format(0))
+        if signal_name in all_saved_list:
+            return internal_delay(signal_name)
+        return - np.inf
     else:
         results = []
         if num_bits < 0:
             num_bits = word_size
         for i in range(num_bits):
-            if pattern.format(i) in all_saved_list:
-                results.append(internal_delay(pattern.format(i)))
+            signal_name = sim_data.convert_signal_name(pattern.format(i))
+            if signal_name in all_saved_list:
+                results.append(internal_delay(signal_name))
         return list(reversed(results))
 
 

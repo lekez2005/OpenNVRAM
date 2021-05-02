@@ -1,9 +1,11 @@
 import importlib.util
+import json
 import math
 import os
 import random
 import subprocess
 import time
+from functools import lru_cache
 from importlib import reload
 from typing import List
 
@@ -21,11 +23,21 @@ except ImportError:
 
 OPTS = globals.OPTS
 
+
 def ceil(decimal):
     """
     Performs a ceiling function on the decimal place specified by the DRC grid.
     """
     grid = tech.drc["grid"]
+    return math.ceil(decimal * 1 / grid) / (1 / grid)
+
+
+def ceil_2x_grid(decimal):
+    """
+    Performs a ceiling function on the decimal place specified by the DRC grid.
+    Such that it remains on grid when divided by 2
+    """
+    grid = tech.drc["grid"] * 2
     return math.ceil(decimal * 1 / grid) / (1 / grid)
 
 
@@ -37,6 +49,7 @@ def floor(decimal):
     return math.floor(decimal * 1 / grid) / (1 / grid)
 
 
+@lru_cache(maxsize=64)
 def round_to_grid(number):
     """
     Rounds an arbitrary number to the grid.
@@ -102,7 +115,7 @@ def get_body_tap():
     from modules import body_tap as mod_body_tap
 
     body_tap = mod_body_tap.body_tap
-    return body_tap
+    return body_tap()
 
 def get_tap_positions(num_columns):
     # cells_per_group to accommodate peripherals spanning more than one bitcell.
@@ -113,7 +126,7 @@ def get_tap_positions(num_columns):
 
     cells_per_group = OPTS.cells_per_group
 
-    if not OPTS.use_body_taps:
+    if not OPTS.use_x_body_taps:
         bitcell_offsets = [i*bitcell.width for i in range(num_columns)]
         return bitcell_offsets, []
 
@@ -131,28 +144,38 @@ def get_tap_positions(num_columns):
     if tap_positions[-1] == num_columns:
         tap_positions[-1] = num_columns - cells_per_group  # prevent clash with cells to the right of bitcell array
 
-    # find column corresponding to
-    add_buffers_rails_space = (hasattr(OPTS, "right_buffers_col_threshold") and
-                               num_columns > OPTS.right_buffers_col_threshold and
-                               len(getattr(OPTS, "right_buffers", [])) > 0)
+    preliminary_array_width = num_columns * bitcell.width + len(tap_positions) * tap_width
+    right_buffers_x = OPTS.repeater_x_offset * preliminary_array_width
+
+    # determine whether space needs to be opened up for repeaters and how much space is needed
+    add_repeaters = (OPTS.add_buffer_repeaters and
+                     num_columns > OPTS.buffer_repeaters_col_threshold and
+                     len(OPTS.buffer_repeater_sizes) > 0)
+    add_buffers_rails_space = add_repeaters and OPTS.dedicated_repeater_space
+
+    if add_repeaters and not OPTS.dedicated_repeater_space:
+        OPTS.buffer_repeaters_x_offset = right_buffers_x
 
     rails_num_taps = 0
     if add_buffers_rails_space:
         from base.design import design
-        output_nets = [x[1] for x in OPTS.right_buffers]
+        output_nets = [x[1] for x in OPTS.buffer_repeater_sizes]
         flattened_nets = [x for y in output_nets for x in y]
         num_rails = len(flattened_nets)
         m4_space = design.get_parallel_space("metal4")
-        m4_pitch = design.get_min_layer_width("metal4") + m4_space
+        m4_pitch = max(design.get_min_layer_width("metal4"),
+                       design.get_bus_width()) + m4_space
         rails_num_taps = math.ceil((num_rails * m4_pitch + m4_space) / tap_width)
-        OPTS.right_buffers_num_taps = rails_num_taps
+        OPTS.repeaters_space_num_taps = rails_num_taps
 
     tap_positions = list(sorted(set(tap_positions)))
     x_offset = 0.0
     positions_index = 0
     bitcell_offsets = [None]*num_columns
     tap_offsets = []
-    OPTS.right_buffers_offsets = []
+
+    OPTS.repeaters_array_space_offsets = []
+
     for i in range(num_columns):
         if positions_index < len(tap_positions) and i == tap_positions[positions_index]:
             tap_offsets.append(x_offset)
@@ -161,9 +184,9 @@ def get_tap_positions(num_columns):
         bitcell_offsets[i] = x_offset
         x_offset += bitcell.width
         if add_buffers_rails_space:
-            if x_offset > OPTS.right_buffers_x and (i + 1) % cells_per_group == 0:
-                OPTS.right_buffers_x_actual = x_offset
-                OPTS.right_buffers_offsets = [x_offset + i * tap_width for i in range(rails_num_taps)]
+            if x_offset > right_buffers_x and (i + 1) % cells_per_group == 0:
+                OPTS.buffer_repeaters_x_offset = x_offset
+                OPTS.repeaters_array_space_offsets = [x_offset + i * tap_width for i in range(rails_num_taps)]
                 x_offset += rails_num_taps * tap_width
                 add_buffers_rails_space = False
     return bitcell_offsets, tap_offsets
@@ -211,6 +234,7 @@ def get_libcell_size(name, units, layer):
 
     measure_result = cell_vlsi.getLayoutBorder(layer)
     if measure_result == None:
+        name = name.split("/")[-1]
         measure_result = cell_vlsi.measureSize(name)
     # returns width,height
     return measure_result
@@ -241,7 +265,7 @@ def get_libcell_pins(pin_list, name, units=None, layer=None):
     return cell
 
 
-def get_clearances(cell, layer, purpose="drawing"):
+def get_clearances(cell, layer, purpose=None):
     all_rects = list(sorted(cell.get_gds_layer_rects(layer, purpose),
                             key=lambda x: x.height))  # type: List[rectangle]
 
@@ -347,12 +371,33 @@ def get_temp_file(file_name):
     return os.path.join(OPTS.openram_temp, file_name)
 
 
+def get_sorted_metal_layers():
+    layers = [x for x in tech.layer.keys() if x.startswith("metal")]
+    layers = sorted(layers, key=lambda x: int(x[5:]))
+    layer_numbers = [int(x[5:]) for x in layers]
+    return list(layers), layer_numbers
+
+
+def write_json(data, file_name):
+    if not os.path.isabs(file_name):
+        file_name = os.path.join(OPTS.openram_temp, file_name)
+    with open(file_name, "w") as f:
+        json.dump(data, f, indent=4, sort_keys=True)
+
+
+def load_module(path):
+    """Load module given absolute path"""
+    mod_name = os.path.splitext(os.path.basename(path))[0]
+    spec = importlib.util.spec_from_file_location(mod_name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def to_cadence(gds_file):
     abs_path = os.path.dirname(os.path.abspath(__file__))
-    file_dir = os.path.join(abs_path, '..', '..', 'technology', 'freepdk45', 'scripts')
+    file_dir = os.path.join(abs_path, '..', '..', 'technology', 'scripts')
     file_path = os.path.join(file_dir, 'to_cadence.py')
-    spec = importlib.util.spec_from_file_location("to_cadence", file_path)
-    to_cadence = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(to_cadence)
-    to_cadence.export_gds(gds_file)
+    to_cadence_ = load_module(file_path)
+    to_cadence_.export_gds(gds_file)
 

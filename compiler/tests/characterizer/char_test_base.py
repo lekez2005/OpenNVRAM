@@ -9,6 +9,8 @@ import unittest
 from importlib import reload
 from typing import List, Tuple, Union
 
+import numpy as np
+
 from characterization_utils import parse_options
 
 sys.path.append('..')
@@ -69,13 +71,15 @@ class CharTestBase(testutils.OpenRamTest):
     def parse_custom_options(cls):
         cls.parser = parser = argparse.ArgumentParser()
         parser.add_argument("-B", "--beta", default=None, type=float)
-        parser.add_argument("--height", default=1.0, type=float)
+        parser.add_argument("--height", default=None, type=float)
 
         parser.add_argument("--driver_stages", default=None)
         parser.add_argument("--driver_wire_length", default=None, type=float)
 
         parser.add_argument("--cell_mod", default=None)
         parser.add_argument("--body_tap", default=None)
+        parser.add_argument("--no_contacts", action="store_true")
+        parser.add_argument("--horizontal", action="store_true")
 
         parser.add_argument("--min_c", default=0.1e-15, type=float)
         parser.add_argument("--max_c", default=20e-15, type=float)
@@ -115,7 +119,6 @@ class CharTestBase(testutils.OpenRamTest):
         super().setUp()
 
         from globals import OPTS
-        self.corner = (OPTS.process_corners[0], OPTS.supply_voltages[0], OPTS.temperatures[0])
 
         self.logic_buffers_height = OPTS.logic_buffers_height
 
@@ -123,7 +126,7 @@ class CharTestBase(testutils.OpenRamTest):
 
         OPTS.analytical_delay = False
         OPTS.spice_name = self.options.spice_name
-        OPTS.spectre_options = " +aps +mt=16 "
+        OPTS.spectre_command_options = " +aps +mt=16 "
 
         self.set_beta(self.options)
 
@@ -338,7 +341,7 @@ mvarsearch {{
 
             if self.options.use_mdl:
                 stim_file.write(".PARAM Cload=1f\n")
-                OPTS.spectre_options = " =mdlcontrol optimize.mdl "
+                OPTS.spectre_command_options = " =mdlcontrol optimize.mdl "
 
                 self.mdl_file = self.prefix("optimize.mdl")
                 with open(self.mdl_file, "w") as mdl_file:
@@ -355,6 +358,52 @@ mvarsearch {{
                     cap_val = float(line.split()[-1])
                     return cap_val
         assert False, "Optimization result not found"
+
+    def run_ac_cap_measurement(self, pin_name, dut):
+        from characterizer.stimuli import stimuli
+        import characterizer
+        reload(characterizer)
+
+        # TODO make configurable
+        min_f = 10e6
+        max_f = 1e9
+
+        self.stim_file_name = self.prefix("stim.sp")
+        with open(self.stim_file_name, "w") as stim_file:
+            stim_file.write("simulator lang=spice \n")
+            stim = stimuli(stim_file, corner=self.corner)
+            stim.write_include(self.load_pex)
+            all_pins = dut.pins
+            split_index = all_pins.index(pin_name)
+            z_pin_index = len(all_pins) - 3
+            prefix = " " .join(["gnd"] * split_index)
+            suffix = " ".join(["gnd"] * (z_pin_index - split_index))
+
+            dut_statement = "Xdut {} {} {} vdd gnd {}\n".format(prefix, pin_name, suffix,
+                                                                dut.name)
+            stim_file.write(dut_statement)
+            vdd_value = self.corner[1]
+            stim_file.write("Vvdd vdd gnd {}\n".format(vdd_value))
+            stim_file.write("Vac {} gnd {} AC {}\n".format(pin_name, vdd_value, 1))
+            stim_file.write(".save I(Vac)\n".format(pin_name))
+            stim_file.write(".ac dec 10 {} {}\n".format(min_f, max_f))
+        stim.run_sim()
+        from psf_reader import PsfReader
+        # TODO output file name by simulator
+        sim_data = PsfReader(self.prefix("frequencySweep.ac"))
+        f = sim_data.data.get_sweep_values()
+        i_data = - np.imag(sim_data.get_signal("Vac:p"))
+        # least squares fit
+        from scipy.optimize import least_squares
+
+        def least_squares_f_x(x_):
+            return np.log(i_data) - np.log(x_[0] + 2 * np.pi * f * x_[1])
+
+        initial_guess = [0, 1e-15]
+
+        best_fit = least_squares(least_squares_f_x, initial_guess)
+        _, cap = best_fit.x
+        return cap
 
     def save_result(self, cell_name: str, pin_name: str, value: float,
                     size: float = 1, clear_existing=False,

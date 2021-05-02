@@ -13,32 +13,30 @@ class SramTest(TestBase):
         if not OPTS.baseline:
             return
 
-        # self.sweep_all(cols=None, rows=None, words_per_row=None, default_col=64, num_banks=2)
-        self.sweep_all(cols=[], rows=[64], words_per_row=[1], default_col=256, num_banks=1)
-        #self.sweep_all()
+        # self.sweep_all(cols=[], rows=[128], words_per_row=2, default_col=64, num_banks=1)
+        self.sweep_all()
 
-    def test_sotfet_array(self):
+    def get_sram_class(self):
         from globals import OPTS
-        if not OPTS.mram == "sotfet":
-            return
 
-        OPTS.run_optimizations = True
-
-        self.sweep_all(cols=None, rows=None, words_per_row=None, default_col=64, num_banks=1)
+        if hasattr(OPTS, "sram_class"):
+            sram_class = self.load_class_from_opts("sram_class")
+        else:
+            from modules.shared_decoder.cmos_sram import CmosSram
+            from modules.shared_decoder.sotfet.sotfet_mram import SotfetMram
+            if OPTS.mram in ["sotfet", "sot"]:
+                sram_class = SotfetMram
+            else:
+                sram_class = CmosSram
+        import tech
+        tech.drc_exceptions[sram_class.__name__] = tech.drc_exceptions.get("active_density", [])
+        return sram_class
 
     def sweep_all(self, rows=None, cols=None, words_per_row=None, default_row=64,
                   default_col=64, num_banks=1):
         from base import design
-        from modules.shared_decoder.cmos_sram import CmosSram
-        from modules.shared_decoder.sotfet.sotfet_mram import SotfetMram
-        from globals import OPTS
-        if OPTS.mram == "sotfet":
-            sram_class = SotfetMram
-        else:
-            sram_class = CmosSram
 
-        import tech
-        tech.drc_exceptions["CmosSram"] = tech.drc_exceptions["active_density"]
+        sram_class = self.get_sram_class()
 
         if rows is None:
             rows = [16, 32, 64, 128, 256]
@@ -69,9 +67,23 @@ class SramTest(TestBase):
         word_size = int(num_cols / words_per_row)
         num_words = num_rows * words_per_row * num_banks
         a = sram_class(word_size=word_size, num_words=num_words, words_per_row=words_per_row,
-                       num_banks=num_banks, name="sram1")
+                       num_banks=num_banks, name="sram1", add_power_grid=True)
 
         self.local_check(a)
+
+    def test_two_dependent_banks(self):
+        from globals import OPTS
+        OPTS.independent_banks = False
+        sram_class = self.get_sram_class()
+        for words_per_row in [1, 2, 4, 8]:
+            self.create_and_test_sram(sram_class, 64, 64, words_per_row=words_per_row, num_banks=2)
+
+    def test_two_independent_banks(self):
+        from globals import OPTS
+        OPTS.independent_banks = True
+        sram_class = self.get_sram_class()
+        for words_per_row in [1, 2, 4, 8]:
+            self.create_and_test_sram(sram_class, 64, 64, words_per_row=words_per_row, num_banks=2)
 
 
 TestBase.run_tests(__name__)

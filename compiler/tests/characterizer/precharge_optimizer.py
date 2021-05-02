@@ -187,7 +187,7 @@ class WordlineEnOptimizer(CharTestBase):
 
                     stim_file.write("Xdut {} {} \n".format(" ".join(load_dut.pins), load_dut.name))
                     # driver
-                    stim_file.write("Xdriver {0} {0} {0} precharge_en float vdd gnd {1} \n".
+                    stim_file.write("Xdriver {0} {0} {0} float precharge_en vdd gnd {1} \n".
                                     format(in_pin_name, precharge_buffer.name))
 
                     stim.write_supply()

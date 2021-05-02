@@ -5,6 +5,8 @@ import math
 import os
 import sys
 
+import numpy as np
+
 from test_base import TestBase
 from globals import OPTS
 
@@ -21,100 +23,79 @@ class SharedDecoderSimulator(TestBase):
         import debug
 
         from sim_steps_generator import SimStepsGenerator
+        from mram_sim_steps_generator import MramSimStepsGenerator
         from base import utils
 
         OPTS.use_pex = not options.schematic
         OPTS.run_drc = options.run_drc
         OPTS.run_lvs = options.run_lvs
         OPTS.run_pex = options.run_pex
+        OPTS.spice_name = options.spice_name
 
         OPTS.num_banks = options.num_banks
         OPTS.word_size = options.word_size
         OPTS.words_per_row = int(options.num_cols / options.word_size)
         OPTS.num_words = OPTS.words_per_row * options.num_rows * options.num_banks
 
+        if mode == SOT_MODE:
+            OPTS.precharge_bl = False
+        elif mode == SOTFET_MODE:
+            if options.precharge:
+                OPTS.precharge_bl = True
+                OPTS.sense_amp_mod = "mram/sotfet_sense_amp_mram"
+            else:
+                OPTS.precharge_bl = False
+                OPTS.sense_amp_mod = "mram/sotfet_discharge_sense_amp"
+
         OPTS.run_optimizations = not options.fixed_buffers
         OPTS.energy = options.energy
+
+        OPTS.independent_banks = False
+
+        # TODO multi stage buffer for predecoder col mux. pnor3 too large for 3x8 buffer
+        if OPTS.words_per_row > 2:
+            OPTS.column_decoder_buffers = [4]  # use single stage
+
+        setattr(OPTS, "push", getattr(OPTS, "push", False))
+
+        two_bank_dependent = not OPTS.independent_banks and options.num_banks == 2
 
         if options.energy:
             OPTS.pex_spice = OPTS.pex_spice.replace("_energy", "")
 
         OPTS.pex_spice = OPTS.pex_spice.replace(custom_suffix, "")
 
-        if mode == CMOS_MODE:
-            from modules.shared_decoder.cmos_sram import CmosSram
-            sram_class = CmosSram
+        if hasattr(OPTS, "sram_class"):
+            sram_class = self.load_class_from_opts("sram_class")
         else:
-            from modules.shared_decoder.sotfet.sotfet_mram import SotfetMram
-            OPTS.configure_sense_amp(not options.latched, OPTS)
-            sram_class = SotfetMram
+            if mode == CMOS_MODE:
+                from modules.shared_decoder.cmos_sram import CmosSram
+                sram_class = CmosSram
+            elif mode == PUSH_MODE:
+                from modules.push_rules.horizontal_sram import HorizontalSram
+                sram_class = HorizontalSram
+            else:
+                from modules.shared_decoder.sotfet.sotfet_mram import SotfetMram
+                OPTS.configure_sense_amp(not options.latched, OPTS)
+                sram_class = SotfetMram
 
         self.sram = sram_class(word_size=OPTS.word_size, num_words=OPTS.num_words,
                                num_banks=OPTS.num_banks, words_per_row=OPTS.words_per_row,
-                               name="sram1")
+                               name="sram1", add_power_grid=True)
+        debug.info(1, "Write netlist to file")
         self.sram.sp_write(OPTS.spice_file)
 
-        delay = SimStepsGenerator(self.sram, spfile=OPTS.spice_file,
-                                  corner=self.corner, initialize=False)
+        if OPTS.mram:
+            delay = MramSimStepsGenerator(self.sram, spfile=OPTS.spice_file,
+                                          corner=self.corner, initialize=False)
+        else:
+            delay = SimStepsGenerator(self.sram, spfile=OPTS.spice_file,
+                                      corner=self.corner, initialize=False)
 
         delay.trimsp = OPTS.trim_netlist = False
 
-        # probe these cols
-        if options.energy:
-            cols = [OPTS.word_size - 1]
-        else:
-            points = 5
-            spacing = (self.sram.num_cols - 1) / (points - 1)
-            cols = [math.floor(i * spacing) for i in range(points)]
-        # align cols to nearest col mux
-        cols = [int(x / OPTS.words_per_row) * OPTS.words_per_row for x in cols]
-
-        OPTS.probe_cols = list(sorted(set(cols)))
-
-        OPTS.sense_trigger_setup = 0.2  # enough time to sample on the output flop before sense amp is disabled
-
-        num_rows = self.sram.bank.num_rows
-        num_cols = self.sram.bank.num_cols
-
-        if OPTS.baseline:
-            first_read = first_write = 0.3
-            second_read = 0.45
-            second_write = 0.5
-
-            OPTS.sense_trigger_delay = 0.35
-            if num_rows == 256:
-                first_read = 0.4
-                second_read = 0.55
-                OPTS.sense_trigger_delay = 0.45
-
-                first_write = 0.4
-                second_write = 0.75
-            elif num_rows == 64:
-                first_read = first_write = 0.25
-                second_write = 0.35
-                second_read = 0.4
-                OPTS.sense_trigger_delay = 0.25
-                OPTS.sense_trigger_setup = 0.2
-        else:
-
-            if num_rows == 64:
-                first_read = 0.3
-                second_read = 0.85
-                OPTS.sense_trigger_delay = 0.6
-                first_write = 0.3
-                second_write = 0.95
-            elif num_rows == 128:
-                first_read = 0.4
-                second_read = 1
-                OPTS.sense_trigger_delay = 0.85
-                first_write = 0.35
-                second_write = 1.45
-            else:
-                first_read = 0.5
-                second_read = 1.65
-                OPTS.sense_trigger_delay = 1.5
-                first_write = 0.4
-                second_write = 2.5
+        first_read, first_write, second_read, second_write = OPTS.configure_timing(options, self.sram,
+                                                                                   OPTS)
 
         delay.write_period = first_write + second_write
         delay.write_duty_cycle = first_write / delay.write_period
@@ -132,8 +113,36 @@ class SharedDecoderSimulator(TestBase):
         delay.saved_nodes = []
 
         delay.prepare_netlist()
+        if options.schematic:
+            delay.replace_models(delay.sim_sp_file)
 
         delay.current_time = delay.duty_cycle * delay.period
+
+        # probe these cols
+        if options.energy:
+            cols = [self.sram.bank.num_cols - 1]
+        elif OPTS.verbose_save:
+            cols = list(range(0, self.sram.bank.num_cols, OPTS.words_per_row))
+        else:
+            # mix even and odd cols
+            points = 5
+            bits = np.linspace(0, options.word_size - 1, points)
+            cols = []
+            for i in range(points):
+                bit = int(bits[i])
+                if i == points - 1:
+                    bit = options.word_size - 1
+                elif not bit % 2 == i % 2:
+                    bit -= 1
+                bits[i] = bit
+                col = bit * OPTS.words_per_row
+                cols.append(col)
+
+        # align cols to nearest col mux
+        cols = [int(x / OPTS.words_per_row) * OPTS.words_per_row for x in cols]
+
+        OPTS.probe_cols = list(sorted(set(cols)))
+        OPTS.probe_bits = [int(x / self.sram.words_per_row) for x in OPTS.probe_cols]
 
         delay.initialize_sim_file()
 
@@ -141,36 +150,44 @@ class SharedDecoderSimulator(TestBase):
         dummy_address = 1
 
         if OPTS.energy:
-            delay.probe.probe_clk_buf(bank=0)
             delay.probe.probe_address(address=0)
+            for i in range(options.num_banks):
+                delay.probe.probe_bank(i)
         else:
             # probe sram
             for i in range(options.num_banks):
-                delay.probe_bank(i)
+                delay.probe.probe_bank(i)
 
             max_bank = 0 if options.num_banks == 1 else 1
-            addresses = [(options.num_rows * self.sram.words_per_row - 1), 0]
+            max_bank = 0 if two_bank_dependent else max_bank
+            num_words = int(self.sram.bank.num_rows * self.sram.bank.num_cols
+                            / options.word_size * self.sram.num_banks)
+            addresses = [num_words - 1, 0]
             banks = [0, max_bank]
 
-            if not OPTS.baseline:
-                delay.probe_addresses([dummy_address], 0)
+            delay.probe_addresses([dummy_address], 0)
 
             for i in range(len(addresses)):
                 delay.probe_addresses([addresses[i]], banks[i])
 
         # run extraction and retrieve probes
         if not OPTS.run_drc:
+            self.sram.gds_write(OPTS.gds_file)
             utils.to_cadence(OPTS.gds_file)
         delay.run_pex_and_extract()
 
+        if two_bank_dependent:
+            self.sram.num_words = int(self.sram.num_words / 2)
+            delay.word_size = self.sram.word_size
         delay.initialize_sram(delay.probe, existing_data={})
 
         if OPTS.energy:
             # minimize saved data to make simulation faster
             OPTS.spectre_save = "selected"
             delay.generate_energy_stimulus()
-            delay.probe.current_probes = ["Vvdd:p", "read"]
-            delay.probe.saved_nodes = []
+            # delay.probe.current_probes = ["vvdd", "vread"]
+            delay.probe.current_probes = []
+            delay.probe.saved_nodes = ["vdd", "Csb", "Web"]
             delay.dout_probes = delay.mask_probes = {}
         else:
             for i in range(len(addresses)):
@@ -208,8 +225,11 @@ def create_arg_parser():
     parser.add_argument("-C", "--num_cols", default=64, type=int)
     parser.add_argument("-W", "--word_size", default=DEFAULT_WORD_SIZE, type=int)
     parser.add_argument("-B", "--num_banks", default=1, choices=[1, 2], type=int)
+    parser.add_argument("-t", "--tech", dest="tech_name", help="Technology name", default="freepdk45")
+    parser.add_argument("--simulator", dest="spice_name", help="Simulator name", default="spectre")
     parser.add_argument("--fixed_buffers", action="store_true")
     parser.add_argument("--latched", action="store_true")
+    parser.add_argument("--precharge", action="store_true")
     parser.add_argument("--small", action="store_true")
     parser.add_argument("--large", action="store_true")
     parser.add_argument("--schematic", action="store_true")
@@ -228,10 +248,10 @@ def create_arg_parser():
 
 def parse_options(parser):
     mode_ = sys.argv[1]
-    assert mode_ in [CMOS_MODE, SOT_MODE, SOTFET_MODE]
+    assert mode_ in [CMOS_MODE, SOT_MODE, SOTFET_MODE, PUSH_MODE]
 
     options_, other_args = parser.parse_known_args()
-    sys.argv = other_args
+    sys.argv = other_args + ["-t", options_.tech_name]
 
     if options_.small:
         options_.num_rows = 64
@@ -252,6 +272,8 @@ def get_sim_directory(options_, mode_):
     else:
         word_size_suffix = ""
     schem_suffix = "_schem" if options_.schematic else ""
+    if options_.precharge:
+        schem_suffix = "_precharge" + schem_suffix
 
     energy_suffix = "_energy" if options_.energy else ""
 
@@ -260,13 +282,16 @@ def get_sim_directory(options_, mode_):
     sim_directory = "{}_r_{}_c_{}{}{}{}{}{}".format(mode_, options_.num_rows, options_.num_cols,
                                                     word_size_suffix, bank_suffix, latched_suffix,
                                                     schem_suffix, energy_suffix)
-    openram_temp_ = os.path.join(os.environ["SCRATCH"], "openram", "shared_dec", sim_directory)
+    openram_temp_ = os.path.join(os.environ["SCRATCH"], "openram", "shared_dec",
+                                 options_.tech_name,
+                                 sim_directory)
     return openram_temp_
 
 
 CMOS_MODE = "cmos"
 SOT_MODE = "sot"
 SOTFET_MODE = "sotfet"
+PUSH_MODE = "push"
 
 DEFAULT_WORD_SIZE = 32
 

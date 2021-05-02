@@ -1,11 +1,6 @@
-from base.vector import vector
 from globals import OPTS
-from modules.buffer_stage import BufferStage
 from modules.control_buffers import ControlBuffers
 from modules.logic_buffer import LogicBuffer
-from pgates.pinv import pinv
-from pgates.pnand2 import pnand2
-from pgates.pnor2 import pnor2
 
 
 class LatchedControlBuffers(ControlBuffers):
@@ -32,201 +27,138 @@ class LatchedControlBuffers(ControlBuffers):
         sense_en:           and3(bank_sel, sense_trig, sampleb) (same as tri_en) # ensures sense_en is after sampleb
         tri_en_bar: sense_en_bar
     """
-    name = "control_buffers"
 
-    nand = nor = inv = clk_buf = write_buf = sense_amp_buf = wordline_buf = precharge_buf = sample_bar = None
-    clk_bar_inst = bank_sel_cbar_inst = read_bar_inst = None
-    clk_buf_inst = write_buf_inst = sense_amp_buf_inst = wordline_buf_inst = precharge_buf_inst = None
-    tri_en_buf_inst = sample_bar_inst = sample_bar_int_inst = sel_clk_sense_inst = None
+    def __init__(self, bank):
+        self.use_precharge_trigger = OPTS.use_precharge_trigger
+        self.bank = bank
+        self.is_left_bank = self.bank.is_left_bank
+        if self.is_left_bank:
+            self.name += "_left"
 
-    bank_sel_pin = clk_pin = read_pin = sel_cbar_rail = sense_trig_pin = None
+        self.use_chip_sel = OPTS.num_banks == 2 and OPTS.independent_banks
+        self.use_decoder_clk = ((not self.is_left_bank) and
+                                (OPTS.create_decoder_clk or self.use_chip_sel))
 
-    rail_pos = [0.0] * 4
+        super().__init__(contact_nwell=True, contact_pwell=True)
 
     def create_modules(self):
-        common_args = self.get_common_args()
-        buffer_args = self.get_buffer_args()
-        logic_args = self.get_logic_args()
-
-        self.nand = pnand2(**common_args)
-        self.add_mod(self.nand)
-
-        self.nand_x2 = pnand2(size=1.8, **common_args)
-        self.add_mod(self.nand_x2)
-
-        self.nor = pnor2(**common_args)
-        self.add_mod(self.nor)
-
-        self.inv = pinv(**common_args)
-        self.add_mod(self.inv)
-
-        self.clk_buf = LogicBuffer(buffer_stages=OPTS.clk_buffers, logic="pnand2", **logic_args)
-        self.add_mod(self.clk_buf)
-
-        assert len(OPTS.wordline_en_buffers) % 2 == 0, "Number of wordline buffers should be even"
-        self.wordline_buf = LogicBuffer(buffer_stages=OPTS.wordline_en_buffers, logic="pnor2", **logic_args)
-        self.add_mod(self.wordline_buf)
-
-        self.write_buf = LogicBuffer(buffer_stages=OPTS.write_buffers, logic="pnor2", **logic_args)
-        self.add_mod(self.write_buf)
-
+        self.create_common_modules()
+        self.create_decoder_clk()
+        self.create_bank_sel()
+        self.create_clk_buf()
+        self.create_wordline_en()
+        self.create_write_buf()
         self.create_precharge_buffers()
+        self.create_sense_amp_buf()
+        self.create_sample_bar()
+        self.create_tri_en_buf()
 
-        assert len(OPTS.sampleb_buffers) % 2 == 0, "Number of sampleb buffers should be even"
-        self.sample_bar = BufferStage(buffer_stages=OPTS.sampleb_buffers, **buffer_args)
-        self.add_mod(self.sample_bar)
+    def create_schematic_connections(self):
+        connections = [
+            ("clk_buf", self.clk_buf,
+             ["bank_sel", "clk", "clk_bar", "clk_buf"]),
+            ("clk_bar", self.inv, ["clk", "clk_bar_int"]),
+            ("bank_sel_cbar", self.nand_x2,
+             ["bank_sel", "clk_bar_int", "bank_sel_cbar"]),
+            ("wordline_buf", self.wordline_buf,
+             ["sense_trig", "bank_sel_cbar", "wordline_en", "wordline_en_bar"]),
+            ("write_buf", self.write_buf,
+             ["read", "bank_sel_cbar", "write_en", "write_en_bar"])
+        ]
+        self.add_sample_b_connections(connections)
+        connections += [
+            ("sample_bar", self.sample_bar,
+             ["sample_bar_int", "sample_en_buf", "sample_en_bar"]),
+            ("sense_amp_buf", self.sense_amp_buf,
+             ["sample_bar_int", "sense_trig", "bank_sel", "sense_en_bar", "sense_en"]),
+            ("tri_en_buf", self.tri_en_buf,
+             ["sample_bar_int", "sense_trig", "bank_sel", "tri_en_bar", "tri_en"])
+        ]
+        self.add_precharge_buf_connections(connections)
+        self.add_decoder_clk_connections(connections)
+        self.add_chip_sel_connections(connections)
+        return connections
 
-        assert len(OPTS.sense_amp_buffers) % 2 == 1, "Number of sense_en buffers should be odd"
-        self.sense_amp_buf = LogicBuffer(buffer_stages=OPTS.sense_amp_buffers, logic="pnand3", **logic_args)
-        self.add_mod(self.sense_amp_buf)
+    def create_decoder_clk(self):
+        if self.use_decoder_clk:
+            assert len(OPTS.decoder_clk_stages) % 2 == 1, "Number of decoder clk stages should be odd"
+            self.decoder_clk = self.create_mod(LogicBuffer, buffer_stages="decoder_clk_stages",
+                                               logic="pnand2")
 
-        self.tri_en_buf = LogicBuffer(buffer_stages=OPTS.tri_en_buffers, logic="pnand3", **logic_args)
-        self.add_mod(self.tri_en_buf)
+    def add_decoder_clk_connections(self, connections):
+        if not self.use_decoder_clk:
+            return
+
+        sel_net = "chip_sel" if self.use_chip_sel else "bank_sel"
+        connection = ("decoder_clk", self.decoder_clk, [sel_net, "clk", "decoder_clk_bar", "decoder_clk"])
+        connections.insert(0, connection)
+
+    def create_bank_sel(self):
+        if self.use_chip_sel:
+            assert len(OPTS.bank_sel_stages) % 2 == 1, "Number of bank sel stages should be odd"
+            self.bank_sel_buf = self.create_mod(LogicBuffer, buffer_stages="bank_sel_stages",
+                                                logic="pnand2")
 
     def create_precharge_buffers(self):
         assert len(OPTS.precharge_buffers) % 2 == 0, "Number of precharge buffers should be even"
-        logic_args = self.get_logic_args()
-        self.precharge_buf = LogicBuffer(buffer_stages=OPTS.precharge_buffers, logic="pnand3", **logic_args)
-        self.add_mod(self.precharge_buf)
+        logic = "pnand3" if self.bank.words_per_row == 1 else "pnand2"
+        self.precharge_buf = self.create_mod(LogicBuffer, buffer_stages="precharge_buffers",
+                                             logic=logic)
 
-    def add_modules(self):
-        y_offset = self.height - self.nand.height
+    def add_sample_b_connections(self, connections):
+        if self.bank.words_per_row == 1:
+            connections.append(("sense_trig_bar", self.inv, ["sense_trig", "sense_trig_bar"]))
+            connections.append(("sample_bar_int", self.nand3,
+                                ["bank_sel", "read", "sense_trig_bar", "sample_bar_int"]))
+        else:
+            connections.append(("sense_trig_bar", self.inv, ["sense_trig", "sense_trig_bar"]))
+            connections.append(("sample_bar_int", self.nand3,
+                                ["bank_sel", "read", "sense_trig_bar", "sample_bar_int"]))
 
-        self.precharge_buf_inst = self.add_inst("precharge_buf", mod=self.precharge_buf,
-                                                offset=vector(0, y_offset))
-        self.connect_inst(["read", "bank_sel", "clk", "precharge_en", "precharge_en_bar", "vdd", "gnd"])
+    def add_precharge_buf_connections(self, connections):
+        precharge_in = "precharge_trig" if self.use_precharge_trigger else "clk"
+        read_conn = ["read"] * (self.bank.words_per_row == 1)
+        nets = read_conn + [precharge_in, "bank_sel", "precharge_en_bar", "precharge_en"]
+        connections.insert(0, ("precharge_buf", self.precharge_buf, nets))
 
-        self.clk_buf_inst = self.add_inst("clk_buf", mod=self.clk_buf, offset=self.precharge_buf_inst.lr())
-        self.connect_inst(["bank_sel", "clk", "clk_buf", "clk_bar", "vdd", "gnd"])
+    def add_chip_sel_connections(self, connections):
+        if not self.use_chip_sel:
+            return
+        for _, _, nets in connections:
+            for index, item in enumerate(nets):
+                if item == "bank_sel":
+                    nets[index] = "bank_sel_buf"
+        connection = ("bank_sel_buf", self.bank_sel_buf,
+                      ["bank_sel", "chip_sel", "bank_sel_bar", "bank_sel_buf"])
+        connections.insert(0, connection)
 
-        self.clk_bar_inst = self.add_inst("clk_bar", mod=self.inv, offset=self.clk_buf_inst.lr())
-        self.connect_inst(["clk", "clk_bar_int", "vdd", "gnd"])
+    @staticmethod
+    def remove_floating_pins(candidate_pins, output_pins, mod):
+        for pin_name in candidate_pins:
+            if isinstance(pin_name, tuple):
+                pin_name, dest_pin = pin_name
+            else:
+                dest_pin = pin_name
+            if pin_name not in mod.pins and dest_pin in output_pins:
+                output_pins.remove(dest_pin)
 
-        self.bank_sel_cbar_inst = self.add_inst("bank_sel_cbar", mod=self.nand_x2, offset=self.clk_bar_inst.lr())
-        self.connect_inst(["bank_sel", "clk_bar_int", "bank_sel_cbar", "vdd", "gnd"])
+    def get_schematic_pins(self):
+        precharge_trigger = ["precharge_trig"] * self.use_precharge_trigger
+        chip_sel = ["chip_sel"] * self.use_chip_sel
+        decoder_clk = ["decoder_clk"] * self.use_decoder_clk
 
-        self.wordline_buf_inst = self.add_inst("wordline_buf", mod=self.wordline_buf,
-                                               offset=self.bank_sel_cbar_inst.lr())
-        self.connect_inst(["sense_trig", "bank_sel_cbar", "wordline_en_bar", "wordline_en", "vdd", "gnd"])
+        in_pins = chip_sel + ["bank_sel", "read", "clk", "sense_trig"] + precharge_trigger
+        out_pins = decoder_clk + ["clk_buf", "clk_bar", "wordline_en", "precharge_en_bar",
+                                  "write_en", "write_en_bar", "sense_en", "sense_en_bar",
+                                  "tri_en", "tri_en_bar", "sample_en_bar"]
 
-        self.write_buf_inst = self.add_inst("write_buf", mod=self.write_buf, offset=self.wordline_buf_inst.lr())
-        self.connect_inst(["read", "bank_sel_cbar", "write_en_bar", "write_en", "vdd", "gnd"])
-
-        self.sel_clk_sense_inst = self.add_inst("sel_clk_sense", mod=self.nor, offset=self.write_buf_inst.lr())
-        self.connect_inst(["sense_trig", "bank_sel_cbar", "sel_clk_sense", "vdd", "gnd"])
-
-        self.sample_bar_int_inst = self.add_inst("sample_bar_int", mod=self.nand_x2,
-                                                 offset=self.sel_clk_sense_inst.lr())
-        self.connect_inst(["read", "sel_clk_sense", "sample_bar_int", "vdd", "gnd"])
-
-        self.sample_bar_inst = self.add_inst("sample_bar", mod=self.sample_bar, offset=self.sample_bar_int_inst.lr())
-        self.connect_inst(["sample_bar_int", "sample_en_buf", "sample_en_bar", "vdd", "gnd"])
-
-        self.sense_amp_buf_inst = self.add_inst("sense_amp_buf", mod=self.sense_amp_buf,
-                                                offset=self.sample_bar_inst.lr())
-        self.connect_inst(["sample_bar_int", "sense_trig", "bank_sel", "sense_en", "sense_en_bar", "vdd", "gnd"])
-
-        self.tri_en_buf_inst = self.add_inst("tri_en_buf", mod=self.tri_en_buf,
-                                             offset=self.sense_amp_buf_inst.lr())
-        self.connect_inst(["sample_bar_int", "sense_trig", "bank_sel", "tri_en", "tri_en_bar", "vdd", "gnd"])
-
-    def create_clk_pin(self):
-        self.clk_pin = self.add_layout_pin("clk", "metal3", offset=vector(0, self.rail_pos[3]),
-                                           width=self.clk_bar_inst.get_pin("A").cx())
-
-    def create_read_pin(self):
-        self.read_pin = self.add_layout_pin("read", "metal3", offset=vector(0, self.rail_pos[0]),
-                                            width=self.sample_bar_int_inst.get_pin("A").cx())
-
-    def add_input_pins(self):
-        self.create_clk_pin()
-        self.create_read_pin()
-
-        self.sense_trig_pin = self.add_layout_pin("sense_trig", "metal3", offset=vector(0, self.rail_pos[1]),
-                                                  width=self.tri_en_buf_inst.get_pin("A").cx())
-
-        self.bank_sel_pin = self.add_layout_pin("bank_sel", "metal3", offset=vector(0, self.rail_pos[2]),
-                                                width=self.tri_en_buf_inst.get_pin("C").lx())
-
-    def route_internal_signals(self):
-        self.route_precharge_buf()
-
-        # clk_buf
-        self.connect_a_pin(self.clk_buf_inst, self.bank_sel_pin, via_dir="left")
-        self.connect_b_pin(self.clk_buf_inst, self.clk_pin, via_dir="left")
-
-        self.connect_inverter_in(self.clk_bar_inst, self.clk_pin)
-
-        self.connect_a_pin(self.bank_sel_cbar_inst, self.bank_sel_pin)
-        # output of clk_bar to bank_sel_cbar_inst
-        self.connect_z_to_b(self.clk_bar_inst.get_pin("Z"), self.bank_sel_cbar_inst.get_pin("B"))
-
-        # bank_sel_cbar_inst output
-        self.sel_cbar_rail = self.create_output_rail(self.bank_sel_cbar_inst.get_pin("Z"),
-                                                     self.clk_pin, self.sel_clk_sense_inst.get_pin("B"))
-
-        # connect to wordline en
-        self.connect_z_to_b(self.bank_sel_cbar_inst.get_pin("Z"), self.wordline_buf_inst.get_pin("B"))
-        self.connect_a_pin(self.wordline_buf_inst, self.sense_trig_pin)
-
-        # write buf
-        self.connect_b_pin(self.write_buf_inst, self.sel_cbar_rail, via_dir="left")
-        self.connect_a_pin(self.write_buf_inst, self.read_pin)
-
-        # sel_clk_sense
-        self.connect_b_pin(self.sel_clk_sense_inst, self.sel_cbar_rail, via_dir="left")
-        self.connect_a_pin(self.sel_clk_sense_inst, self.sense_trig_pin)
-
-        # sample_bar_int
-        self.connect_z_to_b(self.sel_clk_sense_inst.get_pin("Z"), self.sample_bar_int_inst.get_pin("B"))
-        self.connect_a_pin(self.sample_bar_int_inst, self.read_pin)
-
-        # sample_bar
-        self.connect_z_to_a(self.sample_bar_int_inst, self.sample_bar_inst, a_name="in")
-
-        self.sample_bar_int_rail = self.create_output_rail(self.sample_bar_int_inst.get_pin("Z"),
-                                                           self.read_pin,
-                                                           self.tri_en_buf_inst.get_pin("A"), via_dir="left")
-        self.route_sense_amp()
-        self.route_tri_en()
-
-    def route_precharge_buf(self):
-        # route precharge_buf_inst
-        self.connect_a_pin(self.precharge_buf_inst, self.read_pin, via_dir="right")
-        self.connect_b_pin(self.precharge_buf_inst, self.bank_sel_pin, via_dir="left")
-        self.connect_c_pin(self.precharge_buf_inst, self.clk_pin, via_dir="right")
-
-    def route_sense_amp(self):
-        # sense_en
-        self.connect_a_pin(self.sense_amp_buf_inst, self.sample_bar_int_rail, via_dir="right")
-        self.connect_b_pin(self.sense_amp_buf_inst, self.sense_trig_pin, via_dir="left")
-        self.connect_c_pin(self.sense_amp_buf_inst, self.bank_sel_pin, via_dir="left")
-
-    def route_tri_en(self):
-        self.connect_a_pin(self.tri_en_buf_inst, self.sample_bar_int_rail, via_dir="right")
-        self.connect_b_pin(self.tri_en_buf_inst, self.sense_trig_pin, via_dir="left")
-        self.connect_c_pin(self.tri_en_buf_inst, self.bank_sel_pin, via_dir="left")
-
-    def add_output_pins(self):
-        pin_names = ["precharge_en_bar", "clk_buf", "clk_bar", "wordline_en", "write_en", "write_en_bar",
-                     "sense_en", "tri_en", "tri_en_bar", "sample_en_bar"]
-        mod_names = ["out", "out_inv", "out", "out", "out", "out_inv", "out_inv", "out_inv", "out", "out"]
-        instances = [self.precharge_buf_inst, self.clk_buf_inst, self.clk_buf_inst, self.wordline_buf_inst,
-                     self.write_buf_inst, self.write_buf_inst, self.sense_amp_buf_inst, self.tri_en_buf_inst,
-                     self.tri_en_buf_inst, self.sample_bar_inst]
-        for i in range(len(pin_names)):
-            out_pin = instances[i].get_pin(mod_names[i])
-            self.add_layout_pin(pin_names[i], "metal2", offset=out_pin.ul(), height=self.height - out_pin.uy())
-
-    def add_power_pins(self):
-        sense_amp_gnd = self.sense_amp_buf_inst.get_pin("gnd")
-        self.add_layout_pin("gnd", "metal1", offset=vector(0, sense_amp_gnd.by()), width=self.width,
-                            height=sense_amp_gnd.height())
-        sense_amp_vdd = self.sense_amp_buf_inst.get_pin("vdd")
-        self.add_layout_pin("vdd", "metal1", offset=vector(0, sense_amp_vdd.by()), width=self.width,
-                            height=sense_amp_vdd.height())
-
-    def add_pins(self):
-        self.add_pin_list(["bank_sel", "read", "clk", "sense_trig", "clk_buf", "clk_bar", "wordline_en",
-                           "precharge_en_bar", "write_en", "write_en_bar",
-                           "sense_en", "tri_en", "tri_en_bar", "sample_en_bar", "vdd", "gnd"])
+        self.remove_floating_pins([("en", "write_en"), ("en_bar", "write_en_bar")],
+                                  out_pins,
+                                  self.bank.write_driver_array)
+        self.remove_floating_pins([("en", "sense_en"), ("en_bar", "sense_en_bar")],
+                                  out_pins,
+                                  self.bank.sense_amp_array)
+        self.remove_floating_pins([("en", "tri_en"), ("en_bar", "tri_en_bar")],
+                                  out_pins,
+                                  self.bank.tri_gate_array)
+        return in_pins, out_pins

@@ -3,7 +3,7 @@ import os
 import sys
 
 parent_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-sys.path.append(parent_dir)
+sys.path.append(os.path.abspath(parent_dir))
 
 import testutils
 import unittest
@@ -32,6 +32,9 @@ class TestBase(testutils.OpenRamTest):
                 TestBase.config_template = "config_shared_sot_{}"
             elif "sotfet" in sys.argv:
                 TestBase.config_template = "config_shared_sotfet_{}"
+            elif "push" in sys.argv:
+                TestBase.config_template = "config_push_hs_{}"
+                sys.path.append(os.path.abspath(os.path.join(parent_dir, "push_rules")))
             else:
                 TestBase.baseline = True
 

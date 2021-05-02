@@ -16,12 +16,12 @@ class FlopCin(DistributedLoadMixin, CharTestBase):
         if self.options.cell_mod is not None:
             OPTS.ms_flop_mod = self.options.cell_mod
             if self.options.body_tap is None:
-                OPTS.ms_flop_tap = self.options.cell_mod + "_tap"
+                OPTS.ms_flop_tap_mod = self.options.cell_mod + "_tap"
             else:
-                OPTS.ms_flop_tap = self.options.body_tap
+                OPTS.ms_flop_tap_mod = self.options.body_tap
         else:
             OPTS.ms_flop_mod = OPTS.ms_flop
-            OPTS.ms_flop_tap = None  # use default
+            OPTS.ms_flop_tap_mod = None  # use default
 
     def get_pins(self):
         return ["clk"]
@@ -37,7 +37,7 @@ class FlopCin(DistributedLoadMixin, CharTestBase):
         cols = num_elements
 
         load = ms_flop_array(columns=cols, word_size=cols, flop_mod=OPTS.ms_flop_mod,
-                             flop_tap_name=OPTS.ms_flop_tap, align_bitcell=True)
+                             flop_tap_name=OPTS.ms_flop_tap_mod, align_bitcell=True)
         return load
 
     def get_dut_instance_statement(self, pin):

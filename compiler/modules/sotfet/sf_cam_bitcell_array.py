@@ -61,11 +61,6 @@ class sf_cam_bitcell_array(bitcell_array.bitcell_array):
     def get_full_height(self):
         return self.height, 0
 
-    def add_dummies(self):
-        self.add_left_dummy = False
-        self.add_right_dummy = True
-        super().add_dummies()
-
     def add_layout_pins(self):
         super().add_layout_pins()
         for row in range(self.row_size):

@@ -4,11 +4,28 @@ import os
 File containing the process technology parameters for FreePDK 45nm.
 """
 
+
+def add_tech_layers(obj):
+    for layer_ in ["nwell", "pwell"]:
+        for well_rect in obj.get_layer_shapes(layer_):
+            obj.add_rect("vtg", offset=well_rect.ll(), width=well_rect.width,
+                         height=well_rect.height)
+
+
+def delay_params_class():
+    try:
+        from delay_params import DelayParams
+    except ImportError:
+        from .delay_params import DelayParams
+    return DelayParams
+
+
 info = {}
 info["name"] = "freepdk45"
 info["body_tie_down"] = 0
 info["has_pwell"] = True
 info["has_nwell"] = True
+info["poly_contact_layer"] = "metal1"
 
 #GDS file info
 GDS = {}
@@ -57,6 +74,14 @@ layer["metal10"] = 29
 layer["text"]    = 239
 layer["boundary"]= 239
 
+purpose = {"drawing": 0}
+
+
+default_fill_layers = ["nwell", "nimplant", "pimplant", "pwell"]
+
+power_grid_layers = ["metal9", "metal10"]
+power_grid_num_vias = 2
+
 ###################################################
 ##END GDS Layer Map
 ###################################################
@@ -68,7 +93,7 @@ layer["boundary"]= 239
 #technology parameter
 parameter={}
 parameter["min_tx_size"] = 0.09
-parameter["beta"] = 3
+parameter["beta"] = 1.52
 
 drclvs_home=os.environ.get("DRCLVS_HOME")
 drc={}
@@ -81,12 +106,21 @@ drc["lvs_rules"]=drclvs_home+"/calibreLVS.rul"
 drc["xrc_rules"]=drclvs_home+"/calibrexRC.rul"
 drc["layer_map"]=os.environ.get("OPENRAM_TECH")+"/freepdk45/layers.map"
 
+drc["latchup_spacing"] = 40  # not an enforced rule but realistically needed
+
 # minwidth_tx with contact (no dog bone transistors)
 drc["minwidth_tx"]=0.09
+drc["maxwidth_tx"] = 4
 drc["minlength_channel"] = 0.05
+
+# for metal buses
+drc["medium_width"] = 0.08
+drc["bus_space"] = 0.08
 
 # WELL.1 Minimum spacing of nwell/pwell at different potential
 drc["pwell_to_nwell"] = 0.225
+drc["nwell_to_nwell"] = 0.0
+drc["pwell_to_pwell"] = 0.0
 # WELL.4 Minimum width of nwell/pwell
 drc["minwidth_well"] = 0.2
 
@@ -94,6 +128,8 @@ drc["minwidth_well"] = 0.2
 drc["minwidth_poly"] = 0.05
 # POLY.2 Minimum spacing of poly AND active
 drc["poly_to_poly"] = 0.14
+# space between vertical ends of poly
+drc["poly_end_to_end"] = 0.075
 # POLY.3 Minimum poly extension beyond active
 drc["poly_extend_active"] = 0.055
 # POLY.4 Minimum enclosure of active around gate
@@ -102,6 +138,8 @@ drc["active_enclosure_gate"] = 0.07
 drc["poly_to_active"] = 0.05
 # POLY.6 Minimum Minimum spacing of field poly
 drc["poly_to_field_poly"] = 0.075
+
+drc["poly_contact_to_active"] = 0.055
 # Not a rule
 drc["minarea_poly"] = 0.0
 
@@ -145,8 +183,6 @@ drc["poly_enclosure_contact"] = 0.005
 drc["poly_extend_contact"] = 0.005
 # CONTACT.6 Minimum spacing of contact and gate
 drc["contact_to_gate"] = 0.0375 #changed from 0.035
-# CONTACT.7 Minimum spacing of contact and poly
-drc["contact_to_poly"] = 0.090
 
 # METAL1.1 Minimum width of metal1
 drc["minwidth_metal1"] = 0.065
@@ -206,23 +242,98 @@ drc["minarea_metal3"] = 0
 # VIA2-3.1 Minimum width of Via[2-3]
 drc["minwidth_via3"] = 0.065
 # VIA2-3.2 Minimum spacing of Via[2-3]
-drc["via3_to_via3"] = 0.07
+drc["via3_to_via3"] = 0.075
 
 # METALSMG.1 Minimum width of semi-global metal
 drc["minwidth_metal4"] = 0.14
 # METALSMG.2 Minimum spacing of semi-global metal
 drc["metal4_to_metal4"] = 0.14
 # METALSMG.3 Minimum enclosure around via[3-6] on two opposite sides
-drc["metal4_extend_via3"] = 0.07
+drc["metal4_extend_via3"] = 0.035
 # Reserved for asymmetric enclosure
-drc["metal4_enclosure_via3"] = 0
+drc["metal4_enclosure_via3"] = 0.0025
 # METALSMG.3 Minimum enclosure around via[3-6] on two opposite sides
 drc["metal4_enclosure_via4"] = 0
 # Reserved for asymmetric enclosure
-drc["metal4_extend_via4"] = 0.07
+drc["metal4_extend_via4"] = 0
+
+
+drc["minwidth_via4"] = 0.14
+drc["via4_to_via4"] = 0.14
+
+drc["minwidth_metal5"] = 0.14
+drc["metal5_to_metal5"] = 0.14
+drc["metal5_extend_via4"] = 0.0025
+drc["metal5_enclosure_via4"] = 0.0025
+drc["metal5_enclosure_via5"] = 0.0025
+drc["metal5_extend_via5"] = 0.0025
+
+drc["minwidth_via5"] = 0.14
+drc["via5_to_via5"] = 0.14
+
+drc["minwidth_metal6"] = 0.14
+drc["metal6_to_metal6"] = 0.14
+drc["metal6_extend_via5"] = 0.0025
+drc["metal6_enclosure_via5"] = 0.0025
+drc["metal6_enclosure_via6"] = 0.0025
+drc["metal6_extend_via6"] = 0.0025
+
+drc["minwidth_via6"] = 0.14
+drc["via6_to_via6"] = 0.14
+
+drc["minwidth_metal7"] = 0.4
+drc["metal7_to_metal7"] = 0.4
+drc["metal7_extend_via6"] = 0.0025
+drc["metal7_enclosure_via6"] = 0.0025
+drc["metal7_enclosure_via7"] = 0.0025
+drc["metal7_extend_via7"] = 0.0025
+
+drc["minwidth_via7"] = 0.4
+drc["via7_to_via7"] = 0.44
+
+drc["minwidth_metal8"] = 0.4
+drc["metal8_to_metal8"] = 0.4
+drc["metal8_extend_via7"] = 0.0025
+drc["metal8_enclosure_via7"] = 0.0025
+drc["metal8_enclosure_via8"] = 0.0025
+drc["metal8_extend_via8"] = 0.0025
+
+drc["minwidth_via8"] = 0.4
+drc["via8_to_via8"] = 0.44
+
+drc["minwidth_metal9"] = 0.8
+drc["metal9_to_metal9"] = 0.8
+drc["metal9_extend_via8"] = 0.0025
+drc["metal9_enclosure_via8"] = 0.0025
+drc["metal9_enclosure_via9"] = 0.0025
+drc["metal9_extend_via9"] = 0.0025
+
+drc["minwidth_via9"] = 0.8
+drc["via9_to_via9"] = 0.88
+
+drc["minwidth_metal10"] = 0.8
+drc["metal10_to_metal10"] = 0.8
+drc["metal10_extend_via9"] = 0.0025
+drc["metal10_enclosure_via9"] = 0.0025
+
+#TODO lookup table DRC spacing rules needed
+
+drc["wide_line_space_metal1"] = 0.09
+drc["wide_length_threshold_metal1"] = 0.3
+drc["wide_width_threshold_metal1"] = 0.09
+
+drc["wide_line_space_metal2"] = 0.27
+drc["wide_length_threshold_metal2"] = 0.27
+drc["wide_width_threshold_metal2"] = 0.27
+
+drc["line_end_threshold_metal3"] = 0.09
+drc["line_end_line_space_metal3"] = 0.09
+
+drc["wide_line_space_metal10"] = 1.5
 
 # Metal 5-10 are ommitted
 
+drc["rail_height"] = 0.135
 
 
 ###################################################
@@ -235,6 +346,7 @@ drc["metal4_extend_via4"] = 0.07
 
 #spice info
 spice = {}
+spice["gmin"] = 1e-13
 spice["nmos"] = "nmos_vtg"
 spice["pmos"] = "pmos_vtg"
 # This is a map of corners to model files
@@ -267,11 +379,13 @@ spice["channel"] = drc["minlength_channel"]
 spice["clk"] = "clk"
 
 # analytical delay parameters
-spice["wire_unit_r"] = 0.075     # Unit wire resistance in ohms/square
-spice["wire_unit_c"] = 0.64      # Unit wire capacitance ff/um^2
-spice["min_tx_r"] = 9250.0       # Minimum transistor on resistance in ohms
-spice["min_tx_drain_c"] = 0.7    # Minimum transistor drain capacitance in ff
-spice["min_tx_gate_c"] = 0.2     # Minimum transistor gate capacitance in ff
+spice["wire_unit_r"] = 0.38     # Unit wire resistance in ohms/square
+spice["wire_unit_c"] = 0.15      # Unit wire capacitance ff/um^2
+spice["min_tx_r"] = 9000       # Minimum transistor on resistance in ohms
+spice["min_tx_drain_c"] = 0.24    # Minimum transistor drain capacitance in ff
+spice["min_tx_gate_c"] = 0.13     # Minimum transistor gate capacitance in ff
+spice["pmos_unit_gm"] = 68e-6
+spice["nmos_unit_gm"] = 105e-6
 spice["msflop_setup"] = 9        # DFF setup time in ps
 spice["msflop_hold"] = 1         # DFF hold time in ps
 spice["msflop_delay"] = 20.5     # DFF Clk-to-q delay in ps

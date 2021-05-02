@@ -232,7 +232,7 @@ class SfCamDelay(SequentialDelay):
 
     def write_ic(self, ic, col_node, col_voltage):
         if self.cmos:
-            ic.write("ic {}={} \n".format(col_node, col_voltage))
+            ic.write(".ic V({})={} \n".format(col_node, col_voltage))
         else:
             phi = 0.1 * OPTS.llg_prescale
 
@@ -246,7 +246,7 @@ class SfCamDelay(SequentialDelay):
             values = [phi, phi, np.arccos(col_voltage), np.arccos(-col_voltage)]
 
             for i in range(4):
-                ic.write("ic {}={} \n".format(nodes[i], values[i] * OPTS.llg_prescale))
+                ic.write(".ic V({})={} \n".format(nodes[i], values[i] * OPTS.llg_prescale))
 
     def binary_to_voltage(self, x):
         if self.cmos:

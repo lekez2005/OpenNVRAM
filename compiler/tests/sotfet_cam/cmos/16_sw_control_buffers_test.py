@@ -9,8 +9,7 @@ from cam_test_base import CamTestBase
 class SwControlBuffersTest(CamTestBase):
     def test_logic_buffers(self):
         from modules.sotfet.cmos.sw_control_buffers import SwControlBuffers
-        from modules.sotfet.fast_ramp.fast_ramp_control_buffers import FastRampControlBuffers
-        a = FastRampControlBuffers()
+        a = SwControlBuffers()
         self.local_check(a)
 
 

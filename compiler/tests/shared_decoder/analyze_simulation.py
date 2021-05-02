@@ -1,4 +1,4 @@
-#!/bin/env python
+#!/bin/env python3
 import json
 import logging
 import os
@@ -11,24 +11,10 @@ import numpy as np
 matplotlib.use("Qt5Agg")
 from matplotlib import pyplot as plt
 
-from shared_simulator import create_arg_parser, parse_options, get_sim_directory, CMOS_MODE
+from shared_simulator import create_arg_parser, parse_options, get_sim_directory, \
+    CMOS_MODE, PUSH_MODE, SOT_MODE, SOTFET_MODE
 import sim_analyzer
 from sim_analyzer import measure_delay_from_stim_measure
-
-
-def get_address_data(address, time):
-    return sim_analyzer.get_address_data(address, time, state_probes, data_thresh)
-
-
-def pattern_from_saved(pattern, *args):
-    pattern = re.search(pattern, sim_analyzer.all_saved_signals)
-    if pattern is None:
-        return ""
-    pattern = pattern.group(0)
-    for i in range(0, len(args), 2):
-        pattern = re.sub(args[i], args[i + 1], pattern)
-    pattern = re.sub("Xbank[01]+", "Xbank{0}", pattern)
-    return pattern
 
 
 def load_events(op_name):
@@ -49,11 +35,68 @@ def load_events(op_name):
 def get_analysis_bit(delays_):
     """Use col with max delay if verbose save or use specified bit"""
     if options.analysis_bit_index is None:
-        if verbose_save:
-            return (word_size - 1) - np.argmax(delays_)
-        else:
-            return probe_bits[-1]
+        max_delay_bit_ = (word_size - 1) - np.argmax(delays_)
+        if max_delay_bit_ in probe_bits:
+            return max_delay_bit_
+        return probe_bits[-1]
     return probe_bits[options.analysis_bit_index]
+
+
+def get_max_pattern_delay(pattern, *args, edge=None, clk_buf=False):
+    if not pattern:  # pattern not saved
+        return -1
+    net = pattern.format(bank, *args)
+    delay_func = (sim_analyzer.clk_to_bus_delay
+                  if clk_buf else sim_analyzer.clk_bar_to_bus_delay)
+    return delay_func(net, start_time, end_time, num_bits=1, edgetype2=edge)
+
+
+def get_probe(probe_key, net, bank=None, col=None, bit=None):
+    probes = voltage_probes[probe_key]
+    if bank is not None:
+        probes = probes[str(bank)]
+    if net is not None:
+        probes = probes[net]
+
+    col_bit = col if col is not None else bit
+    if isinstance(probes, dict):
+        probe = probes[str(col_bit)]
+    elif len(probes) == 1:
+        probe = probes[0]
+    else:
+        container = probe_cols if col is not None else probe_bits
+        col_bit_index = container.index(col_bit)
+        probe = probes[col_bit_index]
+    return probe
+
+
+def voltage_probe_delay(probe_key, net, bank_=None, col=None, bit=None,
+                        edge=None, clk_buf=False):
+    probe = get_probe(probe_key, net, bank_, col, bit)
+    delay_func = (sim_analyzer.clk_to_bus_delay
+                  if clk_buf else sim_analyzer.clk_bar_to_bus_delay)
+    return delay_func(probe, start_time, end_time, num_bits=1, edgetype2=edge)
+
+
+def print_max_delay(desc, val):
+    if val > 0:
+        print("{} delay = {:.4g}p".format(desc, val * 1e12))
+
+
+plot_exclusions = ["sense_en", "rwl_en", "bl_out"]
+
+
+def plot_sig(signal_name, from_t, to_t, label):
+    for excl in plot_exclusions:
+        if excl in signal_name:
+            return
+    try:
+        print(signal_name)
+        signal_name = sim_data.convert_signal_name(signal_name)
+        signal = sim_data.get_signal_time(signal_name, from_t=from_t, to_t=to_t)
+        ax1.plot(*signal, label=label)
+    except Exception as er:
+        print("Signal {} not found".format(signal_name))
 
 
 def get_address_data(address, time):
@@ -67,7 +110,9 @@ arg_parser = create_arg_parser()
 arg_parser.add_argument("-v", "--verbose", action="count", default=0)
 mode, options = parse_options(arg_parser)
 openram_temp = get_sim_directory(options, mode) + ""
-cmos = mode == CMOS_MODE
+cmos = mode in [CMOS_MODE, PUSH_MODE]
+push = mode == PUSH_MODE
+sot = mode in [SOT_MODE, SOTFET_MODE]
 
 word_size = options.word_size
 schematic = options.schematic
@@ -81,23 +126,44 @@ logging.basicConfig(level=log_level, format="%(levelname)s: %(message)s")
 
 print("Word-size = ", word_size)
 
-verbose_save = options.verbose_save
-
-words_per_row = int(options.num_cols / options.word_size)
-num_words = words_per_row * options.num_rows * options.num_banks
-
-address_width = int(np.log2(num_words))
-
 # Take overlap between cycles into account
-read_settling_time = 150e-12
-write_settling_time = 500e-12
+if cmos:
+    read_settling_time = 100e-12
+else:
+    read_settling_time = 250e-12
+write_settling_time = 200e-12
 
 logging.info("Simulation Dir = {}".format(openram_temp))
 
+if options.spice_name == "hspice":
+    sim_analyzer.measure_file_name = "timing.lis"
+    sim_analyzer.transient_file_name = "timing.tr0"
 sim_analyzer.setup(num_cols_=options.num_cols, num_rows_=options.num_rows,
                    sim_dir_=openram_temp)
 
-states_file = os.path.join(openram_temp, "state_probes.json")
+two_bank_dependent = bool(int(sim_analyzer.search_file(sim_analyzer.stim_file,
+                                                       r"two_bank_dependent = ([0-1])")))
+
+words_per_row = int(options.num_cols / options.word_size)
+if two_bank_dependent:
+    options.num_rows *= 2
+    num_words = words_per_row * options.num_rows
+else:
+    num_words = words_per_row * options.num_rows * options.num_banks
+address_width = int(np.log2(num_words))
+
+sim_analyzer.word_size = options.word_size
+
+state_probes = json.load(open(os.path.join(openram_temp, "state_probes.json"), "r"))
+voltage_probes = json.load(open(os.path.join(openram_temp, "voltage_probes.json"), "r"))
+current_probes = json.load(open(os.path.join(openram_temp, "current_probes.json"), "r"))
+with open(os.path.join(openram_temp, "sim_saves.txt"), "w") as f:
+    f.write("\n".join(sim_analyzer.all_saved_list))
+
+data_pattern = "D[{}]"
+mask_pattern = "mask[{}]"
+sim_analyzer.data_pattern = data_pattern
+
 logging.info("Simulation end: " + time.ctime(os.path.getmtime(sim_analyzer.stim_file)))
 
 sim_data = sim_analyzer.sim_data
@@ -105,66 +171,21 @@ sim_data = sim_analyzer.sim_data
 sim_data.thresh = 0.45
 data_thresh = sim_data.thresh if cmos else 0
 
-with open(states_file, "r") as states_file_:
-    state_probes = json.load(states_file_)
-
 setup_time = 0.015e-9
-
-mask_pattern = "mask[{}]"
-
-if not schematic:
-
-    if cmos:
-        wordline_pattern = pattern_from_saved("v\(\S+wl\S+Xbitcell_array\S+\)", "wl\[[0-9]+\]", "wl[{1}]",
-                                              "r[0-9]+", "r{1}")
-        wordline_en_pattern = pattern_from_saved("v\(\S+wordline_en\S+Xwordline_driver\S+\)")
-    else:
-        wordline_en_pattern = pattern_from_saved("v\(\S+wwl_en\S+Xwwl_driver\S+\)")
-        rwl_en_pattern = pattern_from_saved("v\(\S+rwl_en\S+Xrwl_driver\S+\)")
-        wordline_pattern = pattern_from_saved("v\(\S+wwl\S+Xbitcell_array\S+\)", "wwl\[[0-9]+\]", "wwl[{1}]",
-                                              "r[0-9]+", "r{1}")
-        rwl_pattern = pattern_from_saved("v\(\S+rwl\S+Xbitcell_array\S+\)", "rwl\[[0-9]+\]", "rwl[{1}]",
-                                         "r[0-9]+", "r{1}")
-    write_en_pattern = pattern_from_saved("v\(\S+write_en(?!_bar)\S+Xdriver\S+\)", "Xdriver_[0-9]+", "Xdriver_{1}")
-
-    write_en_bar_pattern = pattern_from_saved("v\(\S+write_en_bar\S+Xdriver\S+\)", "Xdriver_[0-9]+", "Xdriver_{1}")
-
-    bl_pattern = pattern_from_saved("v\(\S+bl\S+Xbitcell\S+\)", "c[0-9]+", "c{1}", "\[[0-9]+\]", "[{1}]")
-    br_pattern = pattern_from_saved("v\(\S+br\S+Xbitcell\S+\)", "c[0-9]+", "c{1}", "\[[0-9]+\]", "[{1}]")
-    if words_per_row > 1:
-        bl_out_pattern = pattern_from_saved("v\(\S+bl_out\S+Xsa\S+\)", "bl_out\[[0-9]+\]", "bl_out[{1}]",
-                                            "Xsa_d[0-9]+", "Xsa_d{1}")
-        br_out_pattern = pattern_from_saved("v\(\S+br_out\S+Xsa\S+\)", "br_out\[[0-9]+\]", "br_out[{1}]",
-                                            "Xsa_d[0-9]+", "Xsa_d{1}")
-
-    flop_clk_in_pattern = pattern_from_saved("v\(\S+clk_bar\S+Xdata_in\S+\)", "dff[0-9]+", "dff{1}")
-
-    sense_en_pattern = pattern_from_saved("v\(\S+sense_en(?!_bar)\S+Xsa\S+\)", "Xsa_d[0-9]+", "Xsa_d{1}")
-    sample_en_bar_pattern = pattern_from_saved("v\(\S+sample_en_bar\S+Xsa\S+\)", "Xsa_d[0-9]+", "Xsa_d{1}")
-
-    and_out_pattern = pattern_from_saved("v\(\S+and_out\S+Xsense_amp_array\S+\)", "Xsa_d[0-9]+", "Xsa_d{1}",
-                                         "and_out\[[0-9]+\]", "and_out[{1}]")
-
-data_pattern = "D[{}]"
-sim_analyzer.data_pattern = data_pattern
-
-write_driver_in_pattern = pattern_from_saved("v\(\S+data_in\S+Xdriver\S+\)", "Xdriver_[0-9]+", "Xdriver_{1}",
-                                             "\[[0-9]+\]", "[{1}]")
 
 address_pattern = "A[{}]"
 
 probe_cols_str = sim_analyzer.search_file(sim_analyzer.stim_file,
                                           r"Probe cols = \[(.*)\]")
 probe_cols = list(map(int, probe_cols_str.split(",")))
-if verbose_save:
-    probe_bits = list(range(word_size))
-else:
-    probe_bits = [int(x / words_per_row) for x in probe_cols]
+
+probe_bits_str = sim_analyzer.search_file(sim_analyzer.stim_file,
+                                          r"Probe bits = \[(.*)\]")
+probe_bits = list(map(int, probe_bits_str.split(",")))
 
 if __name__ == "__main__":
 
-    clk_reference = "v(" + re.search(r".meas tran {}.* TRIG v\((\S+)\) VAL".
-                                     format("PRECHARGE"), sim_analyzer.stim_str).group(1) + ")"
+    sim_analyzer.clk_reference = sim_data.convert_signal_name(voltage_probes["clk_probe"])
 
     area = float(sim_analyzer.search_file(sim_analyzer.stim_file, r"Area=([0-9\.]+)um2"))
 
@@ -174,8 +195,9 @@ if __name__ == "__main__":
     # Precharge and Decoder delay
     max_decoder_delay = 0
     max_precharge = 0
+    max_clk_to_decoder_in = 0
     for event in all_read_events + all_write_events:
-        max_dec_, dec_delays = measure_delay_from_stim_measure("decoder",
+        max_dec_, dec_delays = measure_delay_from_stim_measure("decoder_a[0-9]+",
                                                                max_delay=0.9 * event[2],
                                                                event_time=event[0])
         max_decoder_delay = max(max_decoder_delay, max_dec_)
@@ -185,31 +207,50 @@ if __name__ == "__main__":
                                                                    event_time=event[0])
         max_precharge = max(max_precharge, max_prech_)
 
-    print("\nDecoder delay = {:.2f}p".format(max_decoder_delay / 1e-12))
-    print("Precharge delay = {:.2f}p".format(max_precharge / 1e-12))
+        if push:
+            max_clk_dec_, _ = measure_delay_from_stim_measure("decoder_in[0-9]+", max_delay=0.9 * event[2],
+                                                              event_time=event[0])
+            max_clk_to_decoder_in = max(max_clk_to_decoder_in, max_clk_dec_)
+
+    print("\nPrecharge delay = {:.2f}p".format(max_precharge / 1e-12))
+
+    if push:
+        print("Clk to dec_in = {:.2f}p".format(max_clk_to_decoder_in / 1e-12))
+        print("Decoder enable to dec_out = {:.2f}p".format(max_decoder_delay / 1e-12))
+    else:
+        print("Decoder delay = {:.2f}p".format(max_decoder_delay / 1e-12))
+
+    if push:
+        max_decoder_delay, max_clk_to_decoder_in = max_clk_to_decoder_in, max_decoder_delay
 
     # Analyze Reads
 
     print("----------------Read Analysis---------------")
+    max_read_event = None
     for read_event in all_read_events:
-        print("Read at time: {:.4g} n".format(read_event[0] * 1e9))
-        sim_analyzer.verify_read_event(read_event[0], read_event[1],
-                                       read_event[2] + read_settling_time,
-                                       read_event[3], negate=not cmos)
+        print("Read {} at time: {:.4g} n".format(read_event[1], read_event[0] * 1e9))
+        negate_read = sot and not options.precharge
+        correct = sim_analyzer.verify_read_event(read_event[0], read_event[1],
+                                                 read_event[2] + read_settling_time,
+                                                 read_event[3], negate=negate_read)
+        if not correct:
+            max_read_event = read_event
 
     max_dout = 0
-    max_read_event = all_read_events[-1] if all_read_events else all_write_events[-1]
+
     max_read_bit_delays = [0] * word_size
     if options.analysis_op_index is not None:
         analysis_events = all_read_events[options.analysis_op_index:options.analysis_op_index + 1]
+    elif max_read_event is not None:
+        analysis_events = [max_read_event]
     else:
         analysis_events = all_read_events
-    for read_event in analysis_events:
+    for index, read_event in enumerate(analysis_events):
         d_delays = sim_analyzer.clk_bar_to_bus_delay(data_pattern, read_event[0],
                                                      read_event[0] + read_event[2] +
                                                      read_settling_time, num_bits=word_size)
 
-        if max(d_delays) > max_dout:
+        if max(d_delays) > max_dout or index == 0:
             max_read_event = read_event
             max_dout = max(d_delays)
             max_read_bit_delays = d_delays
@@ -228,11 +269,14 @@ if __name__ == "__main__":
     # analyze writes
     print("----------------Write Analysis---------------")
 
+    max_write_event = None
     for write_event_ in all_write_events:
-        print("Write at time: {:.4g} n".format(write_event_[0] * 1e9))
-        sim_analyzer.verify_write_event(write_event_[0], write_event_[1],
-                                        write_event_[2] + write_settling_time,
-                                        write_event_[3], negate=not cmos)
+        print("Write {} at time: {:.4g} n".format(write_event_[1], write_event_[0] * 1e9))
+        correct = sim_analyzer.verify_write_event(write_event_[0], write_event_[1],
+                                                  write_event_[2] + write_settling_time,
+                                                  write_event_[3], negate=False)
+        if not correct:
+            max_write_event = write_event_
 
     write_energies = [sim_analyzer.measure_energy((x[0], x[2] + x[0])) for x in all_write_events]
     if not write_energies:
@@ -240,221 +284,265 @@ if __name__ == "__main__":
 
     # Write delay
     max_q_delay = 0
-    max_write_event = all_write_events[1] if all_write_events else all_read_events[-1]
     max_write_bit_delays = [0] * word_size
 
     if options.analysis_op_index is not None:
         analysis_events = all_write_events[options.analysis_op_index:options.analysis_op_index + 1]
+    elif max_write_event is not None:
+        analysis_events = [max_write_event]
     else:
         analysis_events = all_write_events
 
-    for write_event in analysis_events:
+    for index, write_event in enumerate(analysis_events):
         max_valid_delay = (1 + write_event[3]) * write_event[2]
         max_q_, q_delays = sim_analyzer. \
             measure_delay_from_stim_measure("state_delay", event_time=write_event[0],
                                             max_delay=max_valid_delay,
                                             index_pattern="a[0-9]+_c(?P<bit>[0-9]+)_")
-        if max_q_ > max_q_delay:
+        if max_q_ > max_q_delay or index == 0:
             max_q_delay = max_q_
             max_write_event = write_event
             max_write_bit_delays = q_delays
+    # max_write_event = all_write_events[0]
 
-    print("Q state delay = {:.3g} ps, address = {}, t = {:.3g} ns".
+    print("Q state delay = {:.4g} ps, address = {}, t = {:.4g} ns".
           format(max_q_delay / 1e-12, max_write_event[1], max_write_event[0] * 1e9))
 
     total_write = max(max_precharge, max_decoder_delay) + max_q_delay
     print("Total Write delay = {:.2f} ps".format(total_write / 1e-12))
     print("Max write energy = {:.2f} pJ".format(max(write_energies) / 1e-12))
 
-    if not schematic:
+    print("---------------------------------------------")
+    logging.info("Read Period: {:.3g}".format(max_read_event[2] * 1e9))
+    logging.info("Write Period: {:.3g}".format(max_write_event[2] * 1e9))
 
-        print("----------------Critical Paths---------------")
+    print("----------------Critical Paths---------------")
 
-        print("\nWrite Critical Path: t = {:.3g}n\n".format(max_write_event[0]))
+    # write analysis:
+    max_write_bit = get_analysis_bit(max_write_bit_delays)
 
-        start_time = end_time = 0
-        bank = 0
+    write_address = max_write_event[1]
+    write_period = max_write_event[2]
+    write_start_time = max_write_event[0]
+    max_write_row = max_write_event[4]
 
+    write_end_time = write_start_time + write_period + write_settling_time + 0.2e-9
 
-        def get_max_pattern_delay(pattern, *args, edge=None):
-            if not pattern:  # pattern not saved
-                return -1
-            net = pattern.format(bank, *args)
-            return sim_analyzer.clk_bar_to_bus_delay(net, start_time, end_time,
-                                                     num_bits=1, edgetype2=edge)
+    write_q_net = "v({})".format(state_probes[str(write_address)][max_write_bit])
 
+    max_write_col = int(re.search("r[0-9]+_c([0-9]+)", write_q_net).group(1))
+    controls_write_bit = int(max_write_col / words_per_row)
+    write_bank = int(re.search("Xbank([0-1]+)", write_q_net).group(1))
 
-        def print_max_delay(desc, val):
-            if val > 0:
-                print("{} delay = {:.3g}p".format(desc, val * 1e12))
+    # col = max_write_bit *
+    start_time = write_start_time
+    end_time = write_end_time
+    bank = write_bank
 
+    write_en_delay = voltage_probe_delay("control_buffers", "write_en", bank,
+                                         bit=controls_write_bit, edge=sim_data.RISING_EDGE)
 
-        def plot_sig(signal_name, from_t, to_t, label):
-            try:
-                signal = sim_data.get_signal_time(signal_name, from_t=from_t, to_t=to_t)
-                plt.plot(*signal, label=label)
-            except Exception as er:
-                print("Signal {} not found".format(signal_name))
+    flop_out_delay = voltage_probe_delay("write_driver_array", "data", bank,
+                                         bit=controls_write_bit)
+    bl_delay = voltage_probe_delay("bl", None, bank,
+                                   col=max_write_col, edge=sim_data.FALLING_EDGE)
+    br_delay = voltage_probe_delay("br", None, bank,
+                                   col=max_write_col, edge=sim_data.FALLING_EDGE)
+    q_delay = get_max_pattern_delay(write_q_net)
 
-
-        # write analysis:
-        max_write_bit = get_analysis_bit(max_write_bit_delays)
-
-        write_address = max_write_event[1]
-        write_period = max_write_event[2]
-        write_start_time = max_write_event[0]
-        max_write_row = max_write_event[4]
-        write_bank = max_write_event[6]
-        write_end_time = write_start_time + write_period + write_settling_time + 0.2e-9
-
-        q_net = "v({})".format(state_probes[str(write_address)][max_write_bit])
-
-        max_write_col = int(re.search("r[0-9]+_c([0-9]+)", q_net).group(1))
-
-        # col = max_write_bit *
-        start_time = write_start_time
-        end_time = write_end_time
-        bank = write_bank
-
-        write_en_delay = get_max_pattern_delay(write_en_pattern, max_write_bit, edge=sim_data.RISING_EDGE)
-        write_en_bar_delay = get_max_pattern_delay(write_en_bar_pattern, max_write_bit, edge=sim_data.FALLING_EDGE)
-        flop_out_delay = get_max_pattern_delay(write_driver_in_pattern, max_write_bit)
-        bl_delay = get_max_pattern_delay(bl_pattern, max_write_col, edge=sim_data.FALLING_EDGE)
-        br_delay = get_max_pattern_delay(br_pattern, max_write_col, edge=sim_data.FALLING_EDGE)
-        q_delay = get_max_pattern_delay(q_net)
-
-        print_max_delay("Write EN", write_en_delay)
+    print("\nWrite Critical Path: t = {:.3g}n row={} bit={} bank={}\n".format(max_write_event[0], max_write_row,
+                                                                              max_write_bit, bank))
+    print_max_delay("Write EN", write_en_delay)
+    if "write_en_bar" in voltage_probes["control_buffers"]:
+        write_en_bar_delay = voltage_probe_delay("control_buffers", "write_en_bar", bank,
+                                                 controls_write_bit, edge=sim_data.FALLING_EDGE)
         print_max_delay("Write ENB", write_en_bar_delay)
-        print_max_delay("Flop out", flop_out_delay)
-        print_max_delay("BL", bl_delay)
-        print_max_delay("BR", br_delay)
-        print_max_delay("Q", q_delay)
+    print_max_delay("Flop out", flop_out_delay)
+    print_max_delay("BL", bl_delay)
+    print_max_delay("BR", br_delay)
+    print_max_delay("Q", q_delay)
 
-        # max_read_event = all_read_events[4]
-        print("\nRead Critical Path: t = {:.3g}n\n".format(max_read_event[0]))
+    # Read analysis
+    max_read_bit = get_analysis_bit(max_read_bit_delays)
 
-        # Read analysis
-        max_read_bit = get_analysis_bit(max_read_bit_delays)
+    max_read_address = max_read_event[1]
+    max_read_row = max_read_event[4]
+    wl_en_row = options.num_rows - 1
+    max_read_period = max_read_event[2]
+    read_start_time = max_read_event[0]
+    read_end_time = read_start_time + max_read_period + read_settling_time + 0.1e-9
 
-        max_read_address = max_read_event[1]
-        max_read_row = max_read_event[4]
-        max_read_period = max_read_event[2]
-        read_start_time = max_read_event[0]
-        read_end_time = read_start_time + max_read_period + read_settling_time + 0.1e-9
-        read_bank = max_read_event[6]
+    read_q_net = "v({})".format(state_probes[str(max_read_address)][max_read_bit])
+    bank = read_bank = int(re.search("Xbank([0-1]+)", read_q_net).group(1))
 
-        read_q_net = "v({})".format(state_probes[str(max_read_address)][max_read_bit])
+    max_read_col = int(re.search("r[0-9]+_c([0-9]+)", read_q_net).group(1))
+    controls_read_bit = int(max_read_col / words_per_row)
 
-        max_read_col = int(re.search("r[0-9]+_c([0-9]+)", read_q_net).group(1))
+    start_time = read_start_time
+    end_time = read_end_time
 
-        start_time = read_start_time
-        end_time = read_end_time
-        bank = read_bank
+    print("\nRead Critical Path: t = {:.3g}n row={} bit={} bank={} \n".
+          format(max_read_event[0], max_read_row, max_read_bit, bank))
+    wordline_en = "wordline_en" if cmos else "rwl_en"
 
-        wordline_en_delay = get_max_pattern_delay(wordline_en_pattern, edge=sim_data.RISING_EDGE)
-        wordline_delay = get_max_pattern_delay(wordline_pattern, max_read_row, edge=sim_data.RISING_EDGE)
-        sample_fall_delay = get_max_pattern_delay(sample_en_bar_pattern, max_read_bit, edge=sim_data.FALLING_EDGE)
-        sample_rise_delay = get_max_pattern_delay(sample_en_bar_pattern, max_read_bit, edge=sim_data.RISING_EDGE)
-        sense_en_delay = get_max_pattern_delay(sense_en_pattern, max_read_bit)
-        if words_per_row == 1:
-            bl_delay = get_max_pattern_delay(bl_pattern, max_read_bit)
-            br_delay = get_max_pattern_delay(br_pattern, max_read_bit)
-            bl_plot_pattern = bl_pattern
-            br_plot_pattern = br_pattern
-        else:
-            bl_delay = get_max_pattern_delay(bl_out_pattern, max_read_bit)
-            br_delay = get_max_pattern_delay(br_out_pattern, max_read_bit)
-            bl_plot_pattern = bl_out_pattern
-            br_plot_pattern = br_out_pattern
-        if not cmos and not options.plot == "write":
-            wordline_pattern = rwl_pattern
-            wordline_en_pattern = rwl_en_pattern
+    wordline_en_delay = voltage_probe_delay("control_buffers", wordline_en, bank,
+                                            bit=wl_en_row, edge=sim_data.RISING_EDGE)
+    wordline_delay = voltage_probe_delay("wl", None, None, bit=max_read_address,
+                                         edge=sim_data.RISING_EDGE)
 
-        print_max_delay("Wordline EN", wordline_en_delay)
-        print_max_delay("Wordline ", wordline_delay)
+    sample_fall_delay = sample_rise_delay = None
+    if "sample_en_bar" in voltage_probes["control_buffers"]:
+        sample_fall_delay = voltage_probe_delay("control_buffers", "sample_en_bar", bank,
+                                                controls_read_bit, edge=sim_data.FALLING_EDGE)
+        sample_rise_delay = voltage_probe_delay("control_buffers", "sample_en_bar", bank,
+                                                controls_read_bit, edge=sim_data.RISING_EDGE)
+
+    sense_en_delay = voltage_probe_delay("control_buffers", "sense_en", bank,
+                                         controls_read_bit, edge=sim_data.RISING_EDGE)
+
+    bl_delay = voltage_probe_delay("sense_amp_array", "bl", bank, controls_read_bit)
+    if "br" in voltage_probes["sense_amp_array"][str(bank)]:
+        br_delay = voltage_probe_delay("sense_amp_array", "br", bank, controls_read_bit)
+    else:
+        br_delay = voltage_probe_delay("br", None, bank, col=max_read_col)
+
+    print_max_delay("Wordline EN", wordline_en_delay)
+    print_max_delay("Wordline ", wordline_delay)
+    if sample_rise_delay is not None and sample_rise_delay is not None:
         print_max_delay("Sample Fall", sample_fall_delay)
         print_max_delay("Sample Rise", sample_rise_delay)
-        print_max_delay("Sense EN", sense_en_delay)
-        print_max_delay("BL", bl_delay)
-        print_max_delay("BR", br_delay)
+    print_max_delay("Sense EN", sense_en_delay)
+    print_max_delay("BL", bl_delay)
+    print_max_delay("BR", br_delay)
 
-        and_out_signal = and_out_pattern.format(bank, max_read_bit)
-        if and_out_signal in sim_analyzer.all_saved_signals:
-            and_out_delay = get_max_pattern_delay(and_out_pattern, max_read_bit)
-            print_max_delay("Sense out", and_out_delay)
+    sense_out_delay = voltage_probe_delay("sense_amp_array", "dout", bank, controls_read_bit)
+    print_max_delay("Sense out", sense_out_delay)
 
-        # Plots
-        if options.plot is not None:
-            logging.getLogger('matplotlib').setLevel(logging.WARNING)
-            if options.plot == "write":
-                bit = max_write_bit
-                col = max_write_col
-                start_time = write_start_time
-                end_time = write_end_time
-                row = max_write_row
-                bank = write_bank
-                address = write_address
-            else:
-                bit = max_read_bit
-                col = max_read_col
-                start_time = read_start_time
-                end_time = read_end_time
-                q_net = read_q_net
-                row = max_read_row
-                bank = read_bank
-                address = max_read_address
+    # Plots
+    if options.plot is not None:
+        logging.getLogger('matplotlib').setLevel(logging.WARNING)
+        fig, ax1 = plt.subplots()
+        if options.plot == "write":
+            bit = controls_write_bit
+            q_bit = max_write_bit
+            q_net = write_q_net
+            col = max_write_col
+            start_time = write_start_time
+            end_time = write_end_time
+            row = max_write_row
+            bank = write_bank
+            address = write_address
+        else:
+            bit = controls_read_bit
+            q_bit = max_read_bit
+            col = max_read_col
+            start_time = read_start_time
+            end_time = read_end_time
+            q_net = read_q_net
+            row = max_read_row
+            bank = read_bank
+            address = max_read_address
+        if col not in probe_cols:
+            control_col = int(col / words_per_row) * words_per_row
+        else:
+            control_col = col
 
-            plot_sig(clk_reference, from_t=start_time, to_t=end_time, label="clk_buf")
+        plot_sig(sim_analyzer.clk_reference, from_t=start_time, to_t=end_time, label="clk_buf")
 
-            plot_sig(bl_pattern.format(bank, col),
-                     from_t=start_time, to_t=end_time, label="bl")
-            plot_sig(br_pattern.format(bank, col),
-                     from_t=start_time, to_t=end_time, label="br")
-            if words_per_row > 1:
-                plot_sig(bl_out_pattern.format(bank, bit),
-                         from_t=start_time, to_t=end_time, label="bl_out")
-                plot_sig(br_out_pattern.format(bank, bit),
-                         from_t=start_time, to_t=end_time, label="br_out")
 
-            if options.plot == "write":
-                # plot_sig(write_en_pattern.format(bank, max_write_bit),
-                #                                    from_t=start_time, to_t=end_time, label="write_en")
-                # plot_sig(write_en_bar_pattern.format(bank, max_write_bit),
-                #                                    from_t=start_time, to_t=end_time, label="write_en_bar")
-                if verbose_save:
-                    plot_sig(flop_clk_in_pattern.format(bank, max_write_bit),
-                             from_t=start_time, to_t=end_time, label="flop_clk")
-                    plot_sig(write_driver_in_pattern.format(bank, max_write_bit),
-                             from_t=start_time, to_t=end_time, label="flop_out")
-            else:
-                plot_sig(sample_en_bar_pattern.format(bank, max_read_bit),
+        def format_sig(key, net, bit_=None):
+            if bit_ is None:
+                bit_ = bit
+            return get_probe(key, net, bank, bit_)
+
+
+        plot_sig(format_sig("bl", None, col), from_t=start_time, to_t=end_time, label="bl")
+        plot_sig(format_sig("br", None, col), from_t=start_time, to_t=end_time, label="br")
+
+        plot_sig(format_sig("sense_amp_array", "bl"),
+                 from_t=start_time, to_t=end_time, label="bl_out")
+
+        # if "br" in voltage_probes["sense_amp_array"][str(bank)]:
+        #     plot_sig(format_sig("sense_amp_array", "br"),
+        #              from_t=start_time, to_t=end_time, label="br_out")
+        # elif "br" in voltage_probes["write_driver_array"][str(bank)]:
+        #     plot_sig(format_sig("write_driver_array", "br"),
+        #              from_t=start_time, to_t=end_time, label="br_out")
+
+        # if "bl_reset" in voltage_probes["control_buffers"]["0"]:
+        #     plot_sig(format_sig("control_buffers", "bl_reset", control_col),
+        #              from_t=start_time, to_t=end_time, label="bl_reset")
+        #     plot_sig(format_sig("control_buffers", "br_reset", control_col),
+        #              from_t=start_time, to_t=end_time, label="br_reset")
+
+        if options.plot == "write":
+            plot_sig(format_sig("control_buffers", "write_en"),
+                     from_t=start_time, to_t=end_time, label="write_en")
+            # plot_sig(format_sig("control_buffers", "clk_buf"),
+            #          from_t=start_time, to_t=end_time, label="flop_clk")
+            # plot_sig(format_sig("write_driver_array", "data"),
+            #          from_t=start_time, to_t=end_time, label="flop_out")
+        else:
+            if sample_rise_delay is not None:
+                plot_sig(format_sig("control_buffers", "sample_en_bar"),
                          from_t=start_time, to_t=end_time, label="sample")
-                plot_sig(sense_en_pattern.format(bank, max_read_bit),
-                         from_t=start_time, to_t=end_time, label="sense_en")
-                plot_sig(and_out_pattern.format(bank, max_read_bit),
-                         from_t=start_time, to_t=end_time, label="and_out")
-            plot_sig(wordline_pattern.format(bank, row),
-                     from_t=start_time, to_t=end_time, label="wl[{}]".format(row))
-            # plot_sig(wordline_en_pattern.format(bank),
-            #                                    from_t=start_time, to_t=end_time, label="wl_en")
-            plot_sig(q_net, from_t=start_time, to_t=end_time, label="Q")
-            #            plot_sig("clk", from_t=start_time, to_t=end_time, label="clk")
-            plt.axhline(y=0.45, linestyle='--', linewidth=0.5)
-            plt.axhline(y=0.9, linestyle='--', linewidth=0.5)
+            if mode == SOT_MODE:
+                plot_sig(format_sig("sense_amp_array", "vref"),
+                         from_t=start_time, to_t=end_time, label="vref")
+                plot_sig(format_sig("sense_amp_array", "vdata"),
+                         from_t=start_time, to_t=end_time, label="vdata")
+            if mode in [SOT_MODE, SOTFET_MODE]:
+                plot_sig(format_sig("control_buffers", "rwl_en", bit_=wl_en_row),
+                         from_t=start_time, to_t=end_time, label="rwl_en")
+            plot_sig(format_sig("control_buffers", "sense_en"),
+                     from_t=start_time, to_t=end_time, label="sense_en")
+            if mode == CMOS_MODE:
+                for net in ["out_int", "outb_int"]:
+                    plot_sig(format_sig("sense_amp_array", net),
+                             from_t=start_time, to_t=end_time, label=net)
+            else:
+                plot_sig(format_sig("sense_amp_array", "dout"),
+                         from_t=start_time, to_t=end_time, label="sense_out")
+            plot_sig(data_pattern.format(bit),
+                     from_t=start_time, to_t=end_time, label="D")
+        if not cmos and options.plot == "write":
+            wl_name = "wwl"
+        else:
+            wl_name = "wl"
+        plot_sig(voltage_probes[wl_name][str(address)],
+                 from_t=start_time, to_t=end_time, label="wl[{}]".format(row))
+        # plot_sig(wordline_en_pattern.format(bank),
+        #                                    from_t=start_time, to_t=end_time, label="wl_en")
+        plot_sig(q_net, from_t=start_time, to_t=end_time, label="Q")
+        #            plot_sig("clk", from_t=start_time, to_t=end_time, label="clk")
+        plt.axhline(y=0.45, linestyle='--', linewidth=0.5)
+        plt.axhline(y=0.9, linestyle='--', linewidth=0.5)
 
-            if options.plot == "write" and not cmos:
-                write_current_net = q_net.replace("state", "M1:d").replace("v(", "").replace(")", "")
-                write_current_time = sim_data.get_signal_time(write_current_net, from_t=start_time,
-                                                              to_t=end_time)
-                write_current = write_current_time[1] / max(abs(write_current_time[1]))
-                # write_current = write_current_time[1] * 10e6
-                plt.plot(write_current_time[0], write_current, label="current")
+        plt.grid()
+        plt.legend(loc="center left", fontsize="x-small")
+        plt.title("{}: bit = {} col = {} addr = {}".format(os.path.basename(openram_temp),
+                                                           q_bit, col, address))
+        if not options.verbose_save:
+            print("Available bits: {}".format(", ".join(map(str, probe_bits))))
 
-            plt.grid()
-            plt.legend(loc="center left", fontsize="x-small")
-            plt.title("{}: bit = {} col = {} addr = {}".format(os.path.basename(openram_temp),
-                                                               bit, col, address))
-            if not verbose_save:
-                print("Available bits: {}".format(", ".join(map(str, probe_bits))))
-            # move_plot(monitor=0, maximized=False)
-            plt.show()
+        sot_write = options.plot == "write" and not cmos
+
+        # psf_reader.get_dpi() TODO segfaults
+        # psf_reader.move_plot(monitor=0, maximized=False)
+        # plt.show(block=not sot_write)
+
+        if sot_write:
+            write_current_net = current_probes["bitcell_array"][str(address)][str(q_bit)]
+            write_current_net = "i1({})".format(write_current_net)
+            print(write_current_net)
+            write_current_time = sim_data.get_signal_time(write_current_net, from_t=start_time,
+                                                          to_t=end_time)
+            # write_current = write_current_time[1] / max(abs(write_current_time[1]))
+            write_current = write_current_time[1] * 1e6
+            # plt.figure()
+            ax2 = ax1.twinx()
+            plt.plot(write_current_time[0], write_current, ':k', label="current")
+            ax2.set_ylabel("Write Current (uA)")
+            ax2.grid()
+        plt.tight_layout()
+        plt.show()

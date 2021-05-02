@@ -37,19 +37,24 @@ class contact_test(OpenRamTest):
     def test_m1m2(self):
         self.check_stack(("metal1", "via1", "metal2"))
 
-    def test_full_stack_m1_m10(self):
+    def test_full_stack_m1_mtop(self):
         from base.contact_full_stack import ContactFullStack
         m1mtop = ContactFullStack.m1mtop()
         self.local_drc_check(m1mtop)
 
-    def test_full_stack_m2_m10(self):
+    def test_full_stack_m2_mtop(self):
         from base.contact_full_stack import ContactFullStack
         m2mtop = ContactFullStack.m2mtop()
         self.local_drc_check(m2mtop)
 
-    def test_full_stack_thin_m1_m9(self):
+    def test_full_stack_m1_m_second_top(self):
         from base.contact_full_stack import ContactFullStack
-        m1mtop = ContactFullStack(start_layer=0, stop_layer=1, centralize=False, dimensions=[[1, 5]])
+        m1mtop = ContactFullStack(start_layer=0, stop_layer=-2, centralize=False, dimensions=[1, 2])
+        self.local_drc_check(m1mtop)
+
+    def test_full_stack_m1_m2(self):
+        from base.contact_full_stack import ContactFullStack
+        m1mtop = ContactFullStack(start_layer=0, stop_layer=1, centralize=False, dimensions=[1, 5])
         self.local_drc_check(m1mtop)
 
 

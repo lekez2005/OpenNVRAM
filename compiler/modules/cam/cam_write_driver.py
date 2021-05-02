@@ -10,7 +10,5 @@ class cam_write_driver(design.design):
     is a hand-made cell, so the layout and netlist should be available in
     the technology library.
     """
-
-    pin_names = ["din", "bl", "br", "en", "mask", "gnd", "vdd"]
     lib_name = "cam_write_driver"
 

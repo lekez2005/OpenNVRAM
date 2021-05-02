@@ -70,6 +70,7 @@ class DelayParamsBase(ABC):
 
     @classmethod
     def get_rc(cls, layer=None, width=None, space=None):
+        """Return cap in F per um and r in ohm per micron """
         if not cls.rc_map:
             cls.initialize()
         if layer is None:
@@ -80,8 +81,8 @@ class DelayParamsBase(ABC):
             space = cls.min_space
 
         rc_def = cls.find_closest(layer, width, space)
-        c = rc_def.cap * width / rc_def.width
-        r = rc_def.res * rc_def.width / width
+        c = rc_def.cap * width
+        r = rc_def.res / width
         return c, r
 
     @classmethod

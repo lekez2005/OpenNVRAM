@@ -32,7 +32,7 @@ class options(optparse.Values):
 
     use_ultrasim = False
     ultrasim_speed = 3  # 1 (most accurate) -> 8 (least accurate)
-    ultrasim_mode = "a"  # a for analog, s for spice
+    ultrasim_mode = "s"  # a for analog, s for spice. spice is more accurate
 
     # The spice executable being used which is derived from the user PATH.
     spice_exe = ""
@@ -58,10 +58,10 @@ class options(optparse.Values):
     supply_voltages = ""
     temperatures = ""
     process_corners = ""
-    use_body_taps = True  # bitcell does not include body taps so insert body taps between bitcells
 
     spectre_format = "psfbin"
     spectre_ic_mode = "node"
+    spectre_simulator_options = " "
     decoder_flops = False
 
     verbose_save = False  # whether to save all lots of internal nodes e.g. cols for control signals, currents
@@ -73,7 +73,8 @@ class options(optparse.Values):
     cache_optimization_prefix = ""
 
     # use data from characterizations or dynamically compute
-    use_characterization_data = True  # Require exact match in loading characterization data
+    use_characterization_data = True
+    # Require exact match in loading characterization data or permit interpolation
     interpolate_characterization_data = True
 
     # for delay graph evaluation, if number of driven loads is greater than N,
@@ -84,10 +85,14 @@ class options(optparse.Values):
     decoder = "hierarchical_decoder"
     col_decoder = "column_decoder"
     ms_flop = "ms_flop"
+    ms_flop_mod = "ms_flop"
+    ms_flop_tap_mod = "ms_flop_tap"
     mask_in_flop = ms_flop
     mask_in_flop_tap = "ms_flop_tap"
+
     predecoder_flop = "ms_flop_horz_pitch"
     predecoder_flop_layout = "h"  # v for side by side, h for one above the other
+
     ms_flop_array = "ms_flop_array"
     ms_flop_array_horizontal = "ms_flop_array_horizontal"
     ms_flop_horz_pitch = "ms_flop_horz_pitch"
@@ -97,32 +102,86 @@ class options(optparse.Values):
     bitcell_array = "bitcell_array"
     sense_amp = "sense_amp"
     sense_amp_mod = "sense_amp"
+    sense_amp_tap = "sense_amp_tap"
     sense_amp_array = "sense_amp_array"
     precharge_array = "precharge_array"
     column_mux_array = "single_level_column_mux_array"
     write_driver = "write_driver"
+    write_driver_mod = "write_driver"
     write_driver_array = "write_driver_array"
+    tri_gate_mod = "tri_gate"
     tri_gate = "tri_gate"
     tri_gate_array = "tri_gate_array"
     wordline_driver = "wordline_driver"
     replica_bitline = "replica_bitline"
     replica_bitcell = "replica_bitcell"
     bitcell = "bitcell"
+    bitcell_mod = "cell_6t"
     delay_chain = "delay_chain"
     body_tap = "body_tap"
     control_flop = "ms_flop_horz_pitch"
+    flop_buffer = "flop_buffer.FlopBuffer"
+
+    pex_tx_prefix = "m"  # m for regular bsim model, X for subckt model definitions
 
     # buffer stages
+    max_buf_size = 40
+    # Penalize large buffer sizes. Add 'penalty'*(sum(sizes)) ps to delays
+    buffer_optimization_size_penalty = 0.1
     control_logic_clk_buffer_stages = [2, 6, 16, 24]  # buffer stages for control logic clk_bar and clk_buf
     control_logic_logic_buffer_stages = [2.5, 8]  # buffer stages for control logic outputs except clks
     bank_gate_buffers = {  # buffers for bank gate. "default" used for unspecified signals
         "default": [2, 4, 8],
         "clk": [2, 6, 12, 24, 24]
     }
-    precharge_size = 2
-    column_mux_size = 4
+    # For num_banks == 2, whether to spread word across the two banks or make them independent
+    independent_banks = True
+    # Create separate buffered clock for decoders or use clk_buf (shared with flops)
+    create_decoder_clk = True
+    decoder_clk_stages = [4]
+    bank_sel_stages = [4]
 
+    control_buffers_num_rows = 2
+    # Whether external precharge trigger signal is supplied.
+    # If no precharge_trigger, precharge uses the clock edges
+    use_precharge_trigger = False
+
+    precharge_size = 4
+    max_precharge_size = 10
+    max_column_decoder_buffers = 8
+    column_mux_size = 8
+
+    # bitcell config
+    # bitcell can be mirrored across y axis without really swapping bitlines
+    symmetric_bitcell = True
+    mirror_bitcell_y_axis = False
     cells_per_group = 1
+    num_dummies = 0
+    dummy_cell = None
+    export_dummy_bitcell_pins = True
+
+    use_x_body_taps = True  # bitcell does not include body taps so insert body taps between bitcells columns
+    use_y_body_taps = False # insert taps between bitcell rows
+
+    # control signals routing configuration
+    # whether to route rails to the left of the peripherals array
+    route_control_signals_left = False
+    # whether to connect to array closest to the buffer or closer to the middle of the array
+    # applies when not 'route_control_signals_left'
+    centralize_control_signals = False
+
+    # repeaters configuration
+    add_buffer_repeaters = True  # whether to add repeaters
+    # whether to add dedicated space between bitcells or just use space between the bitlines
+    dedicated_repeater_space = False
+    # repeater x offset relative to total array width
+    repeater_x_offset = 0.7
+    # repeaters will be added if num_cols in a bank > this
+    buffer_repeaters_col_threshold = 128
+    # repeater sizes e.g. ("clk_bar", ["clk_buf", "clk_bar"], [10, 15, 20])
+    # takes "clk_bar" output from control buffer, adds inverter chain 10-20
+    # output of 15 goes to clk_bar, output of 20 goes to clk_buf
+    buffer_repeater_sizes = []
 
     predecode_sizes = [1, 2]
     control_flop_buffers = [2]  # buffer for control flop
@@ -130,6 +189,9 @@ class options(optparse.Values):
     sense_amp_type = "sense_amp"
     LATCHED_SENSE_AMP = "latched_sense_amp"
     MIRROR_SENSE_AMP = "sense_amp"
+
+    # for number of bitcells between M4 bitcell grids
+    bitcell_vdd_spacing = 10
 
     def __init__(self):
         super().__init__()

@@ -2,8 +2,6 @@ import debug
 from base import utils
 from base.design import design
 from base.vector import vector
-from globals import OPTS
-from modules.precharge import precharge_tap
 from modules.precharge_array import precharge_array
 from tech import drc
 
@@ -30,7 +28,7 @@ class sotfet_mram_br_precharge_array(precharge_array):
         """Creates a precharge array by horizontally tiling the precharge cell"""
         (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
         for i in range(self.columns):
-            name = "pre_column_{0}".format(i)
+            name = "mod_{0}".format(i)
             offset = vector(self.bitcell_offsets[i] + self.pc_cell.width, 0)
             inst = self.add_inst(name=name,
                                  mod=self.pc_cell,

@@ -1,19 +1,31 @@
-from base.contact import m2m3
+import debug
+from base.contact import m2m3, m1m2
 from base.design import METAL3, METAL2
 from base.vector import vector
 from base.well_implant_fills import create_wells_and_implants_fills
+from globals import OPTS
+from modules.horizontal.pinv_wordline import pinv_wordline
 from modules.shared_decoder.cmos_sram import CmosSram
-from modules.shared_decoder.sotfet.sotfet_mram_bank import SotfetMramBank
 
 
 class SotfetMram(CmosSram):
 
     def create_bank(self):
-        self.bank = SotfetMramBank(name="bank", word_size=self.word_size,
-                                   num_words=self.num_words_per_bank,
-                                   words_per_row=self.words_per_row,
-                                   num_banks=self.num_banks)
+        if OPTS.mram == "sotfet":
+            self.fixed_controls = ["vref"]
+        else:
+            self.fixed_controls = ["vclamp"]
+        kwargs = {"word_size": self.word_size,
+                  "num_words": self.num_words_per_bank,
+                  "words_per_row": self.words_per_row,
+                  "num_banks": self.num_banks}
+        self.bank = self.create_mod_from_str(OPTS.bank_class, **kwargs)
         self.add_mod(self.bank)
+
+        if self.num_banks == 2:
+            debug.info(1, "Creating left bank")
+            kwargs["adjacent_bank"] = self.bank
+            self.left_bank = self.create_mod_from_str(OPTS.bank_class, **kwargs)
 
     def join_decoder_wells(self):
         fill_rects = create_wells_and_implants_fills(
@@ -45,29 +57,46 @@ class SotfetMram(CmosSram):
                 bank_inst = self.bank_insts[i]
                 wordline_in = bank_inst.get_pin("dec_out[{}]".format(row))
                 if row % 2 == 0:
-                    self.add_contact(m2m3.layer_stack,
-                                     offset=vector(decoder_out.lx(), wordline_in.by()))
+                    via_offset = vector(decoder_out.lx(), wordline_in.by())
                     self.add_rect(METAL2, offset=decoder_out.ll(),
                                   height=wordline_in.by() - decoder_out.by())
                 else:
-                    self.add_contact(m2m3.layer_stack,
-                                     offset=vector(decoder_out.lx(),
-                                                   wordline_in.uy() - m2m3.height))
+                    via_offset = vector(decoder_out.lx(), wordline_in.uy() - m2m3.height)
                     self.add_rect(METAL2, offset=decoder_out.ul(),
                                   height=wordline_in.by() - decoder_out.uy())
+                vias = [m2m3]
+                if isinstance(self.row_decoder.inv, pinv_wordline):
+                    vias.append(m1m2)
+                for via in vias:
+                    self.add_contact(via.layer_stack, offset=via_offset)
                 end_x = wordline_in.lx() if i == 0 else wordline_in.rx()
                 self.add_rect(METAL3, offset=vector(decoder_out.lx(), wordline_in.by()),
                               width=end_x - decoder_out.lx())
 
-    def get_bank_connections(self, bank_num):
-        connections = super().get_bank_connections(bank_num)
-        connections.append("vref")
-        return connections
+    def join_bank_controls(self):
+        if self.single_bank:
+            return
+        super().join_bank_controls()
+
+        # find lowest control rail to prevent clash
+        rails = [getattr(self, x + "_rail") for x in self.control_inputs]
+        y_offset = min(rails, key=lambda x: x.by()).by()
+
+        for bank_inst in self.bank_insts:
+            control_rails = [getattr(bank_inst.mod, x + "_rail")
+                             for x in bank_inst.mod.left_control_rails]
+            min_y = min(control_rails, key=lambda x: x.by()).by() + bank_inst.by()
+            y_offset = min(y_offset, min_y)
+
+        y_offset -= self.bus_pitch
+        for pin_name in self.fixed_controls:
+            self.join_control(pin_name, y_offset)
 
     def add_pins(self):
         super().add_pins()
-        self.add_pin("vref")
+        self.add_pin_list(self.fixed_controls)
 
     def copy_layout_pins(self):
         super().copy_layout_pins()
-        self.copy_layout_pin(self.right_bank_inst, "vref")
+        for pin_name in self.fixed_controls:
+            self.copy_layout_pin(self.right_bank_inst, pin_name)

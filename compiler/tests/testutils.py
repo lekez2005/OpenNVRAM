@@ -56,14 +56,19 @@ class OpenRamTest(unittest.TestCase):
         globals.end_openram()
 
     def setUp(self):
+        self.corner = (OPTS.process_corners[0], OPTS.supply_voltages[0], OPTS.temperatures[0])
         OPTS.check_lvsdrc = False
         self.reset()
+
+    def temp_file(self, file_name):
+        return os.path.join(OPTS.openram_temp, file_name)
     
     def local_drc_check(self, w):
         tempgds = os.path.join(OPTS.openram_temp, "temp.gds")
         w.gds_write(tempgds)
         import verify
-        self.assertFalse(verify.run_drc(w.name, tempgds, exception_group=w.__class__.__name__))
+        self.assertFalse(verify.run_drc(w.drc_gds_name, tempgds,
+                                        exception_group=w.__class__.__name__))
 
         if OPTS.purge_temp:
             self.cleanup()  
@@ -78,7 +83,8 @@ class OpenRamTest(unittest.TestCase):
 
         import verify
         try:
-            self.assertTrue(verify.run_drc(a.name, tempgds, exception_group=a.__class__.__name__)==0)
+            self.assertTrue(verify.run_drc(a.drc_gds_name, tempgds,
+                                           exception_group=a.__class__.__name__) == 0)
         except:
             self.reset()
             self.fail("DRC failed: {}".format(a.name))
@@ -110,9 +116,16 @@ class OpenRamTest(unittest.TestCase):
     @staticmethod
     def load_class_from_opts(mod_name):
         config_mod_name = getattr(OPTS, mod_name)
-        class_file = reload(__import__(config_mod_name))
-        mod_class = getattr(class_file, config_mod_name)
-        return mod_class
+        from base.design import design
+        return design.import_mod_class_from_str(config_mod_name)
+
+    @staticmethod
+    def create_class_from_opts(opt_name, *args, **kwargs):
+        from base.design import design
+        from globals import OPTS
+        opt_val = getattr(OPTS, opt_name)
+        mod = design.create_mod_from_str_(opt_val, *args, **kwargs)
+        return mod
 
     def isclose(self, value1, value2, error_tolerance=1e-2):
         """ This is used to compare relative values. """

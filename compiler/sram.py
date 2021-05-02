@@ -25,19 +25,9 @@ class sram(design.design, sram_power_grid.Mixin):
 
     def __init__(self, word_size, num_words, num_banks, name, words_per_row=None):
 
-        c = reload(__import__(OPTS.control_logic))
-        self.mod_control_logic = getattr(c, OPTS.control_logic)
-        
-        c = reload(__import__(OPTS.ms_flop_array))
-        self.mod_ms_flop_array = getattr(c, OPTS.ms_flop_array)
-        
         c = __import__(OPTS.bitcell)
         self.mod_bitcell = getattr(c, OPTS.bitcell)
         self.bitcell = self.mod_bitcell()
-
-        c = reload(__import__(OPTS.ms_flop))
-        self.mod_ms_flop = getattr(c, OPTS.ms_flop)
-        self.ms_flop = self.mod_ms_flop()
 
         self.word_size = word_size
         self.num_words = num_words
@@ -64,8 +54,9 @@ class sram(design.design, sram_power_grid.Mixin):
         self.bank_to_bus_distance = 5*self.m3_width
         
         self.compute_sizes()
-        self.add_pins()
+
         self.create_layout()
+        self.add_pins()
         
         # Can remove the following, but it helps for debug!
         self.add_lvs_correspondence_points()
@@ -95,7 +86,7 @@ class sram(design.design, sram_power_grid.Mixin):
 
         # Estimate the words per row given the height of the bitcell and the square side length
         if self.words_per_row is not None:
-            self.tentative_num_cols = self.words_per_row
+            self.tentative_num_cols = self.words_per_row * self.word_size
         else:
             self.tentative_num_cols = int(self.bank_side_length/self.bitcell.width)
             self.words_per_row = self.estimate_words_per_row(self.tentative_num_cols, self.word_size)
@@ -746,10 +737,11 @@ class sram(design.design, sram_power_grid.Mixin):
         # y_flip == -1 --> flip in y_axis
 
         # x_flip and y_flip are used for position translation
+        bank_mod = self.get_bank_mod(bank_num)
         position_copy = vector(position)
 
-        position_copy.x += int(y_flip == -1)*self.bank.width
-        position_copy.y += int(x_flip == -1)*self.bank.height
+        position_copy.x += int(y_flip == -1) * bank_mod.width
+        position_copy.y += int(x_flip == -1) * bank_mod.height
 
         if x_flip == -1 and y_flip == -1:
             bank_mirror = "XY"
@@ -759,15 +751,18 @@ class sram(design.design, sram_power_grid.Mixin):
             bank_mirror = "MY"
         else:
             bank_mirror = "R0"
-            
-        bank_inst=self.add_inst(name="bank{0}".format(bank_num),
-                                mod=self.bank,
-                                offset=position_copy,
-                                mirror=bank_mirror)
+
+        bank_inst = self.add_inst(name="bank{0}".format(bank_num),
+                                  mod=self.get_bank_mod(bank_num),
+                                  offset=position_copy,
+                                  mirror=bank_mirror)
 
         self.connect_inst(self.get_bank_connections(bank_num))
 
         return bank_inst
+
+    def get_bank_mod(self, bank_num):
+        return self.bank
 
     def get_bank_connections(self, bank_num):
         connections = []

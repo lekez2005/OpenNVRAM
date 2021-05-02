@@ -1,15 +1,18 @@
 import math
-from importlib import reload
 
 import debug
 from base import contact
 from base import design
+from base.contact import m2m3, m1m2, cross_m1m2
+from base.design import METAL3, METAL1, METAL2, PIMP, NIMP
 from base.vector import vector
 from globals import OPTS
-from pgates.pgate import pgate
+from modules.buffer_stage import BufferStage
 from pgates.pinv import pinv
 from pgates.pnand2 import pnand2
 from pgates.pnand3 import pnand3
+from pgates.pnor2 import pnor2
+from pgates.pnor3 import pnor3
 from tech import drc
 
 
@@ -17,9 +20,11 @@ class hierarchical_predecode(design.design):
     """
     Pre 2x4 and 3x8 decoder shared code.
     """
-    def __init__(self, input_number, route_top_rail=True, use_flops=False, buffer_sizes=None):
+    def __init__(self, input_number, route_top_rail=True, use_flops=False, buffer_sizes=None,
+                 negate=False):
         self.number_of_inputs = input_number
         self.number_of_outputs = int(math.pow(2, self.number_of_inputs))
+
         name = "pre{0}x{1}".format(self.number_of_inputs,self.number_of_outputs)
         if not route_top_rail:
             name += "_no_top"
@@ -30,28 +35,29 @@ class hierarchical_predecode(design.design):
             name += "_" + ("__".join(['{:.3g}'.format(x) for x in buffer_sizes])).replace(".", "_")
         else:
             self.buffer_sizes = OPTS.predecode_sizes
+        if negate:
+            name += "_neg"
+
+        if len(self.buffer_sizes) % 2 == 1:
+            negate = not negate
+
+        self.negate = negate
         design.design.__init__(self, name=name)
         self.route_top_rail = route_top_rail
         self.use_flops = use_flops
 
-        c = __import__(OPTS.bitcell)
-        self.mod_bitcell = getattr(c, OPTS.bitcell)()
+        self.mod_bitcell = self.create_mod_from_str(OPTS.bitcell)
         self.bitcell_height = self.mod_bitcell.height
 
+    def create_flops(self):
         self.vertical_flops = OPTS.predecoder_flop_layout == "v" and self.use_flops
-
         if self.use_flops:
             predecoder_flop = OPTS.predecoder_flop
-
-            c = reload(__import__(predecoder_flop))
-            self.mod_ms_flop = getattr(c, predecoder_flop)
-            self.flop = self.mod_ms_flop()
-            self.add_mod(self.flop)
-
+            self.flop = self.create_mod_from_str(predecoder_flop)
         if self.use_flops and not self.vertical_flops:
             self.module_height = self.flop.height
         else:
-            self.module_height = pgate.get_default_height()
+            self.module_height = getattr(OPTS, "logic_buffers_height", self.bitcell_height)
 
     def add_pins(self):
         in_name = "flop_in[{}]" if self.use_flops else "in[{}]"
@@ -66,6 +72,7 @@ class hierarchical_predecode(design.design):
 
     def create_modules(self):
         """ Create the INV and NAND gate """
+        self.create_flops()
 
         inverter_size = self.buffer_sizes[1]
 
@@ -74,27 +81,52 @@ class hierarchical_predecode(design.design):
         self.nand = self.create_nand(self.number_of_inputs)
         self.add_mod(self.nand)
 
-        # TODO use buffer stages in place of single output inverter
+        self.output_buffer = BufferStage(buffer_stages=self.buffer_sizes[1:], route_outputs=False,
+                                         height=self.module_height)
+        self.add_mod(self.output_buffer)
 
         if not self.route_top_rail:
-            self.top_inv = pinv(size=inverter_size, contact_nwell=False, height=self.module_height)
-            self.add_mod(self.top_inv)
-            self.top_nand = self.create_nand(self.number_of_inputs, contact_nwell=False)
+            self.top_output_buffer = BufferStage(buffer_stages=self.buffer_sizes[1:],
+                                                 route_outputs=False, contact_nwell=False,
+                                                 height=self.module_height)
+            self.add_mod(self.top_output_buffer)
+            self.top_nand = self.create_nand(self.number_of_inputs)
             self.add_mod(self.top_nand)
         else:
-            self.top_inv = self.inv
+            self.top_output_buffer = self.output_buffer
             self.top_nand = self.nand
 
-    def create_nand(self, inputs, contact_nwell=True):
+    def create_nand(self, inputs):
         """ Create the NAND for the predecode input stage """
         nand_size = self.buffer_sizes[0]
         if inputs == 2:
-            nand = pnand2(size=nand_size, contact_nwell=contact_nwell, height=self.module_height)
+            nand_class = pnor2 if self.negate else pnand2
         elif inputs == 3:
-            nand = pnand3(size=nand_size, contact_nwell=contact_nwell, height=self.module_height)
+            nand_class = pnor3 if self.negate else pnand3
         else:
-            return debug.error("Invalid number of predecode inputs.",-1)
-        return nand
+            return debug.error("Invalid number of predecode inputs.", -1)
+        while nand_size >= 1:
+            # silence name clash/size errors
+            def noop(*args, **kwargs): pass
+
+            def silect_check(check, _):
+                assert check
+
+            debug_error = debug.error
+            debug_check = debug.check
+            debug.error = noop
+            debug.check = silect_check
+            try:
+                # adjacent inverter will have body taps
+                nand = nand_class(size=nand_size, contact_nwell=False,
+                                  contact_pwell=False,
+                                  height=self.module_height, same_line_inputs=False)
+                return nand
+            except (AssertionError, AttributeError):
+                nand_size *= 0.98
+            finally:
+                debug.error = debug_error
+                debug.check = debug_check
 
     def setup_flop_offsets(self):
         x_offset = 0
@@ -140,7 +172,9 @@ class hierarchical_predecode(design.design):
     def setup_constraints(self):
         # we are going to use horizontal vias, so use the via height
         # use a conservative douple spacing just to get rid of annoying via DRCs
-        self.m1_pitch = self.m2_pitch = self.m3_pitch = contact.m1m2.width + self.parallel_line_space
+        self.m1_pitch = m1m2.first_layer_width + self.get_parallel_space(METAL1)
+        self.m2_pitch = m1m2.second_layer_width + self.get_parallel_space(METAL2)
+        self.m3_pitch = m2m3.second_layer_width + self.get_parallel_space(METAL3)
 
         # The rail offsets are indexed by the label
         self.rails = {}
@@ -166,14 +200,19 @@ class hierarchical_predecode(design.design):
 
 
         # x offset to NAND decoder includes the left rails, mid rails and inverters, plus an extra m2 pitch
-        self.x_off_nand = self.mid_rail_x + (1 + 2*self.number_of_inputs) * self.m2_pitch
+        # give space to A pin
 
-                       
+        nand_a_pin = self.nand.get_pin("A")
+        via_space = self.get_line_end_space(METAL1) + m1m2.first_layer_height
+        a_pin_space = max(via_space - nand_a_pin.lx(), 0)
+        self.x_off_nand = self.mid_rail_x + (1 + 2*self.number_of_inputs) * self.m2_pitch + a_pin_space
+
+
         # x offset to output inverters
         self.x_off_inv_2 = self.x_off_nand + self.nand.width
 
         # Height width are computed 
-        self.width = self.x_off_inv_2 + self.inv.width
+        self.width = self.x_off_inv_2 + self.output_buffer.width
         self.height = self.number_of_outputs * self.nand.height
 
     def create_rails(self):
@@ -188,12 +227,12 @@ class hierarchical_predecode(design.design):
                 default_height = self.height - 2*self.m2_space
                 self.add_layout_pin(text=label,
                                     layer="metal2",
-                                    offset=vector(self.rails[label] - 0.5*self.m2_width, 0), 
+                                    offset=vector(self.rails[label] - 0.5*self.m2_width, 0),
                                     width=self.m2_width,
                                     height=self.rail_heights.get(label, default_height))
             else:
                 self.add_rect(layer="metal2",
-                              offset=vector(self.rails[label] - 0.5*self.m2_width, 0), 
+                              offset=vector(self.rails[label] - 0.5*self.m2_width, 0),
                               width=self.m2_width,
                               height=self.height - top_space)
 
@@ -203,7 +242,7 @@ class hierarchical_predecode(design.design):
         self.in_inst = []
         for row in range(self.number_of_inputs):
             if not self.use_flops:
-                name = "Xpre_inv[{0}]".format(row)
+                name = "pre_inv_{0}".format(row)
                 if (row % 2 == 1):
                     y_off = row * (self.inv.height)
                     mirror = "R0"
@@ -219,7 +258,7 @@ class hierarchical_predecode(design.design):
                                    "inbar[{0}]".format(row),
                                    "vdd", "gnd"])
             else:
-                name = "Xflop[{0}]".format(row)
+                name = "flop_{0}".format(row)
                 if self.vertical_flops:
 
                     if row < 2:
@@ -248,41 +287,45 @@ class hierarchical_predecode(design.design):
                                    "inbar[{0}]".format(row),
                                    "clk", "vdd", "gnd"])
 
-
-            
     def add_output_inverters(self):
         """ Create inverters for the inverted output decode signals. """
-        
+
         self.inv_inst = []
         for inv_num in range(self.number_of_outputs):
-            name = "Xpre_nand_inv[{}]".format(inv_num)
+            name = "pre_nand_inv_{}".format(inv_num)
             if (inv_num % 2 == 1):
-                y_off = inv_num * self.inv.height
+                y_off = inv_num * self.output_buffer.height
                 mirror = "R0"
             else:
-                y_off =(inv_num + 1)*self.inv.height
+                y_off =(inv_num + 1)*self.output_buffer.height
                 mirror = "MX"
             offset = vector(self.x_off_inv_2, y_off)
             if inv_num < self.number_of_outputs - 1:
-                inv = self.inv
+                output_buffer = self.output_buffer
             else:
-                inv = self.top_inv
+                output_buffer = self.top_output_buffer
             self.inv_inst.append(self.add_inst(name=name,
-                                               mod=inv,
+                                               mod=output_buffer,
                                                offset=offset,
                                                mirror=mirror))
-            self.connect_inst(["Z[{}]".format(inv_num),
-                               "out[{}]".format(inv_num),
-                               "vdd", "gnd"])
-            
-            
+            out_net = "out[{}]".format(inv_num)
+            out_bar_net = "out_bar[{}]".format(inv_num)
+            z_net = "Z[{}]".format(inv_num)
+
+            if len(output_buffer.buffer_stages) == 1:
+                output_nets = [out_net, z_net]
+            elif len(output_buffer.buffer_stages) % 2 == 1:
+                output_nets = [out_net, out_bar_net]
+            else:
+                output_nets = [out_bar_net, out_net]
+            self.connect_inst([z_net] + output_nets + ["vdd", "gnd"])
 
     def add_nand(self,connections):
         """ Create the NAND stage for the decodes """
-        self.nand_inst = []        
+        self.nand_inst = []
         for nand_input in range(self.number_of_outputs):
             inout = str(self.number_of_inputs)+"x"+str(self.number_of_outputs)
-            name = "Xpre{0}_nand[{1}]".format(inout,nand_input)
+            name = "pre{0}_nand_{1}".format(inout,nand_input)
             if (nand_input % 2 == 1):
                 y_off = nand_input * self.inv.height
                 mirror = "R0"
@@ -298,8 +341,16 @@ class hierarchical_predecode(design.design):
                                                 mod=nand,
                                                 offset=offset,
                                                 mirror=mirror))
-            self.connect_inst(connections[nand_input])
-            
+            nand_conns = []
+            for net in connections[nand_input]:
+                if self.negate and net.startswith("in["):
+                    net = net.replace("in[", "inbar[")
+                elif self.negate and net.startswith("inbar["):
+                    net = net.replace("inbar[", "in[")
+                nand_conns.append(net)
+            self.connect_inst(nand_conns)
+
+            self.join_inverter_nand_implants(nand_input)
 
     def route(self):
         if self.use_flops:
@@ -311,7 +362,7 @@ class hierarchical_predecode(design.design):
             self.route_input_inverters()
             self.route_inputs_to_rails()
         self.route_nand_to_rails()
-        self.route_output_inverters()        
+        self.route_output_inverters()
         self.route_vdd_gnd()
 
     def route_inputs_to_rails(self):
@@ -322,10 +373,10 @@ class hierarchical_predecode(design.design):
             # pins in the nand gates. 
             y_offset = (num+self.number_of_inputs) *self.inv.height + 0.5*self.rail_height +\
                        contact.m1m2.height + self.m1_space
-            in_pin = "in[{}]".format(num)            
+            in_pin = "in[{}]".format(num)
             a_pin = "A[{}]".format(num)
             in_pos = vector(self.rails[in_pin],y_offset)
-            a_pos = vector(self.rails[a_pin],y_offset)            
+            a_pos = vector(self.rails[a_pin],y_offset)
             self.add_path("metal1",[in_pos, a_pos])
             self.add_via_center(layers = ("metal1", "via1", "metal2"),
                                 offset=[self.rails[in_pin], y_offset],
@@ -342,22 +393,25 @@ class hierarchical_predecode(design.design):
 
             # route nand output to output inv input
             z_pin = self.nand_inst[num].get_pin("Z")
-            a_pin = self.inv_inst[num].get_pin("A")
+            a_pin = self.inv_inst[num].get_pin("in")
             self.add_rect("metal1", offset=vector(z_pin.rx(), a_pin.by()), width=a_pin.lx()-z_pin.rx())
 
-            self.copy_layout_pin(self.inv_inst[num], "Z", "out[{}]".format(num))
+            out_pin = "out_inv" if len(self.output_buffer.buffer_stages) % 2 == 1 else "out"
+            self.copy_layout_pin(self.inv_inst[num], out_pin, "out[{}]".format(num))
 
     def route_horizontal_input_flops(self):
         """
         Route flip flop inputs and outputs
         """
+        _, m3_min_width = self.calculate_min_area_fill(self.m3_width, layer=METAL3)
         for row in range(self.number_of_inputs):
             # connect din
             din_pin = self.in_inst[row].get_pin("din")
             rail_x = self.rails["flop_in[{}]".format(row)]
             self.add_contact_center(contact.m2m3.layer_stack, offset=vector(rail_x, din_pin.cy()))
             self.add_rect("metal3", offset=vector(rail_x, din_pin.by()), width=din_pin.lx() - rail_x)
-            self.add_contact(contact.m2m3.layer_stack, offset=din_pin.ll(), rotate=90)
+            self.add_contact(contact.m2m3.layer_stack, offset=din_pin.ll() + vector(m2m3.height, 0),
+                             rotate=90)
 
             # connect clk
             if not self.vertical_flops:
@@ -367,22 +421,21 @@ class hierarchical_predecode(design.design):
                 self.add_rect("metal1", offset=vector(rail_x, clk_pin.by()), width=clk_pin.lx() - rail_x)
 
             # route dout
-            m3_min_width = self.metal1_minwidth_fill
-            flop_out = self.in_inst[row].get_pin("dout")
-            out_pin = "A[{}]".format(row)
-            rail_x = self.rails[out_pin]
-            self.add_rect("metal3", offset=vector(flop_out.cx(), flop_out.cy() - 0.5*self.m3_width),
-                          width=max(rail_x - flop_out.cx(), m3_min_width))
-            self.add_contact_center(contact.m2m3.layer_stack, offset=vector(rail_x, flop_out.cy()))
-
-            # route dout_bar
-            rail_x = self.rails["Abar[{}]".format(row)]
-            flop_out_bar = self.in_inst[row].get_pin("dout_bar")
-            self.add_contact(contact.m2m3.layer_stack,
-                             offset=flop_out_bar.lr() + vector(contact.m2m3.second_layer_height, 0),
-                             rotate=90)
-            self.add_rect("metal3", offset=flop_out_bar.lr(), width=max(rail_x - flop_out_bar.rx(), m3_min_width))
-            self.add_contact_center(contact.m2m3.layer_stack, offset=vector(rail_x, flop_out_bar.cy()))
+            pin_names = ["dout", "dout_bar"]
+            out_pin_names = ["A", "Abar"]
+            for i in range(2):
+                flop_pin = self.in_inst[row].get_pin(pin_names[i])
+                out_pin = "{}[{}]".format(out_pin_names[i], row)
+                rail_x = self.rails[out_pin]
+                self.add_contact(contact.m2m3.layer_stack,
+                                 offset=flop_pin.lr() + vector(contact.m2m3.second_layer_height, 0),
+                                 rotate=90)
+                rail_width = max(rail_x - flop_pin.rx(), m3_min_width)
+                # prevent mimimum extension past via problem
+                if 0 < rail_width + flop_pin.rx() - (rail_x + 0.5 * m2m3.second_layer_width) < self.m3_width:
+                    rail_width = rail_x + 0.5 * m2m3.second_layer_width + self.m3_width - flop_pin.rx()
+                self.add_rect("metal3", offset=flop_pin.lr(), width=rail_width)
+                self.add_contact_center(contact.m2m3.layer_stack, offset=vector(rail_x, flop_pin.cy()))
 
     def route_vertical_input_flops(self):
 
@@ -436,26 +489,19 @@ class hierarchical_predecode(design.design):
         """
         Route all conections of the inputs inverters [Inputs, outputs, vdd, gnd] 
         """
-        a_rails = [self.rails[key] for key in self.rails if key.startswith("A")]
-        left_rails = min(a_rails) - 3*self.m1_space
         for inv_num in range(self.number_of_inputs):
             out_pin = "Abar[{}]".format(inv_num)
             in_pin = "in[{}]".format(inv_num)
-            
-            #add output so that it is just below the vdd or gnd rail
-            # since this is where the p/n devices are and there are no
-            # pins in the nand gates.
-            y_offset = (inv_num+1) * self.inv.height - 0.5*self.rail_height - 2*self.m1_space -\
-                       0.5*contact.m1m2.first_layer_height
-            inv_out_pos = self.in_inst[inv_num].get_pin("Z").rc()
-            rail_pos = vector(self.rails[out_pin],y_offset)
-            self.add_path("metal1", [inv_out_pos, vector(left_rails, inv_out_pos.y),
-                                     vector(left_rails, y_offset), rail_pos])
-            self.add_via_center(layers = ("metal1", "via1", "metal2"),
-                                offset=rail_pos,
-                                rotate=0)
 
-            
+            z_pin = self.in_inst[inv_num].get_pin("Z")
+            y_offset = z_pin.uy()
+            rail_pos = vector(self.rails[out_pin], y_offset)
+
+            self.add_contact_center(m2m3.layer_stack, offset=vector(rail_pos.x, y_offset))
+            self.add_contact_center(m2m3.layer_stack, offset=vector(z_pin.cx(), y_offset))
+            self.add_rect(METAL3, offset=vector(z_pin.cx(), y_offset - 0.5 * self.m3_width),
+                          width=rail_pos.x - z_pin.cx())
+
             #route input
             inv_in_pos = self.in_inst[inv_num].get_pin("A").lc()
             in_pos = vector(self.rails[in_pin],inv_in_pos.y)
@@ -463,13 +509,16 @@ class hierarchical_predecode(design.design):
             self.add_via_center(layers=("metal1", "via1", "metal2"),
                                 offset=in_pos,
                                 rotate=0)
-            
+
     def route_nand_to_rails(self):
         # This 2D array defines the connection mapping 
         nand_input_line_combination = self.get_nand_input_line_combination()
         for k in range(self.number_of_outputs):
             # create x offset list         
             index_lst= nand_input_line_combination[k]
+            if self.negate:
+                index_lst = [x.replace("A[", "Abar2[").replace("Abar[", "A[").
+                                 replace("Abar2[", "Abar[") for x in index_lst]
 
             if self.number_of_inputs == 2:
                 gate_lst = ["A","B"]
@@ -479,31 +528,33 @@ class hierarchical_predecode(design.design):
             # this will connect pins A,B or A,B,C
             max_rail = max(self.rails.values())
             layers = ("metal1", "via1", "metal2")
-            via_x = max_rail + 2*self.m1_space + 0.5*contact.m1m2.first_layer_height
+            via_space = self.get_line_end_space(METAL2)
+            via_x = max_rail + 0.5 * self.m2_width + via_space + 0.5*contact.m1m2.first_layer_height
             for rail_pin, gate_pin_name in zip(index_lst,gate_lst):
                 gate_pin = self.nand_inst[k].get_pin(gate_pin_name)
                 pin_pos = gate_pin.lc()
                 rail_pos = vector(self.rails[rail_pin], pin_pos.y)
-                self.add_via_center(layers=layers, offset=rail_pos, rotate=0)
-                self.add_path("metal1", [rail_pos, vector(via_x, rail_pos.y)])
-                via_offset = vector(via_x, rail_pos.y)
-                self.add_via_center(layers=layers, offset=via_offset, rotate=90)
-                self.add_path("metal2", [via_offset, pin_pos])
+                self.add_cross_contact_center(cross_m1m2, offset=rail_pos, rotate=True)
                 if gate_pin_name == "A":
-                    y_offset = gate_pin.cy()
+                    self.add_rect(METAL1, offset=vector(rail_pos.x, rail_pos.y - 0.5 * self.m1_width),
+                                  width=gate_pin.lx() - rail_pos.x)
                 else:
+                    self.add_path("metal1", [rail_pos, vector(via_x, rail_pos.y)])
+                    via_offset = vector(via_x, rail_pos.y)
+                    self.add_via_center(layers=layers, offset=via_offset, rotate=90)
+                    self.add_path("metal2", [via_offset, pin_pos])
                     if k % 2 == 0:
-                        y_offset = gate_pin.cy() + 0.5*(contact.m1m2.second_layer_height - self.m1_width)
+                        y_offset = rail_pos.y - 0.5 * self.m2_width + 0.5 * m1m2.second_layer_height
                     else:
-                        y_offset = gate_pin.cy() - 0.5*(contact.m1m2.second_layer_height - self.m1_width)
-                self.add_via_center(layers=layers, offset=vector(gate_pin.cx(), y_offset), rotate=0)
+                        y_offset = rail_pos.y + 0.5 * self.m2_width - 0.5 * m1m2.second_layer_height
+                    self.add_via_center(layers=layers, offset=vector(gate_pin.cx(), y_offset), rotate=0)
 
     def route_vdd_gnd(self):
         """ Add a pin for each row of vdd/gnd which are must-connects next level up. """
 
         for num in range(0, self.number_of_outputs):
             # this will result in duplicate polygons for rails, but who cares
-            
+
             # use the inverter offset even though it will be the nand's too
 
             vdd_x_start = gnd_x_start = 0
@@ -596,8 +647,32 @@ class hierarchical_predecode(design.design):
 
                 self.add_rect("nwell", offset=vector(left_x, bot), width=right_x-left_x, height=top-bot)
 
+    def join_inverter_nand_implants(self, row):
+        """Join body tap implants to prevent implant enclose active DRC errors
+        Assumes that the output inverter includes body contacts
+        """
+        if not self.implant_enclose_poly:  # implant enclose active already satisfied
+            return
+        inv_inst = self.inv_inst[row].mod.module_insts[0]
+        nand_inst = self.nand_inst[row]
+        rects = inv_inst.get_layer_shapes(PIMP) + inv_inst.get_layer_shapes(NIMP)
+        rects = list(sorted(rects, key=lambda x: x.cy()))
+        # top and bottom rect
+        for i in range(2):
+            rect = [rects[0], rects[-1]][i]
+            if rect.uy() < inv_inst.height and rect.by() > 0: # not a body tap
+                continue
+            layer = NIMP if i == 0 else PIMP
+            y_offset = row * inv_inst.height + rect.by()
+            if row % 2 == 0:
+                y_offset += (inv_inst.height - rect.uy())
+            else:
+                y_offset += rect.by()
+            x_end = self.inv_inst[row].lx() + inv_inst.lx() + rect.lx()
 
+            self.add_rect(layer, offset=vector(nand_inst.lx(), rect.by()),
+                          height=rect.height,
+                          width=x_end - nand_inst.lx())
 
-        
-
-
+    def get_nand_input_line_combination(self):
+        raise NotImplementedError

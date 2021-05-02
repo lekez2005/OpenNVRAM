@@ -1,4 +1,5 @@
 import os
+import subprocess
 from importlib import reload
 
 import numpy as np
@@ -114,29 +115,27 @@ class SequentialDelay(delay):
 
         for address in range(self.sram.num_words):
             if address not in existing_data:
-                existing_data[address] = utils.get_random_vector(self.sram.word_size)
+                existing_data[address] = utils.get_random_vector(self.word_size)
 
         self.existing_data = existing_data
 
         ic_file = getattr(OPTS, "ic_file", os.path.join(OPTS.openram_temp, "sram.ic"))
+        OPTS.ic_file = ic_file
 
         with open(ic_file, "w") as ic:
-
-            ic.write("simulator lang=spectre \n")
 
             storage_nodes = probe.get_bitcell_storage_nodes()
             for address in range(self.sram.num_words):
                 address_data = list(reversed(existing_data[address]))
-                for col in range(self.sram.word_size):
+                for col in range(self.word_size):
                     col_voltage = self.binary_to_voltage(address_data[col])
                     col_node = storage_nodes[address][col]
                     self.write_ic(ic, col_node, col_voltage)
 
-            ic.write("simulator lang=spice \n")
             ic.flush()
 
     def write_ic(self, ic, col_node, col_voltage):
-        ic.write("ic {}={} \n".format(col_node, col_voltage))
+        ic.write(".ic V({})={} \n".format(col_node, col_voltage))
 
     def binary_to_voltage(self, x):
         return x * self.vdd_voltage
@@ -233,18 +232,26 @@ class SequentialDelay(delay):
             self.sf.write(self.v_comments[key][:-1] + " ] \n")
             self.sf.write(self.v_data[key] + " )\n")
 
-    def write_pwl(self, key, prev_val, curr_val):
-        """Append current time's data to pwl. Transitions from the previous value to the new value using the slew"""
+    def get_setup_time(self, key, prev_val, curr_val):
         if key in ["clk"]:
             setup_time = 0
         elif key in ["acc_en", "acc_en_inv"]:  # to prevent contention with tri-state buffer
             setup_time = -0.75 * self.duty_cycle * self.period
         else:
             setup_time = self.setup_time
+        return setup_time
+
+    def write_pwl(self, key, prev_val, curr_val):
+        """Append current time's data to pwl. Transitions from the previous value to the new value using the slew"""
+
+        if prev_val == curr_val and self.current_time > 1.5 * self.period:
+            return
+
+        setup_time = self.get_setup_time(key, prev_val, curr_val)
+        t2 = max(self.slew, self.current_time + 0.5 * self.slew - setup_time)
         t1 = max(0.0, self.current_time - 0.5 * self.slew - setup_time)
-        t2 = max(0.0, self.current_time + 0.5 * self.slew - setup_time)
-        self.v_data[key] += " {0}n {1}v {2}n {3}v ".format(t1, self.vdd_voltage * prev_val, t2,
-                                                           self.vdd_voltage * curr_val)
+        self.v_data[key] += " {0:8.8g}n {1}v {2:8.8g}n {3}v ". \
+            format(t1, self.vdd_voltage * prev_val, t2, self.vdd_voltage * curr_val)
         self.v_comments[key] += " ({0}, {1}) ".format(int(self.current_time / self.period),
                                                       curr_val)
 
@@ -258,7 +265,7 @@ class SequentialDelay(delay):
         """Generate voltage at current time for each pwl voltage supply"""
         # control signals
         for key in self.control_sigs:
-            if key in ["sense_trig", "diff", "diffb"]:
+            if key in ["write_trig", "precharge_trig", "sense_trig", "diff", "diffb"]:
                 continue
             self.write_pwl_from_key(key)
 
@@ -469,6 +476,15 @@ class SequentialDelay(delay):
                                      targ_name=label, targ_val=targ_val, targ_dir=targ_dir,
                                      targ_td=self.current_time + self.duty_cycle * self.period)
 
+    def replace_models(self, file_name):
+        if hasattr(OPTS, "model_replacements"):
+            model_replacements = OPTS.model_replacements
+            sed_patterns = "; ".join(["s/{}/{}/g".format(mod, rep)
+                                      for mod, rep in model_replacements])
+            command = ["sed", "--in-place", sed_patterns, file_name]
+            debug.info(1, "Replacing bitcells with command: {}".format(" ".join(command)))
+            subprocess.run(command, shell=False)
+
     def run_drc_lvs_pex(self):
         OPTS.check_lvsdrc = True
         reload(verify)
@@ -477,7 +493,8 @@ class SequentialDelay(delay):
         self.sram.gds_write(OPTS.gds_file)
 
         if OPTS.run_drc:
-            drc_result = verify.run_drc(self.sram.name, OPTS.gds_file, exception_group="sram")
+            drc_result = verify.run_drc(self.sram.drc_gds_name,
+                                        OPTS.gds_file, exception_group="sram")
             if drc_result:
                 raise AssertionError("DRC Failed")
 
@@ -489,6 +506,8 @@ class SequentialDelay(delay):
 
         force_pex = not os.path.exists(OPTS.pex_spice)
         if OPTS.use_pex and (force_pex or OPTS.run_pex):
-            errors = verify.run_pex(self.sram.name, OPTS.gds_file, OPTS.spice_file, OPTS.pex_spice)
+            errors = verify.run_pex(self.sram.name, OPTS.gds_file, OPTS.spice_file, OPTS.pex_spice,
+                                    run_drc_lvs=False)
+            self.replace_models(OPTS.pex_spice)
             if errors:
                 raise AssertionError("PEX failed")

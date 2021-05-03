@@ -1,5 +1,5 @@
 from base.contact import m1m2, m2m3
-from base.design import METAL1, METAL2, METAL3, design, NWELL, PIMP, NIMP
+from base.design import METAL1, METAL2, METAL3, design
 from base.vector import vector
 from base.well_implant_fills import create_wells_and_implants_fills
 from globals import OPTS

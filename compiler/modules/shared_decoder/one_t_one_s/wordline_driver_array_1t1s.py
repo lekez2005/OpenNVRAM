@@ -1,13 +1,10 @@
-from base.contact import cross_m2m3
-from base.design import METAL3
 from base.vector import vector
 from modules.shared_decoder.one_t_one_s.wordline_driver_mixin import wordline_driver_mixin
-from modules.shared_decoder.stacked_wordline_driver_array import stacked_wordline_driver_array
+from modules.wordline_driver_array import wordline_driver_array
 from pgates.pgate_tap import pgate_tap
 
 
-class stacked_wordline_driver_array_1t1s(wordline_driver_mixin,
-                                         stacked_wordline_driver_array):
+class wordline_driver_array_1t1s(wordline_driver_mixin, wordline_driver_array):
 
     def add_modules(self):
         super().add_modules()
@@ -15,24 +12,13 @@ class stacked_wordline_driver_array_1t1s(wordline_driver_mixin,
         self.add_layout_pin("rw", rw_pin.layer, offset=rw_pin.ll(), width=rw_pin.width(),
                             height=self.height - rw_pin.by())
 
-        # align joining rail with in[0]
-        y_offset = self.buffer_insts[0].get_pin("vdd").uy()
-        rw_left = self.buffer_insts[0].get_pin("rw")
-
-        for pin in [rw_pin, rw_left]:
-            self.add_cross_contact_center(cross_m2m3, vector(pin.cx(),
-                                                             y_offset + 0.5 * self.m3_width))
-
-        self.add_rect(METAL3, offset=vector(rw_pin.cx(), y_offset),
-                      width=rw_left.cx() - rw_pin.cx(), height=self.m3_width)
-
     def add_body_taps(self):
         # add body taps
         body_tap = pgate_tap(self.logic_buffer.logic_mod)
-        for i in range(0, self.rows, 2):
+        for i in range(0, self.rows):
             inst = self.buffer_insts[i]
             y_offset = inst.by()
-            if (i % 4) < 2:
+            if (i % 2) == 0:
                 y_offset += self.logic_buffer.height
                 mirror = "MX"
             else:

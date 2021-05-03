@@ -111,7 +111,7 @@ class stacked_wordline_driver_array(wordline_driver_array):
 
             self.buffer_insts.append(buffer_inst)
 
-            self.copy_layout_pin(buffer_inst, "out_inv", "wl[{}]".format(row))
+            self.copy_layout_pin(buffer_inst, "out", "wl[{}]".format(row))
 
             # Join adjacent rects between left and right buffers
             if row % 4 in [1, 3]:

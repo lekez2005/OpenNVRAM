@@ -32,6 +32,8 @@ class TestBase(testutils.OpenRamTest):
                 TestBase.config_template = "config_shared_sot_{}"
             elif "sotfet" in sys.argv:
                 TestBase.config_template = "config_shared_sotfet_{}"
+            elif "1t1s" in sys.argv:
+                TestBase.config_template = "config_shared_1t1s_{}"
             elif "push" in sys.argv:
                 TestBase.config_template = "config_push_hs_{}"
                 sys.path.append(os.path.abspath(os.path.join(parent_dir, "push_rules")))

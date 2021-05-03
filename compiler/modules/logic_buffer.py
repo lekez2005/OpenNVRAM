@@ -96,7 +96,9 @@ class LogicBuffer(design.design, metaclass=Unique):
                                      align_bitcell=self.align_bitcell)
 
         self.add_mod(self.logic_mod)
+        self.create_buffer_mod()
 
+    def create_buffer_mod(self):
         self.buffer_mod = BufferStage(self.buffer_stages, height=self.height,
                                       route_outputs=self.route_outputs,
                                       contact_pwell=self.contact_pwell,

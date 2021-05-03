@@ -2,6 +2,7 @@ import debug
 from base import utils
 from base.design import design
 from base.vector import vector
+from base.well_implant_fills import get_default_fill_layers
 from modules.precharge_array import precharge_array
 from tech import drc
 
@@ -51,9 +52,14 @@ class sotfet_mram_br_precharge_array(precharge_array):
             self.add_inst(self.body_tap.name, self.body_tap, offset=vector(x_offset, 0))
             self.connect_inst([])
         self.width = inst.rx()
-        layers = ["nwell"]
-        purposes = ["drawing"]
-        for i in range(1):
-            rect = self.pc_cell.get_layer_shapes(layers[i], purposes[i])[0]
-            self.add_rect(layers[i], offset=vector(0, rect.by()),
-                          width=self.width + self.well_enclose_implant, height=rect.height)
+
+        default_layers, default_purposes = get_default_fill_layers()
+
+        for layer, purpose in zip(default_layers, default_purposes):
+            rects = self.pc_cell.get_layer_shapes(layer, purpose)
+            rects = list(filter(lambda x: x.width >= self.pc_cell.width, rects))
+            if not rects:
+                continue
+            rect = max(rects, key=lambda x: x.width * x.height)
+            self.add_rect(layer, offset=vector(0, rect.by()),
+                          width=self.width - rect.lx(), height=rect.height)

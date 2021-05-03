@@ -381,10 +381,10 @@ class precharge_tap(design.design):
         add_tech_layers(self)
 
     def create_layout(self):
-        body_tap = utils.get_body_tap()
+        body_tap = self.create_mod_from_str_(OPTS.body_tap)
         self.width = body_tap.width
 
-        vdd_rail = utils.get_libcell_pins(["vdd"], OPTS.body_tap)["vdd"][0]
+        vdd_rail = utils.get_libcell_pins(["vdd"], body_tap.gds_file)["vdd"][0]
 
         precharge_vdd = next(x for x in self.precharge_cell.get_pins("vdd") if x.layer == METAL3)
         self.add_rect(METAL3, offset=vector(0, precharge_vdd.by()), width=self.width,
@@ -413,7 +413,10 @@ class precharge_tap(design.design):
                       width=fill_width, height=fill_height)
 
         # tap nimplant
-        nimp_rect = max(self.precharge_cell.get_layer_shapes(NIMP), key=lambda x: x.uy())
+        nimp_rects = self.precharge_cell.get_layer_shapes(NIMP)
+        if not nimp_rects:
+            return
+        nimp_rect = max(nimp_rects, key=lambda x: x.uy())
         self.add_rect(NIMP, offset=vector(nimp_rect.lx(), nimp_rect.by()),
                       width=self.width + (nimp_rect.rx() - self.precharge_cell.width) -
                             nimp_rect.lx(), height=nimp_rect.height)

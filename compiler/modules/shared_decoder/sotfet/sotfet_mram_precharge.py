@@ -6,7 +6,7 @@ from base.vector import vector
 from globals import OPTS
 from modules.precharge import precharge
 from pgates.ptx import ptx
-from tech import parameter
+from tech import parameter, add_tech_layers
 
 
 class sotfet_mram_precharge(precharge):
@@ -19,10 +19,12 @@ class sotfet_mram_precharge(precharge):
         self.connect_input_gates()
         self.connect_bl()
         self.add_vdd_pin()
-        self.height = self.get_pin("vdd").uy()
+        vdd_pin = next(x for x in self.get_pins("vdd") if x.layer == METAL1)
+        self.height = vdd_pin.uy()
 
         self.add_bitline_pins()
         self.fill_nwell()
+        add_tech_layers(self)
 
     def create_ptx(self):
         num_fingers = OPTS.precharge_num_fingers
@@ -54,8 +56,9 @@ class sotfet_mram_precharge(precharge):
         # create dummy contact to measure contact height
         active_cont = contact(layer_stack=contact.active_layers, dimensions=[1, self.pmos.num_contacts])
 
-        metal_fill_height = utils.ceil(max(self.minarea_metal1_contact / metal_fill_width,
-                                           active_cont.first_layer_height))
+        _, metal_fill_height = self.calculate_min_area_fill(metal_fill_width, layer=METAL1)
+
+        metal_fill_height = utils.ceil(max(metal_fill_height, active_cont.first_layer_height))
 
         source_pins = self.ptx_inst.get_pins("S")
         self.max_fill_y = max(source_pins[0].uy(), source_pins[0].cy() + 0.5 * m1m2.height)
@@ -98,11 +101,13 @@ class sotfet_mram_precharge(precharge):
                                        size=[1, 2], rotate=90)
         self.add_rect_center(METAL2, offset=vector(self.mid_x, via_y),
                              height=pin_height, width=cont.height)
-        self.add_rect(METAL3, offset=vector(0, y_offset), width=self.width, height=pin_height)
 
         for pin in self.ptx_inst.get_pins("D"):
             self.add_rect(METAL1, offset=pin.ul(), width=pin.width(),
                           height=self.get_pin("vdd").by() - pin.uy())
+
+        self.add_layout_pin("vdd", METAL3, offset=vector(0, y_offset), width=self.width,
+                            height=pin_height)
 
     def add_bitline_pins(self):
         for pin_name in ["BL", "BR"]:

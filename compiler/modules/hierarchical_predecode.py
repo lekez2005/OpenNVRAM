@@ -660,17 +660,17 @@ class hierarchical_predecode(design.design):
         # top and bottom rect
         for i in range(2):
             rect = [rects[0], rects[-1]][i]
-            if rect.uy() < inv_inst.height and rect.by() > 0: # not a body tap
+            if rect.uy() < inv_inst.height and rect.by() > 0:  # not a body tap
                 continue
             layer = NIMP if i == 0 else PIMP
-            y_offset = row * inv_inst.height + rect.by()
+            y_offset = row * inv_inst.height
             if row % 2 == 0:
                 y_offset += (inv_inst.height - rect.uy())
             else:
                 y_offset += rect.by()
             x_end = self.inv_inst[row].lx() + inv_inst.lx() + rect.lx()
 
-            self.add_rect(layer, offset=vector(nand_inst.lx(), rect.by()),
+            self.add_rect(layer, offset=vector(nand_inst.lx(), y_offset),
                           height=rect.height,
                           width=x_end - nand_inst.lx())
 

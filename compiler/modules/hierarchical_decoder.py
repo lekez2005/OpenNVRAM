@@ -595,11 +595,18 @@ class hierarchical_decoder(design.design):
                 fill_x = pin.cx() + 0.5 * m1_fill_width - m2_fill_width
                 via_x = pin.cx()
             else:
-                fill_x = pin.lx()
-                via_x = pin.lx() + 0.5 * m1_fill_width
+                if rail_x < pin.cx():
+                    fill_x = pin.lx()
+                    via_x = pin.lx() + 0.5 * m1_fill_width
+                else:
+                    fill_x = pin.rx() - m1_fill_width
+                    via_x = pin.rx() - 0.5 * m1_fill_width
 
-            self.add_rect(METAL3, offset=vector(rail_x, rail_y), width=via_x - rail_x +
-                          0.5 * self.m3_width)
+            if via_x > rail_x:
+                rail_width = via_x - rail_x + 0.5 * self.m3_width
+            else:
+                rail_width = via_x - rail_x - 0.5 * self.m3_width
+            self.add_rect(METAL3, offset=vector(rail_x, rail_y), width=rail_width)
 
             self.add_rect(METAL3, offset=vector(via_x - 0.5 * self.m3_width, pin.cy()),
                           height=rail_y - pin.cy())

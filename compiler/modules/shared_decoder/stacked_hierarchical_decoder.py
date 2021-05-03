@@ -1,6 +1,5 @@
-from base import utils, contact
-from base.contact import cross_contact, m2m3, m1m2, cross_m2m3
-from base.design import METAL2, PIMP, NIMP, NWELL, METAL3, METAL1
+from base import contact
+from base.design import METAL2, PIMP, NIMP, NWELL
 from base.vector import vector
 from modules.hierarchical_decoder import hierarchical_decoder
 from pgates.pinv import pinv
@@ -51,10 +50,11 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
                 self.row_to_side[row] = "left"
                 self.row_to_side[row + 1] = "right"
 
-    def add_modules(self):
+    def create_modules(self):
         args = {
             "height": 2 * self.bitcell_height,
             "align_bitcell": True,
+            "same_line_inputs": True,
             "contact_nwell": False,
             "contact_pwell": False
         }
@@ -138,10 +138,14 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
                                 width=z_pin.width(),
                                 height=z_pin.height())
 
+    def fill_predecoder_to_row_decoder_implants(self):
+        pass
+
     def add_body_contacts(self):
-        implant_enclosure = drc["ptx_implant_enclosure_active"]
+        implant_enclosure = self.implant_enclose_active
         implant_height = drc["minwidth_implant"]
-        nwell_height = implant_height + 2 * self.well_enclose_implant
+        nwell_height = max(contact.well.first_layer_width + 2 * self.well_enclose_active,
+                           self.well_width)
 
         if self.row_to_side[0] == "left":
             left_inst, right_inst = self.nand_inst[:2]
@@ -151,7 +155,8 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
         available_width = right_inst.lx() - left_inst.rx()
         active_width = available_width - 2 * implant_enclosure
         num_contacts = self.calculate_num_contacts(active_width)
-        implant_width = nwell_width = available_width
+        implant_width = available_width
+        nwell_width = available_width + 2 * self.well_width
         mid_x = 0.5 * (right_inst.lx() + left_inst.rx())
 
         for row in range(0, self.rows, 2):
@@ -176,81 +181,6 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
         vdd_pin = right_inst.get_pin("vdd")
         self.add_rect(PIMP, offset=vector(vdd_pin.lx(), vdd_pin.cy() - 0.5 * implant_height),
                       height=implant_height, width=pre_module_width)
-
-    def connect_rails_to_decoder(self):
-        self.add_mod(cross_m2m3)
-
-        for row in range(0, self.rows, 2):
-            if self.row_to_side[row] == "left":
-                left_index = row
-                right_index = row + 1
-            else:
-                left_index = row + 1
-                right_index = row
-            left_inst = self.nand_inst[left_index]
-            right_inst = self.nand_inst[right_index]
-
-            # right inst
-            pins = ["A", "B", "C"]
-            for i in range(len(self.predec_groups)):
-                dest_pin = right_inst.get_pin(pins[i])
-                left_pin = left_inst.get_pin(pins[i])
-                predecoder_rail = self.rail_x_offsets[self.row_to_predec[right_index][i]]
-                pin_bottom = dest_pin.cy() - 0.5 * right_inst.mod.gate_fill_height
-                if i == 0:
-                    # add to the right
-                    via_y = pin_bottom - 0.5 * m1m2.height
-                    self.add_contact_center(m1m2.layer_stack, offset=vector(predecoder_rail, via_y))
-                    rect_x = predecoder_rail - 0.5 * m1m2.width
-                    self.add_rect(METAL1, offset=vector(rect_x, pin_bottom),
-                                  width=dest_pin.lx() - rect_x)
-                    # add to the left
-                    predecoder_rail = self.rail_x_offsets[self.row_to_predec[left_index][i]]
-                    pin_top = 0.5 * left_inst.mod.gate_fill_height + left_pin.cy()
-                    via_y = pin_top + 0.5 * m1m2.height
-                    self.add_contact_center(m1m2.layer_stack, offset=vector(predecoder_rail, via_y))
-                    rect_x = predecoder_rail + 0.5 * m1m2.width
-                    self.add_rect(METAL1, offset=vector(left_pin.rx(), pin_top - self.m1_width),
-                                  width=rect_x - left_pin.rx())
-
-                elif i == 1:  # both left and right have the same rail
-                    via_y = dest_pin.cy() - 0.5 * cross_m2m3.height
-                    via_x = predecoder_rail - 0.5 * cross_m2m3.contact_width
-                    self.add_inst(cross_m2m3.name, cross_m2m3, offset=vector(via_x, via_y))
-                    self.add_rect(METAL3, offset=vector(left_pin.cx(), dest_pin.cy() - 0.5 * self.m3_width),
-                                  width=dest_pin.cx() - left_pin.cx())
-                    self.connect_inst([])
-                    for pin in [left_pin, dest_pin]:
-                        self.add_contact_center(m1m2.layer_stack, offset=pin.center())
-                        self.add_contact_center(m2m3.layer_stack, offset=pin.center())
-                        self.add_rect_center(METAL2, offset=pin.center(), height=left_inst.mod.gate_fill_height,
-                                             width=left_inst.mod.gate_fill_width)
-                elif i == 2:
-                    via_y = (dest_pin.cy() + 0.5 * m2m3.height + self.get_line_end_space(METAL3) +
-                             0.5 * m2m3.contact_width)
-                    self.add_contact_center(m2m3.layer_stack, offset=vector(predecoder_rail, via_y))
-                    self.add_rect(METAL3, offset=vector(left_pin.cx(), via_y - 0.5 * self.m3_width),
-                                  width=dest_pin.cx() - left_pin.cx())
-                    pins = [left_pin, dest_pin]
-                    for j in range(2):
-                        pin = pins[j]
-                        if j == 0:
-                            x_offset = pin.rx() - 0.5 * left_inst.mod.gate_fill_width
-                            self.add_rect(METAL3, offset=vector(x_offset, via_y - 0.5 * self.m3_width),
-                                          width=max(self.m3_width, x_offset - pin.cx()))
-                        else:
-                            x_offset = pin.lx() + 0.5 * left_inst.mod.gate_fill_width
-                            self.add_rect(METAL3, offset=vector(pin.cx(), via_y - 0.5 * self.m3_width),
-                                          width=max(self.m3_width, x_offset - pin.cx()))
-
-                        offset = vector(x_offset, pin.cy())
-                        self.add_contact_center(m1m2.layer_stack, offset=offset)
-                        self.add_contact_center(m2m3.layer_stack, offset=offset)
-                        self.add_rect_center(METAL2, offset=offset, height=left_inst.mod.gate_fill_height,
-                                             width=left_inst.mod.gate_fill_width)
-                        self.add_rect(METAL3, offset=vector(x_offset - 0.5 * self.m3_width,
-                                                            pin.cy()),
-                                      height=via_y + 0.5 * self.m3_width - pin.cy())
 
     def route_vdd_gnd(self):
         left_inst = min(self.inv_inst[:2], key=lambda x: x.lx())

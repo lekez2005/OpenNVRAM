@@ -455,7 +455,16 @@ class pgate(pgates_characterization_base, design.design):
         offset = vector(positions[0], mid_y - 0.5 * self.m2_width)
         self.add_rect(METAL2, offset=offset, width=self.output_x - min_drain_x,
                       height=self.m2_width)
-        offset = vector(self.output_x + 0.5 * contact.m1m2.first_layer_width, mid_y + contact_shift)
+        m1_space = self.get_line_end_space(METAL1)
+        rail_allowance = 0.5 * self.rail_height + m1_space
+        if mid_y > self.mid_y:
+            via_y = min(mid_y + contact_shift,
+                        self.height - rail_allowance - 0.5 * m1m2.height)
+        else:
+            via_y = max(mid_y + contact_shift,
+                        rail_allowance + 0.5 * m1m2.height)
+
+        offset = vector(self.output_x + 0.5 * contact.m1m2.first_layer_width, via_y)
         self.add_contact_center(layers=m1m2.layer_stack, offset=offset)
 
     def connect_s_or_d(self, pmos_positions, nmos_positions):

@@ -30,7 +30,7 @@ class ms_flop_array(BitcellAlignedArray):
 
     body_tap_insts = []
 
-    def __init__(self, columns, word_size, name="", align_bitcell=False, flop_mod=None,
+    def __init__(self, columns, word_size, name="", align_bitcell=True, flop_mod=None,
                  flop_tap_name=None):
         self.columns = columns
         self.word_size = word_size

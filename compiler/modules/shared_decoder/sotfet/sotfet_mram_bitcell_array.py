@@ -39,9 +39,13 @@ class sotfet_mram_bitcell_array(bitcell_array):
                 self.add_layout_pin(pin_name.lower() + "[{}]".format(row), pin.layer,
                                     offset=pin.ll(), width=pin_width, height=pin.height())
 
+        self.add_body_tap_power_pins()
+
+    def add_body_tap_power_pins(self):
         # tap inst vdd
         tap_offsets = self.bitcell_y_offsets[1]
         for pin in self.body_tap.get_pins("gnd"):
             for y_offset in tap_offsets:
-                self.add_layout_pin("gnd", pin.layer, offset=vector(pin.lx(), pin.by() + y_offset),
+                self.add_layout_pin("gnd", pin.layer, offset=vector(pin.lx(),
+                                                                    pin.by() + y_offset),
                                     height=pin.height(), width=self.width - pin.lx())

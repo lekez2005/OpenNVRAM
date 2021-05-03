@@ -249,7 +249,10 @@ def get_libcell_pins(pin_list, name, units=None, layer=None):
         units = tech.GDS["unit"]
     if layer is None:
         layer = tech.layer["boundary"]
-    cell_gds = os.path.join(OPTS.openram_tech, "gds_lib", str(name) + ".gds")
+    if os.path.isabs(name) and os.path.exists(name):
+        cell_gds = name
+    else:
+        cell_gds = os.path.join(OPTS.openram_tech, "gds_lib", str(name) + ".gds")
     cell_vlsi = gdsMill.VlsiLayout(units=units, from_file=cell_gds)
     cell_vlsi.load_from_file()
 

@@ -8,7 +8,7 @@ class wordline_driver_array_1t1s(wordline_driver_mixin, wordline_driver_array):
 
     def add_modules(self):
         super().add_modules()
-        rw_pin = self.buffer_insts[1].get_pin("rw")
+        rw_pin = self.buffer_insts[0].get_pin("rw")
         self.add_layout_pin("rw", rw_pin.layer, offset=rw_pin.ll(), width=rw_pin.width(),
                             height=self.height - rw_pin.by())
 

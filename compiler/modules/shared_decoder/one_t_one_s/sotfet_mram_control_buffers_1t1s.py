@@ -51,5 +51,6 @@ class SotfetMramControlBuffers1t1s(SotfetMramControlBuffers):
         in_pins, out_pins = LatchedControlBuffers.get_schematic_pins(self)
         in_pins.append("write_trig")
         out_pins.remove("wordline_en")
+        out_pins.remove("sample_en_bar")
         out_pins.extend(["rwl_en", "wwl_en", "br_precharge_en_bar", "br_reset"])
         return in_pins, out_pins

@@ -1,5 +1,6 @@
 from base.design import design
 from base.library_import import library_import
+from base.vector import vector
 from globals import OPTS
 from modules.shared_decoder.one_t_one_s.wl_logic_buffer import WlLogicBuffer
 from pgates.pgate_tap import pgate_tap
@@ -24,8 +25,11 @@ class wordline_driver_mixin():
         super().add_pins()
         self.add_pin("rw")
 
-    def create_modules(self):
+    def get_pgate_height(self):
         bitcell = self.create_mod_from_str_(OPTS.bitcell)
+        return bitcell.height
+
+    def create_modules(self):
         if self.name == "rwl_driver":
             mod_name = OPTS.rwl_inverter_mod
         else:
@@ -34,7 +38,8 @@ class wordline_driver_mixin():
         self.logic_buffer = WlLogicBuffer(first_stage_mod=first_stage_mod,
                                           buffer_stages=self.buffer_stages,
                                           logic="pnand2",
-                                          height=2 * bitcell.height, route_outputs=False,
+                                          height=self.get_pgate_height(),
+                                          route_outputs=False,
                                           route_inputs=False,
                                           contact_pwell=False, contact_nwell=False,
                                           align_bitcell=True)

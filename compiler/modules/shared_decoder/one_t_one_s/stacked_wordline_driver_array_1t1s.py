@@ -1,6 +1,7 @@
 from base.contact import cross_m2m3
 from base.design import METAL3
 from base.vector import vector
+from globals import OPTS
 from modules.shared_decoder.one_t_one_s.wordline_driver_mixin import wordline_driver_mixin
 from modules.shared_decoder.stacked_wordline_driver_array import stacked_wordline_driver_array
 from pgates.pgate_tap import pgate_tap
@@ -8,6 +9,10 @@ from pgates.pgate_tap import pgate_tap
 
 class stacked_wordline_driver_array_1t1s(wordline_driver_mixin,
                                          stacked_wordline_driver_array):
+
+    def get_pgate_height(self):
+        bitcell = self.create_mod_from_str_(OPTS.bitcell)
+        return 2 * bitcell.height
 
     def add_modules(self):
         super().add_modules()

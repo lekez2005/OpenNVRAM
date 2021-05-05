@@ -59,10 +59,7 @@ class PrechargeResetArray(precharge_array):
 
     def add_insts(self):
         """Creates a precharge array by horizontally tiling the precharge cell"""
-        bitcell_array_cls = self.import_mod_class_from_str(OPTS.bitcell_array)
-        offsets = bitcell_array_cls.calculate_x_offsets(num_cols=self.columns)
-
-        (self.bitcell_offsets, self.tap_offsets, _) = offsets
+        self.load_bitcell_offsets()
 
         self.child_insts = []
         for i in range(self.columns):

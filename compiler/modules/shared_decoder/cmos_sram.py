@@ -514,7 +514,7 @@ class CmosSram(design):
             y_offset = rail_offsets[i]
             if i == 0 and self.words_per_row == 2:
                 if len(self.column_decoder.buffer_inst.mod.module_insts) > 1:
-                    self.add_contact_center(m1m2.layer_stack,
+                    self.add_contact_center(m1m2.layer_stack, rotate=90,
                                             offset=vector(output_pin.cx(), y_offset))
                 self.add_rect(METAL2, offset=vector(output_pin.lx(), y_offset - 0.5 * self.m2_width),
                               height=self.m2_width,

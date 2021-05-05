@@ -233,8 +233,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         self.wordline_driver = self.create_module('wordline_driver', rows=self.num_rows,
                                                   buffer_stages=OPTS.wordline_buffers)
 
-        self.precharge_array = self.create_module('precharge_array', columns=self.num_cols,
-                                                  size=OPTS.precharge_size)
+        self.create_precharge_array()
 
         self.create_control_buffers()
         self.derive_chip_sel_decoder_clk()
@@ -316,6 +315,10 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
     def create_control_buffers(self):
         """Create control logic buffers"""
         pass
+
+    def create_precharge_array(self):
+        self.precharge_array = self.create_module('precharge_array', columns=self.num_cols,
+                                                  size=OPTS.precharge_size)
 
     def derive_control_flops(self):
         flop_inputs = ["read", "bank_sel"]
@@ -665,7 +668,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                         ("en_bar", "sense_en_bar", EXACT)]
 
         if self.words_per_row > 1:
-            replacements.extend([("bl", "bl_out"), ("br", "br_out")])
+            replacements.extend([("bl[", "bl_out["), ("br[", "br_out[")])
         connections = self.connections_from_mod(self.sense_amp_array, replacements)
         self.connect_inst(connections)
 
@@ -1710,7 +1713,10 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
     def route_body_tap_supplies(self):
         if not OPTS.use_x_body_taps:
             return
-        rails = utils.get_libcell_pins(["vdd", "gnd"], OPTS.body_tap)
+
+        body_tap = self.create_mod_from_str_(OPTS.body_tap)
+
+        rails = utils.get_libcell_pins(["vdd", "gnd"], body_tap.gds_file)
         if not rails["vdd"] or not rails["gnd"]:
             return
 
@@ -1834,7 +1840,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         all_power_pins = self.get_all_power_pins()
         for pin_name in ["vdd", "gnd"]:
             for inst in [self.bitcell_array_inst]:
-                if pin_name in inst.mod.pins:
+                if pin_name in inst.mod.pin_map:
                     all_power_pins.extend(inst.get_pins(pin_name))
 
         rail_top = self.get_intra_array_grid_top()
@@ -1863,7 +1869,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                                                 rotate=90)
                 self.connect_control_buffers_power_to_grid(new_pin)
 
-    def fill_vertical_module_spaces(self):
+    def get_vertical_instance_stack(self):
         self.control_buffers.child_mod = self.control_buffers.inv
         self.control_buffers.child_insts = self.control_buffers.top_insts
         stack = [self.control_buffers_inst, self.tri_gate_array_inst]
@@ -1874,6 +1880,10 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         if getattr(self, "col_mux_array_inst", None):
             stack.append(self.col_mux_array_inst)
         stack.append(self.precharge_array_inst)
+        return stack
+
+    def fill_vertical_module_spaces(self):
+        stack = self.get_vertical_instance_stack()
         for bottom_inst, top_inst in zip(stack[:-1], stack[1:]):
             join_vertical_adjacent_module_wells(self, bottom_inst, top_inst)
 

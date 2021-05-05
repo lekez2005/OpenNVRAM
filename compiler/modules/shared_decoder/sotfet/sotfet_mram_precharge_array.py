@@ -12,9 +12,9 @@ class sotfet_mram_precharge_array(precharge_array):
 
         self.columns = columns
 
-        c = __import__(OPTS.precharge)
-        self.pc_cell = getattr(c, OPTS.precharge)(name="sotfet_mram_precharge", size=size)
-        self.add_mod(self.pc_cell)
+        self.pc_cell = self.create_mod_from_str(OPTS.precharge, name="sotfet_mram_precharge", size=size)
+
+        self.child_mod = self.pc_cell
 
         self.body_tap = precharge_tap(self.pc_cell)
         self.add_mod(self.body_tap)

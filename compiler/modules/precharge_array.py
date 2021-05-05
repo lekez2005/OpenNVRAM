@@ -55,9 +55,14 @@ class precharge_array(design.design):
                             width=self.width,
                             height=en_pin.height())
 
+    def load_bitcell_offsets(self):
+        bitcell_array_cls = self.import_mod_class_from_str(OPTS.bitcell_array)
+        offsets = bitcell_array_cls.calculate_x_offsets(num_cols=self.columns)
+        (self.bitcell_offsets, self.tap_offsets, _) = offsets
+
     def add_insts(self):
         """Creates a precharge array by horizontally tiling the precharge cell"""
-        (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
+        self.load_bitcell_offsets()
         self.child_insts = []
         for i in range(self.columns):
             name = "mod_{0}".format(i)

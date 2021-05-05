@@ -1,5 +1,4 @@
 import debug
-from base import utils
 from base.design import design
 from base.vector import vector
 from base.well_implant_fills import get_default_fill_layers
@@ -15,6 +14,7 @@ class sotfet_mram_br_precharge_array(precharge_array):
         self.columns = columns
 
         self.pc_cell = bank.precharge_array.pc_cell
+        self.child_mod = self.pc_cell
 
         self.body_tap = bank.precharge_array.body_tap
         self.add_mod(self.body_tap)
@@ -27,7 +27,8 @@ class sotfet_mram_br_precharge_array(precharge_array):
 
     def add_insts(self):
         """Creates a precharge array by horizontally tiling the precharge cell"""
-        (self.bitcell_offsets, self.tap_offsets) = utils.get_tap_positions(self.columns)
+        self.load_bitcell_offsets()
+        self.child_insts = []
         for i in range(self.columns):
             name = "mod_{0}".format(i)
             offset = vector(self.bitcell_offsets[i] + self.pc_cell.width, 0)
@@ -48,6 +49,7 @@ class sotfet_mram_br_precharge_array(precharge_array):
                                 height=bl_pin.height())
             self.connect_inst(["br[{0}]".format(i), "bl[{0}]".format(i),
                                "en", "vdd"])
+            self.child_insts.append(inst)
         for x_offset in self.tap_offsets:
             self.add_inst(self.body_tap.name, self.body_tap, offset=vector(x_offset, 0))
             self.connect_inst([])

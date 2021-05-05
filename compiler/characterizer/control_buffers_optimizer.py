@@ -562,6 +562,21 @@ class ControlBufferOptimizer:
         """Optimization order may be important so permit re-ordering"""
         return list(self.driver_loads.values())
 
+    def get_config_num_stages(self, buffer_mod, buffer_stages_str, buffer_loads):
+        initial_stages = buffer_mod.buffer_stages
+        default_num_stages = len(initial_stages)
+        all_num_stages = {default_num_stages}
+        if default_num_stages >= 4:
+            all_num_stages.add(default_num_stages - 2)
+        if default_num_stages >= 4 and len(buffer_loads) == 2:
+            all_num_stages.update(range(3, default_num_stages))
+        if buffer_stages_str == "column_decoder_buffers":
+            if self.bank.words_per_row > 2:
+                all_num_stages = {1}
+            else:
+                all_num_stages = {2}
+        return all_num_stages
+
     def optimize_all(self):
 
         self.create_parameter_convex_spline_fit(num_sizes=60)  # TODO make configurable
@@ -594,17 +609,7 @@ class ControlBufferOptimizer:
             is_precharge = buffer_stages_str == "precharge_buffers"
 
             initial_stages = buffer_mod.buffer_stages
-            default_num_stages = len(initial_stages)
-            all_num_stages = {default_num_stages}
-            if default_num_stages >= 4:
-                all_num_stages.add(default_num_stages - 2)
-            if default_num_stages >= 4 and len(buffer_loads) == 2:
-                all_num_stages.update(range(3, default_num_stages))
-            if buffer_stages_str == "column_decoder_buffers":
-                if self.bank.words_per_row > 2:
-                    all_num_stages = {1}
-                else:
-                    all_num_stages = {2}
+            all_num_stages = self.get_config_num_stages(buffer_mod, buffer_stages_str, buffer_loads)
 
             min_criteria, min_stages = np.inf, None
 
@@ -668,7 +673,7 @@ class ControlBufferOptimizer:
             buffer_mod = buffer_stages_inst.mod
             max_buffer_size = getattr(OPTS, "max_" + buffer_stages_str, max_size)
             if isinstance(buffer_mod, BufferStage):
-                buffer_mod = buffer_mod.buffer_invs[0]
+                buffer_mod = buffer_mod.buffer_invs[-1]
             config_keys.append((buffer_mod, "A", "Z", max_buffer_size))
         self.add_additional_configs(config_keys)
 
@@ -693,7 +698,7 @@ class ControlBufferOptimizer:
             return str(val)
 
         if isinstance(buffer_mod, BufferStage):
-            buffer_mod = buffer_mod.buffer_invs[0]
+            buffer_mod = buffer_mod.buffer_invs[-1]
 
         suffixes = (buffer_mod.get_char_data_file_suffixes() +
                     buffer_mod.get_char_data_size_suffixes())
@@ -710,9 +715,7 @@ class ControlBufferOptimizer:
         precharge = self.bank.precharge_array.child_insts[0].mod
         config_keys.append((precharge, "en", "bl", OPTS.max_precharge_size))
 
-    @staticmethod
-    def characterize_instance_by_size(buffer_mod, size, in_pin, out_pin):
-        """Create an instance of buffer_mod with size, evaluate its actual size, cin, resistance and gm"""
+    def get_mod_args(self, buffer_mod, size):
         class_name = buffer_mod.__class__.__name__
         if class_name == "pinv":
             args = {"height": buffer_mod.height, "size": size, "beta": buffer_mod.beta,
@@ -722,11 +725,16 @@ class ControlBufferOptimizer:
                     "same_line_inputs": buffer_mod.same_line_inputs}
         elif class_name == "pinv_wordline":
             args = {"size": size, "beta": buffer_mod.beta}
-        elif class_name in ["precharge", "PrechargeAndReset"]:
+        elif class_name == "precharge":
             name = "precharge_{:.5g}".format(size)
             args = {"name": name, "size": size}
         else:
             raise NotImplementedError("Please supply arguments for class {}".format(class_name))
+        return args
+
+    def characterize_instance_by_size(self, buffer_mod, size, in_pin, out_pin):
+        """Create an instance of buffer_mod with size, evaluate its actual size, cin, resistance and gm"""
+        args = self.get_mod_args(buffer_mod, size)
         mod = buffer_mod.__class__(**args)
 
         cin, _ = mod.get_input_cap(in_pin)

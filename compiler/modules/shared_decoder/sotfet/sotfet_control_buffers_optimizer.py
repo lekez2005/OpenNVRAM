@@ -4,6 +4,21 @@ from globals import OPTS
 
 
 class SotfetControlBuffersOptimizer(ControlBufferOptimizer):
+
+    def get_mod_args(self, buffer_mod, size):
+        class_name = buffer_mod.__class__.__name__
+        if class_name in ["PrechargeAndReset", "sotfet_mram_precharge"]:
+            name = "precharge_{:.5g}".format(size)
+            args = {"name": name, "size": size}
+        else:
+            return super().get_mod_args(buffer_mod, size)
+        return args
+
+    def get_config_num_stages(self, buffer_mod, buffer_stages_str, buffer_loads):
+        if "sampleb_buffers" == buffer_stages_str and OPTS.mirror_sense_amp:
+            return {2, 4}
+        return super().get_config_num_stages(buffer_mod, buffer_stages_str, buffer_loads)
+
     def extract_wordline_driver_loads(self):
         """Create config for optimizing wordline driver"""
 
@@ -20,7 +35,7 @@ class SotfetControlBuffersOptimizer(ControlBufferOptimizer):
         from globals import OPTS
         # add precharge
         precharge = self.bank.precharge_array.child_insts[0].mod
-        if OPTS.precharge_bl:
+        if getattr(OPTS, "precharge_bl", True):
             in_pin = "en"
         else:
             in_pin = "bl_reset"

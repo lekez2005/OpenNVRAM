@@ -38,6 +38,8 @@ class SpiceDut(stimuli):
             self.sf.write(" vref ")
         elif OPTS.mram == "sot":
             self.sf.write(" vclamp ")
+        if getattr(OPTS, "one_t_one_s", False):
+            self.sf.write("rw")
 
         self.sf.write(" {0}\n".format(sram_name))
 
@@ -146,10 +148,13 @@ class SpiceDut(stimuli):
 
         match_groups = regex_pattern.search(tx_name).groupdict()
 
+        args = [split, match_groups, replacement_f, format_tx]
         if OPTS.mram == "sot":
-            self.replace_sot_cells(split, match_groups, replacement_f, format_tx)
+            self.replace_sot_cells(*args)
+        elif getattr(OPTS, "one_t_one_s", False):
+            self.replace_1t1s_cells(*args)
         elif OPTS.mram == "sotfet":
-            self.replace_sotfet_cells(split, match_groups, replacement_f, format_tx)
+            self.replace_sotfet_cells(*args)
 
     @staticmethod
     def replace_sot_cells(definition_split, match_groups, replacement_f, format_tx):
@@ -198,3 +203,21 @@ class SpiceDut(stimuli):
             assert "br[" in source.lower(), "Sanity check to confirm br[ is connected to source"
             replacement_f.write("{} {} {} {} {} {} {}\n".format(sot_cell_name, sf_drain, sot_p,
                                                               br_net, br_net, body, "sotfet"))
+
+    @staticmethod
+    def replace_1t1s_cells(definition_split, match_groups, replacement_f, format_tx):
+        tx_num = match_groups["tx_num"]
+        if tx_num[0] == "0":
+            replacement_f.write(format_tx())
+        else:
+            drain, gate, source, body = definition_split[1:5]
+            name_template = OPTS.bitcell_name_template
+            sot_p = (name_template + "_sot_p").format(**match_groups)
+            bl_net = drain
+            rwl_net = source
+            sotfet_cell_name = "{}_XI0".format(name_template.format(**match_groups))
+            assert bl_net == drain, "Sanity check to confirm sf_drain"
+            assert sot_p == gate, "Sanity check to confirm sot_p"
+            assert "br[" in source.lower(), "Sanity check to confirm br[ is connected to source"
+            replacement_f.write("{} {} {} {} {} {} {}\n".format(sotfet_cell_name, bl_net, bl_net,
+                                                                sot_p, rwl_net, body, "sotfet"))

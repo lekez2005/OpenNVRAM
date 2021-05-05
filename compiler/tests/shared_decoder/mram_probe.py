@@ -30,10 +30,11 @@ class MramProbe(SharedProbe):
             return super().get_control_buffers_probe_bits(destination_inst, bank)
 
     def get_sense_amp_internal_nets(self):
+        child_mod = self.sram.bank.sense_amp_array.child_mod
         probes = ["dout", "dout_bar", "bl", "vref"]
         if OPTS.mram == "sot":
             probes.extend(["vdata"])
-        return probes
+        return self.filter_internal_nets(child_mod, probes)
 
     def get_wordline_nets(self):
         return ["wwl", "rwl"]

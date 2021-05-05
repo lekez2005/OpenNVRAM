@@ -13,6 +13,7 @@ class PinvWl(design):
     """
 
     pin_names = ["A", "Z", "RW", "vdd", "gnd"]
+    tx_mults = 1
 
 
 class wordline_driver_mixin():

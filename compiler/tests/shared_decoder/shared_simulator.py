@@ -248,7 +248,7 @@ def create_arg_parser():
 
 def parse_options(parser):
     mode_ = sys.argv[1]
-    assert mode_ in [CMOS_MODE, SOT_MODE, SOTFET_MODE, PUSH_MODE]
+    assert mode_ in [CMOS_MODE, SOT_MODE, SOTFET_MODE, PUSH_MODE, ONE_TONE_S]
 
     options_, other_args = parser.parse_known_args()
     sys.argv = other_args + ["-t", options_.tech_name]
@@ -292,6 +292,7 @@ CMOS_MODE = "cmos"
 SOT_MODE = "sot"
 SOTFET_MODE = "sotfet"
 PUSH_MODE = "push"
+ONE_TONE_S = "1t1s"
 
 DEFAULT_WORD_SIZE = 32
 

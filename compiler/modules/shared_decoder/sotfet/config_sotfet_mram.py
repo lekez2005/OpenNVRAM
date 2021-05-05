@@ -4,6 +4,8 @@ python_path = ["modules/shared_decoder", "modules/shared_decoder/sotfet"]
 baseline = False
 mram = "sotfet"
 
+llg_prescale = 0.001
+
 cells_per_group = 2
 
 cache_optimization_prefix = "mram_"

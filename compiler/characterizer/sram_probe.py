@@ -4,7 +4,7 @@ from subprocess import check_output, CalledProcessError
 import numpy as np
 
 import debug
-from characterizer.dependency_graph import get_instance_module, get_net_driver
+from characterizer.dependency_graph import get_instance_module, get_net_driver, get_all_net_drivers
 from characterizer.probe_utils import get_current_drivers, get_all_tx_fingers, format_bank_probes, \
     get_voltage_connections, get_extracted_prefix
 from globals import OPTS
@@ -364,7 +364,9 @@ class SramProbe(object):
             for net in self.get_wordline_nets():
                 # get wordline driver array
                 full_net = net + "[{}]".format(row)
-                driver = get_net_driver(full_net, bank_mod)
+                out_drivers, _ = get_all_net_drivers(full_net, bank_mod)
+                driver = list(filter(lambda x: not x[1].name == "bitcell_array",
+                                     out_drivers))[0]
                 _, wordline_driver_array, conns = driver
                 conn_index = bank_mod.conns.index(conns)
                 driver_inst = bank_mod.insts[conn_index]
@@ -554,7 +556,7 @@ class SramProbe(object):
         return ["dout_bar"]
 
     def probe_sense_amps(self, bank_):
-        """Probe write driver internal bl_bar, br_bar"""
+        """Probe bitlines at sense amps"""
         # first locate an instance of sense amp driver
         suffix = "_out" if self.sram.words_per_row > 1 else ""
         bl_net = "bl{}[0]".format(suffix)

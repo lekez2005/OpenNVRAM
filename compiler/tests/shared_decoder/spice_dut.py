@@ -34,11 +34,13 @@ class SpiceDut(stimuli):
         self.sf.write(" {0} {1} {2} ".format(" ".join(sram.control_pin_names),
                                              self.vdd_name, self.gnd_name))
 
+        self.one_t_one_s = getattr(OPTS, "one_t_one_s", False)
+
         if OPTS.mram == "sotfet":
             self.sf.write(" vref ")
         elif OPTS.mram == "sot":
             self.sf.write(" vclamp ")
-        if getattr(OPTS, "one_t_one_s", False):
+        if self.one_t_one_s:
             self.sf.write("rw")
 
         self.sf.write(" {0}\n".format(sram_name))
@@ -151,7 +153,7 @@ class SpiceDut(stimuli):
         args = [split, match_groups, replacement_f, format_tx]
         if OPTS.mram == "sot":
             self.replace_sot_cells(*args)
-        elif getattr(OPTS, "one_t_one_s", False):
+        elif self.one_t_one_s:
             self.replace_1t1s_cells(*args)
         elif OPTS.mram == "sotfet":
             self.replace_sotfet_cells(*args)
@@ -202,7 +204,7 @@ class SpiceDut(stimuli):
             assert sot_p == gate, "Sanity check to confirm sot_p"
             assert "br[" in source.lower(), "Sanity check to confirm br[ is connected to source"
             replacement_f.write("{} {} {} {} {} {} {}\n".format(sot_cell_name, sf_drain, sot_p,
-                                                              br_net, br_net, body, "sotfet"))
+                                                                br_net, br_net, body, "sotfet"))
 
     @staticmethod
     def replace_1t1s_cells(definition_split, match_groups, replacement_f, format_tx):
@@ -216,8 +218,8 @@ class SpiceDut(stimuli):
             bl_net = drain
             rwl_net = source
             sotfet_cell_name = "{}_XI0".format(name_template.format(**match_groups))
-            assert bl_net == drain, "Sanity check to confirm sf_drain"
-            assert sot_p == gate, "Sanity check to confirm sot_p"
-            assert "br[" in source.lower(), "Sanity check to confirm br[ is connected to source"
+            assert "bl[" in bl_net, "Sanity check to confirm bl_net"
+            assert "sot_p" in sot_p, "Sanity check to confirm sot_p"
+            assert "rwl[" in source.lower(), "Sanity check to confirm rwl[ is connected to source"
             replacement_f.write("{} {} {} {} {} {} {}\n".format(sotfet_cell_name, bl_net, bl_net,
                                                                 sot_p, rwl_net, body, "sotfet"))

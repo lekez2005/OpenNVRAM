@@ -12,6 +12,11 @@ class MramSimStepsGenerator(SimStepsGenerator):
         self.control_sigs.append("write_trig")
         self.write_trig = self.prev_write_trig = 0
 
+        self.one_t_one_s = getattr(OPTS, "one_t_one_s", False)
+        if self.one_t_one_s:
+            self.control_sigs.append("rw")
+            self.rw = self.prev_rw = 0
+
     def create_probe(self):
         self.probe = MramProbe(self.sram, OPTS.pex_spice)
 
@@ -41,6 +46,8 @@ class MramSimStepsGenerator(SimStepsGenerator):
             ic.flush()
 
     def update_output(self, increment_time=True):
+        if self.one_t_one_s:
+            self.rw = int (not self.read)
         if increment_time and not self.read:
             self.write_pwl("write_trig", 0, 1)
 

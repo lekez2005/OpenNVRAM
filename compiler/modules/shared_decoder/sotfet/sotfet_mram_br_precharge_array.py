@@ -14,6 +14,7 @@ class sotfet_mram_br_precharge_array(precharge_array):
         self.columns = columns
 
         self.pc_cell = bank.precharge_array.pc_cell
+        self.add_mod(self.pc_cell)
         self.child_mod = self.pc_cell
 
         self.body_tap = bank.precharge_array.body_tap

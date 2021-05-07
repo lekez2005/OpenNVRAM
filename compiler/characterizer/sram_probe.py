@@ -1,4 +1,5 @@
 import re
+import shutil
 from subprocess import check_output, CalledProcessError
 
 import numpy as np
@@ -632,7 +633,7 @@ class SramProbe(object):
 
     @staticmethod
     def grep_file(pattern, pex_file, regex=True):
-        rg = True
+        rg = shutil.which("rg")
         if rg:
             executable = "rg"
             flags = "-ie" if regex else "-iF"

@@ -104,6 +104,20 @@ class spice(verilog.verilog):
 
     def get_pin_dir(self, name):
         """ Returns the direction of the pin. (Supply/ground are INOUT). """
+        name_lower = name.lower()
+        all_types = set()
+        conns = [(conn_index, conn) for conn_index, conn in enumerate(self.conns)
+                 if name_lower in [y.lower() for y in conn]]
+        if conns:
+            for conn_index, conn in conns:
+                conn = [y.lower() for y in conn]
+                pin = self.insts[conn_index].mod.pins[conn.index(name_lower)]
+                all_types.add(self.insts[conn_index].mod.get_pin_dir(pin))
+        if all_types:
+            if len(all_types) == 1:
+                return all_types.pop()
+            else:
+                return INOUT
         pin_type = self.get_pin_type(name)
         if pin_type in [POWER, GROUND]:
             return INOUT

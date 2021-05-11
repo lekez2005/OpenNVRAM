@@ -1,23 +1,11 @@
-import debug
-from base import design
-from base import utils
-from tech import GDS, layer
+from modules.ms_flop import ms_flop
 
 
-class ms_flop_horz_pitch(design.design):
+class ms_flop_horz_pitch(ms_flop):
     """
-    Flip flop whose height matches that of the bitcell
+    Flip flop whose height is close to pgates/bitcell for use in decoders or CAM tags
     """
-
+    lib_name = "ms_flop_horz_pitch"
     pin_names = ["din", "dout", "dout_bar", "clk", "vdd", "gnd"]
-    (width,height) = utils.get_libcell_size("ms_flop_horz_pitch", GDS["unit"], layer["boundary"])
-    pin_map = utils.get_libcell_pins(pin_names, "ms_flop_horz_pitch", GDS["unit"], layer["boundary"])
 
-    def __init__(self):
-        design.design.__init__(self, "ms_flop_horz_pitch")
-        debug.info(2, "Create ms_flop_horz_pitch")
-
-        self.width = ms_flop_horz_pitch.width
-        self.height = ms_flop_horz_pitch.height
-        self.pin_map = ms_flop_horz_pitch.pin_map
 

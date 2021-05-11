@@ -1,4 +1,5 @@
 from base import design
+from base.hierarchy_spice import INPUT, OUTPUT, INOUT
 from base.library_import import library_import
 from globals import OPTS
 
@@ -9,6 +10,14 @@ class ms_flop(design.design):
     Memory address flip-flop
     """
     lib_name = OPTS.ms_flop_mod
+
+    def get_pin_dir(self, name):
+        if name in ["din", "clk"]:
+            return INPUT
+        elif name in ["dout", "dout_bar"]:
+            return OUTPUT
+        else:
+            return INOUT
 
     def analytical_delay(self, slew, load=0.0):
         # dont know how to calculate this now, use constant in tech file

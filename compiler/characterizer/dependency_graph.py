@@ -6,13 +6,28 @@ TODO
     - More systematic pin length computation, currently uses max(pin_length, min(cell_width, cell_height))
     - Distributed loads are not detected if the nesting hierarchy is greater than one -> Implement flatenning load hierarchy to fix
 """
-
 import math
 from typing import List, Tuple, Dict, Union
 
 import debug
 from base.design import design
 from base.hierarchy_spice import OUTPUT, INOUT, INPUT, delay_data
+
+
+class ModuleConn(tuple):
+    # tuple of Module and connection
+    def __new__(cls, module, conn):
+        return super(ModuleConn, cls).__new__(ModuleConn, (module, conn))
+
+    def __str__(self):
+        if len(self[1]) > 5:
+            suffix = " ... {}".format(self[1][-1])
+        else:
+            suffix = ""
+        return "({}, [{}{}])".format(self[0], ", ".join(self[1][:5]), suffix)
+
+    def __repr__(self):
+        return self.__str__()
 
 
 class GraphLoad:
@@ -90,7 +105,7 @@ class GraphNode:
 
         self.parent_module = all_parent_modules[-1][0]
         self.original_parent_module = self.parent_module  # for when parent module is overridden at higher level
-        self.all_parent_modules = all_parent_modules
+        self.all_parent_modules = [x for x in all_parent_modules]  # make a copy
         self.conn = conn
 
         conn_index = self.parent_module.conns.index(conn)
@@ -307,14 +322,40 @@ class GraphNode:
         self.delay = delay_data(delay, slew_out)
         return self.delay
 
+    def get_full_net(self, in_net=True):
+        net = self.parent_in_net if in_net else self.parent_out_net
+        net = net.lower()
+
+        all_parent_modules = [x for x in self.all_parent_modules]
+
+        while len(all_parent_modules) > 0:
+            module, conn = all_parent_modules.pop(-1)
+            module_pins = [x.lower() for x in module.pins]
+            if net in module_pins:
+                pin_index = module_pins.index(net)
+                if len(all_parent_modules) > 0:
+                    net = all_parent_modules[-1][1][pin_index]
+                else:
+                    break
+            else:
+                break
+        if len(all_parent_modules) == 0:
+            return net
+        full_net = ""
+        for parent_module, conn in all_parent_modules:
+            inst_name = parent_module.insts[parent_module.conns.index(conn)].name
+            full_net += "X{}.".format(inst_name)
+        full_net += net
+        return full_net
+
     def __str__(self):
         if self.delay is not None:
             delay_suffix = " ({:.3g} p) ".format(self.delay.delay * 1e12)
         else:
             delay_suffix = ""
-        return " {}:{}-> | {}:{} | -> {}:{} {} ".format(self.parent_in_net, self.in_net,
+        return " {}:{}-> | {}:{} | -> {}:{} {} ".format(self.get_full_net(), self.in_net,
                                                         self.instance_name,
-                                                        self.module.name, self.parent_out_net,
+                                                        self.module.name, self.get_full_net(in_net=False),
                                                         self.out_net, delay_suffix)
 
     def __repr__(self):
@@ -373,15 +414,28 @@ class GraphPath:
         self.nodes[0] = value
 
     def __str__(self):
-        return "\t".join([str(x) for x in self.nodes])
+        return self.__repr__()
 
     def __repr__(self):
         result = ""
         for i in range(len(self.nodes)):
+            start_node = self.nodes[i]
             if i < len(self.nodes) - 1:
-                result += "{}\n{}".format(str(self.nodes[i]), 4 * (i + 1) * " ")
+                end_node = self.nodes[i + 1]
+                end_internal_net = end_node.in_net
+                end_net = end_node.get_full_net(in_net=True)
             else:
-                result += str(self.nodes[-1])
+                end_node = self.nodes[i]
+                end_internal_net = end_node.out_net
+                end_net = end_node.get_full_net(in_net=False)
+            if start_node.delay is not None:
+                delay_suffix = " ({:.3g} p) ".format(start_node.delay.delay * 1e12)
+            else:
+                delay_suffix = ""
+            result += "\n" + 4 * (i + 1) * " " + " {}:{}-> | {}:{} | -> {}:{} {} ".format(
+                start_node.get_full_net(), start_node.in_net, start_node.instance_name,
+                start_node.module.name, end_net, end_internal_net, delay_suffix
+            )
         return result
 
     def __len__(self):
@@ -452,7 +506,7 @@ def get_net_driver(net: str, module: design):
     return driver
 
 
-def get_all_net_drivers(net: str, module: design ):
+def get_all_net_drivers(net: str, module: design):
     all_connections = list(get_all_net_connections(net, module))
     output_drivers = [tuple(x[:3]) for x in all_connections if x[3] == OUTPUT]
     inout_drivers = [tuple(x[:3]) for x in all_connections if x[3] == INOUT]
@@ -469,11 +523,11 @@ def get_all_drivers_for_pin(net: str, parent_module: design):
     results = []
     for child_pin, child_module, conn in all_drivers:
         if child_module.is_delay_primitive():
-            results.append([(parent_module, conn), (child_module, child_pin, net)])
+            results.append([ModuleConn(parent_module, conn), (child_module, child_pin, net)])
         else:
             descendants = get_all_drivers_for_pin(child_pin, child_module)
             for desc_ in descendants:
-                results.append([(parent_module, conn)] + desc_)
+                results.append([ModuleConn(parent_module, conn)] + desc_)
     return results
 
 
@@ -485,6 +539,81 @@ def get_driver_for_pin(net: str, parent_module: design):
         return [parent_module, child_module, (child_pin, net, conn)]
     descendants = get_driver_for_pin(child_pin, child_module)
     return [(parent_module, conn)] + descendants
+
+
+def flatten_paths(paths, module, current_depth, max_depth, max_adjacent_modules):
+    # Process derived inputs by descending into modules that created them
+    processing_queue = [x for x in paths]  # quick copy
+    processed_paths = []
+
+    sibling_iterations_count = 0
+    while len(processing_queue) > 0:
+        path = processing_queue[0]
+
+        source_node = path.source_node
+        if source_node.parent_in_net in module.pins:  # not a derived node
+            # check if it's explicitly an input
+            if module.get_pin_dir(source_node.parent_in_net) == INPUT:
+                processed_paths.append(path)
+                processing_queue.remove(path)
+                continue
+
+        # find module that drives this net within the current hierarchy
+        sibling_out_pin, sibling_module, sibling_conn = get_net_driver(
+            source_node.parent_in_net, module)
+
+        if sibling_module.is_delay_primitive():
+            sibling_input_pins = sibling_module.get_input_pins()
+            for sibling_input_pin in sibling_input_pins:
+                sibling_pin_index = sibling_module.pins.index(sibling_input_pin)
+                all_parent_modules = source_node.all_parent_modules[:-1] + [(module, sibling_conn)]
+                sibling_node = GraphNode(in_net=sibling_input_pin, out_net=sibling_out_pin,
+                                         module=sibling_module,
+                                         parent_in_net=sibling_conn[sibling_pin_index],
+                                         parent_out_net=source_node.parent_in_net,
+                                         all_parent_modules=all_parent_modules, conn=sibling_conn)
+                new_path = path.prepend_node(sibling_node)
+                processing_queue.append(new_path)
+        else:
+            sibling_hierarchy = get_all_drivers_for_pin(sibling_out_pin, sibling_module)[0]
+            sibling_paths = construct_paths(sibling_hierarchy, current_depth=current_depth + 1,
+                                            max_depth=max_depth,
+                                            max_adjacent_modules=max_adjacent_modules)
+            if len(source_node.all_parent_modules) > 0:
+                module_conn = [ModuleConn(source_node.all_parent_modules[-1][0], sibling_conn)]
+            else:
+                module_conn = []
+
+            # fix hierarchy of sibling source node
+            for sibling_path in sibling_paths:
+                sibling_source_node = sibling_path.source_node
+                all_sibling_parents = module_conn + sibling_source_node.all_parent_modules
+                for i in range(len(all_sibling_parents) - 1, 0, -1):
+                    _, parent_conn = all_sibling_parents[i - 1]
+                    parent_mod, _ = all_sibling_parents[i]
+                    if sibling_source_node.parent_in_net not in parent_mod.pins:
+                        break
+                    pin_index = parent_mod.pins.index(sibling_source_node.parent_in_net)
+                    sibling_source_node.parent_in_net = parent_conn[pin_index]
+                sibling_source_node.all_parent_modules = []
+
+            # some nodes are shared between paths: prevent double updates
+            all_nodes = set([node for sibling_path in sibling_paths for node in sibling_path.nodes])
+            for node in all_nodes:
+                node.all_parent_modules = (source_node.all_parent_modules[:-1] + module_conn +
+                                           node.all_parent_modules)
+
+            for sibling_path in sibling_paths:
+                new_path = path.prepend_nodes(sibling_path)
+                processing_queue.append(new_path)
+
+        processing_queue.remove(path)
+
+        sibling_iterations_count += 1
+        if sibling_iterations_count > max_adjacent_modules:
+            raise ValueError("max_adjacent_modules exceeded. Netlist potentially contains cycles"
+                             " or try increasing max_adjacent_modules from {}".format(max_adjacent_modules))
+    return processed_paths
 
 
 def construct_paths(driver_hierarchy, current_depth=0, max_depth=20, max_adjacent_modules=50,
@@ -522,91 +651,32 @@ def construct_paths(driver_hierarchy, current_depth=0, max_depth=20, max_adjacen
                                all_parent_modules=all_parent_modules, conn=conn)
         paths.append(GraphPath([graph_node]))
 
-    # Process derived inputs by descending into modules that created them
-    processing_queue = [x for x in paths]  # quick copy
-    processed_paths = []
-
-    sibling_iterations_count = 0
-    while len(processing_queue) > 0:
-        path = processing_queue[0]
-
-        source_node = path.source_node
-        if source_node.parent_in_net in immediate_parent_module.pins:  # not a derived node
-            # check if it's explicitly an input
-            if immediate_parent_module.get_pin_dir(source_node.parent_in_net) == INPUT:
-                processed_paths.append(path)
-                processing_queue.remove(path)
-                continue
-
-        # find module that drives this net within the current hierarchy
-        sibling_out_pin, sibling_module, sibling_conn = get_net_driver(
-            source_node.parent_in_net, immediate_parent_module)
-        sibling_input_pins = sibling_module.get_input_pins()
-
-        if sibling_module.is_delay_primitive():
-            for sibling_input_pin in sibling_input_pins:
-                sibling_pin_index = sibling_module.pins.index(sibling_input_pin)
-                all_parent_modules = parent_modules + [(immediate_parent_module, sibling_conn)]
-                sibling_node = GraphNode(in_net=sibling_input_pin, out_net=sibling_out_pin,
-                                         module=sibling_module,
-                                         parent_in_net=sibling_conn[sibling_pin_index],
-                                         parent_out_net=source_node.parent_in_net,
-                                         all_parent_modules=all_parent_modules, conn=sibling_conn)
-                new_path = path.prepend_node(sibling_node)
-                processing_queue.append(new_path)
-        else:
-            sibling_hierarchy = get_driver_for_pin(sibling_out_pin, sibling_module)
-            sibling_paths = construct_paths(sibling_hierarchy, current_depth=current_depth + 1,
-                                            max_depth=max_depth,
-                                            max_adjacent_modules=max_adjacent_modules)
-            for sibling_path in sibling_paths:
-                new_path = path.prepend_nodes(sibling_path)
-                processing_queue.append(new_path)
-
-        processing_queue.remove(path)
-
-        sibling_iterations_count += 1
-        if sibling_iterations_count > max_adjacent_modules:
-            raise ValueError("max_adjacent_modules exceeded. Netlist potentially contains cycles"
-                             " or try increasing max_adjacent_modules from {}".format(max_adjacent_modules))
-
-    final_paths = processed_paths
+    processed_paths = flatten_paths(paths, immediate_parent_module, current_depth,
+                                    max_depth, max_adjacent_modules)
 
     # Process ancestors
     all_ancestors = list(reversed(parent_modules))
     for i in range(len(all_ancestors)):
         ancestor_module, ancestor_conn = all_ancestors[i]
-        processing_queue = [x for x in processed_paths]
-        processed_paths = []
-        for path in processing_queue:
+        for path in processed_paths:
             source_node = path.source_node
-            child_pin_index = immediate_parent_module.pins.index(source_node.parent_in_net)
-            pin_net_in_ancestor = ancestor_conn[child_pin_index]
-            if pin_net_in_ancestor in ancestor_module.pins:
-                source_node.parent_in_net = pin_net_in_ancestor
-                source_node.parent_module = ancestor_module
-                processed_paths.append(path)
-            else:
-                # derive the path
-                all_drivers_in_ancestor = get_all_net_drivers(pin_net_in_ancestor, ancestor_module)
-                for driver_in_ancestor in all_drivers_in_ancestor[0] + all_drivers_in_ancestor[1]:
-                    next_driver_pin, next_driver_module, next_driver_conns = driver_in_ancestor
-                    next_driver_paths = create_graph(next_driver_pin, next_driver_module,
-                                                     driver_exclusions)
-                    sibling_immediate_parent = (all_ancestors[i][0], next_driver_conns)
-                    sibling_all_parent_modules = list(reversed(all_ancestors[i + 1:])) + [sibling_immediate_parent]
-                    for next_driver_path in next_driver_paths:
-                        for node in next_driver_path.nodes:
-                            node.all_parent_modules = sibling_all_parent_modules + node.all_parent_modules
-                        processed_paths.append(path.prepend_nodes(next_driver_path))
+            # derive parent nets
+            in_pin_index = immediate_parent_module.pins.index(source_node.parent_in_net)
+            ancestor_in_net = ancestor_conn[in_pin_index]
+            # update hierarchy
+            source_node.parent_in_net = ancestor_in_net
+            source_node.parent_module = ancestor_module
+            source_node.all_parent_modules = source_node.all_parent_modules[:-1]
+
+        processed_paths = flatten_paths(processed_paths, ancestor_module, current_depth, max_depth,
+                                        max_adjacent_modules)
 
         immediate_parent_module = ancestor_module
-        final_paths = processed_paths
 
     debug.info(2, "Derived path for {} in {}:".format(output_net, original_parent.name))
-    for path in final_paths:
+    for path in processed_paths:
         debug.info(2, str(path))
-    return final_paths
+    return processed_paths
 
 
 def create_graph(destination_net, module: design, driver_exclusions=None):
@@ -622,10 +692,20 @@ def create_graph(destination_net, module: design, driver_exclusions=None):
     """
     if driver_exclusions is None:
         driver_exclusions = []
-    destination_net, dest_hierarchy, _ = get_net_hierarchy(destination_net, module)
+    destination_net, dest_hierarchy, inst_hier = get_net_hierarchy(destination_net, module)
+
+    # Attach parent insts to path nodes
+    parent_modules = []
+    for child_inst, parent_module in zip(inst_hier, dest_hierarchy):
+        child_conn = parent_module.conns[parent_module.insts.index(child_inst)]
+        parent_modules.append(ModuleConn(parent_module, child_conn))
+
     all_paths = []
-    for driver_hierarchy in get_all_drivers_for_pin(destination_net, dest_hierarchy[-1]):
+    all_hierarchies = get_all_drivers_for_pin(destination_net, dest_hierarchy[-1])
+    # breakpoint()
+    for driver_hierarchy in all_hierarchies:
         if driver_hierarchy[-1][0].name not in driver_exclusions:
-            all_paths.extend(construct_paths(driver_hierarchy, driver_exclusions=driver_exclusions))
+            all_paths.extend(construct_paths(parent_modules + driver_hierarchy,
+                                             driver_exclusions=driver_exclusions))
 
     return all_paths

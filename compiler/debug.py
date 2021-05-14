@@ -3,7 +3,6 @@ import os
 import logging
 from logging.handlers import RotatingFileHandler
 
-
 # the debug levels:
 # 0 = minimum output (default)
 # 1 = major stages
@@ -24,45 +23,53 @@ logger.addHandler(console_handler)
 
 file_handler = None
 
-def check(check,str):
-    if not check:
-        (frame, filename, line_number, function_name, lines,
-         index) = inspect.getouterframes(inspect.currentframe())[1]
-        logger.debug("ERROR: file {0}: line {1}: {2}".format(os.path.basename(filename),line_number,str))
-        assert 0, str
 
-def error(str,return_value=0):
+def wrap_message(prefix, message):
     (frame, filename, line_number, function_name, lines,
-     index) = inspect.getouterframes(inspect.currentframe())[1]
-    logger.debug("ERROR: file {0}: line {1}: {2}".format(os.path.basename(filename),line_number,str))
-    assert return_value==0
-
-def warning(str):
-    (frame, filename, line_number, function_name, lines,
-     index) = inspect.getouterframes(inspect.currentframe())[1]
-    logger.debug("WARNING: file {0}: line {1}: {2}".format(os.path.basename(filename),line_number,str))
+     index) = inspect.getouterframes(inspect.currentframe())[2]
+    return "{0}: file {1}: line {2}: ".format(prefix, os.path.basename(filename),
+                                              line_number) + message
 
 
-def info(lev, str):
+def check(check_, message, *args):
+    if check_:
+        return
+    logger.debug(wrap_message("ERROR", message), *args)
+    assert 0, message
+
+
+def error(message, return_value=0, *args):
+    if return_value == 0:
+        return
+    logger.debug(wrap_message("ERROR", message), *args)
+    assert return_value == 0
+
+
+def warning(message, *args):
+    logger.debug(wrap_message("WARNING", message), *args)
+
+
+def info(lev, message, *args):
     from globals import OPTS
-    if (OPTS.debug_level >= lev):
+    if OPTS.debug_level >= lev:
         frm = inspect.stack()[1]
         mod = inspect.getmodule(frm[0])
-        #classname = frm.f_globals['__name__']
-        if mod.__name__ == None:
-            class_name=""
+        # classname = frm.f_globals['__name__']
+        if mod.__name__ is None:
+            class_name = ""
         else:
-            class_name=mod.__name__
-            logger.debug("[{0}/{1}]: {2}".format(class_name,frm[0].f_code.co_name,str))
+            class_name = mod.__name__
+        message = "[{0}/{1}]: ".format(class_name, frm[0].f_code.co_name) + message
+        logger.debug(message, *args)
 
 
-def print_str(str):
-    logger.debug(str)
+def print_str(message):
+    logger.debug(message)
 
 
 class RotateOnOpenHandler(RotatingFileHandler):
     def shouldRollover(self, record):
-        if self.stream is None:                 # delay was set...
+        if self.stream is None:  # delay was set...
             return 1
         return 0
 
@@ -79,4 +86,3 @@ def setup_file_log(filename):
     file_handler = RotateOnOpenHandler(filename, mode='w', backupCount=5, delay=True)
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
-

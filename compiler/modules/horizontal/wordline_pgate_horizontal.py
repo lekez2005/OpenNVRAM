@@ -2,6 +2,7 @@ from base import contact
 from base.contact import m2m3, m1m2
 from base.design import ACTIVE, NIMP, PIMP, NWELL, PWELL, METAL1, POLY, METAL3, METAL2, PO_DUMMY, design
 from base.vector import vector
+from base.well_active_contacts import get_max_contact
 from base.well_implant_fills import calculate_tx_metal_fill
 from globals import OPTS
 from modules.horizontal.pgate_horizontal import pgate_horizontal
@@ -225,14 +226,12 @@ class wordline_pgate_horizontal(pgate_horizontal):
 
             x_offset = actives[i].cx() + via_shift
 
-            for y_index in conn_indices[i]:
-                y_offset = y_offsets[y_index]
-                self.add_contact_center(m1m2.layer_stack, offset=vector(x_offset, y_offset),
-                                        rotate=90)
+            contact_dimensions = get_max_contact(m2m3.layer_stack, actives[i].width).dimensions
+            num_contacts = min(2, contact_dimensions[1])
 
             pin = self.get_pin(pin_name)
             self.add_contact_center(m2m3.layer_stack, offset=vector(x_offset, pin.cy()),
-                                    rotate=90)
+                                    rotate=90, size=[1, num_contacts])
 
             self.add_rect_center(METAL2, offset=vector(x_offset, 0.5 * self.height),
                                  width=m1m2.height, height=self.height)
@@ -251,6 +250,9 @@ class wordline_pgate_horizontal(pgate_horizontal):
         y_offsets = self.get_source_drain_offsets()
 
         for i in range(2):
+            active_rect = active_rects[i]
+            contact_dimensions = get_max_contact(m1m2.layer_stack, active_rect.width).dimensions
+
             if getattr(self, fill_props[i]):
                 fill_x, fill_right, fill_height, fill_width = getattr(self, fill_props[i])
                 real_fill_x = fill_x + active_rects[i].lx()
@@ -258,6 +260,13 @@ class wordline_pgate_horizontal(pgate_horizontal):
                     y_offset = y_offsets[y_index] - 0.5 * fill_height
                     self.add_rect(METAL1, offset=vector(real_fill_x, y_offset),
                                   width=fill_width, height=fill_height)
+                m1m2_via_x = fill_x + active_rect.lx() + 0.5 * contact.m1m2.height
+            else:
+                m1m2_via_x = active_rect.cx()
+            for y_index in conn_indices[i]:
+                self.add_contact_center(m1m2.layer_stack, size=contact_dimensions,
+                                        offset=vector(m1m2_via_x, y_offsets[y_index]),
+                                        rotate=90)
 
     @classmethod
     def get_dummy_y_offsets(cls, reference_mod: "wordline_pgate_horizontal"):

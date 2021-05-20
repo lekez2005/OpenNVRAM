@@ -33,7 +33,7 @@ class pgate_horizontal(pgates_characterization_base, design):
         if not pgate_horizontal.contraints_initialized:
             self.__class__.initialize_constraints(self)
         self.rail_height = self.__class__.rail_height
-        self.height = pgate_horizontal.height
+        self.height = self.__class__.height
 
         self.create_layout()
 

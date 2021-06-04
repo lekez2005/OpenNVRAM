@@ -6,18 +6,19 @@ import sys
 
 sys.path.append(os.path.dirname(__file__))
 try:
-    from script_loader import load_setup
+    from script_loader import load_setup, latest_scratch
 except (ImportError, ModuleNotFoundError):
-    from .script_loader import load_setup
+    from .script_loader import load_setup, latest_scratch
 
 
-def export_gds(gds, top_level=False):
-    setup, _ = load_setup(top_level=top_level)
+def export_gds(gds, setup=None):
+    if setup is None:
+        setup, _, _ = load_setup(top_level=False)
 
     command = [
         "strmin",
         "-layerMap", setup.layer_map,
-        "-library",  setup.export_library_name,
+        "-library", setup.export_library_name,
         "-strmFile", gds,
         "-attachTechFileOfLib", setup.pdk_library_name,
         "-logFile", os.environ["SCRATCH"] + "/logs/strmIn.log",
@@ -27,14 +28,10 @@ def export_gds(gds, top_level=False):
     subprocess.call(command, cwd=setup.cadence_work_dir)
 
 
-def latest_scratch(scratch):
-    all_subdirs = [scratch + d for d in os.listdir(scratch) if os.path.isdir(scratch + d)]
-    return max(all_subdirs, key=os.path.getmtime)
-
-
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        export_gds(sys.argv[1], top_level=True)
+    setup_, tech_name, _ = load_setup(top_level=True)
+    if len(sys.argv) > 0:
+        gds_ = sys.argv[0]
     else:
-        scratch = os.path.join(os.environ["SCRATCH"], "openram")
-        export_gds(os.path.join(latest_scratch(scratch), "/temp.gds"), top_level=False)
+        gds_ = latest_scratch()
+    export_gds(gds_, setup=setup_)

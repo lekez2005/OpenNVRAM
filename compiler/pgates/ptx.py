@@ -534,9 +534,9 @@ class ptx(design.design):
                                  interpolate_size_suffixes=interpolate)
         if unit_cap is None:
             if terminal == "d":
-                unit_cap = spice["min_tx_drain_c"] / spice["minwidth_tx"]
+                unit_cap = spice["min_tx_drain_c"] / spice["minwidth_tx"] * 1e-15
             elif terminal == "g":
-                unit_cap = spice["min_tx_gate_c"] / spice["minwidth_tx"]
+                unit_cap = spice["min_tx_gate_c"] / spice["minwidth_tx"] * 1e-15
             else:
                 debug.error("Invalid tx terminal {}".format(terminal), -1)
         debug.info(4, "Unit cap for terminal {} width {} nf {} = {:.4g}".format(

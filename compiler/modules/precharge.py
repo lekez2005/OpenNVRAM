@@ -11,7 +11,54 @@ from pgates.ptx_spice import ptx_spice
 from tech import drc, parameter, layer as tech_layers, add_tech_layers, info
 
 
-class precharge(design.design):
+class precharge_characterization:
+    def is_delay_primitive(self):
+        return True
+
+    def get_char_data_size(self: design):
+        return self.size
+
+    def get_driver_resistance(self, pin_name, use_max_res=False,
+                              interpolate=None, corner=None):
+        resistance = self.lookup_resistance(pin_name, interpolate, corner)
+        if resistance:
+            return resistance / self.size
+        return self.pmos.get_driver_resistance("d", use_max_res,
+                                               interpolate=True, corner=corner)
+
+    def get_input_cap(self: design, pin_name, num_elements: int = 1, wire_length: float = 0.0,
+                      interpolate=None, **kwargs):
+        total_cap, cap_per_unit = super().get_input_cap(pin_name=pin_name,
+                                                        num_elements=self.size,
+                                                        wire_length=wire_length, **kwargs)
+        return total_cap * num_elements, cap_per_unit
+
+    def get_input_cap_from_instances(self: design, pin_name, wire_length: float = 0.0,
+                                     **kwargs):
+        total_cap, cap_per_unit = super().get_input_cap_from_instances(pin_name, wire_length,
+                                                                       **kwargs)
+        # super class method doesn't consider size in calculating
+        cap_per_unit /= self.size
+        return total_cap, cap_per_unit
+
+    def compute_input_cap(self: design, pin_name, wire_length: float = 0.0):
+        total_cap = super().compute_input_cap(pin_name, wire_length)
+        # super class method doesn't consider size in calculating
+        cap_per_unit = total_cap / self.size
+        return total_cap, cap_per_unit
+
+    def get_char_data_file_suffixes(self, **kwargs):
+        return [("beta", parameter["beta"])]
+
+    def get_char_data_name(self, **kwargs) -> str:
+        """
+        name by which module was characterized
+        :return:
+        """
+        return "{}_{}".format(self.__class__.__name__, self.bitcell.name)
+
+
+class precharge(precharge_characterization, design.design):
     """
     Creates a single precharge cell
     This module implements the precharge bitline cell used in the design.
@@ -34,9 +81,6 @@ class precharge(design.design):
 
     def add_pins(self):
         self.add_pin_list(["bl", "br", "en", "vdd"])
-
-    def get_char_data_file_suffixes(self, **kwargs):
-        return [("beta", parameter["beta"])]
 
     def create_layout(self):
         self.set_layout_constants()
@@ -361,12 +405,6 @@ class precharge(design.design):
             y_offset = self.active_top - fill_height
             self.add_rect("metal1", offset=vector(x_offset, y_offset),
                           width=fill_width, height=fill_height)
-
-    def is_delay_primitive(self):
-        return True
-
-    def get_driver_resistance(self, pin_name, use_max_res=False, interpolate=None, corner=None):
-        return self.pmos.get_driver_resistance("d", use_max_res, interpolate=True, corner=corner)
 
 
 class precharge_tap(design.design):

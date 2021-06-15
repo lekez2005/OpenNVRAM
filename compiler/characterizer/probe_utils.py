@@ -128,7 +128,7 @@ def get_all_tx_fingers(current_driver, replacements):
     nf = get_num_fingers(current_driver)
     drivers = [current_driver[0]]
     if OPTS.use_pex and nf > 1:
-        drivers += [current_driver[0] + "@{}".format(x) for x in range(1, nf)]
+        drivers += [current_driver[0] + "@{}".format(x + 1) for x in range(1, nf)]
     for (src, dest) in replacements:
         drivers = [re.sub(src, dest, x) for x in drivers]
     return drivers
@@ -152,7 +152,7 @@ def add_prefix(probes, prefix):
 
 
 def get_extracted_prefix(child_net, inst_hierarchy):
-    # if in internal net is in a module's pins,
+    # if an internal net is in a module's pins,
     # Calibre doesn't include the child net in the extraction name
     inst_hierarchy = list(reversed(inst_hierarchy))
     prefix = ""
@@ -162,7 +162,7 @@ def get_extracted_prefix(child_net, inst_hierarchy):
                 return "", child_net
             # find corresponding net in parent
             pin_index = inst.mod.pins.index(child_net)
-            parent_inst = inst_hierarchy[i+1]
+            parent_inst = inst_hierarchy[i + 1]
             child_inst_index = parent_inst.mod.insts.index(inst)
             child_conn = parent_inst.mod.conns[child_inst_index]
             child_net = child_conn[pin_index]

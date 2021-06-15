@@ -197,11 +197,11 @@ class SpiceDut(stimuli):
             drain, gate, source, body = definition_split[1:5]
             name_template = OPTS.bitcell_name_template
             sf_drain = (name_template + "_sf_drain").format(**match_groups)
-            sot_p = gate
+            sot_p = (name_template + "_sot_p").format(**match_groups)
             br_net = source
             sot_cell_name = "{}_XI0".format(name_template.format(**match_groups))
             assert sf_drain == drain, "Sanity check to confirm sf_drain"
-            assert sot_p == gate, "Sanity check to confirm sot_p"
+            assert "virtual_gate" in gate, "Sanity check to confirm virtual_gate"
             assert "br[" in source.lower(), "Sanity check to confirm br[ is connected to source"
             replacement_f.write("{} {} {} {} {} {} {}\n".format(sot_cell_name, sf_drain, sot_p,
                                                                 br_net, br_net, body, "sotfet"))

@@ -84,8 +84,8 @@ class CmosSram(design):
         self.row_decoder_y = self.bank.bitcell_array_inst.uy() - self.row_decoder.height
         self.create_column_decoder()
 
-        bank_flop_connections = [x[0] for x in self.bank.
-            get_control_flop_connections().values()]
+        bank_flop_connections = [x[0] for x in
+                                 self.bank.get_control_flop_connections().values()]
         control_inputs = (self.bank.get_non_flop_control_inputs() +
                           ["clk"] + bank_flop_connections)
         self.control_inputs = control_inputs
@@ -299,7 +299,7 @@ class CmosSram(design):
         if self.bank.col_decoder_is_left:
             flop_inputs_pins = [self.right_bank_inst.get_pin(x)
                                 for x in self.bank_flop_inputs]
-            left_most_rail_x = min(flop_inputs_pins, key=lambda x: x.lx()).lx()
+            left_most_rail_x = min(flop_inputs_pins, key=lambda x: x.lx()).lx() - self.bus_space
         else:
             left_most_rail_x = self.bank.leftmost_control_rail.offset.x
 
@@ -334,6 +334,12 @@ class CmosSram(design):
             self.col_sel_rails_y = (top_flop_inst.uy() + self.bank.rail_space_above_controls
                                     - self.words_per_row * self.bus_pitch)
             min_y = min(min_y, self.col_sel_rails_y)
+        elif self.words_per_row > 1:
+            sel_conns = self.conns[self.insts.index(self.column_decoder_inst)]
+            sel_pin_indices = [index for index, net in enumerate(sel_conns) if "sel" in net]
+            sel_pin_names = [self.column_decoder_inst.mod.pins[i] for i in sel_pin_indices]
+            sel_pins = [self.column_decoder_inst.get_pin(x) for x in sel_pin_names]
+            min_y = min(min_y, min(sel_pins, key=lambda x: x.by()).by())
 
         bank_m2_rails = self.bank.m2_rails
         valid_rails = [x for x in bank_m2_rails if x.uy() + self.get_line_end_space(METAL2) > min_y]
@@ -341,7 +347,7 @@ class CmosSram(design):
         leftmost_rail = min(valid_rails + [self.get_decoder_clk_pin()], key=lambda x: x.lx())
         left_most_rail_x = leftmost_rail.lx()
         if self.column_decoder_inst is not None:
-            left_most_rail_x -= self.words_per_row * self.bus_pitch
+            left_most_rail_x -= self.words_per_row * self.bus_pitch + self.bus_space
         self.leftmost_m2_rail_x = left_most_rail_x
 
         max_predecoder_x = (left_most_rail_x - self.get_wide_space(METAL2) -
@@ -502,7 +508,7 @@ class CmosSram(design):
             rails_x = [x_offset + i * self.bus_pitch for i in range(self.words_per_row)]
         else:
             base_x = (self.bank.leftmost_control_rail.offset.x -
-                      self.bus_pitch * self.words_per_row)
+                      self.bus_pitch * self.words_per_row) - self.bus_space
             rails_y = []
             rails_x = []
         x_offsets = [base_x + i * self.bus_pitch for i in range(self.words_per_row)]

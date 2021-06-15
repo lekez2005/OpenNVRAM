@@ -40,11 +40,14 @@ class SotfetMramControlBuffers(BaseLatchedControlBuffers):
         if OPTS.precharge_bl:
             self.precharge_buf = self.create_mod(LogicBuffer, buffer_stages="precharge_buffers",
                                                  logic="pnand3")
+            bl_reset = "pnand3"
+        else:
+            bl_reset = "pnand2"
         self.br_reset_buf = self.create_mod(LogicBuffer, buffer_stages="br_reset_buffers",
                                             logic="pnor2")
         self.bl_reset_buf = self.create_mod(LogicBuffer,
                                             buffer_stages="bl_reset_buffers",
-                                            logic="pnand3")
+                                            logic=bl_reset)
 
     def create_wordline_en(self):
         assert len(OPTS.rwl_en_buffers) % 2 == 1, "Number of rwl buffers should be odd"
@@ -90,38 +93,48 @@ class SotfetMramControlBuffers(BaseLatchedControlBuffers):
         connections.insert(0, ("bank_sel_bar", self.inv, ["bank_sel", "bank_sel_bar"]))
         connections.insert(1, ("br_reset", self.br_reset_buf, ["nor_read_clk", "bank_sel_bar",
                                                                "br_reset", "br_reset_bar"]))
-        # bl_reset
-        connections.insert(2, ("read_bar", self.inv, ["read", "read_bar"]))
-        connections.insert(3, ("bl_reset", self.bl_reset_buf,
-                               ["bank_sel", precharge_in, "read_bar", "bl_reset_bar", "bl_reset"]))
         # precharge_en_bar
         if OPTS.precharge_bl:
+            # bl_reset
+            connections.insert(2, ("read_bar", self.inv, ["read", "read_bar"]))
+            connections.insert(3, ("bl_reset", self.bl_reset_buf,
+                                   ["bank_sel", precharge_in, "read_bar", "bl_reset_bar",
+                                    "bl_reset"]))
+            # precharge_en_bar
             nets = ["read"] + [precharge_in, "bank_sel", "precharge_en_bar", "precharge_en"]
             connections.insert(0, ("precharge_buf", self.precharge_buf, nets))
+        else:
+            # bl_reset
+            connections.insert(2, ("bl_reset", self.bl_reset_buf,
+                                   ["bank_sel", precharge_in, "bl_reset_bar", "bl_reset"]))
 
     def add_sense_amp_connections(self, connections):
+
+        connections.extend([
+            ("sense_trig_bar", self.inv, ["sense_trig", "sense_trig_bar"]),
+
+            ("sample_bar_int", self.nand3, ["bank_sel", "read", "sense_trig_bar",
+                                            "sample_bar_int"])
+        ])
+
         if OPTS.precharge_bl:
             connections.extend([
-                ("sense_trig_bar", self.inv, ["sense_trig", "sense_trig_bar"]),
-
-                ("sample_bar_int", self.nand3, ["bank_sel", "read", "sense_trig_bar", "sample_bar_int"]),
-
                 ("sample_bar", self.sample_bar,
-                 ["sample_bar_int", "sample_en_buf", "sample_en_bar"])
+                 ["sample_bar_int", "sample_en_buf", "sample_en_bar"]),
+                ("sense_amp_buf", self.sense_amp_buf,
+                 ["sample_bar_int", "sense_trig", "bank_sel", "sense_en_bar", "sense_en"]),
+                ("tri_en_buf", self.tri_en_buf,
+                 ["sample_bar_int", "sense_trig", "bank_sel", "tri_en_bar", "tri_en"])
             ])
         else:
             connections.extend([
-                ("sample_bar_int", self.nand, ["read", "bank_sel", "sample_bar_int"]),
                 ("sample_bar", self.sample_bar,
-                 ["sense_trig", "clk", "sample_bar_int", "sample_en_buf", "sample_en_bar"])
+                 ["sense_trig", "clk", "sample_bar_int", "sample_en_buf", "sample_en_bar"]),
+                ("tri_en_buf", self.tri_en_buf,
+                 ["sample_bar_int", "sense_trig", "bank_sel", "tri_en_bar", "tri_en"]),
+                ("sense_amp_buf", self.sense_amp_buf,
+                 ["sample_bar_int", "sense_trig", "bank_sel", "sense_en_bar", "sense_en"]),
             ])
-
-        connections.extend([
-            ("sense_amp_buf", self.sense_amp_buf,
-             ["sample_bar_int", "sense_trig", "bank_sel", "sense_en_bar", "sense_en"]),
-            ("tri_en_buf", self.tri_en_buf,
-             ["sample_bar_int", "sense_trig", "bank_sel", "tri_en_bar", "tri_en"])
-        ])
 
     def get_schematic_pins(self):
         in_pins, out_pins = super().get_schematic_pins()

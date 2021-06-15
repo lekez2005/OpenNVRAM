@@ -1,3 +1,5 @@
+import numpy
+
 from base.design import design
 from characterizer.control_buffers_optimizer import ControlBufferOptimizer
 from globals import OPTS
@@ -15,7 +17,7 @@ class SotfetControlBuffersOptimizer(ControlBufferOptimizer):
         return args
 
     def get_config_num_stages(self, buffer_mod, buffer_stages_str, buffer_loads):
-        if "sampleb_buffers" == buffer_stages_str and OPTS.mirror_sense_amp:
+        if "sampleb_buffers" == buffer_stages_str:
             return {2, 4}
         return super().get_config_num_stages(buffer_mod, buffer_stages_str, buffer_loads)
 
@@ -39,7 +41,7 @@ class SotfetControlBuffersOptimizer(ControlBufferOptimizer):
             in_pin = "en"
         else:
             in_pin = "bl_reset"
-        config_keys.append((precharge, in_pin, "bl", OPTS.max_precharge_size))
+        config_keys.append((precharge, in_pin, "bl", OPTS.max_precharge_size, numpy.linspace))
 
     def get_sorted_driver_loads(self):
         driver_loads = list(self.driver_loads.values())

@@ -266,13 +266,17 @@ class ControlBufferOptimizer:
         self.unique_config_keys = unique_config_keys
         for key in unique_config_keys.keys():
             config = unique_config_keys[key]["config"]
-            class_name, suffix_key, buffer_mod, in_pin, out_pin, max_buffer_size = config
+            class_name, suffix_key, buffer_mod, in_pin, out_pin, max_buffer_size, size_func = config
             debug.info(1, "\n{}".format(key))
 
             cin, cout, resistance, gm = [], [], [], []
             actual_sizes = []
             size_data = [actual_sizes, cin, cout, resistance, gm]
-            sizes = np.logspace(0, np.log10(max_buffer_size), num_sizes)
+            if size_func == np.logspace:
+                size_range = (0, np.log10(max_buffer_size))
+            else:
+                size_range = (1, max_buffer_size)
+            sizes = size_func(*size_range, num_sizes)
 
             for size in sizes:
                 parameters = self.characterize_instance_by_size(buffer_mod, size,
@@ -334,7 +338,7 @@ class ControlBufferOptimizer:
         except RuntimeError as ex:
             if "Initial simplex is flat" in str(ex):  # just a linear fit
                 valid_vertices = [0, len(x_data) - 1]
-            if "The initial hull is narrow" in str(ex):  # just a linear fit
+            elif "The initial hull is narrow" in str(ex):  # just a linear fit
                 valid_vertices = [0, len(x_data) - 1]
             else:
                 raise ex
@@ -674,17 +678,17 @@ class ControlBufferOptimizer:
             max_buffer_size = getattr(OPTS, "max_" + buffer_stages_str, max_size)
             if isinstance(buffer_mod, BufferStage):
                 buffer_mod = buffer_mod.buffer_invs[-1]
-            config_keys.append((buffer_mod, "A", "Z", max_buffer_size))
+            config_keys.append((buffer_mod, "A", "Z", max_buffer_size, np.logspace))
         self.add_additional_configs(config_keys)
 
         # make configs unique
         unique_config_keys = {}  # type: Dict[str, Dict[str, Any]]
-        for buffer_mod, in_pin, out_pin, max_buffer_size in config_keys:
+        for buffer_mod, in_pin, out_pin, max_buffer_size, sizes_func in config_keys:
             full_key, suffix_key, class_name = self.get_buffer_mod_key(buffer_mod)
             if full_key in unique_config_keys:
                 max_buffer_size = max(max_buffer_size,
                                       unique_config_keys[full_key]["config"][5])
-            config = (class_name, suffix_key, buffer_mod, in_pin, out_pin, max_buffer_size)
+            config = (class_name, suffix_key, buffer_mod, in_pin, out_pin, max_buffer_size, sizes_func)
             unique_config_keys[full_key] = {"config": config}
         return unique_config_keys
 
@@ -713,7 +717,7 @@ class ControlBufferOptimizer:
         from globals import OPTS
         # add precharge
         precharge = self.bank.precharge_array.child_insts[0].mod
-        config_keys.append((precharge, "en", "bl", OPTS.max_precharge_size))
+        config_keys.append((precharge, "en", "bl", OPTS.max_precharge_size, np.linspace))
 
     def get_mod_args(self, buffer_mod, size):
         class_name = buffer_mod.__class__.__name__

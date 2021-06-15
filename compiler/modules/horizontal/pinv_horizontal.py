@@ -65,8 +65,8 @@ class pinv_horizontal(pgate_horizontal, metaclass=unique_meta.Unique):
             return None
 
         while tx_mults > 0:
-            self.nmos_finger_width = nmos_finger_width = utils.floor(nmos_width / tx_mults)
-            self.pmos_finger_width = pmos_finger_width = utils.floor(pmos_width / tx_mults)
+            self.nmos_finger_width = nmos_finger_width = utils.round_to_grid(nmos_width / tx_mults)
+            self.pmos_finger_width = pmos_finger_width = utils.round_to_grid(pmos_width / tx_mults)
             if nmos_finger_width < self.min_tx_width or pmos_finger_width < self.min_tx_width:
                 tx_mults -= 1
             else:

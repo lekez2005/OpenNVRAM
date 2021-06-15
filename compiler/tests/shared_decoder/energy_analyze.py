@@ -21,6 +21,8 @@ sim_file = os.path.join(openram_temp, "tran.tran.tran")
 print("Sim dir = {}".format(openram_temp))
 sim_data = PsfReader(sim_file, vdd_name="v(vdd)")
 
+current_signal = 'i(vvdd)'
+
 
 def search_stim(pattern):
     with open(stim_file, 'r') as file:
@@ -30,7 +32,7 @@ def search_stim(pattern):
 
 
 def measure_energy(start_time, end_time):
-    current = sim_data.get_signal('i(vvdd)', start_time, end_time)
+    current = sim_data.get_signal(current_signal, start_time, end_time)
     time = sim_data.slice_array(sim_data.time, start_time, end_time)
     energy = -np.trapz(current, time) * sim_data.vdd
     return energy
@@ -51,7 +53,7 @@ def energy_format(l):
 
 for op_name, op_events in all_ops:
     op_energies = []
-    for op_time, op_period in op_events[:10]:
+    for op_time, op_period in op_events:
         op_time = float(op_time) * 1e-9
         op_period = float(op_period) * 1e-9
         max_op_start = op_time + 0.5 * op_period
@@ -76,9 +78,10 @@ for op_name, op_events in all_ops:
     print("Mean {} energy = {:.3g} pJ".format(op_name.capitalize(),
                                               sum(op_energies) / len(op_energies)))
 
-leakage_op = search_stim(r" -- LEAKAGE start = (\S+) end = (\S+)")[0]
-leakage_start, leakage_end = [1e-9*float(x) + 9*read_period for x in leakage_op]
-print(leakage_start, leakage_end)
+time = sim_data.time
+num_points = 2
+leakage_start = time[-num_points]
+leakage_end = time[-1]
 total_leakage = measure_energy(leakage_start, leakage_end)
 
 leakage_power = total_leakage / (leakage_end - leakage_start)

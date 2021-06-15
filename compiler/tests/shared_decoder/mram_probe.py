@@ -29,6 +29,15 @@ class MramProbe(SharedProbe):
         else:
             return super().get_control_buffers_probe_bits(destination_inst, bank)
 
+    def sense_amp_current_probes(self, bank, bits):
+        if OPTS.mram == "sot":
+            nets = ["sense_out_bar"]
+        else:
+            nets = ["sense_out", "sense_out_bar"]
+        probes = self.bitline_current_probes(bank, bits, modules=["sense_amp_array"],
+                                             nets=nets, suffix="")
+        self.update_current_probes(probes, "sense_amp_array", bank)
+
     def get_sense_amp_internal_nets(self):
         child_mod = self.sram.bank.sense_amp_array.child_mod
         probes = ["dout", "dout_bar", "bl", "vref"]

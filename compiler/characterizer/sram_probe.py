@@ -1,3 +1,4 @@
+import itertools
 import re
 import shutil
 from subprocess import check_output, CalledProcessError
@@ -226,9 +227,12 @@ class SramProbe(object):
         probes = self.driver_current_probes(bitline_template, nets, bits,
                                             modules=modules)
         probes = format_bank_probes(probes, bank)
-        probes = {key: val for key, val in probes}
-        self.current_probes.update(probes.values())
-        return probes
+        sorted_probes = list(sorted(probes, key=lambda x: x[0]))
+        grouped_probes = itertools.groupby(sorted_probes, key=lambda x: x[0])
+        probes_dict = {key: [x[1] for x in val] for key, val in grouped_probes}
+        probe_list = [x[1] for x in probes]
+        self.current_probes.update(probe_list)
+        return probes_dict
 
     def update_current_probes(self, probes, inst_name, bank):
         if inst_name not in self.current_probes_json:
@@ -240,10 +244,34 @@ class SramProbe(object):
                                              suffix="_out")
         self.update_current_probes(probes, "write_driver_array", bank)
 
+    def mask_flop_current_probes(self, bank, bits):
+        if not self.sram.bank.has_mask_in:
+            return
+        flop_name = self.sram.bank.msf_data_in.name
+        probes = self.bitline_current_probes(bank, bits, modules=[flop_name],
+                                             nets=["mask_in", "mask_in_bar"],
+                                             suffix="")
+        self.update_current_probes(probes, "mask_flops_array", bank)
+
+    def data_flop_current_probes(self, bank, bits):
+        flop_name = self.sram.bank.msf_data_in.name
+        probes = self.bitline_current_probes(bank, bits, modules=[flop_name],
+                                             nets=["data_in", "data_in_bar"],
+                                             suffix="")
+        self.update_current_probes(probes, "data_flops_array", bank)
+
     def sense_amp_current_probes(self, bank, bits):
         probes = self.bitline_current_probes(bank, bits, modules=["sense_amp_array"],
-                                             suffix="_out")
+                                             nets=["sense_out", "sense_out_bar"],
+                                             suffix="")
         self.update_current_probes(probes, "sense_amp_array", bank)
+
+    def tri_state_current_probes(self, bank, bits):
+        mod_name = self.sram.bank.tri_gate_array.name
+        probes = self.bitline_current_probes(bank, bits, modules=[mod_name],
+                                             nets=["data"],
+                                             suffix="")
+        self.update_current_probes(probes, "tri_gate_array", bank)
 
     def precharge_current_probes(self, bank, cols):
         probes = self.bitline_current_probes(bank, cols, modules=["precharge_array"],
@@ -402,7 +430,10 @@ class SramProbe(object):
         bits = [int(x / self.sram.words_per_row) for x in cols]
 
         self.write_driver_current_probes(bank, bits)
+        self.mask_flop_current_probes(bank, bits)
+        self.data_flop_current_probes(bank, bits)
         self.sense_amp_current_probes(bank, bits)
+        self.tri_state_current_probes(bank, bits)
         self.precharge_current_probes(bank, cols)
         self.control_buffers_current_probes(bank)
         self.control_buffers_current_probes(bank)
@@ -520,11 +551,17 @@ class SramProbe(object):
     def get_extracted_net(self, net, destination_inst=None, parent_mod=None):
         if parent_mod is None:
             parent_mod = self.sram
+
+        return self.generic_get_extracted_net(net, parent_mod, self.net_separator,
+                                              destination_inst)
+
+    @staticmethod
+    def generic_get_extracted_net(net, parent_mod, net_separator, destination_inst=None):
         candidate_drivers = [destination_inst.name] if destination_inst else None
 
         name_hier, inst_hierarchy, child_net = next(get_voltage_connections(
             net, parent_mod, candidate_drivers=candidate_drivers))
-        suffix = self.net_separator.join(name_hier)
+        suffix = net_separator.join(name_hier)
 
         prefix, internal_net = get_extracted_prefix(child_net, inst_hierarchy)
         if inst_hierarchy and internal_net in inst_hierarchy[0].mod.pins:
@@ -619,17 +656,22 @@ class SramProbe(object):
         if pex_file is None:
             pex_file = self.pex_file
 
-        label_sub = label.replace("Xsram.", "").replace(".", "_") \
-            .replace("[", r"\[").replace("]", r"\]")
-        prefix = "" if label.startswith("N_") else "N_"
-        pattern = r"\s{}{}_[MX]\S+_[gsd]".format(prefix, label_sub)
-        match = (self.grep_file(pattern, pex_file, regex=True) or
-                 self.grep_file(label, pex_file, regex=False))
+        label_sub = label.replace("Xsram.", "")
+        match, pattern = self.extract_pex_pattern(label_sub, pex_file)
         if not match:
             debug.error("Match not found in pex file for label {} {}".format(label,
                                                                              pattern))
             return label
         return 'Xsram.' + match
+
+    @staticmethod
+    def extract_pex_pattern(label, pex_file):
+        label_sub = label.replace(".", "_").replace("[", r"\[").replace("]", r"\]")
+        prefix = "" if label.startswith("N_") else "N_"
+        pattern = r"\s{}{}_[MX]\S+_[gsd]".format(prefix, label_sub)
+        match = (SramProbe.grep_file(pattern, pex_file, regex=True) or
+                 SramProbe.grep_file(label, pex_file, regex=False))
+        return match, pattern
 
     @staticmethod
     def grep_file(pattern, pex_file, regex=True):

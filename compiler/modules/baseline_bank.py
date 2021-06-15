@@ -655,12 +655,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                                                          self.write_driver_array, num_rails=1)
         return self.write_driver_array_inst.uy() + y_space
 
-    def add_sense_amp_array(self):
-
-        self.sense_amp_array_offset = vector(self.write_driver_array_inst.lx(),
-                                             self.get_sense_amp_array_y())
-        self.sense_amp_array_inst = self.add_inst(name="sense_amp_array", mod=self.sense_amp_array,
-                                                  offset=self.sense_amp_array_offset)
+    def get_sense_amp_array_connections(self):
         replacements = [("dout[", "sense_out["), ("dout_bar[", "sense_out_bar["),
                         ("data[", "sense_out["), ("data_bar[", "sense_out_bar["),
                         ("sampleb", "sample_en_bar"), ("chb", "precharge_en_bar"),
@@ -670,7 +665,16 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         if self.words_per_row > 1:
             replacements.extend([("bl[", "bl_out["), ("br[", "br_out[")])
         connections = self.connections_from_mod(self.sense_amp_array, replacements)
-        self.connect_inst(connections)
+        return connections
+
+    def add_sense_amp_array(self):
+
+        self.sense_amp_array_offset = vector(self.write_driver_array_inst.lx(),
+                                             self.get_sense_amp_array_y())
+        self.sense_amp_array_inst = self.add_inst(name="sense_amp_array", mod=self.sense_amp_array,
+                                                  offset=self.sense_amp_array_offset)
+
+        self.connect_inst(self.get_sense_amp_array_connections())
 
     def get_column_mux_array_y(self):
         y_space = self.calculate_bitcell_aligned_spacing(self.column_mux_array,

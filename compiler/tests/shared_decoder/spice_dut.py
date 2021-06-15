@@ -46,7 +46,7 @@ class SpiceDut(stimuli):
         self.sf.write(" {0}\n".format(sram_name))
 
         if OPTS.mram == "sotfet":
-            self.gen_constant("vref", OPTS.sense_amp_ref, gnd_node="gnd")
+            self.gen_constant("vref", OPTS.sense_amp_vref, gnd_node="gnd")
         elif OPTS.mram == "sot":
             self.gen_constant("vclamp", OPTS.sense_amp_vclamp, gnd_node="gnd")
 

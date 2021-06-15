@@ -52,9 +52,9 @@ def configure_timing(_, sram, OPTS):
     write_settling_time = 2
 
     if OPTS.precharge_bl:
-        OPTS.sense_amp_ref = 0.85
+        OPTS.sense_amp_vref = 0.85
     else:
-        OPTS.sense_amp_ref = 0.4
+        OPTS.sense_amp_vref = 0.4
 
     if num_rows < 64:
         if OPTS.num_banks == 1:

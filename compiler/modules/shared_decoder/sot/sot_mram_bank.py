@@ -21,6 +21,12 @@ class SotMramBank(SotfetMramBankThin):
     def get_bitcell_array_connections(self):
         return self.connections_from_mod(self.bitcell_array, [])
 
+    def get_sense_amp_array_connections(self):
+        connections = super().get_sense_amp_array_connections()
+        connections[connections.index("ref_bl")] = "ref_bl_out"
+        connections[connections.index("ref_br")] = "ref_br_out"
+        return connections
+
     def add_vref_pin(self):
         x_offset = self.vref_x_offset
         self.route_external_control_pin("vclamp", inst=self.sense_amp_array_inst,

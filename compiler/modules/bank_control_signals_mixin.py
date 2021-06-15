@@ -156,6 +156,13 @@ class ControlSignalsMixin:
     def get_control_rails_base_x(self):
         return self.mid_vdd_offset - self.wide_m1_space
 
+    def get_control_rails_order(self, destination_pins, get_top_destination_pin_y):
+        rail_names = list(sorted(destination_pins.keys(),
+                                 key=lambda x: (-self.control_buffers_inst.get_pin(x).uy(),
+                                                get_top_destination_pin_y(x)),
+                                 reverse=False))
+        return rail_names
+
     def add_control_rails(self):
         """Add rails from control logic buffers to appropriate peripherals"""
 
@@ -168,10 +175,7 @@ class ControlSignalsMixin:
         destination_pins = self.get_control_rails_destinations()
         num_rails = len(self.left_control_rails)
         x_offset = self.get_control_rails_base_x() - (num_rails * self.control_rail_pitch) + self.line_end_space
-        rail_names = list(sorted(destination_pins.keys(),
-                                 key=lambda x: (-self.control_buffers_inst.get_pin(x).uy(),
-                                                get_top_destination_pin_y(x)),
-                                 reverse=False))
+        rail_names = self.get_control_rails_order(destination_pins, get_top_destination_pin_y)
         self.rail_names = rail_names
         for rail_name in rail_names:
             if rail_name in self.left_control_rails:

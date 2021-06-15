@@ -43,6 +43,24 @@ class SotfetMramBankThin(SotfetMramBank):
         destinations["rwl_en"] = destinations["br_reset"]
         return destinations
 
+    def get_control_rails_order(self, destination_pins, get_top_destination_pin_y):
+        rail_names = super().get_control_rails_order(destination_pins, get_top_destination_pin_y)
+        precharge_in_pins = self.precharge_array.get_input_pins()
+        top_precharge = max([self.precharge_array_inst.get_pin(x) for x in precharge_in_pins],
+                            key=lambda x: x.uy()).name
+        if top_precharge == "en":
+            top_precharge = "precharge_en_bar"
+        # move w/rwl_en to the left of precharge resets
+        if self.wwl_driver_inst.lx() > self.rwl_driver_inst.lx():
+            enable_pins = ["wwl_en", "rwl_en", top_precharge]
+        else:
+            enable_pins = ["rwl_en", "wwl_en", top_precharge]
+
+        rail_indices = sorted([rail_names.index(x) for x in enable_pins])
+        for i, rail_index in enumerate(rail_indices):
+            rail_names[rail_index] = enable_pins[i]
+        return rail_names
+
     @staticmethod
     def get_default_left_rails():
         return ["wwl_en", "rwl_en"]
@@ -69,9 +87,8 @@ class SotfetMramBankThin(SotfetMramBank):
                               height=in_pin.by() - out_pin.cy(),
                               width=out_pin.width())
                 via_offset = vector(out_pin.cx(), in_pin.cy())
-                self.add_cross_contact_center(cross_m1m2, via_offset,
-                                              rotate=False)
-                self.add_via_center(m2m3.layer_stack, via_offset, rotate=90)
+                self.add_contact_center(m1m2.layer_stack, offset=via_offset)
+                self.add_cross_contact_center(cross_m2m3, offset=via_offset, rotate=False)
                 offset = vector(out_pin.cx() - 0.5 * m2m3.second_layer_height,
                                 in_pin.by())
                 self.add_rect(METAL3, offset=offset,

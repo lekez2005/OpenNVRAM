@@ -280,3 +280,18 @@ def pattern_from_saved(pattern, *args):
     for i in range(0, len(args), 2):
         pattern = re.sub(args[i], args[i + 1], pattern)
     return pattern
+
+
+def load_events(op_name):
+    event_pattern = r"-- {}.*\[(.*)\]".format(op_name)
+    matches = search_file(stim_file, event_pattern)
+    events_ = []
+
+    for match in matches:
+        split_str = match.split(",")
+        addr_, row_, col_index_, bank_ = [int(x) for x in split_str[:4]]
+        event_time_, event_period_, event_duty_ = [float(x) for x in split_str[4:]]
+        events_.append((event_time_ * 1e-9, addr_, event_period_ * 1e-9, event_duty_, row_,
+                        col_index_, bank_))
+
+    return events_

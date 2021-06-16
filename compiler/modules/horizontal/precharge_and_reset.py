@@ -8,11 +8,12 @@ from base.hierarchy_layout import GDS_ROT_90, GDS_ROT_270
 from base.vector import vector
 from base.well_active_contacts import calculate_contact_width
 from globals import OPTS
+from modules.precharge import precharge_characterization
 from pgates.ptx import ptx
 from tech import drc, parameter
 
 
-class PrechargeAndReset(design):
+class PrechargeAndReset(precharge_characterization, design):
     """Precharge bl and reset br"""
 
     def __init__(self, name, size=1, beta=None, mirror=False):
@@ -332,9 +333,3 @@ class PrechargeAndReset(design):
             self.add_rect(well_layer, offset=vector(well_x, bottom_y),
                           width=self.width + self.well_enclose_active - well_x,
                           height=top_y - bottom_y)
-
-    def is_delay_primitive(self):
-        return True
-
-    def get_driver_resistance(self, pin_name, use_max_res=False, interpolate=None, corner=None):
-        return self.pmos.get_driver_resistance("d", use_max_res, interpolate=True, corner=corner)

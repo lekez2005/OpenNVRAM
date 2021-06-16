@@ -1,3 +1,5 @@
+import re
+
 import debug
 from base import design
 from base.contact import m1m2, cross_m1m2, cross_m2m3, m2m3
@@ -34,6 +36,27 @@ class single_level_column_mux_array(design.design):
             self.add_pin("bl_out[{}]".format(i))
             self.add_pin("br_out[{}]".format(i))
         self.add_pin("gnd")
+
+    def get_inputs_for_pin(self, name):
+        reg_pattern = re.compile(r"(\S+)\[([0-9]+)\]")
+        match = reg_pattern.match(name)
+        if match:
+            pin_name, index = match.groups()
+            index = int(index)
+            if "_out" in pin_name:
+                sel_pins = ["sel[{}]".format(i) for i in range(self.words_per_row)]
+                pin_name = pin_name.replace("_out", "")
+                base_col = index * self.words_per_row
+                return ["{}[{}]".format(pin_name, i + base_col)
+                        for i in range(self.words_per_row)] + sel_pins
+            else:
+                bit = int(index / self.words_per_row)
+                sel_index = index % self.words_per_row
+                return ["{}_out[{}]".format(pin_name, bit), "sel[{}]".format(sel_index)]
+        return super(design.design, self).get_inputs_for_pin(name)
+
+    def is_delay_primitive(self):
+        return True
 
     def create_layout(self):
         self.create_modules()

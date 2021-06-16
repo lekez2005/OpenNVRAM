@@ -588,7 +588,7 @@ def flatten_paths(paths, module, current_depth, max_depth, max_adjacent_modules,
             continue
 
         if sibling_module.is_delay_primitive():
-            sibling_input_pins = sibling_module.get_input_pins()
+            sibling_input_pins = sibling_module.get_inputs_for_pin(sibling_out_pin)
             for sibling_input_pin in sibling_input_pins:
                 if sibling_input_pin == sibling_out_pin:
                     continue
@@ -668,7 +668,7 @@ def construct_paths(driver_hierarchy, current_depth=0, max_depth=20, max_adjacen
 
     parent_modules = driver_hierarchy[:-2]  # type: List[Tuple[design, List[str]]]
 
-    input_pins = driver_module.get_input_pins()
+    input_pins = driver_module.get_inputs_for_pin(instance_pin_name)
     for pin in input_pins:
         pin_index = driver_module.pins.index(pin)
         parent_module_net = conn[pin_index]

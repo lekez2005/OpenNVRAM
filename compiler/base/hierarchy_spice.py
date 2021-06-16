@@ -125,12 +125,30 @@ class spice(verilog.verilog):
             return pin_type
 
     def get_input_pins(self):
-        results = []
-        for pin in self.pins:
-            if self.get_pin_dir(pin) == INPUT:
-                results.append(pin)
-        return results
+        return [pin for pin in self.pins if self.get_pin_dir(pin) == INPUT]
 
+    def get_output_pins(self):
+        return [pin for pin in self.pins if self.get_pin_dir(pin) == OUTPUT]
+
+    def get_in_out_pins(self):
+        return [pin for pin in self.pins if self.get_pin_dir(pin) == INOUT]
+
+    def get_inputs_for_pin(self, out_pin):
+        """Get input pins that control the specified output pin"""
+        conns = [(conn_index, conn) for conn_index, conn in enumerate(self.conns)
+                 if out_pin in conn]
+        if not conns:
+            return self.get_input_pins()
+        input_pins = set()
+        for conn_index, conn in conns:
+            inst_mod = self.insts[conn_index].mod
+            inst_mod_pin = inst_mod.pins[conn.index(out_pin)]
+            inst_in_pins = inst_mod.get_inputs_for_pin(inst_mod_pin)
+            for in_pin in inst_in_pins:
+                pin_index = inst_mod.pins.index(in_pin)
+                input_pins.add(conn[pin_index])
+        input_pins = input_pins.intersection(self.pins)
+        return list(input_pins)
 
     def add_mod(self, mod):
         """Adds a subckt/submodule to the subckt hierarchy"""
@@ -443,6 +461,14 @@ class spice(verilog.verilog):
         cap_value = num_elements * self.compute_input_cap(pin_name, wire_length)
         return cap_value, cap_value / num_elements
 
+    def lookup_resistance(self, pin_name, interpolate, corner):
+        # try look up from characterization
+        for suffix in ["_" + pin_name, ""]:
+            resistance = self.get_input_cap_from_char("resistance" + suffix, interpolate=interpolate,
+                                                      corner=corner)
+            if resistance:
+                return resistance
+
     def get_driver_resistance(self, pin_name, use_max_res=False, interpolate=None, corner=None):
         """
         Get driver resistance for given pin_name
@@ -457,10 +483,7 @@ class spice(verilog.verilog):
 
         if interpolate is None:
             interpolate = OPTS.interpolate_characterization_data
-
-        # try look up from characterization
-        resistance = self.get_input_cap_from_char("resistance", interpolate=interpolate,
-                                                  corner=corner)
+        resistance = self.lookup_resistance(pin_name, interpolate, corner)
         if resistance:
             return resistance
         # compute
@@ -533,6 +556,12 @@ class spice(verilog.verilog):
 
         delay = 0.69 * driver_res * total_c + 0.38 * total_r * total_distributed_c
         slew_out = total_r * total_c
+        return delay, slew_out
+
+    @staticmethod
+    def simple_rc_delay(tau, switch_threshold=0.5):
+        delay = math.log(1/(1 - switch_threshold)) * tau
+        slew_out = tau * math.log(0.9 / 0.1)
         return delay, slew_out
 
     def analytical_delay(self, slew, load=0.0):

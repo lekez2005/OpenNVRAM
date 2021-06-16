@@ -2,6 +2,7 @@ from base import design
 from base.library_import import library_import
 from base.vector import vector
 from globals import OPTS
+from modules.single_level_column_mux import get_inputs_for_pin
 from modules.single_level_column_mux_array import single_level_column_mux_array
 
 
@@ -15,6 +16,9 @@ class tgate_column_mux_tap(design.design):
 class tgate_column_mux(design.design):
     pin_names = "bl br bl_out br_out sel gnd vdd".split()
     lib_name = getattr(OPTS, "tgate_column_mux_mod", "tgate_column_mux")
+
+    def get_inputs_for_pin(self, name):
+        return get_inputs_for_pin(self, name)
 
 
 class tgate_column_mux_array(single_level_column_mux_array):

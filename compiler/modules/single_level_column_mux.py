@@ -4,11 +4,20 @@ from base import design
 from base.contact import m1m2
 from base.design import METAL2, ACTIVE, METAL1, POLY, NIMP, PWELL, PIMP
 from base.geometry import MIRROR_X_AXIS
+from base.hierarchy_spice import INPUT
 from base.vector import vector
 from base.well_active_contacts import calculate_contact_width
 from globals import OPTS
 from pgates.ptx import ptx
 from tech import drc, info
+
+
+def get_inputs_for_pin(self, name):
+    if name in ["bl", "br"]:
+        return ["sel", name + "_out"]
+    elif name in ["bl_out", "br_out"]:
+        return ["sel", name.replace("_out", "")]
+    return super(design.design, self).get_inputs_for_pin(name)
 
 
 class single_level_column_mux(design.design):
@@ -28,6 +37,9 @@ class single_level_column_mux(design.design):
         self.tx_mults = 2
         self.add_pin_list(["bl", "br", "bl_out", "br_out", "sel", "gnd"])
         self.create_layout()
+
+    def get_inputs_for_pin(self, name):
+        return get_inputs_for_pin(self, name)
 
     def create_layout(self):
 

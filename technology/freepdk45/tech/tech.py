@@ -76,6 +76,11 @@ layer["boundary"]= 239
 
 purpose = {"drawing": 0}
 
+layer_colors = {
+    "vtg": ("#00ccf2", "outline"),
+    "text": ("#9900e6", "dashed")
+}
+
 
 default_fill_layers = ["nwell", "nimplant", "pimplant", "pwell"]
 

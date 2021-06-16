@@ -117,7 +117,7 @@ class GraphNode:
         self.driver_res = math.inf
         self.delay = None  # type: Union[None, delay_data]
 
-        debug.info(3, "Created GraphNode: {}".format(str(self)))
+        debug.info(3, "Created GraphNode: %s", self)
 
     def get_next_load(self, next_node: 'GraphNode') -> Tuple[List[GraphLoad], Union[None, GraphLoad]]:
 
@@ -367,7 +367,7 @@ class GraphPath:
 
     def __init__(self, nodes=None):
         self.nodes = nodes if nodes is not None else []  # type: List[GraphNode]
-        debug.info(3, "Created GraphPath: {}".format(str(self)))
+        debug.info(3, "Created GraphPath: %s", self)
 
     def prepend_node(self, node: GraphNode):
         return GraphPath([node] + self.nodes)
@@ -501,8 +501,7 @@ def get_net_driver(net: str, module: design):
         driver = out_drivers[0]
     if in_out_drivers:
         driver = in_out_drivers[0]
-    debug.info(4, "Driver for net {} in module {} is {}".format(net, module.name,
-                                                                driver[1].name))
+    debug.info(4, "Driver for net %s in module %s is %s", net, module.name, driver[1].name)
     return driver
 
 
@@ -541,13 +540,36 @@ def get_driver_for_pin(net: str, parent_module: design):
     return [(parent_module, conn)] + descendants
 
 
-def flatten_paths(paths, module, current_depth, max_depth, max_adjacent_modules):
+def remove_path_loops(paths: List[GraphPath]):
+    valid_paths = []
+    for path in paths:
+        has_loop = False
+        existing_nodes = []
+        for node in path.nodes:
+            node_tuple = (node.all_parent_modules, node.module, node.in_net, node.out_net,
+                          node.conn)
+            if node_tuple in existing_nodes:
+                has_loop = True
+                break
+            existing_nodes.append(node_tuple)
+        if not has_loop:
+            valid_paths.append(path)
+    return valid_paths
+
+
+def flatten_paths(paths, module, current_depth, max_depth, max_adjacent_modules,
+                  driver_exclusions):
     # Process derived inputs by descending into modules that created them
     processing_queue = [x for x in paths]  # quick copy
     processed_paths = []
 
     sibling_iterations_count = 0
     while len(processing_queue) > 0:
+        # remove cycles
+        processing_queue = remove_path_loops(processing_queue)
+        if not processing_queue:
+            break
+
         path = processing_queue[0]
 
         source_node = path.source_node
@@ -561,10 +583,15 @@ def flatten_paths(paths, module, current_depth, max_depth, max_adjacent_modules)
         # find module that drives this net within the current hierarchy
         sibling_out_pin, sibling_module, sibling_conn = get_net_driver(
             source_node.parent_in_net, module)
+        if sibling_module.name in driver_exclusions:
+            processing_queue.remove(path)
+            continue
 
         if sibling_module.is_delay_primitive():
             sibling_input_pins = sibling_module.get_input_pins()
             for sibling_input_pin in sibling_input_pins:
+                if sibling_input_pin == sibling_out_pin:
+                    continue
                 sibling_pin_index = sibling_module.pins.index(sibling_input_pin)
                 all_parent_modules = source_node.all_parent_modules[:-1] + [(module, sibling_conn)]
                 sibling_node = GraphNode(in_net=sibling_input_pin, out_net=sibling_out_pin,
@@ -578,7 +605,8 @@ def flatten_paths(paths, module, current_depth, max_depth, max_adjacent_modules)
             sibling_hierarchy = get_all_drivers_for_pin(sibling_out_pin, sibling_module)[0]
             sibling_paths = construct_paths(sibling_hierarchy, current_depth=current_depth + 1,
                                             max_depth=max_depth,
-                                            max_adjacent_modules=max_adjacent_modules)
+                                            max_adjacent_modules=max_adjacent_modules,
+                                            driver_exclusions=driver_exclusions)
             if len(source_node.all_parent_modules) > 0:
                 module_conn = [ModuleConn(source_node.all_parent_modules[-1][0], sibling_conn)]
             else:
@@ -616,7 +644,7 @@ def flatten_paths(paths, module, current_depth, max_depth, max_adjacent_modules)
     return processed_paths
 
 
-def construct_paths(driver_hierarchy, current_depth=0, max_depth=20, max_adjacent_modules=50,
+def construct_paths(driver_hierarchy, current_depth=0, max_depth=20, max_adjacent_modules=100,
                     driver_exclusions=None):
     """
     Construct list of GraphPath for all input pins to outputs
@@ -652,7 +680,8 @@ def construct_paths(driver_hierarchy, current_depth=0, max_depth=20, max_adjacen
         paths.append(GraphPath([graph_node]))
 
     processed_paths = flatten_paths(paths, immediate_parent_module, current_depth,
-                                    max_depth, max_adjacent_modules)
+                                    max_depth, max_adjacent_modules,
+                                    driver_exclusions=driver_exclusions)
 
     # Process ancestors
     all_ancestors = list(reversed(parent_modules))
@@ -669,17 +698,18 @@ def construct_paths(driver_hierarchy, current_depth=0, max_depth=20, max_adjacen
             source_node.all_parent_modules = source_node.all_parent_modules[:-1]
 
         processed_paths = flatten_paths(processed_paths, ancestor_module, current_depth, max_depth,
-                                        max_adjacent_modules)
+                                        max_adjacent_modules, driver_exclusions=driver_exclusions)
 
         immediate_parent_module = ancestor_module
 
-    debug.info(2, "Derived path for {} in {}:".format(output_net, original_parent.name))
+    debug.info(2, "Derived path for %s in %s:", output_net, original_parent.name)
     for path in processed_paths:
-        debug.info(2, str(path))
+        debug.info(2, "%s", path)
     return processed_paths
 
 
-def create_graph(destination_net, module: design, driver_exclusions=None):
+def create_graph(destination_net, module: design, driver_exclusions=None,
+                 driver_inclusions=None):
     """
     Create a list of GraphPath from all input pins to destination_net
     :param destination_net: destination_net
@@ -688,10 +718,15 @@ def create_graph(destination_net, module: design, driver_exclusions=None):
             This is useful for nets that are driven by multiple nodes
             For example, bitlines are driven by precharge, bitcells, write_driver etc
             Exclude bitcells from path by adding e.g. cell_6t to driver_exclusions
+    :param driver_inclusions: Only include these drivers.
+            Only used at initial driver driver determination stage
+            Ignored if empty or None
     :return: List[GraphPath]
     """
     if driver_exclusions is None:
         driver_exclusions = []
+    if driver_inclusions is None:
+        driver_inclusions = []
     destination_net, dest_hierarchy, inst_hier = get_net_hierarchy(destination_net, module)
 
     # Attach parent insts to path nodes
@@ -704,7 +739,17 @@ def create_graph(destination_net, module: design, driver_exclusions=None):
     all_hierarchies = get_all_drivers_for_pin(destination_net, dest_hierarchy[-1])
     # breakpoint()
     for driver_hierarchy in all_hierarchies:
-        if driver_hierarchy[-1][0].name not in driver_exclusions:
+        exclude = False
+        include = not bool(driver_inclusions)  # empty inclusions will include all
+
+        for sub_hier in driver_hierarchy:
+            mod, _ = sub_hier[:2]
+            if mod.name in driver_exclusions:
+                exclude = True
+            if mod.name in driver_inclusions:
+                include = True
+
+        if include and not exclude:
             all_paths.extend(construct_paths(parent_modules + driver_hierarchy,
                                              driver_exclusions=driver_exclusions))
 

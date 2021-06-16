@@ -14,22 +14,7 @@ from matplotlib import pyplot as plt
 from shared_simulator import create_arg_parser, parse_options, get_sim_directory, \
     CMOS_MODE, PUSH_MODE, SOT_MODE, SOTFET_MODE
 import sim_analyzer
-from sim_analyzer import measure_delay_from_stim_measure
-
-
-def load_events(op_name):
-    event_pattern = r"-- {}.*\[(.*)\]".format(op_name)
-    matches = sim_analyzer.search_file(sim_analyzer.stim_file, event_pattern)
-    events_ = []
-
-    for match in matches:
-        split_str = match.split(",")
-        addr_, row_, col_index_, bank_ = [int(x) for x in split_str[:4]]
-        event_time_, event_period_, event_duty_ = [float(x) for x in split_str[4:]]
-        events_.append((event_time_ * 1e-9, addr_, event_period_ * 1e-9, event_duty_, row_,
-                        col_index_, bank_))
-
-    return events_
+from sim_analyzer import measure_delay_from_stim_measure, load_events
 
 
 def get_analysis_bit(delays_):
@@ -229,7 +214,7 @@ if __name__ == "__main__":
     max_read_event = None
     for read_event in all_read_events:
         print("Read {} at time: {:.4g} n".format(read_event[1], read_event[0] * 1e9))
-        negate_read = sot and not options.precharge
+        negate_read = (mode == SOTFET_MODE and not options.precharge) or mode == SOT_MODE
         correct = sim_analyzer.verify_read_event(read_event[0], read_event[1],
                                                  read_event[2] + read_settling_time,
                                                  read_event[3], negate=negate_read)
@@ -294,7 +279,7 @@ if __name__ == "__main__":
         analysis_events = all_write_events
 
     for index, write_event in enumerate(analysis_events):
-        max_valid_delay = (1 + write_event[3]) * write_event[2]
+        max_valid_delay = write_event[2]
         max_q_, q_delays = sim_analyzer. \
             measure_delay_from_stim_measure("state_delay", event_time=write_event[0],
                                             max_delay=max_valid_delay,
@@ -501,8 +486,14 @@ if __name__ == "__main__":
                     plot_sig(format_sig("sense_amp_array", net),
                              from_t=start_time, to_t=end_time, label=net)
             else:
-                plot_sig(format_sig("sense_amp_array", "dout"),
-                         from_t=start_time, to_t=end_time, label="sense_out")
+                if mode == SOT_MODE and False:
+                    sense_out, sense_label = "dout", "sense_out"
+                else:
+                    plot_sig(format_sig("sense_amp_array", "vref"),
+                             from_t=start_time, to_t=end_time, label="vref")
+                    sense_out, sense_label = "dout_bar", "sense_out_bar"
+                plot_sig(format_sig("sense_amp_array", sense_out),
+                         from_t=start_time, to_t=end_time, label=sense_label)
             plot_sig(data_pattern.format(bit),
                      from_t=start_time, to_t=end_time, label="D")
         if not cmos and options.plot == "write":
@@ -515,8 +506,8 @@ if __name__ == "__main__":
         #                                    from_t=start_time, to_t=end_time, label="wl_en")
         plot_sig(q_net, from_t=start_time, to_t=end_time, label="Q")
         #            plot_sig("clk", from_t=start_time, to_t=end_time, label="clk")
-        plt.axhline(y=0.45, linestyle='--', linewidth=0.5)
-        plt.axhline(y=0.9, linestyle='--', linewidth=0.5)
+        plt.axhline(y=0.5 * sim_data.vdd, linestyle='--', linewidth=0.5)
+        plt.axhline(y=sim_data.vdd, linestyle='--', linewidth=0.5)
 
         plt.grid()
         plt.legend(loc="center left", fontsize="x-small")

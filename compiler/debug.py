@@ -38,7 +38,7 @@ def check(check_, message, *args):
     assert 0, message
 
 
-def error(message, return_value=0, *args):
+def error(message, return_value=-1, *args):
     if return_value == 0:
         return
     logger.debug(wrap_message("ERROR", message), *args)

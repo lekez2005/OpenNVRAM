@@ -72,7 +72,7 @@ class contact(design.design, metaclass=unique_meta.Unique):
         if self.implant_type and self.well_type:
             self.create_implant_well_enclosures()
         elif self.implant_type or self.well_type:
-            debug.error(-1,"Must define both implant and well type or none at all.")
+            debug.error("Must define both implant and well type or none at all.", -1)
 
     def setup_layers(self):
         (first_layer, via_layer, second_layer) = self.layer_stack

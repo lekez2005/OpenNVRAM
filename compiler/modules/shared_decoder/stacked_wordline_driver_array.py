@@ -22,26 +22,35 @@ class stacked_wordline_driver_array(wordline_driver_array):
 
     def create_layout(self):
         super().create_layout()
+        self.fill_horizontal_module_space()
         self.width = self.buffer_insts[1].rx()
         self.create_power_pins()
 
     def create_modules(self):
-        c = __import__(OPTS.bitcell)
-        mod_bitcell = getattr(c, OPTS.bitcell)
-        bitcell = mod_bitcell()
+        self.bitcell = self.create_mod_from_str(OPTS.bitcell)
 
         self.logic_buffer = LogicBuffer(self.buffer_stages, logic="pnand2",
-                                        height=2 * bitcell.height, route_outputs=False,
+                                        height=2 * self.bitcell.height, route_outputs=False,
                                         route_inputs=False,
                                         contact_pwell=False, contact_nwell=False, align_bitcell=True)
         self.add_mod(self.logic_buffer)
 
+    def get_row_y_offset(self, row):
+        row_index = row - (row % 2)
+        y_offset = self.bitcell_offsets[row_index]
+        if (row % 4) < 2:
+            y_offset += self.logic_buffer.height
+            mirror = "MX"
+        else:
+            mirror = "R0"
+        return y_offset, mirror
+
     def add_modules(self):
+        self.calculate_y_offsets()
+
         en_pin_x = self.get_parallel_space(METAL1) + self.m1_width
         self.en_pin_clearance = en_pin_clearance = (en_pin_x + self.m2_width +
                                                     self.get_parallel_space(METAL2))
-
-        self.height = 0.5 * self.logic_buffer.height * self.rows
 
         rail_y = - 0.5 * self.rail_height
         en_rail = self.add_rect(METAL2, offset=vector(en_pin_x, rail_y), width=self.m2_width,
@@ -51,28 +60,15 @@ class stacked_wordline_driver_array(wordline_driver_array):
                                      offset=vector(en_pin_clearance + self.logic_buffer.width +
                                                    en_pin_x, rail_y),
                                      width=self.m2_width, height=self.height)
-        # join en rail and en_pin
-        y_offset = en_rail.by() - self.m3_width
-        self.add_rect(METAL3, offset=vector(en_rail.lx(), y_offset),
-                      width=en_pin.lx() - en_rail.lx())
-        self.add_contact(m2m3.layer_stack, offset=vector(en_rail.lx() + m2m3.height, y_offset),
-                         rotate=90)
-        self.add_contact(m2m3.layer_stack, offset=vector(en_pin.rx(), y_offset),
-                         rotate=90)
+
+        self.en_pin, self.en_rail = en_pin, en_rail
+
+        self.join_en_pin_rail()
 
         x_offsets = [en_pin_clearance, 2 * en_pin_clearance + self.logic_buffer.width]
 
-        fill_rects = create_wells_and_implants_fills(
-            self.logic_buffer.buffer_mod.module_insts[-1].mod,
-            self.logic_buffer.logic_mod)
-
         for row in range(self.rows):
-            if (row % 4) < 2:
-                y_offset = self.logic_buffer.height * (int(row / 2) + 1)
-                mirror = "MX"
-            else:
-                y_offset = self.logic_buffer.height * int(row / 2)
-                mirror = "R0"
+            y_offset, mirror = self.get_row_y_offset(row)
             x_offset = x_offsets[row % 2]
             # add logic buffer
             buffer_inst = self.add_inst("driver{}".format(row), mod=self.logic_buffer,
@@ -103,20 +99,32 @@ class stacked_wordline_driver_array(wordline_driver_array):
 
             # route en input pin
             rail = en_rail if row % 2 == 0 else en_pin
-            a_pin = buffer_inst.get_pin("A")
-            self.add_contact(m1m2.layer_stack,
-                             offset=vector(rail.lx(), a_pin.cy() - 0.5 * m1m2.height))
-            self.add_rect(METAL1, offset=vector(rail.lx(), a_pin.cy() - 0.5 * self.m1_width),
-                          width=a_pin.lx() - rail.lx())
-
-            self.buffer_insts.append(buffer_inst)
+            self.route_en_pin(buffer_inst, rail)
 
             self.copy_layout_pin(buffer_inst, "out", "wl[{}]".format(row))
 
-            # Join adjacent rects between left and right buffers
-            if row % 4 in [1, 3]:
-                continue
+            self.buffer_insts.append(buffer_inst)
 
+    def join_en_pin_rail(self):
+        # join en rail and en_pin
+        en_rail, en_pin = self.en_rail, self.en_pin
+        y_offset = en_rail.by() - self.m3_width
+        self.add_rect(METAL3, offset=vector(en_rail.lx(), y_offset),
+                      width=en_pin.lx() - en_rail.lx())
+        self.add_contact(m2m3.layer_stack, offset=vector(en_rail.lx() + m2m3.height, y_offset),
+                         rotate=90)
+        self.add_contact(m2m3.layer_stack, offset=vector(en_pin.rx(), y_offset),
+                         rotate=90)
+
+    def fill_horizontal_module_space(self):
+        fill_rects = create_wells_and_implants_fills(
+            self.logic_buffer.buffer_mod.module_insts[-1].mod,
+            self.logic_buffer.logic_mod)
+
+        for row in range(0, self.rows, 2):
+            buffer_inst = self.buffer_insts[row]
+            adjacent_x_offset = self.buffer_insts[row + 1].lx()
+            # Join adjacent rects between left and right buffers
             for fill_rect in fill_rects:
                 if row % 4 == 0:
                     #
@@ -130,7 +138,7 @@ class stacked_wordline_driver_array(wordline_driver_array):
                 self.add_rect(fill_rect[0], offset=vector(buffer_inst.rx(),
                                                           y_shift + fill_rect[1]),
                               height=fill_rect[2] - fill_rect[1],
-                              width=x_offsets[1] - buffer_inst.rx())
+                              width=adjacent_x_offset - buffer_inst.rx())
 
     def create_power_pins(self):
         all_pins = []

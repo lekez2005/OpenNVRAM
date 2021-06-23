@@ -53,22 +53,25 @@ class wordline_driver_array(design.design):
         self.module_insts = self.logic_buffer.buffer_mod.module_insts
 
     def create_modules(self):
-        c = __import__(OPTS.bitcell)
-        mod_bitcell = getattr(c, OPTS.bitcell)
-        bitcell = mod_bitcell()
+        self.bitcell = self.create_mod_from_str(OPTS.bitcell)
 
-        self.logic_buffer = LogicBuffer(self.buffer_stages, logic="pnand2", height=bitcell.height, route_outputs=False,
-                                        route_inputs=False,
+        self.logic_buffer = LogicBuffer(self.buffer_stages, logic="pnand2", height=self.bitcell.height,
+                                        route_outputs=False, route_inputs=False,
                                         contact_pwell=False, contact_nwell=False, align_bitcell=True)
         self.add_mod(self.logic_buffer)
 
-    def get_row_y_offset(self, row):
-        if (row % 2) == 0:
-            y_offset = self.logic_buffer.height * (row + 1)
-            mirror = "MX"
+    def calculate_y_offsets(self):
+        bitcell_array_cls = self.import_mod_class_from_str(OPTS.bitcell_array)
+        offsets = bitcell_array_cls.calculate_y_offsets(num_rows=self.rows)
+        self.bitcell_offsets, self.tap_offsets, self.dummy_offsets = offsets
+        self.height = max(self.bitcell_offsets + self.dummy_offsets) + self.bitcell.height
 
+    def get_row_y_offset(self, row):
+        y_offset = self.bitcell_offsets[row]
+        if (row % 2) == 0:
+            y_offset += self.logic_buffer.height
+            mirror = "MX"
         else:
-            y_offset = self.logic_buffer.height * row
             mirror = "R0"
         return y_offset, mirror
 
@@ -76,7 +79,7 @@ class wordline_driver_array(design.design):
         # route en input pin
         a_pin = buffer_inst.get_pin("A")
         a_pos = a_pin.lc()
-        clk_offset = vector(en_pin.bc().x, a_pos.y)
+        clk_offset = vector(en_pin.cx(), a_pos.y)
         self.add_segment_center(layer="metal1",
                                 start=clk_offset,
                                 end=a_pos)
@@ -108,6 +111,7 @@ class wordline_driver_array(design.design):
         return x_offset
 
     def add_modules(self):
+        self.calculate_y_offsets()
 
         en_pin, en_pin_x = self.add_en_pin()
         x_offset = self.get_buffer_x_offset(en_pin_x)

@@ -291,6 +291,7 @@ class pgate(pgates_characterization_base, design.design):
 
         self.mid_y = (self.active_mid_y_nmos + 0.5 * self.nmos_width + self.track_bot_space +
                       + 0.5 * self.mid_track_extent)
+        self.mid_y = utils.round_to_grid(self.mid_y)
 
         self.active_enclose_contact = max(drc["active_enclosure_contact"],
                                           (self.active_width - self.contact_width) / 2)

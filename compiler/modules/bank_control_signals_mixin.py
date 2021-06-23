@@ -1,3 +1,5 @@
+from typing import TYPE_CHECKING
+
 import debug
 from base.contact import m2m3, cross_m2m3, cross_m1m2, contact, cross_m3m4
 from base.design import METAL2, METAL3, METAL4, METAL1, design
@@ -5,8 +7,14 @@ from base.vector import vector
 from globals import OPTS
 from modules.control_buffers import Rail, ControlBuffers
 
+if TYPE_CHECKING:
+    from modules.baseline_bank import BaselineBank
+else:
+    class BaselineBank:
+        pass
 
-class ControlSignalsMixin:
+
+class ControlSignalsMixin(BaselineBank):
     """Contain logic for adding control rails from control signals to peripherals"""
 
     def calculate_rail_offsets(self):

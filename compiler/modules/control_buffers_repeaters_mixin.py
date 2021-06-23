@@ -1,4 +1,4 @@
-from typing import Union
+from typing import TYPE_CHECKING, Union
 
 from base import utils
 from base.contact import contact, m3m4, m2m3, m1m2, cross_m2m3, cross_m3m4
@@ -10,10 +10,14 @@ from globals import OPTS
 from modules.buffer_stage import BufferStage
 from tech import drc
 
-design_control = Union[design, 'ControlBuffersMixin']
+if TYPE_CHECKING:
+    from modules.baseline_bank import BaselineBank
+else:
+    class BaselineBank:
+        pass
 
 
-class ControlBuffersRepeatersMixin:
+class ControlBuffersRepeatersMixin(BaselineBank):
 
     def create_repeater(self, buffer_sizes):
         """Create buffer stages given buffer_sizes"""
@@ -107,7 +111,7 @@ class ControlBuffersRepeatersMixin:
             input_rail_net = module_def[0]
             output_nets = module_def[1]
 
-            if len(buffer_sizes) % 2 == 0:
+            if len(module.buffer_stages) % 2 == 0:
                 output_terms = output_nets if len(output_nets) == 2 else \
                     [input_rail_net + "_buffer_dummy", input_rail_net]
             else:
@@ -264,13 +268,13 @@ class ControlBuffersRepeatersMixin:
         self.connect_sample_b()
         self.connect_precharge_bar()
 
-    def get_all_control_pins(self: design_control, pin_name):
+    def get_all_control_pins(self, pin_name):
         pins = [self.control_buffers_inst.get_pin(pin_name)]
         if pin_name in self.repeaters_dict:
             pins.append(self.repeaters_dict[pin_name])
         return pins
 
-    def find_closest_x(self: design, x_offset):
+    def find_closest_x(self, x_offset):
         """Find the closest first open space in the bitcell to the right"""
         x_shift = self.bitcell_array_inst.lx()
         invalid_offsets = [x + self.bitcell_array_inst.lx() + self.bitcell_array.body_tap.width
@@ -286,7 +290,7 @@ class ControlBuffersRepeatersMixin:
     def get_fill_width():
         return utils.ceil((drc["minarea_metal3_drc"])**0.5)
 
-    def connect_rail_to_pin(self: design_control, source_rail: rectangle,
+    def connect_rail_to_pin(self, source_rail: rectangle,
                             source_pin: pin_layout, destination_pin: pin_layout, x_shift=0.0):
         x_offset = self.find_closest_x(source_pin.rx()) + x_shift
 
@@ -299,7 +303,7 @@ class ControlBuffersRepeatersMixin:
 
         return x_offset
 
-    def connect_clk(self: design_control):
+    def connect_clk(self):
         fill_width = self.get_fill_width()
 
         # clk_buf
@@ -337,7 +341,7 @@ class ControlBuffersRepeatersMixin:
             self.add_rect_center("metal3", offset=vector(m4_x_offset, y_offset),
                                  width=fill_width, height=fill_width)
 
-    def connect_sense_en(self: design_control):
+    def connect_sense_en(self):
         x_shift = self.bitcell_array.cell.get_pin("BL").rx() + self.line_end_space + 0.5*self.m4_width
         # sense_en
         dest_pin = self.sense_amp_array_inst.get_pin("en")
@@ -375,7 +379,7 @@ class ControlBuffersRepeatersMixin:
                 self.add_contact_center(m1m2.layer_stack, offset=vector(closest_tap+0.5*self.m2_width,
                                                                         dest_pin.cy()), rotate=90)
 
-    def connect_tri_en(self: design_control):
+    def connect_tri_en(self):
         fill_width = self.get_fill_width()
         x_shift = self.bitcell_array.cell.get_pin("BL").rx() + self.line_end_space + 0.5 * self.m4_width
         dest_pin = self.tri_gate_array_inst.get_pin("en")
@@ -397,7 +401,7 @@ class ControlBuffersRepeatersMixin:
             self.add_rect_center("metal3", offset=vector(m4_x_offset, dest_pin.cy()),
                                  width=fill_width, height=fill_width)
 
-    def connect_write_en(self: design_control):
+    def connect_write_en(self):
         fill_width = self.get_fill_width()
         x_shift = (self.bitcell_array.cell.get_pin("BL").rx() + self.line_end_space +
                    0.5 * self.m4_width + self.via_enclose)
@@ -424,7 +428,7 @@ class ControlBuffersRepeatersMixin:
                 self.add_rect("metal2", offset=vector(m4_x_offset-0.5*fill_width, y_offset),
                               width=fill_width, height=fill_width)
 
-    def connect_sample_b(self: design_control):
+    def connect_sample_b(self):
         fill_width = self.get_fill_width()
 
         x_shift = self.bitcell_array.cell.get_pin("BL").rx() + self.line_end_space + 0.5 * self.m4_width
@@ -470,7 +474,7 @@ class ControlBuffersRepeatersMixin:
                           height=fill_height, width=fill_width)
             self.add_contact_center(m1m2.layer_stack, offset=vector(cell_start, dest_pin.cy()), rotate=90)
 
-    def connect_precharge_bar(self: design_control):
+    def connect_precharge_bar(self):
         fill_width = self.get_fill_width()
 
         x_shift = self.bitcell_array.cell.get_pin("BL").rx() + self.line_end_space + 0.5 * self.m4_width

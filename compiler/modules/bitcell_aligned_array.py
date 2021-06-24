@@ -109,6 +109,14 @@ class BitcellAlignedArray(design, ABC):
     def create_array(self):
         """Add child instances"""
         self.bitcell_offsets, self.tap_offsets, _ = self.get_bitcell_offsets()
+        bitcell_width = self.create_mod_from_str(OPTS.bitcell).width
+
+        max_words_per_row = int(utils.round_to_grid(self.child_mod.width) /
+                                utils.round_to_grid(bitcell_width))
+        assert self.words_per_row >= max_words_per_row,\
+            f"Module {self.child_mod.name} width is {self.child_mod.width:.3g} but " \
+            f"bitcell width is {bitcell_width:.3g} => Max words_per_row = {max_words_per_row}"
+
         self.child_insts = []
         for word in range(self.word_size):
             col = word * self.words_per_row

@@ -29,6 +29,12 @@ wwl_driver = "wordline_buffer_array_horizontal"
 
 bank_class = "mram_bank.MramBank"
 
+route_control_signals_left = True
+sense_amp_array = "sense_amp_array"
+precharge_bl = True
+has_br_reset = True
+
+body_tap = "sotfet_mram_bitcell_tap"
 control_buffers_num_rows = 2
 route_control_signals_left = True
 independent_banks = False

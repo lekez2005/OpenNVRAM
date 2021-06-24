@@ -37,6 +37,7 @@ class wordline_driver_mixin(wordline_driver_array):
         return bitcell.height
 
     def create_modules(self):
+        self.bitcell = self.create_mod_from_str(OPTS.bitcell)
         if self.name == "rwl_driver":
             mod_name = OPTS.rwl_inverter_mod
         else:

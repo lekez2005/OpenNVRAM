@@ -1,21 +1,20 @@
 import debug
 from base.contact import cross_m1m2, m2m3, cross_m2m3, m1m2
-from base.design import METAL1, METAL3, METAL2, ACTIVE
+from base.design import METAL1, METAL3, METAL2
 from base.vector import vector
-from base.well_implant_fills import create_wells_and_implants_fills
 from modules.baseline_bank import BaselineBank
 from modules.shared_decoder.one_t_one_s.sotfet_mram_control_buffers_1t1s import SotfetMramControlBuffers1t1s
-from modules.shared_decoder.sotfet.sotfet_mram_bank import SotfetMramBank
+from modules.shared_decoder.sotfet.sotfet_mram_bank_br_precharge import SotfetMramBankBrPrecharge
 
 
-class SotfetMramBank1t1s(SotfetMramBank):
+class SotfetMramBank1t1s(SotfetMramBankBrPrecharge):
     def create_control_buffers(self):
         self.control_buffers = SotfetMramControlBuffers1t1s(self)
         self.add_mod(self.control_buffers)
 
     @staticmethod
     def get_module_list():
-        return SotfetMramBank.get_module_list() + ["br_precharge_array"]
+        return SotfetMramBankBrPrecharge.get_module_list() + ["br_precharge_array"]
 
     def connect_inst(self, args, check=True):
         if args and self.insts[-1].name in ["wwl_driver", "rwl_driver"]:
@@ -25,21 +24,6 @@ class SotfetMramBank1t1s(SotfetMramBank):
     def add_pins(self):
         super().add_pins()
         self.add_pin("rw")
-
-    def get_control_rails_destinations(self):
-        destinations = super().get_control_rails_destinations()
-        destinations["wwl_en"] = destinations["precharge_en_bar"]
-        destinations["rwl_en"] = destinations["precharge_en_bar"]
-        return destinations
-
-    def get_vertical_instance_stack(self):
-        stack = super().get_vertical_instance_stack()
-        stack.insert(stack.index(self.precharge_array_inst), self.br_precharge_array_inst)
-        return stack
-
-    @staticmethod
-    def get_default_wordline_enables():
-        return ["wwl_en", "rwl_en"]
 
     def route_precharge(self):
         if self.col_mux_array_inst is not None:
@@ -65,9 +49,8 @@ class SotfetMramBank1t1s(SotfetMramBank):
                                        vector(sense_pin.cx(), precharge_pin.by())])
         self.route_all_instance_power(self.precharge_array_inst)
 
-    def route_sense_amp(self):
-        self.add_vref_pin()
-        BaselineBank.route_sense_amp(self)
+    def route_wordline_in(self):
+        self.route_wwl_in()
 
     def route_wwl_in(self):
         self.join_rw_pin()
@@ -117,9 +100,6 @@ class SotfetMramBank1t1s(SotfetMramBank):
                                  offset=vector(x_offset + 0.5 * self.m2_width, y_offset),
                                  width=self.m2_width, height=fill_height)
 
-    def route_rwl_in(self):
-        pass
-
     def route_decoder_in(self):
         super().route_decoder_in()
         fill_height = m2m3.second_layer_height
@@ -149,24 +129,5 @@ class SotfetMramBank1t1s(SotfetMramBank):
                                           offset=vector(pin.cx(),
                                                         y_offset + 0.5 * self.bus_width))
 
-    def fill_between_wordline_drivers(self):
-        # fill between rwl and wwl
-        fill_rects = create_wells_and_implants_fills(
-            self.rwl_driver.logic_buffer.buffer_mod.module_insts[-1].mod,
-            self.wwl_driver.logic_buffer.logic_mod)
-
-        for row in range(self.num_rows):
-            for fill_rect in fill_rects:
-                if fill_rect[0] == ACTIVE:
-                    continue
-                if row % 2 == 0:
-                    fill_rect = (fill_rect[0], self.wwl_driver.logic_buffer.height -
-                                 fill_rect[2],
-                                 self.wwl_driver.logic_buffer.height - fill_rect[1])
-                y_shift = (self.wwl_driver_inst.by() +
-                           row * self.rwl_driver.logic_buffer.height)
-                self.add_rect(fill_rect[0], offset=vector(self.rwl_driver_inst.rx(),
-                                                          y_shift + fill_rect[1]),
-                              height=fill_rect[2] - fill_rect[1],
-                              width=(self.wwl_driver_inst.lx() - self.rwl_driver_inst.rx() +
-                                     self.wwl_driver.buffer_insts[0].lx()))
+    def mirror_wordline_fill_rect(self, row):
+        return row % 2 == 0

@@ -1,5 +1,5 @@
 from base.contact import m1m2, m2m3
-from base.design import METAL1, METAL2, METAL3, design
+from base.design import METAL1, METAL2, METAL3, design, ACTIVE
 from base.vector import vector
 from base.well_implant_fills import create_wells_and_implants_fills
 from globals import OPTS
@@ -126,7 +126,9 @@ class stacked_wordline_driver_array(wordline_driver_array):
             adjacent_x_offset = self.buffer_insts[row + 1].lx()
             # Join adjacent rects between left and right buffers
             for fill_rect in fill_rects:
-                if row % 4 == 0:
+                if fill_rect[0] == ACTIVE:
+                    continue
+                elif row % 4 == 0:
                     #
                     fill_rect = (fill_rect[0], self.logic_buffer.height - fill_rect[2],
                                  self.logic_buffer.height - fill_rect[1])

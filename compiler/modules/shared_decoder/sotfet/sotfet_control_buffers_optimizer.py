@@ -53,10 +53,10 @@ class SotfetControlBuffersOptimizer(ControlBufferOptimizer):
 
     def get_opt_func_map(self):
         funcs = super().get_opt_func_map()
-        funcs.update({
-            "br_reset_buffers": self.create_br_reset_optimization_func,
-            "bl_reset_buffers": self.create_bl_reset_optimization_func
-        })
+        if "bl_reset" in self.bank.precharge_array.pins:
+            funcs["bl_reset_buffers"] = self.create_bl_reset_optimization_func
+        if "br_reset" in self.bank.precharge_array.pins:
+            funcs["br_reset_buffers"] = self.create_br_reset_optimization_func
         return funcs
 
     def create_bl_reset_optimization_func(self, driver_params, driver_config,

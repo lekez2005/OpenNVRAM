@@ -32,11 +32,12 @@ class SotMramControlBuffers(SotfetMramControlBuffers):
         ])
 
     def get_schematic_pins(self):
+        self.extract_precharge_inputs()
         in_pins, out_pins = LatchedControlBuffers.get_schematic_pins(self)
         in_pins.append("write_trig")
         out_pins.remove("wordline_en")
         out_pins.remove("sample_en_bar")
-        if not OPTS.precharge_bl:
+        if not self.has_precharge_bl:
             out_pins.remove("precharge_en_bar")
         out_pins.extend(["rwl_en", "wwl_en", "bl_reset", "br_reset"])
         return in_pins, out_pins

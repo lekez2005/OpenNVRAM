@@ -998,12 +998,16 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         """precharge bitlines to bitcell bitlines
             col_mux or sense amp bitlines to precharge bitlines"""
         debug.info(1, "Route Precharge")
+        self.route_all_instance_power(self.precharge_array_inst)
+        self.route_precharge_to_bitcell()
+        self.route_precharge_to_sense_or_mux()
+
+    def route_precharge_to_bitcell(self):
         self.join_bitlines(top_instance=self.bitcell_array_inst, top_suffix="",
                            bottom_instance=self.precharge_array_inst,
                            bottom_suffix="", word_size=self.num_cols)
 
-        self.route_all_instance_power(self.precharge_array_inst)
-
+    def route_precharge_to_sense_or_mux(self):
         if self.col_mux_array_inst is not None:
             self.join_bitlines(top_instance=self.precharge_array_inst, top_suffix="",
                                bottom_instance=self.col_mux_array_inst,

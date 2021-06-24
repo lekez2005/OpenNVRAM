@@ -3,7 +3,7 @@ from base.design import PIMP, NIMP, METAL1
 from base.geometry import MIRROR_X_AXIS, NO_MIRROR
 from base.hierarchy_layout import GDS_ROT_270
 from base.vector import vector
-from modules.bitcell_array import bitcell_array
+from globals import OPTS
 from modules.horizontal.wordline_logic_buffer import WordlineLogicBuffer
 from modules.horizontal.wordline_pgate_tap import wordline_pgate_tap
 from modules.wordline_driver_array import wordline_driver_array
@@ -22,16 +22,14 @@ class wordline_buffer_array_horizontal(wordline_driver_array):
 
     def create_modules(self):
 
+        self.bitcell = self.create_mod_from_str(OPTS.bitcell)
+
         self.create_buffer()
         reference_mod = self.get_reference_mod()
         self.pwell_tap = wordline_pgate_tap(reference_mod, PIMP)
         self.nwell_tap = wordline_pgate_tap(reference_mod, NIMP)
 
-        offsets = bitcell_array.calculate_y_offsets(num_rows=self.rows)
-        self.bitcell_offsets, self.tap_offsets, _ = offsets
-
         self.width = self.logic_buffer.width
-        self.height = self.bitcell_offsets[-1] + self.logic_buffer.height
 
     def get_row_y_offset(self, row):
         y_offset = self.bitcell_offsets[row]

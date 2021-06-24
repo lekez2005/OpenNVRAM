@@ -419,13 +419,13 @@ class hierarchical_decoder(design.design):
                         (predecoder_inv.width - pre_inv_implant.rx()),
                         self.nand_inst[0].lx() + row_nand_implant.lx())
         # add extra implant width for cases when this implant overlaps with wordline driver implant
-        # extend to the right of the predecoder
+        # extend to the right of the predecoder`
 
         predecoder_right = top_predecoder_inst.rx() - predec_module.nand_inst[0].lx()
-        row_decoder_right = self.nand_inst[0].rx()
+        row_decoder_right = self.inv_inst[0].rx()
 
         implant_right = max(predecoder_right, row_decoder_right)
-        implant_height = predecoder_inv.well_contact_implant_height
+        implant_height = 2 * self.implant_width + self.rail_height
         y_offset = top_predecoder_inst.uy() - 0.5 * implant_height
 
         self.add_rect(PIMP, offset=vector(implant_x, y_offset),

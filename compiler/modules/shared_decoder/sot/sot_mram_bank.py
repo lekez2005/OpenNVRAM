@@ -1,10 +1,10 @@
 from modules.baseline_bank import LEFT_FILL, RIGHT_FILL, JOIN_BOT_ALIGN, JOIN_TOP_ALIGN
 from modules.shared_decoder.cmos_bank import CmosBank
 from modules.shared_decoder.sot.sot_mram_control_buffers import SotMramControlBuffers
-from modules.shared_decoder.sotfet.sotfet_mram_bank_thin import SotfetMramBankThin
+from modules.shared_decoder.sotfet.mram_bank import MramBank
 
 
-class SotMramBank(SotfetMramBankThin):
+class SotMramBank(MramBank):
 
     def add_pins(self):
         super(CmosBank, self).add_pins()

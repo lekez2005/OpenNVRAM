@@ -27,7 +27,7 @@ decoder = "row_decoder_horizontal"
 rwl_driver = "wordline_buffer_array_horizontal"
 wwl_driver = "wordline_buffer_array_horizontal"
 
-bank_class = "sotfet_mram_bank_thin.SotfetMramBankThin"
+bank_class = "mram_bank.MramBank"
 
 control_buffers_num_rows = 2
 route_control_signals_left = True

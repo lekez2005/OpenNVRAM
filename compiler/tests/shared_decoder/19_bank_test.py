@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 from importlib import reload
 
 from test_base import TestBase
@@ -18,11 +18,11 @@ class BankTest(TestBase):
             from base.design import design
             return design.import_mod_class_from_str(OPTS.bank_class), {}
         from modules.shared_decoder.cmos_bank import CmosBank
-        from modules.shared_decoder.sotfet.sotfet_mram_bank import SotfetMramBank
+        from modules.shared_decoder.sotfet.sotfet_mram_bank_br_precharge import SotfetMramBankBrPrecharge
         if OPTS.baseline:
             bank_class = CmosBank
         else:
-            bank_class = SotfetMramBank
+            bank_class = SotfetMramBankBrPrecharge
         return bank_class, {}
 
     def sweep_all(self, rows=None, cols=None, words_per_row=None, default_row=64, default_col=64):

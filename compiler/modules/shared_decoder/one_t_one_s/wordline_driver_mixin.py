@@ -5,6 +5,12 @@ from globals import OPTS
 from modules.shared_decoder.one_t_one_s.wl_logic_buffer import WlLogicBuffer
 from pgates.pgate_tap import pgate_tap
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from modules.wordline_driver_array import wordline_driver_array
+else:
+    class wordline_driver_array:
+        pass
 
 @library_import
 class PinvWl(design):
@@ -16,7 +22,7 @@ class PinvWl(design):
     tx_mults = 1
 
 
-class wordline_driver_mixin():
+class wordline_driver_mixin(wordline_driver_array):
     def connect_inst(self, args, check=True):
         if self.insts[-1].mod == self.logic_buffer:
             args.append("rw")

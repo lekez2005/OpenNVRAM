@@ -7,7 +7,7 @@ import tech
 from base import utils
 from base.contact import m1m2, m2m3, cross_m2m3, cross_m1m2, m3m4
 from base.contact_full_stack import ContactFullStack
-from base.design import METAL1, METAL2, METAL3, METAL4, METAL5, design, PWELL, ACTIVE, NIMP
+from base.design import METAL1, METAL2, METAL3, METAL4, METAL5, design, PWELL, ACTIVE, NIMP, PIMP
 from base.geometry import NO_MIRROR, MIRROR_Y_AXIS
 from base.vector import vector
 from base.well_implant_fills import create_wells_and_implants_fills, get_default_fill_layers
@@ -898,31 +898,39 @@ class CmosSram(design):
 
     def fill_decoder_wordline_space(self):
         wordline_logic = self.bank.wordline_driver.logic_buffer.logic_mod
-        decoder_inverter = self.row_decoder.inv_inst[0].mod
+        decoder_inverter = self.row_decoder.inv_inst[-1].mod
         fill_layers, fill_purposes = [], []
         for layer, purpose in zip(*get_default_fill_layers()):
-            if layer not in [PWELL, ACTIVE, NIMP]:
+            if layer not in [PWELL, ACTIVE]:
                 # No NIMP, PWELL to prevent min spacing to PIMP, NWELL respectively
                 fill_layers.append(layer)
                 fill_purposes.append(purpose)
         rects = create_wells_and_implants_fills(decoder_inverter,
                                                 wordline_logic, layers=fill_layers,
                                                 purposes=fill_purposes)
-        x_offset = self.row_decoder_inst.lx() + self.row_decoder.inv_inst[0].rx()
+        x_offset = self.row_decoder_inst.lx() + self.row_decoder.inv_inst[-1].rx()
         width = (self.right_bank_inst.lx() + self.bank.wordline_driver_inst.lx() +
                  self.bank.wordline_driver.buffer_insts[0].lx()) - x_offset
         bitcell_height = self.bitcell.height
+        mod_height = wordline_logic.height
 
-        for row in range(self.num_rows):
-            y_base = self.bank.bitcell_array_inst.by() + row * self.bitcell.height
+        bitcell_rows_per_driver = round(wordline_logic.height / bitcell_height)
+
+        for row in range(0, self.num_rows, bitcell_rows_per_driver):
+            y_base = (self.bank.bitcell_array_inst.by() +
+                      self.row_decoder.bitcell_offsets[row])
             for layer, rect_bottom, rect_top, left_rect, right_rect in rects:
-                if right_rect.uy() > bitcell_height or left_rect.uy() > bitcell_height:
+                if ((left_rect.height >= mod_height or right_rect.height >= mod_height) and
+                        layer in [PIMP, NIMP]):
+                    # prevent overlap between NIMP and PIMP spanning entire logic
+                    continue
+                if right_rect.uy() > mod_height or left_rect.uy() > mod_height:
                     rect_top = max(right_rect.uy(), left_rect.uy())
                 if right_rect.by() < 0 or left_rect.by() < 0:
                     rect_bottom = min(right_rect.by(), left_rect.by())
                 # cover align with bitcell nwell
-                if row % 2 == 0:
-                    y_offset = y_base + (self.bitcell.height - rect_top)
+                if row % (2 * bitcell_rows_per_driver) == 0:
+                    y_offset = y_base + (mod_height - rect_top)
                 else:
                     y_offset = y_base + rect_bottom
                 self.add_rect(layer, offset=vector(x_offset, y_offset), width=width,

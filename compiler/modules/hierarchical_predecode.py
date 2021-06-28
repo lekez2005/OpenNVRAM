@@ -134,6 +134,8 @@ class hierarchical_predecode(design.design):
         self.clk_x_offset = x_offset + 0.5 * self.m2_width
         self.rails["clk"] = self.clk_x_offset
 
+        self.rail_heights["clk"] = self.number_of_inputs * self.flop.height
+
         if not self.vertical_flops:
             x_offset += self.m2_pitch + 0.5 * self.m2_width
             for rail_index in range(self.number_of_inputs):

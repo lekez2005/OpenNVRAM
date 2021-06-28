@@ -146,6 +146,7 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
         implant_height = drc["minwidth_implant"]
         nwell_height = max(contact.well.first_layer_width + 2 * self.well_enclose_active,
                            self.well_width)
+        self.contact_nwell_height = nwell_height
 
         if self.row_to_side[0] == "left":
             left_inst, right_inst = self.nand_inst[:2]
@@ -158,6 +159,7 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
         implant_width = available_width
         nwell_width = available_width + 2 * self.well_width
         mid_x = 0.5 * (right_inst.lx() + left_inst.rx())
+        self.contact_mid_x = mid_x
 
         for row in range(0, self.rows, 2):
             gnd_pin = self.nand_inst[row].get_pin("gnd")

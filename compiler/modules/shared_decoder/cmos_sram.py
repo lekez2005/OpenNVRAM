@@ -700,18 +700,15 @@ class CmosSram(design):
 
         if self.num_banks == 2 and self.column_decoder_inst is not None:
             # prevent select pins clash
+            sel_rails_height = (1 + self.words_per_row) * self.bus_pitch
             m2_m3_blockages.append((self.left_col_mux_select_y,
-                                    self.bank.bitcell_array_inst.by()))
+                                    self.left_col_mux_select_y + sel_rails_height))
 
         if self.num_banks == 2:
             # prevent clashes with wl output to left bank
-            row_decoder_gnd = self.row_decoder_inst.get_pins("gnd")
-            row_decoder_gnd = [x for x in row_decoder_gnd
-                               if x.by() > self.bank.bitcell_array_inst.by()]
-            wl_space = self.get_parallel_space(METAL3)
-            for gnd_pin in row_decoder_gnd:
-                m2_m3_blockages.append((gnd_pin.by() - wl_space - self.m3_width,
-                                        gnd_pin.uy() + wide_space + self.m3_width))
+            decoder_out_offsets = self.get_decoder_output_offsets(self.bank_insts[-1])
+            for y_offset in decoder_out_offsets:
+                m2_m3_blockages.append((y_offset, y_offset + self.m3_width))
 
         m2_m3_blockages = list(sorted(m2_m3_blockages, key=lambda x: x[0]))
         via_top = self.mid_vdd.height - via_pitch
@@ -722,7 +719,7 @@ class CmosSram(design):
 
         while y_offset < via_top:
             if len(m2_m3_blockages) > 0 and m2_m3_blockages[0][0] <= y_offset + via_pitch:
-                y_offset = m2_m3_blockages[0][1] + via_pitch
+                y_offset = m2_m3_blockages[0][1] + wide_space
                 m2_m3_blockages.pop(0)
             else:
                 via_offsets.append(y_offset)
@@ -808,15 +805,32 @@ class CmosSram(design):
                     self.add_contact_center(m2m3.layer_stack, offset=vector(rail.cx(), y_offset),
                                             size=[1, 2], rotate=90)
 
-    def route_decoder_outputs(self):
-        # place m3 rail to the bank wordline drivers just below the power rail
+    def get_decoder_output_offsets(self, bank_inst):
+        offsets = []
+
         buffer_mod = self.bank.wordline_driver.logic_buffer
         gnd_pin = buffer_mod.get_pin("gnd")
 
         odd_rail_y = gnd_pin.uy() + self.get_parallel_space(METAL3)
         even_rail_y = buffer_mod.height - odd_rail_y - self.m3_width
+
+        for row in range(self.bank.num_rows):
+            if row % 2 == 0:
+                rail_y = even_rail_y
+            else:
+                rail_y = odd_rail_y
+            y_shift = self.bank.wordline_driver_inst.mod.bitcell_offsets[row]
+            offsets.append(y_shift + rail_y + bank_inst.mod.wordline_driver_inst.by())
+
+        return offsets
+
+    def route_decoder_outputs(self):
+        # place m3 rail to the bank wordline drivers just below the power rail
+
         fill_height = m2m3.height
         _, fill_width = self.calculate_min_area_fill(fill_height, layer=METAL2)
+
+        y_offsets = self.get_decoder_output_offsets(self.bank_insts[0])
 
         for row in range(self.num_rows):
             decoder_out = self.row_decoder_inst.get_pin("decode[{}]".format(row))
@@ -826,15 +840,13 @@ class CmosSram(design):
 
             if row % 2 == 0:
                 via_y = decoder_out.uy() - 0.5 * m2m3.second_layer_height
-                rail_y = even_rail_y
             else:
                 via_y = decoder_out.by() - 0.5 * m2m3.second_layer_height
-                rail_y = odd_rail_y
 
             via_offset = vector(decoder_out.cx() - 0.5 * self.m3_width, via_y)
-
             self.add_contact(m2m3.layer_stack, offset=via_offset)
-            y_offset = self.bank.wordline_driver_inst.by() + row * buffer_mod.height + rail_y
+
+            y_offset = y_offsets[row]
             self.add_rect(METAL3, offset=via_offset, height=y_offset - via_offset.y)
             if self.num_banks == 1:
                 x_offset = via_offset.x
@@ -928,6 +940,8 @@ class CmosSram(design):
                     rect_top = max(right_rect.uy(), left_rect.uy())
                 if right_rect.by() < 0 or left_rect.by() < 0:
                     rect_bottom = min(right_rect.by(), left_rect.by())
+                if layer == NIMP:  # prevent space from pimplant to nimplant
+                    rect_top = max(left_rect.uy(), right_rect.uy())
                 # cover align with bitcell nwell
                 if row % (2 * bitcell_rows_per_driver) == 0:
                     y_offset = y_base + (mod_height - rect_top)
@@ -935,6 +949,31 @@ class CmosSram(design):
                     y_offset = y_base + rect_bottom
                 self.add_rect(layer, offset=vector(x_offset, y_offset), width=width,
                               height=rect_top - rect_bottom)
+        # join wells from row decoder to left bank
+        if self.num_banks == 1:
+            return
+
+        for row in range(0, self.num_rows + 1, bitcell_rows_per_driver):
+            if row % (2 * bitcell_rows_per_driver) == 0:
+                well = "nwell"
+            else:
+                well = "pwell"
+            well_height = getattr(self.row_decoder, f"contact_{well}_height", None)
+            if well_height:
+                driver_inst = self.bank_insts[-1].mod.wordline_driver_inst
+                right_x = self.row_decoder.contact_mid_x + self.row_decoder_inst.lx()
+                buffer_x = driver_inst.mod.buffer_insts[0].lx() + well_height  # extra well_height
+                start_x = (self.bank_insts[1].rx() -
+                           self.bank_insts[-1].mod.wordline_driver_inst.lx() - buffer_x)
+                if row == self.num_rows:
+                    y_base = self.row_decoder.bitcell_offsets[row - 1] + bitcell_height
+                else:
+                    y_base = self.row_decoder.bitcell_offsets[row]
+
+                y_offset = self.bank.bitcell_array_inst.by() + y_base - 0.5 * well_height
+                self.add_rect(well, vector(start_x, y_offset),
+                              width=right_x - start_x,
+                              height=well_height)
 
     def route_power_grid(self):
         if not self.add_power_grid:

@@ -477,12 +477,15 @@ class hierarchical_decoder(design.design):
         nwell_width += 2 * min_nwell_width  # to prevent min_nwell_width
         nwell_height = max(min_nwell_width,
                            active_height + 2 * self.well_enclose_active)
+        self.contact_nwell_height = nwell_height
+        self.contact_mid_x = implant_x
 
         if info["has_pwell"]:
             min_pwell_width = self.get_min_layer_width("pwell")
             pwell_width = active_width + 2 * self.well_enclose_active + 2 * min_pwell_width
             pwell_height = max(min_pwell_width,
                                active_height + 2 * self.well_enclose_active)
+            self.contact_pwell_height = pwell_height
 
         for row in range(self.rows):
             gnd_pin = self.nand_inst[row].get_pin("gnd")

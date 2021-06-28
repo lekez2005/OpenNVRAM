@@ -52,18 +52,3 @@ class wordline_driver_mixin(wordline_driver_array):
                                           contact_pwell=False, contact_nwell=False,
                                           align_bitcell=True)
         self.add_mod(self.logic_buffer)
-
-    def add_body_taps(self):
-        # add body taps
-        body_tap = pgate_tap(self.logic_buffer.logic_mod)
-        for i in range(0, self.rows, 2):
-            inst = self.buffer_insts[i]
-            y_offset = inst.by()
-            if (i % 4) < 2:
-                y_offset += self.logic_buffer.height
-                mirror = "MX"
-            else:
-                mirror = "R0"
-            self.add_inst(body_tap.name, body_tap, mirror=mirror,
-                          offset=vector(inst.lx() - body_tap.width, y_offset))
-            self.connect_inst([])

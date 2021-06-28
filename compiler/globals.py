@@ -300,10 +300,10 @@ def import_tech():
     debug.info(1, "Technology path is " + OPTS.openram_tech)
 
     try:
-        filename = "setup_openram_{0}".format(OPTS.tech_name)
+        filename = "setup_openram"
         # we assume that the setup scripts (and tech dirs) are located at the
         # same level as the compielr itself, probably not a good idea though.
-        path = os.path.join(os.environ.get("OPENRAM_TECH"), "setup_scripts")
+        path = os.path.join(OPTS.openram_tech, "tech")
         debug.check(os.path.isdir(path), "setup_scripts does not exist: {0}".format(path))
         sys.path.append(os.path.abspath(path))
         __import__(filename)

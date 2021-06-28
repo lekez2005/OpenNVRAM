@@ -258,6 +258,8 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         # temporarily suspend name map conflict check
         existing_designs = set(design.name_map)
         self.mods.clear()
+        self.pin_map.clear()
+        self.objs.clear()
         design.name_map.clear()
         self.create_modules()
         existing_designs.update(design.name_map)

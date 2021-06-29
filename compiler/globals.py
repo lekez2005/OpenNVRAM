@@ -122,6 +122,8 @@ def init_openram(config_file, is_unit_test=True, openram_temp=None):
 
     debug.info(1,"Initializing OpenRAM...")
 
+    setup_technology()
+
     read_config(config_file, is_unit_test, openram_temp)
 
     debug.setup_file_log(OPTS.log_file)
@@ -149,6 +151,33 @@ def get_tool(tool_type, preferences):
             debug.info(1, "Could not find {0}, trying next {1} tool.".format(name,tool_type))
     else:
         return(None,"")
+
+
+def setup_technology():
+    # environment variable should point to the technology dir
+    openram_tech = os.environ.get("OPENRAM_TECH", None)
+    if not openram_tech:
+        debug.error("$OPENRAM_TECH is not properly defined.", 1)
+    openram_tech = os.path.abspath(openram_tech)
+
+    debug.check(os.path.isdir(openram_tech),
+                f"$OPENRAM_TECH does not exist: {openram_tech}")
+
+    OPTS.openram_tech = os.path.join(openram_tech, OPTS.tech_name)
+
+    debug.info(1, "Technology path is " + OPTS.openram_tech)
+
+    filename = "setup_openram"
+    try:
+        # we assume that the setup scripts (and tech dirs) are located at the
+        # same level as the compielr itself, probably not a good idea though.
+        path = os.path.join(OPTS.openram_tech, "tech")
+        debug.check(os.path.isdir(path), "setup_script does not exist: {0}".format(path))
+        sys.path.append(os.path.abspath(path))
+        __import__(filename)
+    except ImportError:
+        debug.error("Nonexistent technology_setup_file: {0}.py".format(filename))
+        sys.exit(1)
 
 
 def read_config(config_file, is_unit_test=True, openram_temp=None):
@@ -284,32 +313,6 @@ def import_tech():
     global OPTS
 
     debug.info(2,"Importing technology: " + OPTS.tech_name)
-
-    # Set the tech to the config file we read in instead of the command line value.
-    OPTS.tech_name = OPTS.tech_name
-        
-    # environment variable should point to the technology dir
-    try:
-        OPENRAM_TECH = os.path.abspath(os.environ.get("OPENRAM_TECH"))
-    except:
-        debug.error("$OPENRAM_TECH is not properly defined.",1)
-    debug.check(os.path.isdir(OPENRAM_TECH),"$OPENRAM_TECH does not exist: {0}".format(OPENRAM_TECH))
-    
-    OPTS.openram_tech =os.path.join(OPENRAM_TECH, OPTS.tech_name)
-
-    debug.info(1, "Technology path is " + OPTS.openram_tech)
-
-    try:
-        filename = "setup_openram"
-        # we assume that the setup scripts (and tech dirs) are located at the
-        # same level as the compielr itself, probably not a good idea though.
-        path = os.path.join(OPTS.openram_tech, "tech")
-        debug.check(os.path.isdir(path), "setup_scripts does not exist: {0}".format(path))
-        sys.path.append(os.path.abspath(path))
-        __import__(filename)
-    except ImportError:
-        debug.error("Nonexistent technology_setup_file: {0}.py".format(filename))
-        sys.exit(1)
 
     standardize_tech_config()
 

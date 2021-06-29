@@ -543,12 +543,10 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
     def __repr__(self):
         """ override print function output """
-        text = "( design: " + self.name + " pins=" + str(self.pins) + " " + str(self.width) + "x" + str(
-            self.height) + " )\n"
-        for i in self.objs:
-            text += str(i) + ",\n"
-        for i in self.insts:
-            text += str(i) + ",\n"
+        if self.width and self.height:
+            text = "design: {} {:.3g} x {:.3g} \n".format(self.name, self.width, self.height)
+        else:
+            text = f"design: {self.name}"
         return text
 
     def analytical_power(self, proc, vdd, temp, load):

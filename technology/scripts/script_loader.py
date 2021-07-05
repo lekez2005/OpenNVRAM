@@ -36,7 +36,7 @@ def load_setup(top_level=False):
 
     tech_directory = os.environ.get("OPENRAM_TECH")
     tech_name = options.tech_name
-    setup_path = "{0}/setup_scripts/setup_openram_{1}.py".format(tech_directory, tech_name)
+    setup_path = os.path.join(tech_directory, tech_name, "tech", "setup_openram.py")
     setup = load_module(setup_path, "setup")
     if top_level and options.library is not None:
         setup.export_library_name = options.library

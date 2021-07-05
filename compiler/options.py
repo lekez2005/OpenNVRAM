@@ -156,7 +156,7 @@ class options(optparse.Values):
     symmetric_bitcell = True
     mirror_bitcell_y_axis = False
     cells_per_group = 1
-    num_dummies = 0
+    num_bitcell_dummies = 0
     dummy_cell = None
     export_dummy_bitcell_pins = True
 

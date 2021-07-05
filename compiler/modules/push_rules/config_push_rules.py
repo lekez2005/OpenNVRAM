@@ -11,7 +11,7 @@ use_y_body_taps = True
 use_x_body_taps = False
 mirror_bitcell_y_axis = True
 export_dummy_bitcell_pins = False
-num_dummies = 1
+num_bitcell_dummies = 1
 
 sram_class = "modules.push_rules.horizontal_sram.HorizontalSram"
 

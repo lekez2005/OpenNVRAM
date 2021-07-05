@@ -29,7 +29,7 @@ class SotSenseAmpArray(sense_amp_array):
         self.add_mod(self.sense_ref)
 
         x_offset = OPTS.reference_cell_x
-        if OPTS.num_dummies % 2 == 1:
+        if OPTS.num_bitcell_dummies % 2 == 1:
             mirror = MIRROR_Y_AXIS
             x_offset += self.sense_ref.width
         else:

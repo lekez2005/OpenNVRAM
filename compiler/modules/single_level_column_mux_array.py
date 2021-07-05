@@ -99,7 +99,7 @@ class single_level_column_mux_array(design.design):
             name = "mod_{0}".format(col_num)
             offset = vector(self.bitcell_offsets[col_num], self.route_height)
 
-            if (col_num + OPTS.num_dummies) % 2 == 0 and self.mirror:
+            if (col_num + OPTS.num_bitcell_dummies) % 2 == 0 and self.mirror:
                 bitline_nets = "br[{0}] bl[{0}] "
             else:
                 bitline_nets = "bl[{0}] br[{0}] "
@@ -117,7 +117,7 @@ class single_level_column_mux_array(design.design):
         # For every column, add a pass gate
         for col_num in range(self.columns):
             child_insts = self.child_insts[col_num]
-            if (col_num + OPTS.num_dummies) % 2 == 0 and self.mirror:
+            if (col_num + OPTS.num_bitcell_dummies) % 2 == 0 and self.mirror:
                 pin_names = [("bl", "br"), ("br", "bl")]
             else:
                 pin_names = [("bl", "bl"), ("br", "br")]
@@ -175,7 +175,7 @@ class single_level_column_mux_array(design.design):
 
         for j in range(self.columns):
             bl_out, br_out = self.get_output_bitlines(j)
-            if self.mirror and (j + OPTS.num_dummies) % 2 == 0:
+            if self.mirror and (j + OPTS.num_bitcell_dummies) % 2 == 0:
                 bl_out, br_out = br_out, bl_out
 
             bl_out_offset = vector(bl_out.cx() - cross_via_extension, bl_out_y)

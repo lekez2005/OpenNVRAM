@@ -30,7 +30,7 @@ class SotColumnMuxArray(tgate_column_mux_array):
     def create_array(self):
         super().create_array()
         x_offset = OPTS.reference_cell_x
-        if OPTS.num_dummies % 2 == 1:
+        if OPTS.num_bitcell_dummies % 2 == 1:
             mirror = MIRROR_Y_AXIS
             x_offset += self.ref_mux.width
         else:

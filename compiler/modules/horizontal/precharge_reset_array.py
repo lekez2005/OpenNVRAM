@@ -48,7 +48,7 @@ class PrechargeResetArray(precharge_array):
 
     def get_col_mod(self, col):
         offset = vector(self.bitcell_offsets[col], 0)
-        if (col + OPTS.num_dummies) % 2 == 0:
+        if (col + OPTS.num_bitcell_dummies) % 2 == 0:
             mirror = MIRROR_Y_AXIS
             offset.x += self.pc_cell.width
             mod = self.pc_cell_mirror

@@ -107,17 +107,17 @@ class bitcell_array(design.design):
     def create_inst_containers(self):
         self.cell_inst = [[None] * self.column_size for x in range(self.row_size)]  # type: List[List[instance]]
         self.dummy_inst = {
-            "vertical": [[None] * (self.row_size + 2 * OPTS.num_dummies) for _ in range(2 * OPTS.num_dummies)],
-            "horizontal": [[None] * (self.column_size + 2 * OPTS.num_dummies) for _ in range(2 * OPTS.num_dummies)]
+            "vertical": [[None] * (self.row_size + 2 * OPTS.num_bitcell_dummies) for _ in range(2 * OPTS.num_bitcell_dummies)],
+            "horizontal": [[None] * (self.column_size + 2 * OPTS.num_bitcell_dummies) for _ in range(2 * OPTS.num_bitcell_dummies)]
         }  # type: Dict[str, List[List[instance]]]
         self.horizontal_dummy = self.dummy_inst["horizontal"]
         self.vertical_dummy = self.dummy_inst["vertical"]
 
-        cols = list(range(OPTS.num_dummies))
-        cols += [x + OPTS.num_dummies + self.column_size for x in cols]
+        cols = list(range(OPTS.num_bitcell_dummies))
+        cols += [x + OPTS.num_bitcell_dummies + self.column_size for x in cols]
 
-        rows = list(range(OPTS.num_dummies))
-        rows += [x + OPTS.num_dummies + self.row_size for x in rows]
+        rows = list(range(OPTS.num_bitcell_dummies))
+        rows += [x + OPTS.num_bitcell_dummies + self.row_size for x in rows]
 
         self.dummy_rows = rows
         self.dummy_cols = cols
@@ -126,7 +126,7 @@ class bitcell_array(design.design):
         if row in self.dummy_rows:
             return self.horizontal_dummy[self.dummy_rows.index(row)]
         dummy_cells = [self.vertical_dummy[i][row] for i in range(len(self.dummy_cols))]
-        return dummy_cells[:OPTS.num_dummies] + self.cell_inst[row - OPTS.num_dummies] + dummy_cells[OPTS.num_dummies:]
+        return dummy_cells[:OPTS.num_bitcell_dummies] + self.cell_inst[row - OPTS.num_bitcell_dummies] + dummy_cells[OPTS.num_bitcell_dummies:]
 
     def get_bitcell_connections(self, row, col):
         if hasattr(self.cell, "get_bitcell_connections"):
@@ -134,11 +134,11 @@ class bitcell_array(design.design):
         if row in self.dummy_rows:
             wl_conn = "gnd"
         else:
-            wl_conn = "wl[{}]".format(row - OPTS.num_dummies)
+            wl_conn = "wl[{}]".format(row - OPTS.num_bitcell_dummies)
         if col in self.dummy_cols:
             bl_nets = "vdd vdd"
         else:
-            bl_nets = "bl[{0}] br[{0}] ".format(col - OPTS.num_dummies)
+            bl_nets = "bl[{0}] br[{0}] ".format(col - OPTS.num_bitcell_dummies)
         return "{0} {1} vdd gnd".format(bl_nets, wl_conn).split()
 
     def add_bitcell_cells(self):
@@ -146,25 +146,25 @@ class bitcell_array(design.design):
         for col in range(self.column_size):
             for row in range(self.row_size):
                 name = "bit_r{0}_c{1}".format(row, col)
-                x_offset, y_offset, mirror = self.get_cell_offset(col + OPTS.num_dummies,
-                                                                  row + OPTS.num_dummies)
+                x_offset, y_offset, mirror = self.get_cell_offset(col + OPTS.num_bitcell_dummies,
+                                                                  row + OPTS.num_bitcell_dummies)
 
                 cell_inst = self.add_inst(name=name, mod=self.cell,
                                           offset=vector(x_offset, y_offset),
                                           mirror=mirror)
                 self.cell_inst[row][col] = cell_inst
-                self.connect_inst(self.get_bitcell_connections(row + OPTS.num_dummies,
-                                                               col + OPTS.num_dummies))
+                self.connect_inst(self.get_bitcell_connections(row + OPTS.num_bitcell_dummies,
+                                                               col + OPTS.num_bitcell_dummies))
 
     def add_bitcell_dummy_cells(self):
         """Add dummy on all four edges. Total rows = rows + 2, total_cols = cols + 2"""
-        if not OPTS.num_dummies:
+        if not OPTS.num_bitcell_dummies:
             self.width = self.cell_inst[-1][-1].rx()
             self.height = self.cell_inst[-1][-1].uy()
             self.dummy_rows = self.dummy_cols = []
             return
 
-        num_dummies = OPTS.num_dummies
+        num_bitcell_dummies = OPTS.num_bitcell_dummies
         cols = self.dummy_cols
         rows = self.dummy_rows
 
@@ -207,13 +207,13 @@ class bitcell_array(design.design):
             if hasattr(OPTS, "repeaters_array_space_offsets"):
                 tap_offsets += OPTS.repeaters_array_space_offsets
             cell_offsets, _, dummy_offsets = self.bitcell_y_offsets
-            sweep_var = range(self.row_size + 2 * OPTS.num_dummies)
+            sweep_var = range(self.row_size + 2 * OPTS.num_bitcell_dummies)
             mirrors = [MIRROR_X_AXIS, NO_MIRROR]
             tap_size = self.body_tap.height
         else:
             _, tap_offsets, _ = self.bitcell_y_offsets
             cell_offsets, _, dummy_offsets = self.bitcell_x_offsets
-            sweep_var = range(self.column_size + 2 * OPTS.num_dummies)
+            sweep_var = range(self.column_size + 2 * OPTS.num_bitcell_dummies)
             mirrors = [MIRROR_Y_AXIS, NO_MIRROR]
             tap_size = self.body_tap.width
 
@@ -236,7 +236,7 @@ class bitcell_array(design.design):
 
     def connect_dummy_cell_layouts(self):
         """Connect dummy wordlines to gnd and dummy bitlines to vdd"""
-        if OPTS.num_dummies > 0 and False:
+        if OPTS.num_bitcell_dummies > 0 and False:
             self.dummy_cell.route_dummy_cells(self)
 
     def fill_repeaters_space_implant(self):
@@ -460,7 +460,7 @@ class bitcell_array(design.design):
 
         x_offsets = bitcell_array.calculate_offsets(num_cols, bitcell.width, tap_size=tap_width,
                                                     dummy_size=dummy_width,
-                                                    num_dummies=OPTS.num_dummies,
+                                                    num_dummies=OPTS.num_bitcell_dummies,
                                                     cell_grouping=OPTS.cells_per_group)
         add_repeaters = (OPTS.add_buffer_repeaters and
                          num_cols > OPTS.buffer_repeaters_col_threshold and
@@ -511,7 +511,7 @@ class bitcell_array(design.design):
 
         y_offsets = bitcell_array.calculate_offsets(num_rows, bitcell.height, tap_size=tap_height,
                                                     dummy_size=dummy_height,
-                                                    num_dummies=OPTS.num_dummies,
+                                                    num_dummies=OPTS.num_bitcell_dummies,
                                                     cell_grouping=OPTS.cells_per_group)
         return y_offsets
 

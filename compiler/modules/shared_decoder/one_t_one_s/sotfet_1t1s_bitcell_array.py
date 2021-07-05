@@ -23,7 +23,7 @@ class sotfet_1t1s_bitcell_array(sotfet_mram_bitcell_array):
         if hasattr(OPTS, "repeaters_array_space_offsets"):
             tap_offsets += OPTS.repeaters_array_space_offsets
         cell_offsets, _, dummy_offsets = self.bitcell_y_offsets
-        sweep_var = range(self.row_size + 2 * OPTS.num_dummies)
+        sweep_var = range(self.row_size + 2 * OPTS.num_bitcell_dummies)
 
         cell_offsets = list(sorted(cell_offsets + dummy_offsets))
 

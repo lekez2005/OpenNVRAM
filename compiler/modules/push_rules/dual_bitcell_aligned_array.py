@@ -18,7 +18,7 @@ class dual_bitcell_aligned_array(design, ABC):
     mod_rotation = GDS_ROT_270  # initial rotation of child module
     rotation_for_drc = GDS_ROT_270  # rotation of full for DRC runs
     mirror = True  # Mirror instances
-    num_dummies = 1
+    num_bitcell_dummies = 1
     instance_name_prefix = "child_mod_"
 
     @property

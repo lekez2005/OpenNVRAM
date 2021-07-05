@@ -14,7 +14,7 @@ class SotPrechargeArray(PrechargeResetArray):
         for i in range(OPTS.num_reference_cells):
             name = "pre_ref_{0}".format(i)
             x_offset = OPTS.reference_cell_x + i * self.pc_cell.width
-            if (i + OPTS.num_dummies) % 2 == 0:
+            if (i + OPTS.num_bitcell_dummies) % 2 == 0:
                 x_offset += self.pc_cell.width
 
             mod, offset, mirror = self.get_col_mod(i)

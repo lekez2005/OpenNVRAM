@@ -45,5 +45,5 @@ class cam_bitcell_array(bitcell_array.bitcell_array):
             self.add_layout_pin(text="ml[{0}]".format(row),
                                 layer=right_ml_pin.layer,
                                 offset=vector(left_ml_pin.lx(), right_ml_pin.by()),
-                                width=right_ml_pin.rx()-left_ml_pin.lx(),
+                                width=right_ml_pin.rx() - left_ml_pin.lx(),
                                 height=right_ml_pin.height())

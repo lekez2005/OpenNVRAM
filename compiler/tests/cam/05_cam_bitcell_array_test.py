@@ -9,14 +9,9 @@ from cam_test_base import CamTestBase
 class CamBitcellArrayTest(CamTestBase):
 
     def test_4x4_array(self):
-        from globals import OPTS
-        if not OPTS.bitcell_array == "cam_bitcell_array":
-            return
-
-        from modules.cam import cam_bitcell_array
-
-        self.debug.info(2, "Testing 4x4 array for cam_cell_6t")
-        a = cam_bitcell_array.cam_bitcell_array(name="cam_bitcell_array", cols=4, rows=4)
+        a = self.create_class_from_opts("bitcell_array", cols=4, rows=4)
+        self.debug.info(1, "Testing 4x4 array for %s using module %s",
+                        a.__class__.__name__, a.cell.name)
         self.local_check(a)
 
 

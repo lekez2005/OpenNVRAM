@@ -24,7 +24,7 @@ class ptx(design.design):
     """
 
     def __init__(self, width=drc["minwidth_tx"], mults=1, tx_type="nmos",
-                 connect_active=False, connect_poly=False, num_contacts=None, dummy_pos=range(0, 4)):
+                 connect_active=False, connect_poly=False, num_contacts=None, dummy_pos=None):
         # We need to keep unique names because outputting to GDSII
         # will use the last record with a given name. I.e., you will
         # over-write a design in GDS if one has and the other doesn't
@@ -37,10 +37,13 @@ class ptx(design.design):
             name += "_p"
         if num_contacts:
             name += "_c{}".format(num_contacts)
-        if not dummy_pos == range(0, 4):
+        if dummy_pos is not None:
             name += "_d{}".format("".join([str(pos) for pos in dummy_pos]))
         # replace periods with underscore for newer spice compatibility
         name = re.sub('\.', '_', name)
+
+        if dummy_pos is None:
+            dummy_pos = list(range(0, 2 * self.num_poly_dummies))
 
         design.design.__init__(self, name)
         debug.info(3, "create ptx2 structure {0}".format(name))
@@ -406,7 +409,8 @@ class ptx(design.design):
 
         # poly dummys
         if "po_dummy" in tech_layers:
-            shifts = [-self.mults - 2, -self.mults - 1, 0, 1]
+            shifts = ([-self.mults - (i + 1) for i in reversed(range(self.num_poly_dummies))] +
+                      list(range(self.num_poly_dummies)))
             for i in self.dummy_pos:
                 self.add_rect_center(layer="po_dummy",
                                      offset=vector(poly_offset.x + self.poly_pitch * shifts[i], self.dummy_y_offset),

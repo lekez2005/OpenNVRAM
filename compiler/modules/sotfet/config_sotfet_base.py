@@ -18,7 +18,7 @@ tag_flop_array = "tag_flop_array"
 
 ml_precharge_array = "sf_ml_precharge_array"
 ml_precharge = "sf_matchline_precharge"
-body_tap = "sot_body_tap"
+body_tap_mod = "sot_body_tap"
 search_sense_amp_array = "search_sense_amp_array"
 
 bitline_logic = "sot_bitline_logic"

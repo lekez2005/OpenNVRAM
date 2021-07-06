@@ -97,50 +97,50 @@ class MlPrechargeArrayTest(CamTestBase):
     def test_min_width_ml_cell(self):
         from modules.cam import matchline_precharge
         debug.info(2, "Checking matchline precharge cell")
-        cell = matchline_precharge.matchline_precharge()
+        cell = matchline_precharge.matchline_precharge(size=4)
         self.local_drc_check(cell)
 
-    def test_multiple_fingers_cell(self):
-        from modules.cam import matchline_precharge
-        from tech import parameter
-        c = __import__(OPTS.bitcell)
-        mod_bitcell = getattr(c, OPTS.bitcell)
-        bitcell = mod_bitcell()
-        debug.info(2, "Checking matchline precharge cell")
-        cell = matchline_precharge.matchline_precharge(size=(1.2*bitcell.height)/parameter["min_tx_size"])
-        self.local_drc_check(cell)
-
-    def test_precharge_array(self):
-        """Test standalone array for drc issues"""
-        from modules.cam import ml_precharge_array
-        rows = 16
-        debug.info(2, "Checking matchline precharge array with {} rows")
-        array = ml_precharge_array.ml_precharge_array(rows=rows, size=3)
-        self.local_drc_check(array)
-
-
-    def test_array_bitcell_flops_single_finger(self):
-        """
-        Create array of bitcells, ml_precharge and tag flops cascade
-        Since the tag flops should contain body contacts, both drc and lvs should pass for the cascade
-        """
-        cascade = ArrayCascade(8, 1)
-        self.local_drc_check(cascade)
-
-    def test_array_bitcell_flops_multi_finger(self):
-        """
-        Create array of bitcells, ml_precharge and tag flops cascade
-        Since the tag flops should contain body contacts, both drc and lvs should pass for the cascade
-        """
-        from tech import parameter
-        c = __import__(OPTS.bitcell)
-        mod_bitcell = getattr(c, OPTS.bitcell)
-        bitcell = mod_bitcell()
-        debug.info(2, "Checking matchline precharge cell")
-        size = (1.2 * bitcell.height) / parameter["min_tx_size"]
-        cascade = ArrayCascade(8, size)
-
-        self.local_drc_check(cascade)
+    # def test_multiple_fingers_cell(self):
+    #     from modules.cam import matchline_precharge
+    #     from tech import parameter
+    #     c = __import__(OPTS.bitcell)
+    #     mod_bitcell = getattr(c, OPTS.bitcell)
+    #     bitcell = mod_bitcell()
+    #     debug.info(2, "Checking matchline precharge cell")
+    #     cell = matchline_precharge.matchline_precharge(size=(1.2*bitcell.height)/parameter["min_tx_size"])
+    #     self.local_drc_check(cell)
+    #
+    # def test_precharge_array(self):
+    #     """Test standalone array for drc issues"""
+    #     from modules.cam import ml_precharge_array
+    #     rows = 16
+    #     debug.info(2, "Checking matchline precharge array with {} rows")
+    #     array = ml_precharge_array.ml_precharge_array(rows=rows, size=3)
+    #     self.local_drc_check(array)
+    #
+    #
+    # def test_array_bitcell_flops_single_finger(self):
+    #     """
+    #     Create array of bitcells, ml_precharge and tag flops cascade
+    #     Since the tag flops should contain body contacts, both drc and lvs should pass for the cascade
+    #     """
+    #     cascade = ArrayCascade(8, 1)
+    #     self.local_drc_check(cascade)
+    #
+    # def test_array_bitcell_flops_multi_finger(self):
+    #     """
+    #     Create array of bitcells, ml_precharge and tag flops cascade
+    #     Since the tag flops should contain body contacts, both drc and lvs should pass for the cascade
+    #     """
+    #     from tech import parameter
+    #     c = __import__(OPTS.bitcell)
+    #     mod_bitcell = getattr(c, OPTS.bitcell)
+    #     bitcell = mod_bitcell()
+    #     debug.info(2, "Checking matchline precharge cell")
+    #     size = (1.2 * bitcell.height) / parameter["min_tx_size"]
+    #     cascade = ArrayCascade(8, size)
+    #
+    #     self.local_drc_check(cascade)
 
 
 CamTestBase.run_tests(__name__)

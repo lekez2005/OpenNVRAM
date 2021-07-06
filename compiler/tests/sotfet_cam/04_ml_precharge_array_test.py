@@ -8,12 +8,6 @@ import debug
 
 class MlPrechargeArrayTest(CamTestBase):
 
-    def setUp(self):
-        super(MlPrechargeArrayTest, self).setUp()
-        import tech
-        tech.drc_exceptions["matchline_precharge"] = tech.drc_exceptions["latchup"] + tech.drc_exceptions["min_nwell"]
-        tech.drc_exceptions["ml_precharge_array"] = tech.drc_exceptions["latchup"] + tech.drc_exceptions["min_nwell"]
-
     def test_min_width_ml_cell(self):
         from modules.sotfet import sf_matchline_precharge
         debug.info(2, "Checking matchline precharge cell")
@@ -21,14 +15,12 @@ class MlPrechargeArrayTest(CamTestBase):
         self.local_check(cell)
 
     def test_multiple_fingers_cell(self):
-        from modules.sotfet import sf_matchline_precharge
+        from modules.sotfet.sf_matchline_precharge import sf_matchline_precharge
         from tech import parameter
-        from globals import OPTS
-        c = __import__(OPTS.bitcell)
-        mod_bitcell = getattr(c, OPTS.bitcell)
-        bitcell = mod_bitcell()
+
+        bitcell = self.load_class_from_opts("bitcell")()
         debug.info(2, "Checking matchline precharge cell")
-        cell = sf_matchline_precharge.sf_matchline_precharge(size=(1.2*bitcell.height)/parameter["min_tx_size"])
+        cell = sf_matchline_precharge(size=(1.2*bitcell.height)/parameter["min_tx_size"])
         self.local_check(cell)
 
     def test_precharge_array(self):

@@ -27,11 +27,11 @@ class sotfet_mram_bitcell_array(bitcell_array):
 
     def add_layout_pins(self):
         def get_cell_pin(row_, col_, pin_name_="BL"):
-            return self.get_cell_inst_row(row_ + OPTS.num_dummies)[col_].get_pin(pin_name_)
+            return self.get_cell_inst_row(row_ + OPTS.num_bitcell_dummies)[col_].get_pin(pin_name_)
 
         self.add_bitline_layout_pins()
 
-        pin_width = (get_cell_pin(0, self.column_size - 1 + 2 * OPTS.num_dummies, "RWL").rx() -
+        pin_width = (get_cell_pin(0, self.column_size - 1 + 2 * OPTS.num_bitcell_dummies, "RWL").rx() -
                      get_cell_pin(0, 0, "RWL").lx())
         for row in range(self.row_size):
             for pin_name in ["RWL", "WWL"]:

@@ -196,9 +196,13 @@ class precharge(precharge_characterization, design.design):
         # poly dummys
         if "po_dummy" in tech_layers:
             self.dummy_height = max(drc["po_dummy_min_height"], self.poly_height)
-            poly_layers = 2 * ["po_dummy"] + ["poly"] * self.mults + 2 * ["po_dummy"]
-            poly_x_start -= 2 * self.poly_pitch
-            poly_heights = 2 * [self.dummy_height] + [self.poly_height] * self.mults + 2 * [self.dummy_height]
+            num_dummy = self.num_poly_dummies
+
+            poly_layers = (num_dummy * ["po_dummy"] + ["poly"] * self.mults +
+                           num_dummy * ["po_dummy"])
+            poly_x_start -= num_dummy * self.poly_pitch
+            poly_heights = (num_dummy * [self.dummy_height] + [self.poly_height] * self.mults +
+                            num_dummy * [self.dummy_height])
         else:
             poly_layers = ["poly"] * self.mults
             poly_heights = [self.poly_height] * self.mults

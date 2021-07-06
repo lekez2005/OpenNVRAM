@@ -37,6 +37,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
     """
     name_map = []
     has_dummy = PO_DUMMY in tech_layers
+    num_poly_dummies = info.get("num_poly_dummies", int(has_dummy))
     has_pwell = info["has_pwell"]
 
     def __init__(self, name):

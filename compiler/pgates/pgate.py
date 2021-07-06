@@ -304,7 +304,7 @@ class pgate(pgates_characterization_base, design.design):
         self.middle_space = non_active_height - (actual_top_space + actual_bottom_space)
 
         if PO_DUMMY in tech_layers:
-            self.num_dummy_poly = 4
+            self.num_dummy_poly = 2 * self.num_poly_dummies
             self.total_poly = self.tx_mults + self.num_dummy_poly
             poly_extent = self.total_poly * self.poly_pitch - self.poly_space
             self.width = poly_extent - self.poly_width

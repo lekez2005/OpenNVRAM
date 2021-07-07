@@ -241,7 +241,7 @@ class BitcellAlignedArray(design, ABC):
 
         right_buffer_x_offsets = getattr(OPTS, "repeaters_array_space_offsets", [])
 
-        tap_offsets = self.tap_offsets[1:]  # first tap offset doesn't have to be filled
+        tap_offsets = self.tap_offsets  # first tap offset doesn't have to be filled
         if layer == NWELL:
             if len(right_buffer_x_offsets) > 0:
                 tap_offsets += right_buffer_x_offsets

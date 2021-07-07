@@ -2,11 +2,10 @@
 This is called globals.py, but it actually parses all the arguments and performs
 the global OpenRAM setup as well.
 """
+import copy
 import importlib.util
 import optparse
-import copy
 import os
-import re
 import shutil
 import sys
 from importlib import reload
@@ -45,7 +44,8 @@ def parse_args():
         optparse.make_option("-c", "--characterize", action="store_false", dest="analytical_delay",
                              help="Perform characterization to calculate delays (default is analytical models)"),
         optparse.make_option("-d", "--dontpurge", action="store_false", dest="purge_temp",
-                             help="Don't purge the contents of the temp directory after a successful run")
+                             help="Don't purge the contents of the temp directory after a successful run"),
+        optparse.make_option("--config_file", help="Explicitly specify config file")
         # -h --help is implicit.
     }
 

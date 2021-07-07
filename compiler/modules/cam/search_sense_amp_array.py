@@ -14,10 +14,10 @@ class SearchSenseAmp(design.design):
     """
 
     pin_names = ["vin", "vcomp", "dout", "en", "vdd", "gnd"]
-    lib_name = OPTS.search_sense_amp
+    lib_name = OPTS.search_sense_amp_mod
 
 
-class search_sense_amp_array(design.design):
+class SearchSenseAmpArray(design.design):
     def __init__(self, rows):
         design.design.__init__(self, "search_sense_amp_array")
 
@@ -44,7 +44,7 @@ class search_sense_amp_array(design.design):
         self.add_layout_pins()
 
     def add_amp_array(self):
-        self.amp = SearchSenseAmp()
+        self.amp = self.create_mod_from_str(OPTS.search_sense_amp)
         self.add_mod(self.amp)
         for row in range(self.rows):
             y_offset = row*self.amp.height

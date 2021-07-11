@@ -5,7 +5,8 @@ import tech
 from base import contact
 from base import utils
 from base.contact import m2m3, m3m4
-from base.design import design, NWELL, NIMP, PIMP, METAL1, PO_DUMMY, POLY, DRAWING, METAL2, PWELL, METAL3, METAL4
+from base.design import design, NWELL, NIMP, PIMP, METAL1, PO_DUMMY, POLY, DRAWING, \
+    METAL2, PWELL, METAL3, METAL4, ACTIVE
 from base.geometry import instance
 from base.hierarchy_layout import GDS_ROT_270, GDS_ROT_90
 from base.rotation_wrapper import RotationWrapper
@@ -287,6 +288,55 @@ def evaluate_vertical_metal_spacing(top_module: design, bottom_module: design,
     return space
 
 
+def evaluate_well_active_enclosure_spacing(top_module: design, bottom_module: design,
+                                           min_space):
+    def top_bot_rect(module, layer):
+        rects = module.get_layer_shapes(layer)
+        if not rects:
+            return None
+        if module == top_module:
+            return min(rects, key=lambda x: x.by())
+        else:
+            return max(rects, key=lambda x: x.uy())
+
+    # get top and bottom wells and actives
+    bottom_well = top_bot_rect(bottom_module, NWELL)
+    bottom_active = top_bot_rect(bottom_module, ACTIVE)
+    top_well = top_bot_rect(top_module, NWELL)
+    top_active = top_bot_rect(top_module, ACTIVE)
+
+    # determine what well the actives are in
+    top_is_nwell = top_well and top_active and (
+            top_active.by() >= top_well.by() and top_active.uy() <= top_well.uy())
+    bot_is_nwell = bottom_well and bottom_active and (bottom_active.by() >= bottom_well.by() and
+                                                      bottom_active.uy() <= bottom_well.uy())
+
+    # space by top active
+    space = min_space
+    if top_active:
+        if top_is_nwell:
+            space = - top_active.by() + top_module.well_enclose_active
+        elif top_active:  # space to next nwell
+            bot_nwell_y = bottom_well.uy() if bottom_well else 0
+            space = (-(top_active.by() + (bottom_module.height - bot_nwell_y)) +
+                     top_module.well_enclose_active)
+        min_space = max(min_space, space)
+
+    # space by bottom active
+    if bottom_active:
+        if bot_is_nwell:
+            space = (-(bottom_module.height - bottom_active.uy()) +
+                     top_module.well_enclose_active)
+        elif bottom_active:
+            top_nwell_y = top_well.by() if top_well else top_module.height
+            space = (-(bottom_module.height - bottom_active.uy() + top_nwell_y) +
+                     top_module.well_enclose_active)
+
+        min_space = max(min_space, space)
+
+    return min_space
+
+
 def evaluate_vertical_module_spacing(top_modules: List[design],
                                      bottom_modules: List[design],
                                      layers=None, min_space=None, num_cols=64):
@@ -308,6 +358,9 @@ def evaluate_vertical_module_spacing(top_modules: List[design],
         min_space = - top_modules[0].height  # start with overlap
     for top_module in top_modules:
         for bottom_module in bottom_modules:
+            min_space = max(min_space,
+                            evaluate_well_active_enclosure_spacing(top_module, bottom_module,
+                                                                   min_space))
             for layer in layers:
 
                 wide_space = design.get_wide_space(layer)

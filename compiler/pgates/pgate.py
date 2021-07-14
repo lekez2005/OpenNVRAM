@@ -6,7 +6,6 @@ from base import design
 from base import utils
 from base.contact import m1m2
 from base.design import METAL1, PO_DUMMY, PIMP, NIMP, NWELL, METAL2, POLY
-from base.hierarchy_spice import INPUT, OUTPUT
 from base.utils import round_to_grid
 from base.vector import vector
 from base.well_active_contacts import calculate_contact_width
@@ -625,3 +624,7 @@ class pgate(pgates_characterization_base, design.design):
             name = "{}{}".format(mos.tx_type, index + 1)
             self.add_inst(name=name, mod=mos, offset=offset)
             self.connect_inst(conn)
+
+    def create_pgate_tap(self):
+        from pgates.pgate_tap import pgate_tap
+        return pgate_tap(self)

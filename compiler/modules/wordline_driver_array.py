@@ -143,6 +143,16 @@ class wordline_driver_array(design.design):
                                     width=buffer_inst.rx(),
                                     height=power_pin.height())
 
+    def add_body_taps(self):
+        logic_inst = self.logic_buffer.logic_inst
+        body_tap = logic_inst.mod.create_pgate_tap()
+        x_offset = logic_inst.lx() + self.buffer_insts[0].lx() - body_tap.width
+
+        for row in range(self.rows):
+            y_offset, mirror = self.get_row_y_offset(row)
+            self.add_inst(body_tap.name, body_tap, vector(x_offset, y_offset),
+                          mirror=mirror)
+            self.connect_inst([])
 
     def analytical_delay(self, slew, load=0):
         return self.logic_buffer.analytical_delay(slew, load)

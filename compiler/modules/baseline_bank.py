@@ -1890,12 +1890,24 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         if getattr(self, "col_mux_array_inst", None):
             stack.append(self.col_mux_array_inst)
         stack.append(self.precharge_array_inst)
+        stack.append(self.bitcell_array_inst)
+        stack = [x for x in stack if x]
         return stack
 
     def fill_vertical_module_spaces(self):
         stack = self.get_vertical_instance_stack()
+        bitcell_child_insts = getattr(self.bitcell_array, "child_insts", None)
+        self.bitcell_array.child_insts = self.bitcell_array.cell_inst[0]
+
+        real_stack = []
         for bottom_inst, top_inst in zip(stack[:-1], stack[1:]):
+            if bottom_inst and top_inst:
+                real_stack.append((bottom_inst, top_inst))
+
+        for bottom_inst, top_inst in real_stack:
             join_vertical_adjacent_module_wells(self, bottom_inst, top_inst)
+
+        self.bitcell_array.child_insts = bitcell_child_insts
 
     def add_lvs_correspondence_points(self):
         # Add the bitline names

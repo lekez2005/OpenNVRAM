@@ -407,7 +407,8 @@ def evaluate_vertical_module_spacing(top_modules: List[design],
                         else:
                             right_most = max([top_rect, bottom_rect], key=lambda x: x.lx())
                             left_most = min([top_rect, bottom_rect], key=lambda x: x.lx())
-                            run_length = min(right_most.rx(), left_most.rx()) - right_most.lx()
+                            run_length = min(abs(right_most.rx()),
+                                             abs(left_most.rx() - right_most.lx()))
 
                         target_space = design. \
                             get_space_by_width_and_length(layer,
@@ -470,13 +471,14 @@ def join_vertical_adjacent_module_wells(bank: design, bottom_inst, top_inst):
     if hasattr(tech, "vertical_mod_fill_layers"):
         layers.extend(tech.vertical_mod_fill_layers)
 
-    top_mod = top_inst.mod.child_mod  # type: design
+    top_child_inst = top_inst.mod.child_insts[0]
     bottom_mod = bottom_inst.mod.child_mod  # type: design
+    bottom_child_inst = bottom_inst.mod.child_insts[0]
 
     for top_layer, bottom_layer in layers:
         layer_space = get_layer_space(bank, top_layer, bottom_layer)
-        top_rects = top_mod.get_layer_shapes(top_layer, recursive=True)
-        bottom_rects = bottom_mod.get_layer_shapes(bottom_layer, recursive=True)
+        top_rects = top_child_inst. get_layer_shapes(top_layer, recursive=True)
+        bottom_rects = bottom_child_inst.get_layer_shapes(bottom_layer, recursive=True)
         if not top_rects or not bottom_rects:
             continue
         top_rect = min(top_rects, key=lambda x: x.by())

@@ -351,13 +351,21 @@ def evaluate_vertical_module_spacing(top_modules: List[design],
     """
     if layers is None:
         layers = [METAL1, POLY, PO_DUMMY, NIMP, PIMP]
-    if not top_modules[0].has_dummy:
+    if PO_DUMMY not in tech.layer:
         layers.remove(PO_DUMMY)
 
     if min_space is None:
         min_space = - top_modules[0].height  # start with overlap
     for top_module in top_modules:
+        if isinstance(top_module, design):
+            top_inst = top_module
+        else:
+            top_inst, top_module = top_module, top_module.mod
         for bottom_module in bottom_modules:
+            if isinstance(bottom_module, design):
+                bottom_inst = bottom_module
+            else:
+                bottom_inst, bottom_module = bottom_module, bottom_module.mod
             min_space = max(min_space,
                             evaluate_well_active_enclosure_spacing(top_module, bottom_module,
                                                                    min_space))
@@ -365,11 +373,11 @@ def evaluate_vertical_module_spacing(top_modules: List[design],
 
                 wide_space = design.get_wide_space(layer)
 
-                top_rects = top_module.get_layer_shapes(layer, recursive=True)
+                top_rects = top_inst.get_layer_shapes(layer, recursive=True)
                 top_rects = [x for x in top_rects if x.by() < wide_space]
                 top_rects = list(sorted(top_rects, key=lambda x: x.by()))
 
-                bottom_rects = bottom_module.get_layer_shapes(layer, recursive=True)
+                bottom_rects = bottom_inst.get_layer_shapes(layer, recursive=True)
                 bottom_rects = [x for x in bottom_rects
                                 if x.uy() > bottom_module.height - wide_space]
                 bottom_rects = list(sorted(bottom_rects, key=lambda x: x.uy(), reverse=True))

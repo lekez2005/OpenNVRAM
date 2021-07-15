@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 from importlib import reload
 
 import debug
@@ -8,8 +9,14 @@ period_32_rows = 20e-12
 setup_time = 10e-12
 rise_time = 5e-12
 
+if TYPE_CHECKING:
+    from testutils import OpenRamTest
+else:
+    class OpenRamTest:
+        pass
 
-class RowDecoderBase:
+
+class RowDecoderBase(OpenRamTest):
     def test_row_32(self):
         self.run_for_rows(32)
 

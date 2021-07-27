@@ -97,28 +97,23 @@ def create_wells_and_implants_fills(left_mod: design, right_mod: design,
         right_mod_rects = right_mod.get_layer_shapes(layer, purpose=purpose)
 
         for left_mod_rect in left_mod_rects:
+            if left_mod_rect.rx() < left_mod.width:
+                continue
             # find right mod rect which overlaps
-            overlap_rect = None
             for right_mod_rect in right_mod_rects:
+                if right_mod_rect.lx() > 0:
+                    continue
                 if left_mod_rect.by() < right_mod_rect.by():
                     lowest_rect, highest_rect = left_mod_rect, right_mod_rect
                 else:
                     lowest_rect, highest_rect = right_mod_rect, left_mod_rect
-                if lowest_rect.uy() > highest_rect.by():
-                    overlap_rect = right_mod_rect
-                    break
-            if overlap_rect is None:
-                continue
-            # find alignment point. e.g. if alignment is on top, then keep the tops aligned
-            if utils.ceil(overlap_rect.uy()) == utils.ceil(left_mod_rect.uy()):
-                rect_top = min(overlap_rect.uy(), left_mod_rect.uy())
-                rect_bottom = max(overlap_rect.by(), left_mod_rect.by())
-            else:
-                rect_bottom = max(overlap_rect.by(), left_mod_rect.by())
-                rect_top = min(overlap_rect.uy(), left_mod_rect.uy())
+                if lowest_rect.uy() < highest_rect.by():  # no overlap
+                    continue
+                rect_top = min(right_mod_rect.uy(), left_mod_rect.uy())
+                rect_bottom = max(right_mod_rect.by(), left_mod_rect.by())
 
-            fill_rect = (layer, rect_bottom, rect_top, left_mod_rect, overlap_rect)
-            all_fills.append(fill_rect)
+                fill_rect = (layer, rect_bottom, rect_top, left_mod_rect, right_mod_rect)
+                all_fills.append(fill_rect)
     return all_fills
 
 
@@ -351,21 +346,23 @@ def evaluate_vertical_module_spacing(top_modules: List[design],
     """
     if layers is None:
         layers = [METAL1, POLY, PO_DUMMY, NIMP, PIMP]
-    if PO_DUMMY not in tech.layer:
+    if PO_DUMMY not in tech.layer and PO_DUMMY in layers:
         layers.remove(PO_DUMMY)
 
     if min_space is None:
         min_space = - top_modules[0].height  # start with overlap
     for top_module in top_modules:
-        if isinstance(top_module, design):
-            top_inst = top_module
-        else:
+        if isinstance(top_module, instance):
             top_inst, top_module = top_module, top_module.mod
+        else:
+            top_inst = top_module
+
         for bottom_module in bottom_modules:
-            if isinstance(bottom_module, design):
-                bottom_inst = bottom_module
-            else:
+            if isinstance(bottom_module, instance):
                 bottom_inst, bottom_module = bottom_module, bottom_module.mod
+            else:
+                bottom_inst = bottom_module
+
             min_space = max(min_space,
                             evaluate_well_active_enclosure_spacing(top_module, bottom_module,
                                                                    min_space))

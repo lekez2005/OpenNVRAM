@@ -1,5 +1,5 @@
 import debug
-from base import contact
+from base import contact, utils
 from base import unique_meta
 from base.design import METAL1
 from base.vector import vector
@@ -76,6 +76,14 @@ class pinv(pgate.pgate, metaclass=unique_meta.Unique):
         add_tech_layers(self)
         self.add_boundary()
 
+    def get_total_vertical_space(self, nmos_width=None, pmos_width=None):
+        """Use min-tx width for calculating vertical spaces"""
+        if nmos_width is None:
+            nmos_width = utils.ceil(self.nmos_scale * self.min_tx_width)
+        if pmos_width is None:
+            pmos_width = utils.ceil(self.pmos_scale * self.beta * self.min_tx_width)
+        return super().get_total_vertical_space(nmos_width, pmos_width)
+
     def add_poly_contacts(self):
         if self.tx_mults == 1:
             pin_height = contact.poly.second_layer_height
@@ -114,20 +122,20 @@ class pinv(pgate.pgate, metaclass=unique_meta.Unique):
         r = spice["min_tx_r"]/(self.nmos_size/parameter["min_tx_size"])
         c_para = spice["min_tx_drain_c"]*(self.nmos_size/parameter["min_tx_size"])#ff
         return self.cal_delay_with_rc(r = r, c =  c_para+load, slew = slew)
-        
+
     def analytical_power(self, proc, vdd, temp, load):
         """Returns dynamic and leakage power. Results in nW"""
         c_eff = self.calculate_effective_capacitance(load)
         freq = spice["default_event_rate"]
         power_dyn = c_eff*vdd*vdd*freq
         power_leak = spice["inv_leakage"]
-        
+
         total_power = self.return_power(power_dyn, power_leak)
         return total_power
-        
+
     def calculate_effective_capacitance(self, load):
         """Computes effective capacitance. Results in fF"""
         c_load = load
         c_para = spice["min_tx_drain_c"]*(self.nmos_size/parameter["min_tx_size"])#ff
         transistion_prob = spice["inv_transisition_prob"]
-        return transistion_prob*(c_load + c_para) 
+        return transistion_prob*(c_load + c_para)

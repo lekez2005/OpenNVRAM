@@ -98,6 +98,8 @@ class pgate(pgates_characterization_base, design.design):
         if "nand" in self.__class__.__name__:
             # higher beta can help nand's since pmos wouldn't reach min_width as quickly
             beta_factors = [1, 1.2, 1.4]
+        elif "nor" in self.__class__.__name__:
+            beta_factors = [1, 1/1.25, 1/1.5, 1/1.75]
         else:
             beta_factors = [1]
         original_beta = self.beta
@@ -117,9 +119,9 @@ class pgate(pgates_characterization_base, design.design):
     def get_total_vertical_space(self, nmos_width=None, pmos_width=None):
         """Estimate space below nfets, between nfets and pfets and above pfets"""
         if nmos_width is None:
-            nmos_width = utils.ceil(self.nmos_scale * self.min_tx_width)
+            nmos_width = utils.ceil(self.nmos_size * self.min_tx_width)
         if pmos_width is None:
-            pmos_width = utils.ceil(self.pmos_scale * self.beta * self.min_tx_width)
+            pmos_width = utils.ceil(self.pmos_size * self.beta * self.min_tx_width)
 
         # top and bottom space based on power rails
         self.top_space, self.pmos_fill_width, self.pmos_fill_height = \

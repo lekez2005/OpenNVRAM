@@ -10,7 +10,7 @@ try:
 except ImportError:
     from .script_loader import load_setup
 
-setup, tech_name = load_setup()
+setup, tech_name, _ = load_setup()
 output_folder = os.path.join(os.environ["SCRATCH"], "openram", "tmp/spice_export")
 
 cellviews = ["cell_6t", "sense_amp", "write_driver", "ms_flop", "replica_cell_6t", "tri_gate"]

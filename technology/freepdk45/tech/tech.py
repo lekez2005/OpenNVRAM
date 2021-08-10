@@ -8,8 +8,9 @@ File containing the process technology parameters for FreePDK 45nm.
 def add_tech_layers(obj):
     for layer_ in ["nwell", "pwell"]:
         for well_rect in obj.get_layer_shapes(layer_):
-            obj.add_rect("vtg", offset=well_rect.ll(), width=well_rect.width,
-                         height=well_rect.height)
+            width = well_rect.rx() - well_rect.lx()
+            height = well_rect.uy() - well_rect.by()
+            obj.add_rect("vtg", offset=well_rect.ll(), width=width, height=height)
 
 
 def delay_params_class():

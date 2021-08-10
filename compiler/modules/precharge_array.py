@@ -1,7 +1,6 @@
 import debug
 from base import design
-from base import utils
-from base.design import NWELL
+from base.design import NWELL, PWELL
 from base.vector import vector
 from globals import OPTS
 from modules.precharge import precharge, precharge_tap
@@ -73,13 +72,20 @@ class precharge_array(design.design):
             self.copy_layout_pin(inst, "br", "br[{0}]".format(i))
             self.connect_inst(["bl[{0}]".format(i), "br[{0}]".format(i),
                                "en", "vdd"])
-        for x_offset in self.tap_offsets:
-            self.add_inst(self.body_tap.name, self.body_tap, offset=vector(x_offset, 0))
-            self.connect_inst([])
+        if self.body_tap:
+            for x_offset in self.tap_offsets:
+                self.add_inst(self.body_tap.name, self.body_tap, offset=vector(x_offset, 0))
+                self.connect_inst([])
         self.width = inst.rx()
+        self.extend_wells()
 
-        # fill nwell
-        rect = self.pc_cell.get_layer_shapes(NWELL)[0]
-        enclosure = self.well_enclose_ptx_active
-        self.add_rect(NWELL, offset=vector(-enclosure, rect.by()),
-                      width=self.width + 2 * enclosure, height=rect.height)
+    def extend_wells(self):
+        # fill wells
+        layers = [NWELL]
+        if self.has_pwell:
+            layers.append(PWELL)
+        for layer in layers:
+            rect = self.pc_cell.get_layer_shapes(layer)[0]
+            enclosure = self.well_enclose_ptx_active
+            self.add_rect(layer, offset=vector(-enclosure, rect.by()),
+                          width=self.width + 2 * enclosure, height=rect.height)

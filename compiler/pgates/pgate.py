@@ -5,7 +5,7 @@ from base import contact
 from base import design
 from base import utils
 from base.contact import m1m2
-from base.design import METAL1, PO_DUMMY, PIMP, NIMP, NWELL, METAL2, POLY
+from base.design import METAL1, PO_DUMMY, PIMP, NIMP, NWELL, METAL2, POLY, PWELL
 from base.utils import round_to_grid
 from base.vector import vector
 from base.well_active_contacts import calculate_contact_width
@@ -99,7 +99,7 @@ class pgate(pgates_characterization_base, design.design):
             # higher beta can help nand's since pmos wouldn't reach min_width as quickly
             beta_factors = [1, 1.2, 1.4]
         elif "nor" in self.__class__.__name__:
-            beta_factors = [1, 1/1.25, 1/1.5, 1/1.75]
+            beta_factors = [1, 1 / 1.25, 1 / 1.5, 1 / 1.75]
         else:
             beta_factors = [1]
         original_beta = self.beta
@@ -570,12 +570,15 @@ class pgate(pgates_characterization_base, design.design):
                 self.add_contact_center(self.body_contact.layer_stack, rotate=90,
                                         offset=vector(self.mid_x, y_offset),
                                         size=self.body_contact.dimensions)
+            else:
+                continue
 
             # cover with well
             if info["has_pwell"]:
-                well_layer = "pwell" if i == 0 else "nwell"
+                well_layer = PWELL if i == 0 else NWELL
                 self.add_rect_center(well_layer, offset=vector(self.mid_x, y_offset),
-                                     width=self.contact_nwell_width, height=self.contact_nwell_height)
+                                     width=self.contact_nwell_width,
+                                     height=self.contact_nwell_height)
 
     def add_output_pin(self):
         offset = vector(self.output_x, self.active_mid_y_nmos)

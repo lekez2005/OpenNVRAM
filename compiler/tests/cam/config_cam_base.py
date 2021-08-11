@@ -1,40 +1,37 @@
+from copy import copy
+
 from modules.shared_decoder.config_shared import *
+
+independent_banks = False
 
 # modules
 bitcell = "cam_bitcell"
 bitcell_mod = "cam_bitcell"
+body_tap_mod = "cam_body_tap"
 replica_bitcell = "cam_replica_bitcell"
 bitcell_array = "cam_bitcell_array"
 
-precharge = "matchline_precharge.MatchlinePrecharge"
-precharge_array = "matchline_precharge_array.MatchlinePrechargeArray"
+ml_precharge = "matchline_precharge.MatchlinePrecharge"
+ml_precharge_array = "matchline_precharge_array.MatchlinePrechargeArray"
+precharge = "cam_precharge.CamPrecharge"
+precharge_array = "cam_precharge_array.CamPrechargeArray"
+ml_precharge_size = 4
+
+write_driver_mod = "write_driver_mux_buffer"
 
 search_sense_amp = "search_sense_amp_array.SearchSenseAmp"
-search_sense_amp_mod = "search_sense_amp"
+search_sense_amp_mod = "ml_sense_amp"
 search_sense_amp_array = "search_sense_amp_array.SearchSenseAmpArray"
 
-sense_amp_mod = "cam_sense_amp"
-write_driver = "cam_write_driver"
-write_driver_array = "cam_write_driver_array"
-cam_sl_driver = "cam_sl_driver"
-address_mux = "address_mux"
-address_mux_array = "address_mux_array"
-sl_driver_array = "sl_driver_array"
-tag_flop_array = "tag_flop_array"
-replica_bitline = "cam_replica_bitline"
-col_decoder = "cam_column_decoder"
-control_logic = "cam_control_logic"
-body_tap_mod = "cam_body_tap"
+control_buffers_class = "cam_control_buffers.CamControlBuffers"
+wordline_en_buffers = [3.42, 11.7, 40]
 
-cam_block = "cam_block"
+ml_buffers = [2.51, 6.32, 15.9, 40]
+precharge_buffers = copy(wordline_en_buffers)
+discharge_buffers = copy(ml_buffers)
 
-wwl_buffer_stages = [4, 8, 16]
-bank_gate_buffers = {  # buffers for bank gate. "default" used for unspecified signals
-    "default": [2, 4, 8],
-    "clk": [2, 6, 12, 24, 24],
-    "w_en": [2, 8, 24],
-    "search_en": [2, 8, 24]
-}
+bank_class = "cam_bank.CamBank"
+sram_class = "cam.Cam"
 
 # cam config
 word_size = 32
@@ -42,8 +39,9 @@ num_words = 256
 num_banks = 2
 words_per_row = 1
 
-openram_temp = os.path.join(os.environ["SCRATCH"], "openram", "openram_cam")
-spice_file = os.path.join(openram_temp, 'temp.sp')
-pex_spice = os.path.join(openram_temp, 'pex.sp')
-reduced_spice = os.path.join(openram_temp, 'reduced.sp')
-gds_file = os.path.join(openram_temp, 'temp.gds')
+
+def configure_sizes(bank, OPTS):
+    if bank.words_per_row > 1:
+        OPTS.ml_buffers = [40 ** ((x + 1) / 3) for x in range(3)]
+    else:
+        OPTS.ml_buffers = [40 ** ((x + 1) / 4) for x in range(4)]

@@ -718,7 +718,7 @@ class ControlBuffers(design, ABC):
 
         self.add_rect(METAL2, offset=vector(x_offset, in_pin.cy() - 0.5 * self.m2_width),
                       width=in_pin.cx() - x_offset)
-        self.add_contact_center(m1m2.layer_stack, offset=in_pin.center())
+        self.add_cross_contact_center(cross_m1m2, offset=in_pin.center(), rotate=False)
 
     def route_direct_rail_to_pin(self, pin_connection: PinConnection, rail, x_offset,
                                  add_rail_via=True):

@@ -108,12 +108,13 @@ class CmosSram(design):
 
     def route_layout(self):
         debug.info(1, "Route sram")
+        self.fill_decoder_wordline_space()
         self.route_column_decoder()
         self.route_row_decoder_clk()
         self.route_decoder_power()
         self.route_decoder_outputs()
         self.join_bank_controls()
-        self.fill_decoder_wordline_space()
+
         self.route_left_bank_power()
 
         self.copy_layout_pins()
@@ -236,35 +237,42 @@ class CmosSram(design):
 
         self.add_mod(self.column_decoder)
 
-    def add_pins(self):
+    def get_schematic_pins(self):
+        pins = []
         if self.num_banks == 2 and not OPTS.independent_banks:
             word_size = self.word_size * 2
         else:
             word_size = self.word_size
         for i in range(word_size):
-            self.add_pin("DATA[{0}]".format(i))
+            pins.append("DATA[{0}]".format(i))
             if OPTS.independent_banks and self.num_banks == 2:
-                self.add_pin("DATA_1[{0}]".format(i))
+                pins.append("DATA_1[{0}]".format(i))
             if self.bank.has_mask_in:
-                self.add_pin("MASK[{0}]".format(i))
+                pins.append("MASK[{0}]".format(i))
                 if OPTS.independent_banks and self.num_banks == 2:
-                    self.add_pin("MASK_1[{0}]".format(i))
+                    pins.append("MASK_1[{0}]".format(i))
 
         for i in range(self.bank_addr_size):
-            self.add_pin("ADDR[{0}]".format(i))
+            pins.append("ADDR[{0}]".format(i))
 
-        replacements = {key: val for key, val in self.get_bank_connection_replacements()}
+        replacements_list = [x[:2] for x in self.get_bank_connection_replacements()]
+        replacements = {key: val for key, val in replacements_list}
         self.control_pin_names = []
         for pin_name in self.control_inputs:
             new_pin_name = replacements.get(pin_name, pin_name)
             self.control_pin_names.append(new_pin_name)
-            self.add_pin(new_pin_name)
+            pins.append(new_pin_name)
 
-        self.add_pin_list(["vdd", "gnd"])
+        pins.extend(["vdd", "gnd"])
+        return pins
+
+    def add_pins(self):
+        self.add_pin_list(self.get_schematic_pins())
 
     def copy_layout_pins(self):
 
-        replacements = {key: val for key, val in self.get_bank_connection_replacements()}
+        replacements_list = [x[:2] for x in self.get_bank_connection_replacements()]
+        replacements = {key: val for key, val in replacements_list}
 
         right_bank = self.bank_insts[0]
         for pin_name in self.control_inputs:
@@ -913,7 +921,7 @@ class CmosSram(design):
         decoder_inverter = self.row_decoder.inv_inst[-1].mod
         fill_layers, fill_purposes = [], []
         for layer, purpose in zip(*get_default_fill_layers()):
-            if layer not in [PWELL, ACTIVE]:
+            if layer not in [ACTIVE]:
                 # No NIMP, PWELL to prevent min spacing to PIMP, NWELL respectively
                 fill_layers.append(layer)
                 fill_purposes.append(purpose)
@@ -940,7 +948,8 @@ class CmosSram(design):
                     rect_top = max(right_rect.uy(), left_rect.uy())
                 if right_rect.by() < 0 or left_rect.by() < 0:
                     rect_bottom = min(right_rect.by(), left_rect.by())
-                if layer == NIMP:  # prevent space from pimplant to nimplant
+                if layer in [NIMP, PWELL]:
+                    # prevent space from pimplant to nimplant or PWELL to NWELL
                     rect_top = max(left_rect.uy(), right_rect.uy())
                 # cover align with bitcell nwell
                 if row % (2 * bitcell_rows_per_driver) == 0:
@@ -1105,5 +1114,6 @@ class CmosSram(design):
 
     def add_cross_contact_center(self, cont, offset, rotate=False,
                                  rail_width=None):
-        super().add_cross_contact_center(cont, offset, rotate)
+        cont_inst = super().add_cross_contact_center(cont, offset, rotate)
         self.add_cross_contact_center_fill(cont, offset, rotate, rail_width)
+        return cont_inst

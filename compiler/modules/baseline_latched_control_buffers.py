@@ -132,8 +132,11 @@ class LatchedControlBuffers(ControlBuffers):
                       ["bank_sel", "chip_sel", "bank_sel_bar", "bank_sel_buf"])
         connections.insert(0, connection)
 
-    @staticmethod
-    def remove_floating_pins(candidate_pins, output_pins, mod):
+    def remove_floating_pins(self, candidate_pins, output_pins, mod):
+        if isinstance(mod, str):
+            mod = getattr(self.bank, mod, None)
+        if not mod:
+            return
         for pin_name in candidate_pins:
             if isinstance(pin_name, tuple):
                 pin_name, dest_pin = pin_name
@@ -142,23 +145,23 @@ class LatchedControlBuffers(ControlBuffers):
             if pin_name not in mod.pins and dest_pin in output_pins:
                 output_pins.remove(dest_pin)
 
-    def get_schematic_pins(self):
+    def get_input_schematic_pins(self):
         precharge_trigger = ["precharge_trig"] * self.use_precharge_trigger
         chip_sel = ["chip_sel"] * self.use_chip_sel
-        decoder_clk = ["decoder_clk"] * self.use_decoder_clk
-
         in_pins = chip_sel + ["bank_sel", "read", "clk", "sense_trig"] + precharge_trigger
+        return in_pins
+
+    def get_schematic_pins(self):
+        in_pins = self.get_input_schematic_pins()
+        decoder_clk = ["decoder_clk"] * self.use_decoder_clk
         out_pins = decoder_clk + ["clk_buf", "clk_bar", "wordline_en", "precharge_en_bar",
                                   "write_en", "write_en_bar", "sense_en", "sense_en_bar",
                                   "tri_en", "tri_en_bar", "sample_en_bar"]
 
         self.remove_floating_pins([("en", "write_en"), ("en_bar", "write_en_bar")],
-                                  out_pins,
-                                  self.bank.write_driver_array)
+                                  out_pins, "write_driver_array")
         self.remove_floating_pins([("en", "sense_en"), ("en_bar", "sense_en_bar")],
-                                  out_pins,
-                                  self.bank.sense_amp_array)
+                                  out_pins,"sense_amp_array")
         self.remove_floating_pins([("en", "tri_en"), ("en_bar", "tri_en_bar")],
-                                  out_pins,
-                                  self.bank.tri_gate_array)
+                                  out_pins, "tri_gate_array")
         return in_pins, out_pins

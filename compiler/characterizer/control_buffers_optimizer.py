@@ -24,8 +24,6 @@ class ControlBufferOptimizer:
 
     def run_optimizations(self):
         run_optimizations_ = getattr(OPTS, 'run_optimizations', False)
-        if hasattr(OPTS, 'configure_sizes'):
-            getattr(OPTS, 'configure_sizes')(self.bank, OPTS)
         if not run_optimizations_:
             return False
 

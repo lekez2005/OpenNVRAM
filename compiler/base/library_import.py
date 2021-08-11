@@ -27,7 +27,7 @@ def library_import(cls):
             debug.info(2, "Create {}".format(mod_name))
 
             (self.width, self.height) = utils.get_libcell_size(mod_name, GDS["unit"], layer["boundary"])
-            pin_names = getattr(cls, "pin_names", self.pins)
+            pin_names = getattr(self.__class__, "pin_names", self.pins)
             self.pin_map = utils.get_libcell_pins(pin_names, mod_name, GDS["unit"], layer["boundary"])
 
     return GdsLibImport

@@ -208,23 +208,16 @@ class layout(lef.lef):
             offset = vector(0.5*minwidth_layer,0)
             return self.add_rect(layer,start-offset,minwidth_layer,end.y-start.y)
 
-
-    
     def get_pin(self, text):
         """ Return the pin or list of pins """
         text = text.lower()
-        try:
-            if len(self.pin_map[text])>1:
-                debug.warning("Should use a pin iterator since more than one pin {}".format(text))
-            # If we have one pin, return it and not the list.
-            # Otherwise, should use get_pins()
-            return self.pin_map[text][0]
-        except Exception as e:
-            #print e
-            self.gds_write(os.path.join(OPTS.openram_temp, "missing_pin.gds"))
-            debug.error("No pin found with name {0} on {1}. Saved as missing_pin.gds.".format(text,self.name),-1)
-            
-            
+        if not self.pin_map.get(text, None):
+            debug.error(f"No pin found with name {text} on {self.name}.", -1)
+        if len(self.pin_map[text]) > 1:
+            debug.warning("Should use a pin iterator since more than one pin {}".format(text))
+        # If we have one pin, return it and not the list.
+        # Otherwise, should use get_pins()
+        return self.pin_map[text][0]
 
     def get_pins(self, text):
         """ Return a pin list (instead of a single pin) """
@@ -459,8 +452,9 @@ class layout(lef.lef):
             via_x = offset.x - 0.5 * cont.width
             rotate = 0
             via_y = offset.y - 0.5 * cont.height
-        self.add_inst(cont.name, cont, offset=vector(via_x, via_y), rotate=rotate)
+        cont_inst = self.add_inst(cont.name, cont, offset=vector(via_x, via_y), rotate=rotate)
         self.connect_inst([])
+        return cont_inst
 
     def add_cross_contact_center_fill(self, cont, offset, rotate=False, rail_width=None):
         if rail_width is None:

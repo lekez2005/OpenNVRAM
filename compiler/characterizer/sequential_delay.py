@@ -7,7 +7,7 @@ import numpy as np
 import debug
 import tech
 from base import utils
-from characterizer.sram_probe import SramProbe
+from characterizer.net_probes.sram_probe import SramProbe
 from globals import OPTS
 import verify
 from . import delay

@@ -4,7 +4,7 @@ import characterizer
 import debug
 import verify
 from characterizer import sequential_delay
-from characterizer import sram_probe
+from characterizer.net_probes import sram_probe
 from globals import OPTS
 
 

@@ -7,7 +7,7 @@ import numpy as np
 
 import debug
 from characterizer.dependency_graph import get_instance_module, get_net_driver, get_all_net_drivers
-from characterizer.probe_utils import get_current_drivers, get_all_tx_fingers, format_bank_probes, \
+from characterizer.net_probes.probe_utils import get_current_drivers, get_all_tx_fingers, format_bank_probes, \
     get_voltage_connections, get_extracted_prefix
 from globals import OPTS
 

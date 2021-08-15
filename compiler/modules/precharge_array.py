@@ -72,7 +72,7 @@ class precharge_array(design.design):
             self.copy_layout_pin(inst, "br", "br[{0}]".format(i))
             self.connect_inst(["bl[{0}]".format(i), "br[{0}]".format(i),
                                "en", "vdd"])
-        if self.body_tap:
+        if getattr(self, "body_tap", None):
             for x_offset in self.tap_offsets:
                 self.add_inst(self.body_tap.name, self.body_tap, offset=vector(x_offset, 0))
                 self.connect_inst([])
@@ -85,7 +85,10 @@ class precharge_array(design.design):
         if self.has_pwell:
             layers.append(PWELL)
         for layer in layers:
-            rect = self.pc_cell.get_layer_shapes(layer)[0]
+            layer_shapes = self.pc_cell.get_layer_shapes(layer)
+            if not layer_shapes:
+                continue
+            rect = layer_shapes[0]
             enclosure = self.well_enclose_ptx_active
             self.add_rect(layer, offset=vector(-enclosure, rect.by()),
                           width=self.width + 2 * enclosure, height=rect.height)

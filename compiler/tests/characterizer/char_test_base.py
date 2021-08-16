@@ -388,7 +388,7 @@ mvarsearch {{
             stim_file.write(".save I(Vac)\n".format(pin_name))
             stim_file.write(".ac dec 10 {} {}\n".format(min_f, max_f))
         stim.run_sim()
-        from psf_reader import PsfReader
+        from characterizer.simulation.psf_reader import PsfReader
         # TODO output file name by simulator
         sim_data = PsfReader(self.prefix("frequencySweep.ac"))
         f = sim_data.data.get_sweep_values()

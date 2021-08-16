@@ -112,6 +112,9 @@ buffer_repeaters_col_threshold = 128
 
 
 def configure_sizes(bank, OPTS):
+    # TODO multi stage buffer for predecoder col mux. pnor3 too large for 3x8 buffer
+    if OPTS.words_per_row > 2:
+        OPTS.column_decoder_buffers = [4]  # use single stage
     num_rows = bank.num_rows
     num_cols = bank.num_cols
     if num_rows > 127:

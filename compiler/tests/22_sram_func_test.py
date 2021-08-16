@@ -14,7 +14,7 @@ OPTS.analytical_delay = False
 OpenRamTest.initialize_tests()
 
 import tech
-from characterizer import delay
+from characterizer import SpiceCharacterizer
 
 
 @skipIf(not OPTS.spice_exe, "{} not available".format(OPTS.spice_name))
@@ -37,7 +37,7 @@ class SramFuncTest(OpenRamTest):
         debug.info(1, "Probe address {0} probe data {1}".format(probe_address, probe_data))
 
         corner = (OPTS.process_corners[0], OPTS.supply_voltages[0], OPTS.temperatures[0])
-        d = delay(s, tempspice, corner)
+        d = SpiceCharacterizer(s, tempspice, corner)
         d.set_probe(probe_address, probe_data)
 
         # This will exit if it doesn't find a feasible period

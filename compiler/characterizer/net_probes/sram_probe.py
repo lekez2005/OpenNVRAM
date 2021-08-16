@@ -729,7 +729,7 @@ class SramProbe(object):
             debug.error("Invalid address: {}".format(address))
 
     def address_to_int(self, address):
-        """address is vector of integers MSB first"""
+        """Convert address to integer. Address can be vector of integers MSB first or integer"""
         if type(address) == int:
             return address
         elif type(address) == list:

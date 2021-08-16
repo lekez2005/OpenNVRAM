@@ -183,7 +183,7 @@ class MeasureResistance(CharTestBase):
         return r_n, r_p, fall_time, rise_time, scale_factor
 
     def plot_sim(self):
-        from psf_reader import PsfReader
+        from characterizer.simulation.psf_reader import PsfReader
 
         sim_dir = "beta_{:.3g}".format(self.options.beta)
         self.set_temp_folder(sim_dir)

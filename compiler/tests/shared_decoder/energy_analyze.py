@@ -5,7 +5,7 @@ import re
 import numpy as np
 
 from shared_simulator import create_arg_parser, parse_options, get_sim_directory, CMOS_MODE
-from psf_reader import PsfReader
+from characterizer.simulation.psf_reader import PsfReader
 
 arg_parser = create_arg_parser()
 arg_parser.add_argument("-v", "--verbose", action="count", default=0)

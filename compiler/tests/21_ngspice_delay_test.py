@@ -19,7 +19,7 @@ class TimingSramTest(OpenRamTest):
 
     @skipIf(not OPTS.spice_exe, "ngspice not found")
     def runTest(self):
-        from characterizer import delay
+        from characterizer import SpiceCharacterizer
         import tech
         import sram
 
@@ -37,7 +37,7 @@ class TimingSramTest(OpenRamTest):
         debug.info(1, "Probe address {0} probe data {1}".format(probe_address, probe_data))
 
         corner = (OPTS.process_corners[0], OPTS.supply_voltages[0], OPTS.temperatures[0])
-        d = delay(s, tempspice, corner)
+        d = SpiceCharacterizer(s, tempspice, corner)
 
         loads = [tech.spice["msflop_in_cap"] * 4]
         slews = [tech.spice["rise_time"] * 2]

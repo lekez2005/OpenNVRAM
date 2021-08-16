@@ -3,7 +3,7 @@ from importlib import reload
 import characterizer
 import debug
 import verify
-from characterizer import sequential_delay
+from characterizer import SpiceCharacterizer
 from characterizer.net_probes import sram_probe
 from globals import OPTS
 
@@ -113,7 +113,7 @@ class FunctionalTest:
 
     def create_delay(self, corner, delay=None):
         if delay is None:
-            self.delay = sequential_delay.SequentialDelay(self.sram, self.spice_file, corner)
+            self.delay = SpiceCharacterizer(self.sram, self.spice_file, corner)
         else:
             self.delay = delay
         if len(self.addresses) > 0:

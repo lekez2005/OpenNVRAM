@@ -1,31 +1,37 @@
 import os
 import re
-import subprocess
 
 import debug
 from globals import OPTS
 
 
-def relative_compare(value1,value2,error_tolerance=0.001):
+def relative_compare(value1, value2, error_tolerance=0.001):
     """ This is used to compare relative values for convergence. """
-    return (abs(value1 - value2) / max(value1,value2) <= error_tolerance)
+    return (abs(value1 - value2) / max(value1, value2) <= error_tolerance)
 
 
-def get_measurement_file(filename):
+def get_measurement_file():
     if OPTS.spice_name == "xa":
         # customsim has a different output file name
-        full_filename = os.path.join(OPTS.openram_temp, "xa.meas")
+        return "xa.meas"
     elif OPTS.spice_name == "spectre":
-        full_filename = temp_filename = os.path.join(OPTS.openram_temp, "transient1.meas_tran")
-        if OPTS.spectre_format in ["psfxl", "psfbin"] and os.path.exists(full_filename):
-            full_filename = os.path.join(OPTS.openram_temp, "transient1.meas_tran_ascii")
-            cmd = "psf {} > {}".format(temp_filename, full_filename)
-            subprocess.run(cmd, shell=True, check=True)
+        return "stim.measure"
+    elif OPTS.spice_name == "hspice":
+        return "timing.mt0"
     else:
-        # ngspice/hspice using a .lis file
-        full_filename = os.path.join(OPTS.openram_temp, filename + ".lis")
+        # ngspice using a .lis file
+        return "timing.lis"
 
-    return full_filename
+
+def get_sim_file():
+    if OPTS.spice_name == "spectre":
+        return "tran.tran.tran"
+    elif OPTS.spice_name == "hspice":
+        return "timing.tr0"
+    elif OPTS.spice_name == "xa":
+        return "xa"
+    else:
+        return "timing.lis"
 
 
 def parse_output(filename, key, find_max=True):
@@ -34,11 +40,11 @@ def parse_output(filename, key, find_max=True):
         re_pattern = r'"{0}"\s*"measReal"\s*((?:\d+.?\d*[e]?[-+]?[0-9]*)|(?:nan)\S*)\s+.*'.format(key)
     else:
         re_pattern = r"{0}\s*=\s*(-?\d+.?\d*[e]?[-+]?[0-9]*\S*)\s+.*".format(key)
-    full_filename = get_measurement_file(filename)
+    full_filename = get_measurement_file()
     try:
         f = open(full_filename, "rt")
     except IOError:
-        debug.error("Unable to open spice output file: {0}".format(full_filename),1)
+        debug.error("Unable to open spice output file: {0}".format(full_filename), 1)
     else:
         with f:
             contents = f.read()
@@ -58,39 +64,41 @@ def parse_output(filename, key, find_max=True):
         else:
             return vals_float
 
-    
-def round_time(time,time_precision=3):
+
+def round_time(time, time_precision=3):
     # times are in ns, so this is how many digits of precision
     # 3 digits = 1ps
     # 4 digits = 0.1ps
     # etc.
-    return round(time,time_precision)
+    return round(time, time_precision)
 
-def round_voltage(voltage,voltage_precision=5):
+
+def round_voltage(voltage, voltage_precision=5):
     # voltages are in volts
     # 3 digits = 1mv
     # 4 digits = 0.1mv
     # 5 digits = 0.01mv
     # 6 digits = 1uv
     # etc
-    return round(voltage,voltage_precision)
+    return round(voltage, voltage_precision)
+
 
 def convert_to_float(number):
     """Converts a string into a (float) number; also converts units(m,u,n,p)"""
     if number == "Failed":
         return False
-    
+
     # start out with a binary value
     float_value = False
-    try:  
+    try:
         # checks if string is a float without letter units
         float_value = float(number)
     except ValueError:
         # see if it is in scientific notation
         unit = re.search(r"(-?\d+\.?\d*)e(\-?\+?\d+)", number)
         if unit != None:
-            float_value=float(unit.group(1)) * (10 ^ float(unit.group(2)))
-            
+            float_value = float(unit.group(1)) * (10 ^ float(unit.group(2)))
+
         # see if it is in spice notation
         unit = re.search(r"(-?\d+\.?\d*)(m?u?n?p?f?)", number)
         if unit != None:
@@ -100,11 +108,11 @@ def convert_to_float(number):
                 'n': lambda x: x * 0.000000001,  # nano
                 'p': lambda x: x * 0.000000000001,  # pico
                 'f': lambda x: x * 0.000000000000001  # femto
-                }[unit.group(2)](float(unit.group(1)))
+            }[unit.group(2)](float(unit.group(1)))
 
     # if we weren't able to convert it to a float then error out
-    if not type(float_value)==float:
-        debug.error("Invalid number: {0}".format(number),1)
+    if not type(float_value) == float:
+        debug.error("Invalid number: {0}".format(number), 1)
         return False
 
     return float_value

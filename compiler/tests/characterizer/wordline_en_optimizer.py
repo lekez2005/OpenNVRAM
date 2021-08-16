@@ -119,7 +119,7 @@ class WordlineEnOptimizer(CharTestBase):
         from globals import OPTS
 
         from modules.logic_buffer import LogicBuffer
-        from psf_reader import PsfReader
+        from characterizer.simulation.psf_reader import PsfReader
         import numpy as np
         from characterizer import stimuli
         import characterizer

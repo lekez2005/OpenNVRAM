@@ -39,7 +39,7 @@ class options(optparse.Values):
     # Run with extracted parasitics
     use_pex = False
     # Remove noncritical memory cells for characterization speed-up
-    trim_netlist = True
+    trim_netlist = False
     # Use detailed LEF blockages
     detailed_blockages = True
     # Define the output file paths

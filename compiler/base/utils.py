@@ -7,7 +7,7 @@ import subprocess
 import time
 from functools import lru_cache
 from importlib import reload
-from typing import List
+from typing import List, TYPE_CHECKING
 
 import globals
 import tech
@@ -335,7 +335,7 @@ def run_command(command, stdout_file, stderror_file, verbose_level=1, cwd=None):
     pre_exec_fcn = None
     try:
         import psutil
-        nice_value = os.getenv("OPENRAM_SUBPROCESS_NICE", None)
+        nice_value = os.getenv("OPENRAM_SUBPROCESS_NICE", 15)
         if nice_value:
             def pre_exec_fcn():
                 pid = os.getpid()
@@ -404,3 +404,13 @@ def to_cadence(gds_file):
     to_cadence_ = load_module(file_path)
     to_cadence_.export_gds(gds_file)
 
+
+class BaseMixin:
+    pass
+
+
+def run_time_mixin():
+    """if not running type checks, return empty BaseMixin class"""
+    if TYPE_CHECKING:
+        return None
+    return BaseMixin

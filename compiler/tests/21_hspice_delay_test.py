@@ -23,7 +23,7 @@ class TimingSramTest(OpenRamTest):
         OPTS.analytical_delay = False
 
         # This is a hack to reload the characterizer __init__ with the spice version
-        from characterizer import delay
+        from characterizer import SpiceCharacterizer
 
         import sram
         import tech
@@ -41,7 +41,7 @@ class TimingSramTest(OpenRamTest):
         debug.info(1, "Probe address {0} probe data {1}".format(probe_address, probe_data))
 
         corner = (OPTS.process_corners[0], OPTS.supply_voltages[0], OPTS.temperatures[0])
-        d = delay(s, tempspice, corner)
+        d = SpiceCharacterizer(s, tempspice, corner)
         loads = [tech.spice["msflop_in_cap"] * 4]
         slews = [tech.spice["rise_time"] * 2]
         data = d.analyze(probe_address, probe_data, slews, loads)

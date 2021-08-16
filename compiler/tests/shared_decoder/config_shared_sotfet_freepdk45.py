@@ -51,7 +51,7 @@ def configure_sense_amp(mirror: bool, OPTS):
     pass
 
 
-def configure_timing(_, sram, OPTS):
+def configure_timing(sram, OPTS):
     num_rows = sram.bank.num_rows
     OPTS.sense_trigger_setup = 0.15
 

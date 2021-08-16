@@ -40,7 +40,7 @@ sense_amp_vclamp = 0.55
 control_buffers_num_rows = 1
 
 
-def configure_timing(_, sram, OPTS):
+def configure_timing(sram, OPTS):
     num_rows = sram.bank.num_rows
     OPTS.sense_trigger_setup = 0.15
 

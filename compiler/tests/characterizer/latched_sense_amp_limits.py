@@ -15,7 +15,7 @@ class LatchedSenseAmp(CharTestBase):
 
         from modules.bitline_compute.dual_latched_sense_amp_array import dual_latched_sense_amp_array
         from modules.buffer_stage import BufferStage
-        from psf_reader import PsfReader
+        from characterizer.simulation.psf_reader import PsfReader
         import numpy as np
         from characterizer import stimuli
         import characterizer

@@ -15,7 +15,6 @@ class WordlineEnOptimizer(CharTestBase):
     def get_dut_class():
         from modules.precharge_array import precharge_array
         from modules.bitcell_array import bitcell_array
-        from base.contact import m2m3
         import characterizer
         reload(characterizer)
         from base.vector import vector
@@ -104,12 +103,11 @@ class WordlineEnOptimizer(CharTestBase):
         from globals import OPTS
 
         from modules.logic_buffer import LogicBuffer
-        from psf_reader import PsfReader
+        from characterizer.simulation.psf_reader import PsfReader
         import numpy as np
         from characterizer import stimuli
         import characterizer
         reload(characterizer)
-        from base.design import design
 
         OPTS.check_lvsdrc = False
         OPTS.wire_length = 50

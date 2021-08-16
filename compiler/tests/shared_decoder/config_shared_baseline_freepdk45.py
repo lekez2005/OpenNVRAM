@@ -11,7 +11,7 @@ write_buffers = [1, 3.42, 11.7, 40]
 
 use_precharge_trigger = False
 
-def configure_timing(_, sram, OPTS):
+def configure_timing(sram, OPTS):
     num_rows = sram.bank.num_rows
     OPTS.sense_trigger_setup = 0.15
     if num_rows <= 64:

@@ -8,7 +8,7 @@ from globals import OPTS
 from . import charutils as ch
 from . import setup_hold
 from .charutils import round_time
-from .delay import delay
+from characterizer.simulation.spice_characterizer import SpiceCharacterizer
 
 
 class lib:
@@ -445,7 +445,7 @@ class lib:
     def compute_delay(self):
         """ Do the analysis if we haven't characterized the SRAM yet """
         if not hasattr(self, 'd'):
-            self.d = delay(self.sram, self.sp_file, self.corner)
+            self.d = SpiceCharacterizer(self.sram, self.sp_file, self.corner)
             if self.use_model:
                 self.char_results = self.d.analytical_delay(self.sram,self.slews,self.loads)
             else:

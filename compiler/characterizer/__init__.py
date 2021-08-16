@@ -1,5 +1,5 @@
 from globals import find_exe, get_tool
-from .delay import *
+from characterizer.simulation.spice_characterizer import SpiceCharacterizer
 from .lib import *
 from .setup_hold import *
 
@@ -21,3 +21,8 @@ if not OPTS.analytical_delay:
     
     if OPTS.spice_exe == "":
         debug.error("No recognizable spice version found. Unable to perform characterization.", 1)
+
+    if OPTS.spice_name in ["hspice", "spectre"]:
+        from characterizer.simulation.psf_reader import PsfReader as SpiceReader
+    else:
+        raise ValueError(f"Invalid spice reader for spice name {OPTS.spice_name}")

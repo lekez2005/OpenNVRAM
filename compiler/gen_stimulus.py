@@ -59,10 +59,10 @@ class fake_sram(sram.sram):
 sram = fake_sram(OPTS.word_size, OPTS.num_words, OPTS.num_banks, OPTS.output_name)
 sp_file = OPTS.output_path+OPTS.output_name + ".sp"
 
-from characterizer import delay
+from characterizer import SpiceCharacterizer
 import tech
 # Set up the delay and set to the nominal corner
-d = delay.delay(sram, sp_file, ("TT", tech.spice["nom_supply_voltage"], tech.spice["nom_temperature"]))
+d = SpiceCharacterizer.delay(sram, sp_file, ("TT", tech.spice["nom_supply_voltage"], tech.spice["nom_temperature"]))
 # Set the period
 d.period = period
 # Set the load of outputs and slew of inputs

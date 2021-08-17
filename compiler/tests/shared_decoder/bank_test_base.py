@@ -26,10 +26,13 @@ class BankTestBase(TestBase):
         if hasattr(OPTS, "bank_class"):
             from base.design import design
             return design.import_mod_class_from_str(OPTS.bank_class), {}
-        from modules.shared_decoder.cmos_bank import CmosBank
-        from modules.shared_decoder.sotfet.sotfet_mram_bank_br_precharge import SotfetMramBankBrPrecharge
+
+        from modules.baseline_bank import BaselineBank
+        from modules.shared_decoder.sotfet.sotfet_mram_bank_br_precharge \
+            import SotfetMramBankBrPrecharge
         if OPTS.baseline:
-            bank_class = CmosBank
+
+            bank_class = BaselineBank
         else:
             bank_class = SotfetMramBankBrPrecharge
         return bank_class, {}

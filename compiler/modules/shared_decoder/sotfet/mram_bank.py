@@ -2,11 +2,11 @@ from base.contact import cross_m1m2, m2m3, cross_m2m3, m1m2, m3m4
 from base.design import METAL1, METAL3, METAL2, METAL4
 from base.vector import vector
 from globals import OPTS
-from modules.shared_decoder.cmos_bank import CmosBank
+from modules.baseline_bank import BaselineBank
 from modules.shared_decoder.sotfet.sotfet_mram_control_buffers import SotfetMramControlBuffers
 
 
-class MramBank(CmosBank):
+class MramBank(BaselineBank):
     """bank with thin bitcell not supporting 1 word per row"""
     rwl_driver = wwl_driver = None
     wordline_driver_inst = rwl_driver_inst = wwl_driver_inst = None
@@ -18,7 +18,7 @@ class MramBank(CmosBank):
 
     @staticmethod
     def get_module_list():
-        modules = CmosBank.get_module_list()
+        modules = BaselineBank.get_module_list()
         modules = [x for x in modules if x not in ["wordline_driver"]]
         modules.extend(["rwl_driver", "wwl_driver"])
         return modules

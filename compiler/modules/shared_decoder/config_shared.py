@@ -80,6 +80,8 @@ precharge_size = 1.5
 
 column_decoder_buffers = [2, 2]
 
+control_buffers_class = "baseline_latched_control_buffers.LatchedControlBuffers"
+
 # default sizes config
 word_size = 64
 num_words = 64

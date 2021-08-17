@@ -12,10 +12,10 @@ from base.geometry import NO_MIRROR, MIRROR_Y_AXIS
 from base.vector import vector
 from base.well_implant_fills import create_wells_and_implants_fills, get_default_fill_layers
 from globals import OPTS, print_time
+from modules.baseline_bank import BaselineBank
 from modules.flop_buffer import FlopBuffer
 from modules.hierarchical_predecode2x4 import hierarchical_predecode2x4
 from modules.hierarchical_predecode3x8 import hierarchical_predecode3x8
-from modules.shared_decoder.cmos_bank import CmosBank
 
 
 class CmosSram(design):
@@ -163,7 +163,9 @@ class CmosSram(design):
 
     @staticmethod
     def get_bank_class():
-        return CmosBank
+        if getattr(OPTS, "bank_class"):
+            return design.import_mod_class_from_str(OPTS.bank_class)
+        return BaselineBank
 
     def create_bank(self):
         bank_class = self.get_bank_class()

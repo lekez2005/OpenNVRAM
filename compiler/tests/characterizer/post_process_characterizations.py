@@ -38,8 +38,8 @@ class PostProcessInverter(CharTestBase):
     config_template = config_template
 
     def test_cmos_bank(self):
-        from modules.shared_decoder.cmos_bank import CmosBank
-        self.post_process_bank_modules(CmosBank)
+        from modules.baseline_bank import BaselineBank
+        self.post_process_bank_modules(BaselineBank)
 
     def post_process_bank_modules(self, bank_class, **kwargs):
         import numpy as np

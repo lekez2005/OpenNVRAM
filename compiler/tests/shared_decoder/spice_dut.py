@@ -31,7 +31,9 @@ class SpiceDut(stimuli):
         for i in range(abits):
             self.sf.write("A[{0}] ".format(i))
 
-        self.sf.write(" {0} {1} {2} ".format(" ".join(sram.control_pin_names),
+        control_pins = sram.bank.connections_from_mod(sram.control_pin_names,
+                                                      [("ADDR[", "A[")])
+        self.sf.write(" {0} {1} {2} ".format(" ".join(control_pins),
                                              self.vdd_name, self.gnd_name))
 
         self.one_t_one_s = getattr(OPTS, "one_t_one_s", False)

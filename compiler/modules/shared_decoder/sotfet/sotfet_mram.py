@@ -5,10 +5,10 @@ from base.vector import vector
 from base.well_implant_fills import create_wells_and_implants_fills
 from globals import OPTS
 from modules.horizontal.pinv_wordline import pinv_wordline
-from modules.shared_decoder.cmos_sram import CmosSram
+from modules.baseline_sram import BaselineSram
 
 
-class SotfetMram(CmosSram):
+class SotfetMram(BaselineSram):
 
     def create_bank(self):
         if OPTS.mram == "sotfet":

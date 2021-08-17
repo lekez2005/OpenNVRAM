@@ -1,10 +1,10 @@
 from base.design import design
 from globals import OPTS
 from modules.baseline_bank import EXACT
-from modules.shared_decoder.cmos_sram import CmosSram
+from modules.baseline_sram import BaselineSram
 
 
-class Cam(CmosSram):
+class Cam(BaselineSram):
     def create_layout(self):
         assert not OPTS.independent_banks, "Independent banks not supported for CAMs"
         super().create_layout()

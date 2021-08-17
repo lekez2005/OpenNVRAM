@@ -844,8 +844,8 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
             if hasattr(OPTS, "sram_class"):
                 sram_class = self.import_mod_class_from_str(OPTS.sram_class)
             else:
-                from modules.shared_decoder.cmos_sram import CmosSram
-                sram_class = CmosSram
+                from modules.baseline_sram import BaselineSram
+                sram_class = BaselineSram
             col_decoder = sram_class.create_column_decoder_modules(self.words_per_row)
             destinations.append((col_decoder, "clk"))
         return destinations

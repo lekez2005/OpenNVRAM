@@ -5,7 +5,7 @@ import debug
 from base.utils import load_module
 from characterizer.stimuli import stimuli
 from globals import OPTS
-from modules.shared_decoder.cmos_sram import CmosSram
+from modules.baseline_sram import BaselineSram
 
 
 class SpiceDut(stimuli):
@@ -14,7 +14,7 @@ class SpiceDut(stimuli):
     External peripheral spice should also be instantiated here
     """
 
-    def instantiate_sram(self, sram: CmosSram):
+    def instantiate_sram(self, sram: BaselineSram):
         abits = sram.addr_size
         dbits = sram.word_size
         num_banks = sram.num_banks if OPTS.independent_banks else 1

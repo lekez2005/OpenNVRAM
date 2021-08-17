@@ -18,7 +18,7 @@ from modules.hierarchical_predecode2x4 import hierarchical_predecode2x4
 from modules.hierarchical_predecode3x8 import hierarchical_predecode3x8
 
 
-class CmosSram(design):
+class BaselineSram(design):
     wide_space = None
     bank_insts = bank = row_decoder = None
     column_decoder = column_decoder_inst = None

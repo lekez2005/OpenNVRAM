@@ -16,8 +16,8 @@ class SimulatorBase(OpenRamTest):
         from globals import OPTS
         if hasattr(OPTS, "sram_class"):
             return self.load_class_from_opts("sram_class")
-        from modules.shared_decoder.cmos_sram import CmosSram
-        return CmosSram
+        from modules.baseline_sram import BaselineSram
+        return BaselineSram
 
     def create_sram(self):
         from globals import OPTS

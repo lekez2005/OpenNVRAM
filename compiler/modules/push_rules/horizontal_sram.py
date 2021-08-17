@@ -8,10 +8,10 @@ from modules.horizontal.flop_buffer_horizontal import FlopBufferHorizontal
 from modules.push_rules.horizontal_bank import HorizontalBank
 from modules.push_rules.predecode2x4_horizontal import predecode2x4_horizontal
 from modules.push_rules.predecode3x8_horizontal import predecode3x8_horizontal
-from modules.shared_decoder.cmos_sram import CmosSram
+from modules.baseline_sram import BaselineSram
 
 
-class HorizontalSram(CmosSram):
+class HorizontalSram(BaselineSram):
     rotation_for_drc = GDS_ROT_270
 
     def create_modules(self):

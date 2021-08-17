@@ -1,11 +1,9 @@
-import re
-
 import debug
+from characterizer.net_probes.sram_probe import SramProbe
 from globals import OPTS
-from shared_decoder.shared_probe import SharedProbe
 
 
-class MramProbe(SharedProbe):
+class MramProbe(SramProbe):
 
     def __init__(self, sram, pex_file=None):
         super().__init__(sram, pex_file)
@@ -88,10 +86,10 @@ class MramProbe(SharedProbe):
                     self.saved_nodes.add(state_probe)
 
     def get_wordline_label(self, bank_index, row, col):
-        return self.get_w_label(bank_index, row, col).replace("wl", "rwl")
+        return super().get_wordline_label(bank_index, row, col).replace("wl", "rwl")
 
     def get_wwl_label(self, bank_index, row, col):
-        return self.get_w_label(bank_index, row, col).replace("wl", "wwl")
+        return super().get_wordline_label(bank_index, row, col).replace("wl", "wwl")
 
     def probe_address(self, address, pin_name="q"):
         super().probe_address(address, pin_name)

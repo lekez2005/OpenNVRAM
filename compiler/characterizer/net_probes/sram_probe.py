@@ -19,6 +19,7 @@ class SramProbe(object):
     """
 
     def __init__(self, sram, pex_file=None):
+        debug.info(1, "Initialize sram probe")
         self.sram = sram
         if pex_file is None:
             self.pex_file = OPTS.pex_spice
@@ -35,6 +36,7 @@ class SramProbe(object):
         self.two_bank_dependent = not OPTS.independent_banks and self.sram.num_banks == 2
         self.word_size = (int(self.sram.word_size / 2)
                           if self.two_bank_dependent else self.sram.word_size)
+        self.half_sram_word = int(0.5 * self.word_size)
 
         self.net_separator = "_" if OPTS.use_pex else "."
 
@@ -48,10 +50,22 @@ class SramProbe(object):
         self.word_driver_clk_probes = {}
         self.wordline_probes = self.voltage_probes["wl"] = {}
         self.decoder_probes = self.voltage_probes["decoder"] = {}
-        self.clk_probe = self.get_clk_probe()
+        self.decoder_inputs_probes = {}
+
+        self.dout_probes = self.voltage_probes["dout"] = {}
+        self.data_in_probes = self.voltage_probes["data_in"] = {}
+        self.mask_probes = self.voltage_probes["mask"] = {}
+
+        self.external_probes = ["dout", "mask", "data_in"]
+
+        for i in range(sram.word_size):
+            self.dout_probes[i] = "D[{}]".format(i)
+            self.data_in_probes[i] = "data[{}]".format(i)
+            self.mask_probes[i] = "mask[{}]".format(i)
+
+        self.current_probes = set()
 
         self.probe_labels = {"clk"}
-        self.external_probes = ["dout"]
 
     def probe_bit_cells(self, address, pin_name="q"):
         """Probe Q, QBAR of bitcell"""
@@ -133,7 +147,13 @@ class SramProbe(object):
             nodes_map[address] = address_nodes
             for i in range(self.sram.word_size):
                 col = i * self.sram.words_per_row + self.address_to_int(col_index)
-                address_nodes[i] = pattern.format(bank=bank_index, row=row, col=col, name="Xbit")
+                if self.two_bank_dependent and i > self.half_sram_word:
+                    col -= self.sram.num_cols
+                    bank_index_ = 1
+                else:
+                    bank_index_ = bank_index
+                address_nodes[i] = pattern.format(bank=bank_index_, row=row, col=col,
+                                                  name="Xbit")
         return nodes_map
 
     def get_storage_node_pattern(self):
@@ -279,7 +299,7 @@ class SramProbe(object):
         self.update_current_probes(probes, "precharge_array", bank)
 
     def get_bank_bitcell_current_probes(self, bank, bits, row, col_index):
-        cols = [col_index + bit * self.sram.words_per_row for bit in OPTS.probe_bits]
+        cols = [col_index + bit * self.sram.words_per_row for bit in bits]
         template = "Xbank{bank}.Xbitcell_array.Xbit_r" + str(row) + "_c{bit}.{net}"
         nets = ["q", "qbar"]
         replacements = [("r([0-9]+)_c([0-9]+)", "r\g<1>_c{bit}")]
@@ -421,6 +441,40 @@ class SramProbe(object):
     def probe_address_currents(self, address):
         self.probe_bitcell_currents(address)
         self.wordline_driver_currents(address)
+
+    def probe_address(self, address, pin_name="q"):
+
+        address = self.address_to_vector(address)
+        address_int = self.address_to_int(address)
+
+        bank_index, bank_inst, row, col_index = self.decode_address(address)
+
+        decoder_label = "Xsram.dec_out[{}]".format(row)
+        self.decoder_probes[address_int] = decoder_label
+        self.probe_labels.add(decoder_label)
+
+        self.add_decoder_inputs(address_int)
+
+        col = self.sram.num_cols - 1
+        wl_label = self.get_wordline_label(bank_index, row, col)
+        if self.two_bank_dependent:
+            self.probe_labels.add(wl_label)
+            wl_label = self.get_wordline_label(1, row, col)
+
+        self.voltage_probes["wl"][address_int] = wl_label
+        self.probe_labels.add(wl_label)
+
+        pin_labels = [""] * self.sram.word_size
+        for bit in range(self.word_size):
+            col = bit * self.sram.words_per_row + col_index
+            pin_labels[bit] = self.get_bitcell_label(bank_index, row, col, pin_name)
+            if self.two_bank_dependent:
+                pin_labels[bit + self.word_size] = self.get_bitcell_label(1, row,
+                                                                          col, pin_name)
+
+        if not OPTS.mram or not OPTS.use_pex:
+            self.probe_labels.update(pin_labels)
+        self.state_probes[address_int] = pin_labels
 
     def probe_bank_currents(self, bank):
         if not OPTS.verbose_save:
@@ -573,8 +627,22 @@ class SramProbe(object):
 
         return prefix, parent_net, suffix
 
+    @staticmethod
+    def filter_internal_nets(child_mod, candidate_nets):
+        netlist = child_mod.get_spice_parser().get_module(child_mod.name).contents
+        netlist = "\n".join(netlist)
+
+        results = []
+        for net in candidate_nets:
+            if " {} ".format(net) in netlist:
+                results.append(net)
+        return results
+
     def get_write_driver_internal_nets(self):
-        return ["bl_bar", "br_bar"]
+        child_mod = self.sram.bank.write_driver_array.child_mod
+        pin_names = ["vdd"]
+        candidate_nets = ["bl_bar", "br_bar", "data", "mask", "mask_bar", "bl_p", "br_p"]
+        return pin_names + self.filter_internal_nets(child_mod, candidate_nets)
 
     def probe_write_drivers(self, bank_):
         """Probe write driver internal bl_bar, br_bar"""
@@ -591,7 +659,7 @@ class SramProbe(object):
                                  internal_nets=self.get_write_driver_internal_nets())
 
     def get_sense_amp_internal_nets(self):
-        return ["dout_bar"]
+        return ["dout", "out_int", "outb_int", "bl", "br"]
 
     def probe_sense_amps(self, bank_):
         """Probe bitlines at sense amps"""
@@ -628,7 +696,6 @@ class SramProbe(object):
 
     def extract_probes(self):
         if not OPTS.use_pex:
-            self.voltage_probes["clk_probe"] = self.clk_probe
             # self.probe_labels.add("Xsram.Xbank0.*")
             self.saved_nodes = set(self.probe_labels)
             return
@@ -642,9 +709,6 @@ class SramProbe(object):
             self.extract_nested_probe(key, self.voltage_probes, net_mapping)
 
         self.extract_state_probes(net_mapping)
-
-        self.clk_probe = self.extract_from_pex(self.clk_probe)
-        self.voltage_probes["clk_probe"] = self.clk_probe
 
     def extract_state_probes(self, existing_mappings):
         for key in self.state_probes:

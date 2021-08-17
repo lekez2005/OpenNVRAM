@@ -96,7 +96,7 @@ class PulseGenMixin(SpiceCharacterizer):
             if curr_val == 1:
                 setup_time = 0
             else:
-                setup_time = -(1 - self.duty_cycle) * self.period
+                setup_time = -self.duty_cycle * self.period
         elif key == "sense_trig":
             trigger_delay = OPTS.sense_trigger_delay
             if prev_val == 0:

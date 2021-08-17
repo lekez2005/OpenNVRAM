@@ -218,6 +218,8 @@ class SimAnalyzerTest(SimulatorBase):
 
     def voltage_probe_delay(self, probe_key, net, bank_=None, col=None, bit=None,
                             edge=None, clk_buf=False):
+        clk_bank = self.probe_bank if bank_ is None else bank_
+        self.analyzer.clk_reference = self.voltage_probes["clk"][str(clk_bank)]
         probe = self.analyzer.get_probe(probe_key, net, bank_, col, bit)
         delay_func = (self.analyzer.clk_to_bus_delay
                       if clk_buf else self.analyzer.clk_bar_to_bus_delay)
@@ -225,9 +227,10 @@ class SimAnalyzerTest(SimulatorBase):
                           num_bits=1, bus_edge=edge)
 
     def get_wordline_en_delay(self):
-        wl_en_row = self.cmd_line_opts.num_rows - 1
+        probes = self.voltage_probes["control_buffers"][str(self.probe_bank)]["wordline_en"]
+        max_row = max(map(int, probes.keys()))
         return self.voltage_probe_delay("control_buffers", "wordline_en", self.probe_bank,
-                                        bit=wl_en_row, edge=self.RISING_EDGE)
+                                        bit=max_row, edge=self.RISING_EDGE)
 
     def get_wordline_delay(self, max_read_address):
         return self.voltage_probe_delay("wl", None, None, bit=max_read_address,
@@ -293,7 +296,7 @@ class SimAnalyzerTest(SimulatorBase):
         controls_bit = int(col / self.words_per_row)
         self.probe_event = event
 
-        bank = int(re.search("Xbank([0-1]+)", q_net).group(1))
+        bank = int(re.search("Xbank([0-9]+)", q_net).group(1))
 
         self.probe_start_time, self.probe_end_time = start_time, end_time
         self.probe_col = col
@@ -395,10 +398,13 @@ class SimAnalyzerTest(SimulatorBase):
 
     def plot_common_signals(self):
         self.plot_sig(self.analyzer.clk_reference, label="clk_buf")
-        self.plot_sig(self.get_plot_probe("bl", None, self.probe_col), label="bl")
-        self.plot_sig(self.get_plot_probe("br", None, self.probe_col), label="br")
+        self.plot_sig(self.get_plot_probe("bl", None, self.probe_col),
+                      label=f"bl[{self.probe_col}]")
+        self.plot_sig(self.get_plot_probe("br", None, self.probe_col),
+                      label=f"br[{self.probe_col}]")
         if self.words_per_row > 1:
-            self.plot_sig(self.get_plot_probe("sense_amp_array", "bl"), label="bl_out")
+            self.plot_sig(self.get_plot_probe("sense_amp_array", "bl"),
+                          label=f"bl_out[{self.probe_control_bit}]")
 
         address = self.probe_address
         row = self.probe_row
@@ -437,7 +443,7 @@ class SimAnalyzerTest(SimulatorBase):
         from matplotlib import pyplot as plt
         logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
-        print()
+        print("\nPlot Signals: ")
 
         if self.cmd_line_opts.plot == "write":
             self.set_critical_path_params(self.max_write_event, self.max_write_bit_delays,

@@ -178,9 +178,12 @@ class SimAnalyzer:
         pattern_str = rf'{prefix}_{index_pattern}.*{time_suffix}' + r"\s*=\s+(?P<delay>\S+)\s?\n"
 
         pattern = re.compile(pattern_str)
+        invalid_results = ["failed"]
 
         if index_pattern:
-            bit_delays = [(int(x), float(y)) for x, y in pattern.findall(self.meas_str)]
+            matches = [x for x in pattern.findall(self.meas_str)
+                       if x[1] not in invalid_results]
+            bit_delays = [(int(x), float(y)) for x, y in matches]
             delays = [0] * len(bit_delays)
             for bit_, delay_ in bit_delays:
                 delays[bit_] = delay_

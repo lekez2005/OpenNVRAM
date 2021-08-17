@@ -48,6 +48,7 @@ class SramProbe(object):
 
         self.bitcell_probes = {}
         self.word_driver_clk_probes = {}
+        self.clk_probes = self.voltage_probes["clk"] = {}
         self.wordline_probes = self.voltage_probes["wl"] = {}
         self.decoder_probes = self.voltage_probes["decoder"] = {}
         self.decoder_inputs_probes = {}
@@ -181,12 +182,6 @@ class SramProbe(object):
             return self.extract_from_pex(self.decoder_probes[address])
         else:
             return self.decoder_probes[address]
-
-    def get_clk_probe(self, bank=0):
-        if OPTS.use_pex:
-            return "Xsram.Xbank{bank}_clk_buf_Xbank{bank}_Xcontrol_buffers".format(bank=bank)
-        else:
-            return "Xsram.Xbank{}.clk_buf".format(bank)
 
     def get_wordline_label(self, bank_index, row, col):
         if OPTS.use_pex:
@@ -500,9 +495,36 @@ class SramProbe(object):
         self.probe_sense_amps(bank)
         self.control_buffers_voltage_probes(bank)
 
-        if bank == 0:
-            clk_probe = self.voltage_probes["control_buffers"][bank]["clk_buf"][-1]
-            self.clk_probe = clk_probe
+        self.clk_probes[bank] = self.voltage_probes["control_buffers"][bank]["clk_buf"][-1]
+        self.probe_decoder_col_mux(bank)
+        self.probe_control_flops(bank)
+
+    def probe_control_flops(self, bank):
+        self.probe_labels.add("Xsram.Xbank{}.read_buf".format(bank))
+        self.probe_labels.add("Xsram.Xbank{}.bank_sel_buf".format(bank))
+
+    def probe_decoder_col_mux(self, bank):
+        # predecoder flop output
+        if OPTS.use_pex:
+            decoder = self.sram.bank.decoder
+            for i in range(len(decoder.pre2x4_inst) + len(decoder.pre3x8_inst)):
+                pass
+                self.probe_labels.add("Xsram.Xrow_decoder_Xpre_{}_in[0]".format(i))
+                self.probe_labels.add("Xsram.Xrow_decoder_Xpre_{}_in[1]".format(i))
+            self.probe_labels.add("Xsram.decoder_clk_Xrow_decoder")
+
+        # sel outputs
+        if self.sram.words_per_row > 1 and OPTS.verbose_save:
+            for i in range(self.sram.words_per_row):
+                if OPTS.use_pex:
+                    col = (self.word_size - 1) * self.sram.words_per_row + i
+                    self.probe_labels.add("Xsram.sel[{0}]_Xbank{1}_Xcolumn_mux_array_xmod_{2}".
+                                          format(i, bank, col))
+                else:
+                    self.probe_labels.add("Xsram.sel[{}]".format(bank, i))
+
+    def add_decoder_inputs(self, address):
+        pass
 
     @staticmethod
     def get_full_bank_net(net, prefix, suffix, bank_inst):

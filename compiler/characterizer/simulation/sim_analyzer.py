@@ -110,7 +110,7 @@ class SimAnalyzer:
                 json_contents.append(json.load(f))
         self.state_probes, self.voltage_probes, self.current_probes = json_contents
 
-        self.clk_reference = self.voltage_probes["clk_probe"]
+        self.clk_reference = self.voltage_probes["clk"]["0"]
 
         values = []
         for name in ["cols", "bits"]:

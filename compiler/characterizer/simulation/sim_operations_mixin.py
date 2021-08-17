@@ -89,7 +89,6 @@ class SimOperationsMixin(SpiceCharacterizer):
 
         self.state_probes = self.probe.state_probes
         self.decoder_probes = self.probe.decoder_probes
-        self.clk_buf_probe = self.probe.clk_probe
         self.dout_probes = self.probe.dout_probes
         self.mask_probes = self.probe.mask_probes
 
@@ -149,10 +148,9 @@ class SimOperationsMixin(SpiceCharacterizer):
 
     def finalize_sim_file(self):
         self.saved_nodes = list(sorted(list(self.probe.saved_nodes) +
-                                       list(self.dout_probes.values())
-                                       + list(self.mask_probes.values())))
-
-        self.saved_nodes.append(self.clk_buf_probe)
+                                       list(self.dout_probes.values()) +
+                                       list(self.probe.data_in_probes.values()) +
+                                       list(self.mask_probes.values())))
 
         self.saved_currents = self.probe.current_probes
 
@@ -187,7 +185,7 @@ class SimOperationsMixin(SpiceCharacterizer):
             dummy_address = 1 if not address == 1 else 2
         dummy_address = self.offset_address_by_bank(dummy_address, bank)
 
-        self.sf.write("* -- Address Test: Addr, Row, Col, bank, time, per_r, per_w, duty_r, duty_w ")
+        self.sf.write("* -- Address Test: Addr, Row, Col, bank, time, per_r, per_w, duty_r, duty_w \n")
         self.sf.write("* [{0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}]\n".
                       format(address, row, col_index, bank, self.current_time, self.read_period,
                              self.write_period, self.read_duty_cycle, self.write_duty_cycle))
@@ -254,8 +252,6 @@ class SimOperationsMixin(SpiceCharacterizer):
 
         self.sf.write("* -- LEAKAGE start = {:.5g} end = {:.5g}\n".format(start_time,
                                                                           self.current_time))
-
-        self.sf.write("* --clk_buf_probe={}--\n".format(self.probe.clk_probe))
 
     def read_address(self, addr):
         """Read an address. Address is binary vector"""
@@ -333,13 +329,14 @@ class SimOperationsMixin(SpiceCharacterizer):
 
         # Internal bitcell Q state transition delay
         state_labels = self.state_probes[address_int]
+        clk_buf_probe = self.probe.clk_probes[bank_index]
         for i in range(self.word_size):
             targ_val = 0.5 * self.vdd_voltage
             targ_dir = "CROSS"
 
             meas_name = "STATE_DELAY_a{}_c{}_t{}".format(address_int, i, time_suffix)
             self.stim.gen_meas_delay(meas_name=meas_name,
-                                     trig_name=self.clk_buf_probe,
+                                     trig_name=clk_buf_probe,
                                      trig_val=0.5 * self.vdd_voltage, trig_dir="FALL",
                                      trig_td=time + self.duty_cycle * self.period,
                                      targ_name=state_labels[i],
@@ -352,10 +349,12 @@ class SimOperationsMixin(SpiceCharacterizer):
     def setup_decoder_delays(self):
         time_suffix = "{:.2g}".format(self.current_time).replace('.', '_')
         for address_int, in_nets in self.probe.decoder_inputs_probes.items():
+            bank_index, _, row, col_index = self.probe.decode_address(address_int)
+            clk_buf_probe = self.probe.clk_probes[bank_index]
             for i in range(len(in_nets)):
                 meas_name = "decoder_in{}_{}_t{}".format(address_int, i, time_suffix)
                 self.stim.gen_meas_delay(meas_name=meas_name,
-                                         trig_name=self.clk_buf_probe,
+                                         trig_name=clk_buf_probe,
                                          trig_val=0.5 * self.vdd_voltage, trig_dir="RISE",
                                          trig_td=self.current_time,
                                          targ_name=in_nets[i],
@@ -364,10 +363,12 @@ class SimOperationsMixin(SpiceCharacterizer):
 
         trig_dir = self.get_decoder_trig_dir()
         for address_int, decoder_label in self.decoder_probes.items():
+            bank_index, _, row, col_index = self.probe.decode_address(address_int)
+            clk_buf_probe = self.probe.clk_probes[bank_index]
             time_suffix = "{:.2g}".format(self.current_time).replace('.', '_')
             meas_name = "decoder_a{}_t{}".format(address_int, time_suffix)
             self.stim.gen_meas_delay(meas_name=meas_name,
-                                     trig_name=self.clk_buf_probe,
+                                     trig_name=clk_buf_probe,
                                      trig_val=0.5 * self.vdd_voltage, trig_dir=trig_dir,
                                      trig_td=self.current_time,
                                      targ_name=decoder_label,
@@ -389,11 +390,12 @@ class SimOperationsMixin(SpiceCharacterizer):
             else:
                 bank_ = bank
                 bank_col = col
+            clk_buf_probe = self.probe.clk_probes[bank_]
             for bitline in ["bl", "br"]:
                 probe = self.probe.voltage_probes[bitline][bank_][bank_col]
                 meas_name = "PRECHARGE_DELAY_{}_c{}_t{}".format(bitline, col, time_suffix)
                 self.stim.gen_meas_delay(meas_name=meas_name,
-                                         trig_name=self.clk_buf_probe,
+                                         trig_name=clk_buf_probe,
                                          trig_val=trig_val, trig_dir="RISE",
                                          trig_td=time,
                                          targ_name=probe, targ_val=targ_val, targ_dir="RISE",
@@ -403,6 +405,8 @@ class SimOperationsMixin(SpiceCharacterizer):
         """new_val is MSB first"""
 
         bank_index, _, row, col_index = self.probe.decode_address(address_int)
+        clk_buf_probe = self.probe.clk_probes[bank_index]
+
         self.sf.write("* -- Read : [{0}, {1}, {2}, {3}, {4}, {5}, {6}]\n".format(
             address_int, row, col_index, bank_index, self.current_time, self.read_period,
             self.read_duty_cycle))
@@ -425,7 +429,7 @@ class SimOperationsMixin(SpiceCharacterizer):
 
             meas_name = "READ_DELAY_a{}_c{}_t{}".format(address_int, i, time_suffix)
             self.stim.gen_meas_delay(meas_name=meas_name,
-                                     trig_name=self.clk_buf_probe,
+                                     trig_name=clk_buf_probe,
                                      trig_val=mid_vdd, trig_dir="FALL",
                                      trig_td=time + self.duty_cycle * self.period,
                                      targ_name=self.dout_probes[i], targ_val=mid_vdd,

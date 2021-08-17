@@ -10,7 +10,7 @@ class StackedHierarchicalDecoderTest(TestBase):
     def test_all_row_decoders(self):
         import tech
         from globals import OPTS
-        from modules.shared_decoder.stacked_hierarchical_decoder \
+        from modules.stacked_hierarchical_decoder \
             import stacked_hierarchical_decoder
 
         class_name = "stacked_hierarchical_decoder"

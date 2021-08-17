@@ -3,7 +3,7 @@ from base.design import METAL3
 from base.vector import vector
 from globals import OPTS
 from modules.shared_decoder.one_t_one_s.wordline_driver_mixin import wordline_driver_mixin
-from modules.shared_decoder.stacked_wordline_driver_array import stacked_wordline_driver_array
+from modules.stacked_wordline_driver_array import stacked_wordline_driver_array
 from pgates.pgate_tap import pgate_tap
 
 

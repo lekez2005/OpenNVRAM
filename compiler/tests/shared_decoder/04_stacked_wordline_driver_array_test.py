@@ -10,7 +10,7 @@ class StackedWordlineDriverArrayTest(TestBase):
 
     def test_stacked_wordline_driver(self):
         import debug
-        from modules.shared_decoder.stacked_wordline_driver_array import stacked_wordline_driver_array
+        from modules.stacked_wordline_driver_array import stacked_wordline_driver_array
 
         debug.info(2, "Testing 8-row wordline driver array")
 

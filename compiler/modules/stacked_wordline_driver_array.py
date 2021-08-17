@@ -8,6 +8,8 @@ from modules.wordline_driver_array import wordline_driver_array
 
 
 class stacked_wordline_driver_array(wordline_driver_array):
+    """Wordline Driver array with two adjacent rows stacked horizontally
+        so the total height per module is 2x the bitcell height"""
     def __init__(self, name, rows, buffer_stages=None):
         design.__init__(self, name)
         self.rows = rows

@@ -22,7 +22,7 @@ class tgate_column_mux(design.design):
 
 
 class tgate_column_mux_array(single_level_column_mux_array):
-
+    """Transmission gate based column mux array"""
     def create_layout(self):
         super().create_layout()
         self.add_body_contacts()

@@ -9,6 +9,8 @@ from tech import drc
 
 
 class stacked_hierarchical_decoder(hierarchical_decoder):
+    """Decoder with two adjacent rows stacked horizontally
+    so the total height per module is 2x the bitcell height"""
 
     def create_layout(self):
         super().create_layout()

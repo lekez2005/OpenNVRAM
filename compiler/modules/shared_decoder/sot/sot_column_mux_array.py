@@ -3,7 +3,7 @@ from base.geometry import MIRROR_Y_AXIS, NO_MIRROR
 from base.library_import import library_import
 from base.vector import vector
 from globals import OPTS
-from modules.shared_decoder.tgate_column_mux_array import tgate_column_mux_array
+from modules.tgate_column_mux_array import tgate_column_mux_array
 
 
 @library_import

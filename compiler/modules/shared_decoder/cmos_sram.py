@@ -58,7 +58,8 @@ class CmosSram(design):
             print_time("SRAM creation", datetime.datetime.now(), start_time)
 
         # restore word-size
-        self.word_size = num_banks * self.word_size
+        if num_banks == 2 and not OPTS.independent_banks:
+            self.word_size = 2 * self.word_size
 
     def create_layout(self):
         self.single_bank = self.num_banks == 1
@@ -245,11 +246,13 @@ class CmosSram(design):
             word_size = self.word_size
         for i in range(word_size):
             pins.append("DATA[{0}]".format(i))
-            if OPTS.independent_banks and self.num_banks == 2:
-                pins.append("DATA_1[{0}]".format(i))
             if self.bank.has_mask_in:
                 pins.append("MASK[{0}]".format(i))
-                if OPTS.independent_banks and self.num_banks == 2:
+        # pins for the other independent bank
+        if OPTS.independent_banks and self.num_banks == 2:
+            for i in range(word_size):
+                pins.append("DATA_1[{0}]".format(i))
+                if self.bank.has_mask_in:
                     pins.append("MASK_1[{0}]".format(i))
 
         for i in range(self.bank_addr_size):

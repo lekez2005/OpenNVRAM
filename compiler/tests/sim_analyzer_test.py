@@ -22,6 +22,7 @@ class SimAnalyzerTest(SimulatorBase):
         self.initialize()
 
     def initialize(self):
+        self.update_global_opts()
         from characterizer.simulation.sim_analyzer import SimAnalyzer
         self.debug.info(1, "Simulation Dir: %s", self.temp_folder)
         self.analyzer = SimAnalyzer(self.temp_folder)

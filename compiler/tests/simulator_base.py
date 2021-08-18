@@ -2,8 +2,13 @@ import argparse
 import os
 import sys
 from importlib import reload
+from typing import TYPE_CHECKING
 
-from testutils import OpenRamTest
+if TYPE_CHECKING:
+    from testutils import OpenRamTest
+else:
+    class OpenRamTest:
+        pass
 
 
 class SimulatorBase(OpenRamTest):
@@ -27,6 +32,33 @@ class SimulatorBase(OpenRamTest):
                           name="sram1", add_power_grid=True)
         return sram
 
+    def run_simulation(self):
+        import debug
+        from globals import OPTS
+
+        self.sram = self.create_sram()
+        debug.info(1, "Write netlist to file")
+        self.sram.sp_write(OPTS.spice_file)
+
+        netlist_generator = self.create_netlist_generator(self.sram)
+        netlist_generator.configure_timing(self.sram)
+        if self.cmd_line_opts.energy:
+            netlist_generator.write_generic_stimulus()
+        else:
+            netlist_generator.write_delay_stimulus()
+        netlist_generator.stim.run_sim()
+
+        debug.info(1, "Read Period = {:3g}".format(netlist_generator.read_period))
+        debug.info(1, "Read Duty Cycle = {:3g}".format(netlist_generator.read_duty_cycle))
+
+        debug.info(1, "Write Period = {:3g}".format(netlist_generator.write_period))
+        debug.info(1, "Write Duty Cycle = {:3g}".format(netlist_generator.write_duty_cycle))
+
+        debug.info(1, "Trigger delay = {:3g}".format(OPTS.sense_trigger_delay))
+        area = self.sram.width * self.sram.height
+        debug.info(1, "Area = {:.3g} x {:.3g} = {:3g}".format(self.sram.width, self.sram.height,
+                                                              area))
+
     def get_netlist_gen_class(self):
         from characterizer import SpiceCharacterizer
         return SpiceCharacterizer
@@ -38,12 +70,6 @@ class SimulatorBase(OpenRamTest):
         delay_class = self.get_netlist_gen_class()
         return delay_class(sram, spfile=OPTS.spice_file,
                            corner=self.corner, initialize=False)
-
-    def setUp(self):
-        super().setUp()
-        from globals import OPTS
-        self.corner = (OPTS.process_corners[0], OPTS.supply_voltages[0], OPTS.temperatures[0])
-        self.update_global_opts()
 
     @classmethod
     def create_arg_parser(cls):

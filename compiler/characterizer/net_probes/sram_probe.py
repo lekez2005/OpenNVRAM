@@ -467,9 +467,11 @@ class SramProbe(object):
                 pin_labels[bit + self.word_size] = self.get_bitcell_label(1, row,
                                                                           col, pin_name)
 
-        if not OPTS.mram or not OPTS.use_pex:
-            self.probe_labels.update(pin_labels)
+        self.update_bitcell_labels(pin_labels)
         self.state_probes[address_int] = pin_labels
+
+    def update_bitcell_labels(self, pin_labels):
+        self.probe_labels.update(pin_labels)
 
     def probe_bank_currents(self, bank):
         if not OPTS.verbose_save:

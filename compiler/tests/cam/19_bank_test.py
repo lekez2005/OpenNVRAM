@@ -2,7 +2,7 @@
 
 
 from cam_test_base import CamTestBase
-from shared_decoder.bank_test_base import BankTestBase
+from bank_test_base import BankTestBase
 
 
 class CamBankTest(BankTestBase, CamTestBase):

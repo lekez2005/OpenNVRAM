@@ -203,8 +203,8 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         if self.is_left_bank:
             return self.create_left_bank_modules()
 
-        if hasattr(OPTS, 'configure_sizes') and not self.is_optimized:
-            getattr(OPTS, 'configure_sizes')(self, OPTS)
+        if hasattr(OPTS, 'configure_modules') and not self.is_optimized:
+            getattr(OPTS, 'configure_modules')(self, OPTS)
 
         self.msf_mask_in = self.create_module('ms_flop_array', columns=self.num_cols,
                                               word_size=self.word_size, flop_mod=OPTS.mask_in_flop,

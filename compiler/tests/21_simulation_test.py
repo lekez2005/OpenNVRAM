@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-
-from test_base import TestBase
+"""
+Run a delay test on sram using spectre/hspice
+"""
 
 from simulator_base import SimulatorBase
+from testutils import OpenRamTest
 
 
-class SharedDecoderSimulator(TestBase, SimulatorBase):
-    sim_dir_suffix = "shared_simulator"
+class SimulationTest(OpenRamTest, SimulatorBase):
 
     def setUp(self):
         super().setUp()
@@ -15,13 +16,12 @@ class SharedDecoderSimulator(TestBase, SimulatorBase):
         self.update_global_opts()
 
     def get_netlist_gen_class(self):
-        from shared_decoder.sim_steps_generator import SimStepsGenerator
-        return SimStepsGenerator
+        from characterizer import SpiceCharacterizer
+        return SpiceCharacterizer
 
     def test_simulation(self):
         self.run_simulation()
 
 
-if __name__ == "__main__":
-    SharedDecoderSimulator.parse_options()
-    SharedDecoderSimulator.run_tests(__name__)
+SimulationTest.parse_options()
+SimulationTest.run_tests(__name__)

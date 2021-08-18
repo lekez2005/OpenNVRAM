@@ -213,16 +213,22 @@ class SimAnalyzer:
         address_data = [int(x) for x in address_data]
         return address_data
 
+    def get_msb_first_binary(self, probe_dict, time):
+        sorted_keys = list(sorted(probe_dict.keys(), key=int, reverse=True))
+        values = [self.sim_data.get_binary(probe_dict[key], time)[0]
+                  for key in sorted_keys]
+        return values
+
     def get_mask(self, time):
-        if "mask[0]" in self.stim_str:
-            return self.sim_data.get_bus_binary(MASK_PATTERN, self.word_size, time)
+        if "mask" in self.voltage_probes:
+            return self.get_msb_first_binary(self.voltage_probes["mask"], time)
         return [1] * self.word_size
 
     def get_data_in(self, time):
-        return self.sim_data.get_bus_binary(DATA_IN_PATTERN, self.word_size, time)
+        return self.get_msb_first_binary(self.voltage_probes["data_in"], time)
 
     def get_data_out(self, time):
-        return self.sim_data.get_bus_binary(DATA_OUT_PATTERN, self.word_size, time)
+        return self.get_msb_first_binary(self.voltage_probes["dout"], time)
 
     def verify_write_event(self, write_time, write_address, write_period,
                            write_duty, negate=False):

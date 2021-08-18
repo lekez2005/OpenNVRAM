@@ -1,7 +1,5 @@
 from copy import copy
 
-from modules.shared_decoder.config_shared import *
-
 independent_banks = False
 
 # modules

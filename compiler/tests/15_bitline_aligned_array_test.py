@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Run a regression test on a single transistor column_mux.
+Run a regression test for peripherals vertically aligned to the bitcell array
 """
 
-from test_base import TestBase
+from testutils import OpenRamTest
 import debug
 
 
-class BitlineAlignedArrayTest(TestBase):
+class BitlineAlignedArrayTest(OpenRamTest):
 
     def test_sense_amp_array(self):
         debug.info(1, "Testing 2 words per row sense amp")

@@ -143,7 +143,7 @@ buffer_repeater_sizes = [
 buffer_repeaters_col_threshold = 128
 
 
-def configure_sizes(bank, OPTS):
+def configure_modules(bank, OPTS):
     num_rows = bank.num_rows
     num_cols = bank.num_cols
     if num_rows > 127:

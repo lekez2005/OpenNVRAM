@@ -3,10 +3,10 @@
 Run a regression test on a stacked hierarchical decoder.
 """
 
-from test_base import TestBase
+from testutils import OpenRamTest
 
 
-class StackedHierarchicalDecoderTest(TestBase):
+class StackedHierarchicalDecoderTest(OpenRamTest):
     def test_all_row_decoders(self):
         import tech
         from globals import OPTS
@@ -22,4 +22,4 @@ class StackedHierarchicalDecoderTest(TestBase):
             self.local_check(decoder)
 
 
-TestBase.run_tests(__name__)
+StackedHierarchicalDecoderTest.run_tests(__name__)

@@ -1,10 +1,5 @@
 import os
 
-python_path = ["modules/shared_decoder"]
-
-baseline = True
-mram = ""
-
 # modules
 decoder_flops = True
 separate_vdd = False
@@ -23,64 +18,41 @@ data_in_flop_tap = "ms_flop_clk_buf_tap"
 
 # data_in_flop = "ms_flop"
 # data_in_flop_tap = "ms_flop_tap"
-
 control_flop = "ms_flop_horz_pitch"
-
 column_mux_array = "tgate_column_mux_array"
-control_flop_buffers = [4]
+sense_amp_mod = "latched_sense_amp"
+sense_amp_tap = "latched_sense_amp_tap"
+sense_amp_array = "latched_sense_amp_array"
+sense_amp_type = "latched_sense_amp"
+control_buffers_class = "baseline_latched_control_buffers.LatchedControlBuffers"
 
 run_optimizations = True
 
+# Buffer configurations
 logic_buffers_height = 1.4
 
-num_buffers = 5
-
 max_buf_size = 40
-
-num_clk_buf_stages = 5
 max_clk_buffers = max_buf_size
-
-num_wordline_en_stages = 4
 max_wordline_en_buffers = max_buf_size
-
-num_write_en_stages = 5
 max_write_buffers = max_buf_size
-
-num_sense_en_stages = 3
 max_sense_en_size = max_buf_size
-
-num_precharge_stages = 4
 max_precharge_en_size = max_buf_size
-
-num_wordline_driver_stages = 3
 max_wordline_buffers = 20
-
-num_predecoder_stages = 1
 max_predecoder_inv_size = 20
 max_predecoder_nand = 1.2
 
 wordline_buffers = [1, 5, 20]
 predecode_sizes = [1.2, 4]
-
-sense_amp_type = "latched_sense_amp"
-
 write_buffers = [1, 5, 25, 50, 65]
 wordline_en_buffers = [1, 3.7, 13.6, 50]
-
 clk_buffers = [1, 5, 20, 65, 30]  # clk only used by decoders (no latches)
 sampleb_buffers = [1, 3.7, 13.6, 50]
-
-sense_amp_mod = "latched_sense_amp"
-sense_amp_tap = "latched_sense_amp_tap"
-sense_amp_array = "latched_sense_amp_array"
+control_flop_buffers = [4]
 sense_amp_buffers = [3.56, 12.6, 45]
 tri_en_buffers = [3.42, 11.7, 40, 40]
 precharge_buffers = [1, 3.9, 15, 60]
 precharge_size = 1.5
-
 column_decoder_buffers = [2, 2]
-
-control_buffers_class = "baseline_latched_control_buffers.LatchedControlBuffers"
 
 # default sizes config
 word_size = 64
@@ -97,9 +69,7 @@ duty_cycle = 0.35
 
 sense_trigger_delay = 0.5
 
-# temp dir
-openram_temp = os.path.join(os.environ["SCRATCH"], "openram", "shared_dec")
-
+# Buffer repeaters config
 # schematic simulation's positive feedback loop may be hard to break
 buffer_repeater_sizes = [
     ("clk_bar", ["clk_buf", "clk_bar"], [20, 20]),
@@ -109,11 +79,10 @@ buffer_repeater_sizes = [
     ("tri_en", ["tri_en_bar", "tri_en"], [10, 10]),
     ("precharge_en_bar", ["precharge_en_bar"], [10, 20]),
 ]
-
 buffer_repeaters_col_threshold = 128
 
 
-def configure_sizes(bank, OPTS):
+def configure_modules(bank, OPTS):
     # TODO multi stage buffer for predecoder col mux. pnor3 too large for 3x8 buffer
     if OPTS.words_per_row > 2:
         OPTS.column_decoder_buffers = [4]  # use single stage

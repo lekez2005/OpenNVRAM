@@ -67,7 +67,7 @@ duty_cycle = 0.35
 openram_temp = os.path.join(os.environ["SCRATCH"], "openram", "sotfet_cam")
 
 
-def configure_sizes(bank, OPTS):
+def configure_modules(bank, OPTS):
     num_rows = bank.num_rows
     num_cols = bank.num_cols
     if num_rows == 32:

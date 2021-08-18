@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
 from sram_test_base import SramTestBase
-from test_base import TestBase
+from testutils import OpenRamTest
 
 
-class SramTest(SramTestBase, TestBase):
+class SramTest(SramTestBase, OpenRamTest):
     pass
 
 

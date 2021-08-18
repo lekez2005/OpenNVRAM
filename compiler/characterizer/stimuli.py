@@ -12,9 +12,10 @@ import debug
 import tech
 from base import utils
 from globals import OPTS
+from modules.baseline_sram import BaselineSram
 
 
-class stimuli():
+class stimuli:
     """ Class for providing stimuli functions """
 
     def __init__(self, stim_file, corner):
@@ -45,6 +46,17 @@ class stimuli():
         self.sf.write("{0} ".format(tech.spice["clk"]))
         self.sf.write("{0} {1} ".format(self.vdd_name, self.gnd_name))
         self.sf.write("{0}\n".format(sram_name))
+
+    @staticmethod
+    def get_sram_pin_replacements(sram):
+        return [("ADDR[", "A["),
+                ("DATA[", "D["), ("DATA_1[", "D["),
+                ("MASK_1[", "MASK[")]
+
+    def instantiate_sram(self, sram: BaselineSram):
+        replacements = self.get_sram_pin_replacements(sram)
+        connections = " ".join(sram.bank.connections_from_mod(sram.pins, replacements))
+        self.sf.write(f"Xsram {connections} {sram.name} \n")
 
     def inst_model(self, pins, model_name):
         """ Function to instantiate a generic model with a set of pins """

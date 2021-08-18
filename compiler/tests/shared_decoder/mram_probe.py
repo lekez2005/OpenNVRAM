@@ -107,3 +107,7 @@ class MramProbe(SramProbe):
             self.wwl_probes[address_int] = self.get_wwl_label(1, row, col)
 
         self.probe_labels.add(self.wwl_probes[address_int])
+
+    def update_bitcell_labels(self, pin_labels):
+        if not OPTS.use_pex:
+            self.probe_labels.update(pin_labels)

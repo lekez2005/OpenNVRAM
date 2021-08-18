@@ -3,13 +3,13 @@ from importlib import reload
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from test_base import TestBase
+    from testutils import OpenRamTest
 else:
     class TestBase:
         pass
 
 
-class BankTestBase(TestBase):
+class BankTestBase(OpenRamTest):
 
     def local_check(self, a, final_verification=False):
         if hasattr(a.wordline_driver, "add_body_taps"):
@@ -28,13 +28,7 @@ class BankTestBase(TestBase):
             return design.import_mod_class_from_str(OPTS.bank_class), {}
 
         from modules.baseline_bank import BaselineBank
-        from modules.shared_decoder.sotfet.sotfet_mram_bank_br_precharge \
-            import SotfetMramBankBrPrecharge
-        if OPTS.baseline:
-
-            bank_class = BaselineBank
-        else:
-            bank_class = SotfetMramBankBrPrecharge
+        bank_class = BaselineBank
         return bank_class, {}
 
     def sweep_all(self, rows=None, cols=None, words_per_row=None, default_row=64, default_col=64):

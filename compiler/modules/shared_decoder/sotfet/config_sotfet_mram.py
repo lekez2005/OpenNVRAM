@@ -1,5 +1,3 @@
-from modules.shared_decoder.config_shared import *
-
 python_path = ["modules/shared_decoder", "modules/shared_decoder/sotfet"]
 baseline = False
 mram = "sotfet"
@@ -65,7 +63,7 @@ def configure_sense_amp(mirror: bool, OPTS):
         OPTS.sense_amp_buffers = [3.56, 12.6, 45]
 
 
-def configure_sizes(bank, OPTS):
+def configure_modules(bank, OPTS):
     num_rows = bank.num_rows
     num_cols = bank.num_cols
 

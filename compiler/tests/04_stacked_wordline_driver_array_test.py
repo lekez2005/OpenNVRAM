@@ -3,10 +3,10 @@
 Run a regression test on a stacked wordline driver array.
 """
 
-from test_base import TestBase
+from testutils import OpenRamTest
 
 
-class StackedWordlineDriverArrayTest(TestBase):
+class StackedWordlineDriverArrayTest(OpenRamTest):
 
     def test_stacked_wordline_driver(self):
         import debug

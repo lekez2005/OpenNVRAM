@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 
-from test_base import TestBase
+from testutils import OpenRamTest
 
 from sim_analyzer_test import SimAnalyzerTest
 
 
-class AnalyzeSimulation(SimAnalyzerTest, TestBase):
-    sim_dir_suffix = "shared_simulator"
+class AnalyzeSimulation(SimAnalyzerTest, OpenRamTest):
 
     def test_analysis(self):
         self.analyze()

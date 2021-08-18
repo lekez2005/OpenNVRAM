@@ -3,20 +3,15 @@ from importlib import reload
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from test_base import TestBase
+    from testutils import OpenRamTest
 else:
     class TestBase:
         pass
 
 
-class SramTestBase(TestBase):
+class SramTestBase(OpenRamTest):
 
     def test_baseline_array(self):
-        from globals import OPTS
-
-        if not OPTS.baseline:
-            return
-
         # self.sweep_all(cols=[], rows=[128], words_per_row=2, default_col=64, num_banks=1)
         self.sweep_all()
 

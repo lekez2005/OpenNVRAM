@@ -163,7 +163,7 @@ class BaselineSram(design):
 
     @staticmethod
     def get_bank_class():
-        if getattr(OPTS, "bank_class"):
+        if hasattr(OPTS, "bank_class"):
             return design.import_mod_class_from_str(OPTS.bank_class)
         return BaselineBank
 

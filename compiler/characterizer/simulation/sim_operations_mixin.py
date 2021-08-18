@@ -4,7 +4,7 @@ from random import randint
 import numpy as np
 
 from base import utils
-from characterizer import stimuli
+from characterizer.stimuli import stimuli
 from characterizer.net_probes.sram_probe import SramProbe
 from globals import OPTS
 

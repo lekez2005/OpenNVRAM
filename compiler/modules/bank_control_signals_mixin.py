@@ -105,6 +105,7 @@ class ControlSignalsMixin(BaselineBank):
         _, min_rail_width = self.calculate_min_area_fill(self.bus_width, layer=METAL3)
         rail_space = max(self.get_line_end_space(METAL3), self.get_parallel_space(METAL4))
         via_allowance = max(0.5 * m2m3.height, 0.5 * self.bus_width)
+        debug.pycharm_debug()
         for rail_name in control_outputs:
             pin = self.control_buffers.get_pin(rail_name)
             if rail_name in left_rails:
@@ -115,7 +116,8 @@ class ControlSignalsMixin(BaselineBank):
                 min_x = pin.cx() - via_allowance
                 closest_offset = self.find_closest_unoccupied_mid_x(max(x_offset, min_x))
                 if closest_offset is None:
-                    rail_x = max(pin.cx(), x_offset + via_allowance)
+                    rail_x = max(pin.cx(), self.bitcell_array.width + via_allowance,
+                                 x_offset + via_allowance)
                 else:
                     bitcell_index, rail_x = closest_offset
                     self.occupied_m4_bitcell_indices.append(bitcell_index)

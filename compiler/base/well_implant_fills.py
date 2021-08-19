@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Union
 
 import debug
 import tech
@@ -16,6 +16,8 @@ TOP = "top"
 BOTTOM = "bottom"
 VERTICAL = "vertical"
 HORIZONTAL = "horizontal"
+
+design_inst = Union[design, instance]
 
 
 def calculate_tx_metal_fill(tx_width, design_mod: design, contact_if_none=False):
@@ -68,7 +70,7 @@ def get_default_fill_layers():
     return layers, purposes
 
 
-def create_wells_and_implants_fills(left_mod: design, right_mod: design,
+def create_wells_and_implants_fills(left_mod: design_inst, right_mod: design_inst,
                                     layers=None, purposes=None):
     """
     Create all rects needed to fill between two adjacent modules to prevent minimum DRC spacing rules
@@ -88,21 +90,30 @@ def create_wells_and_implants_fills(left_mod: design, right_mod: design,
         purposes = default_purposes
 
     all_fills = []
+    round_g = utils.round_to_grid
 
     for i in range(len(layers)):
         layer = layers[i]
         purpose = purposes[i]
 
-        left_mod_rects = left_mod.get_layer_shapes(layer, purpose=purpose)
-        right_mod_rects = right_mod.get_layer_shapes(layer, purpose=purpose)
+        left_mod_rects = left_mod.get_layer_shapes(layer, purpose=purpose, recursive=True)
+        right_mod_rects = right_mod.get_layer_shapes(layer, purpose=purpose, recursive=True)
 
         for left_mod_rect in left_mod_rects:
-            if left_mod_rect.rx() < left_mod.width:
+            if left_mod_rect.rx() < left_mod.width and isinstance(left_mod, design):
                 continue
             # find right mod rect which overlaps
             for right_mod_rect in right_mod_rects:
-                if right_mod_rect.lx() > 0:
+                if right_mod_rect.lx() > 0 and isinstance(right_mod, design):
                     continue
+                if isinstance(left_mod, instance):
+                    if round_g(right_mod_rect.lx()) > round_g(right_mod.lx()):
+                        continue
+                    if round_g(left_mod_rect.rx()) < round_g(left_mod.rx()):
+                        continue
+                    if round_g(right_mod_rect.lx()) <= round_g(left_mod_rect.lx()):  # overlap
+                        continue
+
                 if left_mod_rect.by() < right_mod_rect.by():
                     lowest_rect, highest_rect = left_mod_rect, right_mod_rect
                 else:

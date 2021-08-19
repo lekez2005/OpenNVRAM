@@ -482,10 +482,8 @@ def join_vertical_adjacent_module_wells(bank: design, bottom_inst, top_inst):
         bottom_rect = max(bottom_rects, key=lambda x: x.uy())
 
         bottom_y = utils.round_to_grid(bottom_inst.by() +
-                                       bottom_inst.mod.child_insts[0].by() +
                                        bottom_rect.uy())
         top_y = utils.round_to_grid(top_inst.by() +
-                                    top_inst.mod.child_insts[0].by() +
                                     top_rect.by())
         if top_y > bottom_y and top_y - bottom_y < layer_space:
             x_offset = (bottom_inst.lx() + max(bottom_rect.lx(), top_rect.lx()))

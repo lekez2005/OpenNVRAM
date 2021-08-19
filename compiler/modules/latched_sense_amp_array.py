@@ -10,7 +10,6 @@ class latched_sense_amp_array(sense_amp_array):
             self.add_pin("dout[{0}]".format(word))
 
         self.add_pin("en")
-        self.add_pin("preb")
         self.add_pin("sampleb")
         self.add_pin("vdd")
         self.add_pin("gnd")

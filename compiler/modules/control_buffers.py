@@ -6,15 +6,15 @@ from typing import List, Tuple, Union
 import debug
 from base import utils
 from base.contact import m2m3, m1m2, cross_m2m3, cross_m1m2
-from base.design import design, METAL3, METAL2, METAL1, DRAWING, ACTIVE
+from base.design import design, METAL3, METAL2, METAL1, DRAWING, ACTIVE, NIMP, PWELL
 from base.geometry import NO_MIRROR, MIRROR_XY
 from base.utils import round_to_grid as round_gd
 from base.vector import vector
 from base.well_implant_fills import get_default_fill_layers, create_wells_and_implants_fills
 from globals import OPTS
 from modules.buffer_stage import BufferStage
-from modules.logic_buffer import LogicBuffer
 from modules.horizontal.pgate_horizontal import pgate_horizontal
+from modules.logic_buffer import LogicBuffer
 from pgates.pgate import pgate
 from pgates.pinv import pinv
 from pgates.pnand2 import pnand2
@@ -935,48 +935,17 @@ class ControlBuffers(design, ABC):
             bottom_insts = list(reversed(self.bottom_insts))
             instances[0].extend(bottom_insts[:-1])
             instances[1].extend(bottom_insts[1:])
-
-        def get_edge_mod(inst, is_input):
-            mod = inst.mod
-            if isinstance(mod, pgate):
-                edge_mod = mod
-            elif isinstance(mod, BufferStage):
-                if is_input:
-                    edge_mod = mod.buffer_invs[0]
-                else:
-                    edge_mod = mod.buffer_invs[-1]
-            elif isinstance(mod, LogicBuffer):
-                if is_input:
-                    edge_mod = mod.logic_mod
-                else:
-                    edge_mod = mod.buffer_mod.buffer_invs[-1]
-            else:
-                raise ValueError("Invalid instance mod {}".format(mod.name))
-            return edge_mod
-
         for left_inst, right_inst in zip(instances[0], instances[1]):
-            if left_inst.rx() >= right_inst.lx():
-                continue
-            if left_inst.mirror == NO_MIRROR:
-                is_inputs = (False, True)
-            else:
-                is_inputs = (True, False)
-            left_mod = get_edge_mod(left_inst, is_inputs[0])
-            right_mod = get_edge_mod(right_inst, is_inputs[1])
-            for fill_rect in create_wells_and_implants_fills(left_mod, right_mod,
-                                                             layers, purposes):
-
-                layer, _, _, left_rect, right_rect = fill_rect
-                if (round_gd(left_rect.width) < round_gd(left_mod.width) or
-                        round_gd(right_rect.width) < round_gd(right_mod.width)):
-                    continue
-
-                rect_bottom = round_gd(max(left_rect.by(), right_rect.by()))
-                rect_top = round_gd(max(left_rect.uy(), right_rect.uy()))
-                height = rect_top - rect_bottom
-                if left_inst.mirror == MIRROR_XY:
-                    rect_bottom = left_inst.height - rect_top
-
-                self.add_rect(layer, offset=vector(left_inst.rx(), left_inst.by() + rect_bottom),
-                              width=right_inst.lx() - left_inst.rx(),
-                              height=height)
+            fills = create_wells_and_implants_fills(left_inst, right_inst, layers, purposes)
+            if fills:
+                for layer, rect_bottom, rect_top, left_rect, right_rect in fills:
+                    if layer in [NIMP, PWELL]:
+                        # prevent space from pimplant to nimplant or PWELL to NWELL
+                        if left_inst in self.top_insts:
+                            rect_top = max(left_rect.uy(), right_rect.uy())
+                        else:
+                            rect_bottom = min(left_rect.by(), right_rect.by())
+                    x_offset = min(left_rect.rx(), left_inst.rx())
+                    self.add_rect(layer, vector(x_offset, rect_bottom),
+                                  width=right_rect.lx() - x_offset,
+                                  height=rect_top - rect_bottom)

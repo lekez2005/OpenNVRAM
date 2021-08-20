@@ -39,7 +39,7 @@ class wordline_buffer_no_enable_array(wordline_buffer_array_horizontal):
             WordlineBuffer(buffer_stages=self.buffer_stages, route_outputs=False)
         self.add_mod(self.buffer)
 
-    def add_tap_insts(self):
+    def add_body_taps(self):
         self.tap_insts = []
         for y_offset in self.tap_offsets:
             tap_insts = wordline_pgate_tap.add_buffer_taps(self, 0, y_offset,

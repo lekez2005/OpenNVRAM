@@ -57,9 +57,9 @@ class wordline_buffer_array_horizontal(wordline_driver_array):
         reference_mod.create_dummies(self, top_y=self.buffer_insts[-1].by(),
                                      bottom_y=self.buffer_insts[0].by(),
                                      reference_mod=reference_mod)
-        self.add_tap_insts()
+        self.add_body_taps()
 
-    def add_tap_insts(self):
+    def add_body_taps(self):
 
         # add taps
         self.tap_insts = []

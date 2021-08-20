@@ -142,6 +142,8 @@ class SimAnalyzer:
         if bank is not None:
             probes = probes[str(bank)]
         if net is not None:
+            if net not in probes:
+                return None
             probes = probes[net]
 
         col_bit = col if col is not None else bit

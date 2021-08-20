@@ -115,7 +115,7 @@ class BitcellAlignedArray(design, ABC):
                                 utils.round_to_grid(bitcell_width))
         assert self.words_per_row >= max_words_per_row,\
             f"Module {self.child_mod.name} width is {self.child_mod.width:.3g} but " \
-            f"bitcell width is {bitcell_width:.3g} => Max words_per_row = {max_words_per_row}"
+            f"bitcell width is {bitcell_width:.3g} => Min words_per_row = {max_words_per_row}"
 
         self.child_insts = []
         for word in range(self.word_size):

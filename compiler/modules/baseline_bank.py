@@ -500,17 +500,18 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                 self.col_decoder_y = row_decoder_y - row_decoder_col_decoder_space - col_decoder_height
             elif row_decoder_y - row_decoder_col_decoder_space - col_decoder_height > \
                     (y_offset_control_buffer + total_flop_height + rail_space_above_controls):
-                # predecoder is still above control flops but move control flops down
-                # if predecoder had been moved left, the rails above the control flops would have still
-                # required moving control flops down anyway
+                # col decoder is still above control flops but move control flops down
+                # if col decoder had been moved left, the rails above the control flops
+                # would have still required moving control flops down anyway
                 y_offset = (row_decoder_y - row_decoder_col_decoder_space - col_decoder_height -
                             rail_space_above_controls - total_flop_height)
                 self.col_decoder_y = y_offset + total_flop_height + rail_space_above_controls
             else:
                 # predecoder will be moved left
                 self.col_decoder_is_left = True
-                y_offset = (row_decoder_y - row_decoder_flop_space - rail_space_above_controls
-                            - total_flop_height)
+                y_offset = min(row_decoder_y - row_decoder_flop_space -
+                               rail_space_above_controls - total_flop_height,
+                               y_offset_control_buffer)
                 self.col_decoder_y = row_decoder_y - row_decoder_col_decoder_space - col_decoder_height
                 self.rail_space_above_controls = rail_space_above_controls
             self.min_point = min(self.min_point, self.col_decoder_y - self.rail_height)

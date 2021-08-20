@@ -3,7 +3,7 @@ from base.design import METAL1, METAL3, METAL2, ACTIVE, design
 from base.vector import vector
 from base.well_implant_fills import create_wells_and_implants_fills
 from globals import OPTS
-from modules.shared_decoder.sotfet.mram_bank import MramBank
+from modules.mram.sotfet.mram_bank import MramBank
 
 
 class SotfetMramBankBrPrecharge(MramBank):

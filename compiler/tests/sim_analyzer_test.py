@@ -378,6 +378,8 @@ class SimAnalyzerTest(SimulatorBase):
         return self.analyzer.get_probe(key, net, self.probe_bank, bit)
 
     def plot_sig(self, signal_name, label, from_t=None, to_t=None):
+        if signal_name is None:
+            return
         if from_t is None:
             from_t = self.probe_start_time
         if to_t is None:

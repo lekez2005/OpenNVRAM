@@ -1,4 +1,5 @@
 import glob
+import math
 import os
 import sys
 import unittest
@@ -128,6 +129,17 @@ class OpenRamTest(unittest.TestCase):
         opt_val = getattr(OPTS, opt_name)
         mod = design.create_mod_from_str_(opt_val, *args, **kwargs)
         return mod
+
+    @staticmethod
+    def get_words_per_row(num_cols, words_per_row, word_size=32):
+        """Assumes 32 bit word size"""
+        if words_per_row is not None:
+            if isinstance(words_per_row, list):
+                return words_per_row
+            else:
+                return [words_per_row]
+        max_col_address_size = int(math.log(num_cols, 2) - math.log(word_size, 2))
+        return [int(2 ** x) for x in range(max_col_address_size + 1)]
 
     def isclose(self, value1, value2, error_tolerance=1e-2):
         """ This is used to compare relative values. """

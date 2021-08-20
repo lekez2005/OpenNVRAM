@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from testutils import OpenRamTest
 else:
-    class TestBase:
+    class OpenRamTest:
         pass
 
 

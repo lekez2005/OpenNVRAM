@@ -15,38 +15,8 @@ class SpiceDut(stimuli):
     """
 
     def instantiate_sram(self, sram: BaselineSram):
-        abits = sram.addr_size
-        dbits = sram.word_size
-        num_banks = sram.num_banks if OPTS.independent_banks else 1
-        sram_name = sram.name
-
-        self.sf.write("Xsram ")
-
-        for j in range(num_banks):
-            for i in range(dbits):
-                self.sf.write("D[{0}] ".format(i))
-                self.sf.write("mask[{0}] ".format(i))
-        if OPTS.independent_banks and num_banks == 2:
-            abits -= 1
-        for i in range(abits):
-            self.sf.write("A[{0}] ".format(i))
-
-        control_pins = sram.bank.connections_from_mod(sram.control_pin_names,
-                                                      [("ADDR[", "A[")])
-        self.sf.write(" {0} {1} {2} ".format(" ".join(control_pins),
-                                             self.vdd_name, self.gnd_name))
-
+        super().instantiate_sram(sram)
         self.one_t_one_s = getattr(OPTS, "one_t_one_s", False)
-
-        if OPTS.mram == "sotfet":
-            self.sf.write(" vref ")
-        elif OPTS.mram == "sot":
-            self.sf.write(" vclamp ")
-        if self.one_t_one_s:
-            self.sf.write("rw")
-
-        self.sf.write(" {0}\n".format(sram_name))
-
         if OPTS.mram == "sotfet":
             self.gen_constant("vref", OPTS.sense_amp_vref, gnd_node="gnd")
         elif OPTS.mram == "sot":
@@ -54,9 +24,7 @@ class SpiceDut(stimuli):
 
     def write_include(self, circuit):
         super().write_include(circuit)
-
-        if OPTS.mram:
-            self.add_device_model()
+        self.add_device_model()
 
     def add_device_model(self):
 
@@ -96,7 +64,7 @@ class SpiceDut(stimuli):
             include_model(OPTS.ref_model_file)
 
     def replace_bitcell(self, delay_obj):
-        if not OPTS.use_pex or not getattr(OPTS, "mram", False):
+        if not OPTS.use_pex:
             return
         debug.info(1, "Replacing bitcells in pex file")
         # derive replacement file

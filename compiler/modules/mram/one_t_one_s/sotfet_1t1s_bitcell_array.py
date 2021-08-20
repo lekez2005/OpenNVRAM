@@ -1,7 +1,7 @@
 from base.geometry import NO_MIRROR
 from base.vector import vector
 from globals import OPTS
-from modules.shared_decoder.sotfet.sotfet_mram_bitcell_array import sotfet_mram_bitcell_array
+from modules.mram.sotfet.sotfet_mram_bitcell_array import sotfet_mram_bitcell_array
 
 
 class sotfet_1t1s_bitcell_array(sotfet_mram_bitcell_array):

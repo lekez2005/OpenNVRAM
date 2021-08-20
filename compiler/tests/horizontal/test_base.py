@@ -3,11 +3,11 @@ import sys
 
 parent_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 parent_dir = os.path.abspath(parent_dir)
-shared_dir = os.path.join(parent_dir, "shared_decoder")
+shared_dir = os.path.join(parent_dir, "mram")
 sys.path.insert(1, parent_dir)
 sys.path.insert(1, shared_dir)
 
-from shared_decoder.test_base import TestBase as SharedTestBase
+from mram.test_base import TestBase as SharedTestBase
 
 
 class TestBase(SharedTestBase):

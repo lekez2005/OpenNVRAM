@@ -5,7 +5,7 @@ import sys
 
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 # insert at beginning of path to override current directory's test_base
-sys.path.insert(0, os.path.join(parent_dir, "shared_decoder"))
+sys.path.insert(0, os.path.join(parent_dir, "mram"))
 sram_test = __import__("20_sram_test")
 
 

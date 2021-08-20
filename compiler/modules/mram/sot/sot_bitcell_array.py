@@ -1,6 +1,6 @@
 from base.vector import vector
 from globals import OPTS
-from modules.shared_decoder.sotfet.sotfet_mram_bitcell_array import sotfet_mram_bitcell_array
+from modules.mram.sotfet.sotfet_mram_bitcell_array import sotfet_mram_bitcell_array
 
 
 class sot_bitcell_array(sotfet_mram_bitcell_array):

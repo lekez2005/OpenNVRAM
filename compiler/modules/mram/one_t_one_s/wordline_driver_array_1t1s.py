@@ -1,5 +1,5 @@
 from base.vector import vector
-from modules.shared_decoder.one_t_one_s.wordline_driver_mixin import wordline_driver_mixin
+from modules.mram.one_t_one_s.wordline_driver_mixin import wordline_driver_mixin
 from modules.wordline_driver_array import wordline_driver_array
 from pgates.pgate_tap import pgate_tap
 

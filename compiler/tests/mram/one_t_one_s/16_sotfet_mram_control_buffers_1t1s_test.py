@@ -22,7 +22,7 @@ class SotfetMramControlBuffersTest(TestBase):
                                sense_amp_array=driver_array,
                                tri_gate_array=driver_array)
 
-        from modules.shared_decoder.one_t_one_s.sotfet_mram_control_buffers_1t1s \
+        from modules.mram.one_t_one_s.sotfet_mram_control_buffers_1t1s \
             import SotfetMramControlBuffers1t1s
         dut = SotfetMramControlBuffers1t1s(bank)
         self.local_check(dut)

@@ -1,4 +1,5 @@
 from config_baseline import *
+from config_baseline import configure_modules as default_configure_modules
 from freepdk45_common_config import *
 
 setup_time = 0.04  # in nanoseconds
@@ -9,6 +10,14 @@ write_driver_mod = "write_driver_mux_buffer"
 write_buffers = [1, 3.42, 11.7, 40]
 
 use_precharge_trigger = False
+
+
+def configure_modules(bank, OPTS):
+    default_configure_modules(bank, OPTS)
+    if bank.words_per_row > 1:
+        OPTS.write_driver_mod = "write_driver_mux_buffer"
+    else:
+        OPTS.write_driver_mod = "write_driver_mask"
 
 
 def configure_timing(sram, OPTS):

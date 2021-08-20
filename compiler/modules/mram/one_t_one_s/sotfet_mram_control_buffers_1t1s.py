@@ -1,7 +1,7 @@
 from globals import OPTS
 from modules.baseline_latched_control_buffers import LatchedControlBuffers
 from modules.logic_buffer import LogicBuffer
-from modules.shared_decoder.sotfet.sotfet_mram_control_buffers import SotfetMramControlBuffers
+from modules.mram.sotfet.sotfet_mram_control_buffers import SotfetMramControlBuffers
 
 
 class SotfetMramControlBuffers1t1s(SotfetMramControlBuffers):

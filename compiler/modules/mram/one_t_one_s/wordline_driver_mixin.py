@@ -1,11 +1,10 @@
+from typing import TYPE_CHECKING
+
 from base.design import design
 from base.library_import import library_import
-from base.vector import vector
 from globals import OPTS
-from modules.shared_decoder.one_t_one_s.wl_logic_buffer import WlLogicBuffer
-from pgates.pgate_tap import pgate_tap
+from modules.mram.one_t_one_s.wl_logic_buffer import WlLogicBuffer
 
-from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from modules.wordline_driver_array import wordline_driver_array
 else:

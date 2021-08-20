@@ -10,7 +10,7 @@ import debug
 class PrechargeTest(TestBase):
 
     def test_single_precharge(self):
-        from modules.shared_decoder.sotfet.sotfet_mram_precharge import sotfet_mram_precharge
+        from modules.mram.sotfet.sotfet_mram_precharge import sotfet_mram_precharge
 
         debug.info(2, "Checking Sotfet mram precharge")
         pc = sotfet_mram_precharge("sotfet_precharge", size=2)

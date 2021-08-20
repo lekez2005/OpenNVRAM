@@ -15,8 +15,8 @@ SHARED_SOTFET = "shared_sotfet"
 PUSH = "push"
 
 configs = {
-    SHARED_BASELINE: "../shared_decoder/config_shared_baseline_{}.py",
-    SHARED_SOTFET: "../shared_decoder/config_shared_sotfet_{}.py",
+    SHARED_BASELINE: "../mram/config_shared_baseline_{}.py",
+    SHARED_SOTFET: "../mram/config_shared_sotfet_{}.py",
     PUSH: "../push_rules/config_push_hs_{}.py"
 }
 

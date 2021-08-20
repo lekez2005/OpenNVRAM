@@ -74,7 +74,7 @@ class SimulatorBase(OpenRamTest):
     @classmethod
     def create_arg_parser(cls):
         parser = argparse.ArgumentParser()
-        parser.add_argument("-M", "--mode", default=cls.CMOS_MODE,
+        parser.add_argument("-M", "--mode", default=cls.valid_modes[0],
                             choices=cls.valid_modes,
                             type=str, help="Simulation mode")
         parser.add_argument("--num_words", default=64, type=int)
@@ -85,10 +85,9 @@ class SimulatorBase(OpenRamTest):
                             default="freepdk45")
         parser.add_argument("--simulator", dest="spice_name", help="Simulator name",
                             default="spectre")
-        parser.add_argument("--dependent", action="store_true")
+        parser.add_argument("--independent", action="store_true")
         parser.add_argument("--fixed_buffers", action="store_true")
         parser.add_argument("--latched", action="store_true")
-        parser.add_argument("--precharge", action="store_true")
         parser.add_argument("--small", action="store_true")
         parser.add_argument("--large", action="store_true")
         parser.add_argument("--schematic", action="store_true")
@@ -140,7 +139,7 @@ class SimulatorBase(OpenRamTest):
         OPTS.run_optimizations = not options.fixed_buffers
         OPTS.energy = options.energy
 
-        OPTS.independent_banks = not options.dependent
+        OPTS.independent_banks = options.independent
 
         if options.energy:
             OPTS.pex_spice = OPTS.pex_spice.replace("_energy", "")
@@ -148,22 +147,21 @@ class SimulatorBase(OpenRamTest):
     @classmethod
     def get_sim_directory(cls, cmd_line_opts):
         bank_suffix = "_bank2" if cmd_line_opts.num_banks == 2 else ""
-        if cmd_line_opts.num_banks == 2 and cmd_line_opts.dependent:
-            bank_suffix += "_depend"
+        if cmd_line_opts.num_banks == 2 and cmd_line_opts.independent:
+            bank_suffix += "_independent"
 
         if not cmd_line_opts.word_size == cls.DEFAULT_WORD_SIZE:
             word_size_suffix = "_w{}".format(cmd_line_opts.word_size)
         else:
             word_size_suffix = ""
         schem_suffix = "_schem" if cmd_line_opts.schematic else ""
-        if cmd_line_opts.precharge:
-            schem_suffix = "_precharge" + schem_suffix
 
         energy_suffix = "_energy" if cmd_line_opts.energy else ""
 
         op = cmd_line_opts
         sim_directory = f"{op.mode}_{op.num_words}_c_{op.num_cols}" \
                         f"{word_size_suffix}{bank_suffix}{schem_suffix}{energy_suffix}"
-        openram_temp_ = os.path.join(os.environ["SCRATCH"], "openram", cls.sim_dir_suffix,
-                                     cmd_line_opts.tech_name, sim_directory)
+        openram_temp_ = os.path.join(os.environ["SCRATCH"], "openram",
+                                     cmd_line_opts.tech_name, cls.sim_dir_suffix,
+                                     sim_directory)
         return openram_temp_

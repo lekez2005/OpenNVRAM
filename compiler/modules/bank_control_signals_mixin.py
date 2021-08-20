@@ -105,7 +105,6 @@ class ControlSignalsMixin(BaselineBank):
         _, min_rail_width = self.calculate_min_area_fill(self.bus_width, layer=METAL3)
         rail_space = max(self.get_line_end_space(METAL3), self.get_parallel_space(METAL4))
         via_allowance = max(0.5 * m2m3.height, 0.5 * self.bus_width)
-        debug.pycharm_debug()
         for rail_name in control_outputs:
             pin = self.control_buffers.get_pin(rail_name)
             if rail_name in left_rails:

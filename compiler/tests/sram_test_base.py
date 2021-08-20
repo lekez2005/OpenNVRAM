@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from testutils import OpenRamTest
 else:
-    class TestBase:
+    class OpenRamTest:
         pass
 
 
@@ -22,7 +22,7 @@ class SramTestBase(OpenRamTest):
             sram_class = self.load_class_from_opts("sram_class")
         else:
             from modules.baseline_sram import BaselineSram
-            from modules.shared_decoder.sotfet.sotfet_mram import SotfetMram
+            from modules.mram.sotfet.sotfet_mram import SotfetMram
             if OPTS.mram in ["sotfet", "sot"]:
                 sram_class = SotfetMram
             else:

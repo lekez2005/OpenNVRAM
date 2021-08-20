@@ -1,6 +1,6 @@
 from modules.logic_buffer import LogicBuffer
 
-from modules.shared_decoder.one_t_one_s.wl_buffer_stages import WlBufferStages
+from modules.mram.one_t_one_s.wl_buffer_stages import WlBufferStages
 
 
 class WlLogicBuffer(LogicBuffer):

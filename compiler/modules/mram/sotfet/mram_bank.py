@@ -3,7 +3,7 @@ from base.design import METAL1, METAL3, METAL2, METAL4
 from base.vector import vector
 from globals import OPTS
 from modules.baseline_bank import BaselineBank
-from modules.shared_decoder.sotfet.sotfet_mram_control_buffers import SotfetMramControlBuffers
+from modules.mram.sotfet.sotfet_mram_control_buffers import SotfetMramControlBuffers
 
 
 class MramBank(BaselineBank):
@@ -34,7 +34,7 @@ class MramBank(BaselineBank):
         super().create_modules()
 
     def create_optimizer(self):
-        from modules.shared_decoder.sotfet.sotfet_control_buffers_optimizer import \
+        from modules.mram.sotfet.sotfet_control_buffers_optimizer import \
             SotfetControlBuffersOptimizer
         self.optimizer = SotfetControlBuffersOptimizer(self)
 

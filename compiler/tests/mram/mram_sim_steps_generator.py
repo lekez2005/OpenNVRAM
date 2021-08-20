@@ -1,16 +1,16 @@
 import numpy as np
-
-from globals import OPTS
 from mram_probe import MramProbe
-from sim_steps_generator import SimStepsGenerator
+
+from characterizer import SpiceCharacterizer
+from globals import OPTS
+from mram.spice_dut import SpiceDut
 
 
-class MramSimStepsGenerator(SimStepsGenerator):
+class MramSimStepsGenerator(SpiceCharacterizer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.control_sigs.append("write_trig")
-        self.write_trig = self.prev_write_trig = 0
+        self.two_step_pulses["write_trig"] = 1
 
         self.one_t_one_s = getattr(OPTS, "one_t_one_s", False)
         if self.one_t_one_s:
@@ -20,7 +20,12 @@ class MramSimStepsGenerator(SimStepsGenerator):
     def create_probe(self):
         self.probe = MramProbe(self.sram, OPTS.pex_spice)
 
-    def initialize_sram(self, probe, existing_data):
+    def create_dut(self):
+        stim = SpiceDut(self.sf, self.corner)
+        stim.words_per_row = self.sram.words_per_row
+        return stim
+
+    def initialize_sram(self, probe: MramProbe = None, existing_data=None):
         super().initialize_sram(probe, existing_data)
         if not OPTS.mram == "sot":
             return
@@ -45,16 +50,16 @@ class MramSimStepsGenerator(SimStepsGenerator):
                             self.write_ic(ic, col_node, col_voltage)
             ic.flush()
 
+    def is_signal_updated(self, key):
+        """Determine whether signal should be updated depending on key and current operation"""
+        if key == "write_trig" and self.read:
+            return False
+        return super().is_signal_updated(key)
+
     def update_output(self, increment_time=True):
         if self.one_t_one_s:
-            self.rw = int (not self.read)
-        if increment_time and not self.read:
-            self.write_pwl("write_trig", 0, 1)
-
+            self.rw = int(not self.read)
         super().update_output(increment_time)
-
-        if increment_time and not self.read:
-            self.write_pwl("write_trig", 1, 0)
 
     def get_setup_time(self, key, prev_val, curr_val):
         if key == "write_trig":
@@ -62,7 +67,7 @@ class MramSimStepsGenerator(SimStepsGenerator):
                 setup_time = self.slew
             else:
                 trigger_delay = OPTS.write_trigger_delay
-                setup_time = self.period - (self.duty_cycle * self.period + trigger_delay)
+                setup_time = -(self.slew + self.duty_cycle * self.period + trigger_delay)
             return setup_time
         else:
             return super().get_setup_time(key, prev_val, curr_val)
@@ -79,4 +84,3 @@ class MramSimStepsGenerator(SimStepsGenerator):
 
         ic.write(".ic V({})={} \n".format(phi_node, phi))
         ic.write(".ic V({})={} \n".format(theta_node, theta))
-

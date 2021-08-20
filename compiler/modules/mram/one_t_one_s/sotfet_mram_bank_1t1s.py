@@ -3,8 +3,8 @@ from base.contact import cross_m1m2, m2m3, cross_m2m3, m1m2
 from base.design import METAL1, METAL3, METAL2
 from base.vector import vector
 from modules.baseline_bank import BaselineBank
-from modules.shared_decoder.one_t_one_s.sotfet_mram_control_buffers_1t1s import SotfetMramControlBuffers1t1s
-from modules.shared_decoder.sotfet.sotfet_mram_bank_br_precharge import SotfetMramBankBrPrecharge
+from modules.mram.one_t_one_s.sotfet_mram_control_buffers_1t1s import SotfetMramControlBuffers1t1s
+from modules.mram.sotfet.sotfet_mram_bank_br_precharge import SotfetMramBankBrPrecharge
 
 
 class SotfetMramBank1t1s(SotfetMramBankBrPrecharge):

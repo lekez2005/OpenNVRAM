@@ -10,5 +10,5 @@ class CamTestBase(OpenRamTest):
 
     @staticmethod
     def get_words_per_row(*args, **kwargs):
-        from shared_decoder.test_base import TestBase
+        from mram.test_base import TestBase
         return TestBase.get_words_per_row(*args, **kwargs)

@@ -1,6 +1,6 @@
-from config_shared_sotfet_freepdk45 import *
+from config_mram_sotfet_freepdk45 import *
 
-python_path += ["modules/shared_decoder/sot"]
+python_path += ["modules/mram/sot"]
 
 mram = "sot"
 

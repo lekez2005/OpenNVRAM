@@ -1,5 +1,4 @@
-from modules.shared_decoder.sotfet.config_sotfet_mram import *
-
+from mram.config_mram import *
 from freepdk45_common_config import *
 
 python_path += ["modules/horizontal"]
@@ -28,6 +27,7 @@ rwl_driver = "wordline_buffer_array_horizontal"
 wwl_driver = "wordline_buffer_array_horizontal"
 
 bank_class = "mram_bank.MramBank"
+sram_class = "sotfet_mram.SotfetMram"
 
 route_control_signals_left = True
 sense_amp_array = "sense_amp_array"
@@ -45,10 +45,6 @@ default_model_params = "mram/default_llg_params.py"
 bitcell_state_probe = "XI0.state"
 
 llg_prescale = 0.001  # prescale internal llg model voltages
-
-
-def configure_sense_amp(mirror: bool, OPTS):
-    pass
 
 
 def configure_timing(sram, OPTS):

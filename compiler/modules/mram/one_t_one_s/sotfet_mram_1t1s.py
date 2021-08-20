@@ -1,4 +1,4 @@
-from modules.shared_decoder.sotfet.sotfet_mram import SotfetMram
+from modules.mram.sotfet.sotfet_mram import SotfetMram
 
 
 class SotfetMram1t1s(SotfetMram):

@@ -323,7 +323,11 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                     (x.layerPurpose == self.get_purpose_number(layer, purpose))))
 
         all_pins = [x for sublist in self.pin_map.values() for x in sublist]
-        return list(filter(filter_match, self.objs + all_pins))
+        shapes = list(filter(filter_match, self.objs + all_pins))
+        if recursive:
+            for inst in self.insts:
+                shapes.extend(inst.get_layer_shapes(layer, purpose, recursive))
+        return shapes
 
     def get_gds_layer_shapes(self, cell, layer, purpose=None, recursive=False):
         purpose_number = self.get_purpose_number(layer, purpose)

@@ -165,11 +165,17 @@ class PulseGenMixin(SpiceCharacterizer):
                 continue
             self.write_pwl_from_key(key)
 
+    def is_signal_updated(self, key):
+        """Determine whether signal should be updated depending on key and current operation"""
+        if key == "sense_trig" and not self.read:
+            return False
+        return True
+
     def update_two_step_pulses(self, increment_time):
         if not increment_time:
             return
         for key, initial_val in self.two_step_pulses.items():
-            if key == "sense_trig" and not self.read:
+            if not self.is_signal_updated(key):
                 continue
             prev_val = int(not initial_val)
             self.write_pwl(key, prev_val, initial_val)

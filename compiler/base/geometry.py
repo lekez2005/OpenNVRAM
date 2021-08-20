@@ -383,8 +383,9 @@ class rectangle(geometry):
 
     def __str__(self):
         """ override print function output """
-        return "rect: @" + str(self.boundary[0]) + " " + str(self.width) + "x" + str(self.height) + " layer=" +str(self.layerNumber)
+        offsets = [self.ll(), self.ur()]
+        return "rect: @" + str(offsets) + " " + str(self.width) + "x" + str(self.height) + " layer=" +str(self.layerNumber)
 
     def __repr__(self):
         """ override print function output """
-        return "( rect: @" + str(self.boundary[0]) + " " + str(self.width) + "x" + str(self.height) + " layer=" + str(self.layerNumber) + " )"
+        return self.__str__()

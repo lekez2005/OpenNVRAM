@@ -65,8 +65,8 @@ class BaseDelayStrategy(ABC):
 
     def run_optimizations(self):
         run_optimizations = hasattr(OPTS, 'run_optimizations') and OPTS.run_optimizations
-        if hasattr(OPTS, 'configure_sizes'):
-            getattr(OPTS, 'configure_sizes')(self, OPTS)
+        if hasattr(OPTS, 'configure_modules'):
+            getattr(OPTS, 'configure_modules')(self, OPTS)
         if run_optimizations:
 
             OPTS.clk_buffers = self.get_clk_buffer_sizes()

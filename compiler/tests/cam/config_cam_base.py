@@ -38,7 +38,7 @@ num_banks = 2
 words_per_row = 1
 
 
-def configure_sizes(bank, OPTS):
+def configure_modules(bank, OPTS):
     if bank.words_per_row > 1:
         OPTS.ml_buffers = [40 ** ((x + 1) / 3) for x in range(3)]
     else:

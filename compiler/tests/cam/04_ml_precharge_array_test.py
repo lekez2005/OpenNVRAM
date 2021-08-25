@@ -37,11 +37,30 @@ class CamPrechargeTest(CamTestBase):
         cell = self.create_class_from_opts("precharge", name="precharge", size=size)
         self.local_check(cell)
 
+    def test_one_word_per_row(self):
+        size = 4
+        self.debug.info(2, f"Checking matchline precharge cell with size {size:.2g}")
+        cell = self.create_class_from_opts("precharge", name="precharge", size=size,
+                                           words_per_row=1)
+        self.local_check(cell)
+
+    def test_multiple_words_per_row(self):
+        size = 4
+        self.debug.info(2, f"Checking matchline precharge cell with size {size:.2g}")
+        cell = self.create_class_from_opts("precharge", name="precharge", size=size,
+                                           words_per_row=2)
+        self.local_check(cell)
+
     def test_precharge_array(self):
         """Test standalone array for drc issues"""
         cols = 16
         self.debug.info(2, "Checking matchline precharge array with {} rows")
-        array = self.create_class_from_opts("precharge_array", columns=cols, size=3)
+        array = self.create_class_from_opts("precharge_array", columns=cols, size=3,
+                                            words_per_row=1)
+        self.local_check(array)
+
+        array = self.create_class_from_opts("precharge_array", columns=cols, size=3,
+                                            words_per_row=2)
         self.local_check(array)
 
 

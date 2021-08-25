@@ -13,7 +13,7 @@ from tech import parameter, add_tech_layers
 
 class CamPrecharge(precharge_characterization, design):
 
-    def __init__(self, name, size=1):
+    def __init__(self, name, size=1, words_per_row=1):
         design.__init__(self, name)
         debug.info(2, "create single precharge cell: {0}".format(name))
 
@@ -25,6 +25,8 @@ class CamPrecharge(precharge_characterization, design):
         self.ptx_width = utils.round_to_grid(size * self.beta * parameter["min_tx_size"])
         self.size = self.ptx_width / (self.beta * parameter["min_tx_size"])
         self.width = self.bitcell.width
+        self.words_per_row = words_per_row
+        self.has_precharge = words_per_row > 1
 
         self.add_pins()
         self.create_layout()
@@ -32,7 +34,10 @@ class CamPrecharge(precharge_characterization, design):
         self.DRC_LVS()
 
     def add_pins(self):
-        self.add_pin_list(["bl", "br", "precharge_en_bar", "discharge", "vdd", "gnd"])
+        precharge_en_bar = ["precharge_en_bar"] * self.has_precharge
+        vdd = ["vdd"] * self.has_precharge
+        pins = (["bl", "br"] + precharge_en_bar + ["discharge"] + vdd + ["gnd"])
+        self.add_pin_list(pins)
 
     def create_layout(self):
         self.create_modules()
@@ -72,6 +77,21 @@ class CamPrecharge(precharge_characterization, design):
         self.nmos_y = max(contact_implant_height - nmos_implant.by(),
                           contact_active_height + self.poly_to_active - nmos_poly.by())
 
+        self.contact_active_height = contact_active_height
+        self.contact_implant_height = contact_implant_height
+
+        if not self.has_precharge:
+            nmos_gate_y = self.nmos_y + self.nmos.get_pins("G")[0].cy()
+            via_height = max(poly_contact.height, cross_m2m3.first_layer_height)
+            bitline_bot = nmos_gate_y + 0.5 * via_height
+
+            bitcell_pin = self.bitcell.get_pin("bl")
+
+            self.height = (bitline_bot + self.get_line_end_space(METAL2) +
+                           bitcell_pin.width())
+            self.nwell_cont_y = None
+            return
+
         pmos_implant = self.pmos.get_layer_shapes(PIMP)[0]
         pmos_poly = min(self.pmos.get_layer_shapes(POLY), key=lambda x: x.by())
 
@@ -93,9 +113,6 @@ class CamPrecharge(precharge_characterization, design):
         self.nwell_cont_y = max(pimp_top,
                                 poly_top + self.poly_to_active + self.implant_enclose_active)
 
-        self.contact_active_height = contact_active_height
-        self.contact_implant_height = contact_implant_height
-
         self.height = self.nwell_cont_y + self.contact_implant_height
 
     def add_modules(self):
@@ -104,10 +121,14 @@ class CamPrecharge(precharge_characterization, design):
         self.nmos_inst = self.add_inst("discharge", self.nmos,
                                        offset=vector(x_offset, self.nmos_y))
         self.connect_inst([], check=False)
+        self.ptx_insts = [self.nmos_inst]
+        if not self.has_precharge:
+            return
 
         self.pmos_inst = self.add_inst("precharge", self.pmos,
                                        offset=vector(x_offset, self.pmos_y))
         self.connect_inst([], check=False)
+        self.ptx_insts.append(self.pmos_inst)
 
     def add_spice_connections(self):
         """Create spice connections"""
@@ -116,7 +137,9 @@ class CamPrecharge(precharge_characterization, design):
         power_nets = ["gnd", "vdd"]
         tx_types = ["nmos", "pmos"]
 
-        for i in range(2):
+        num_insts = 2 if self.has_precharge else 1
+
+        for i in range(num_insts):
             spice_obj = ptx_spice(tx_type=tx_types[i], width=widths[i], mults=1)
             names = ["equalizer", "bl", "br"]
             for j in range(3):
@@ -129,13 +152,13 @@ class CamPrecharge(precharge_characterization, design):
 
     def add_enable_pins(self):
         pin_names = ["discharge", "precharge_en_bar"]
-        insts = [self.nmos_inst, self.pmos_inst]
+        insts = self.ptx_insts
 
         fill_height = cross_m2m3.height
         _, fill_width = self.calculate_min_area_fill(fill_height, layer=METAL2)
 
         pin_x = - 0.5 * cross_m2m3.height
-        for i in range(2):
+        for i in range(len(self.ptx_insts)):
             gate_pin = insts[i].get_pin("G")
             self.add_layout_pin(pin_names[i], METAL3,
                                 offset=vector(pin_x, gate_pin.cy() - 0.5 * self.bus_width),
@@ -167,7 +190,7 @@ class CamPrecharge(precharge_characterization, design):
             tx_pins = []
             contacts = []
 
-            for tx in [self.nmos_inst, self.pmos_inst]:
+            for tx in self.ptx_insts:
                 source_drain = tx.get_pins("S") + tx.get_pins("D")
                 tx_pin = list(sorted(source_drain, key=lambda x: x.lx()))[pin_indices[i]]
                 tx_pins.append(tx_pin)
@@ -195,9 +218,13 @@ class CamPrecharge(precharge_characterization, design):
                                   width=fill_width, height=fill_height)
 
             # join nmos pmos
+            if self.has_precharge:
+                y_top = tx_pins[1].cy()
+            else:
+                y_top = self.height
             offset = vector(tx_pins[0].cx() - 0.5 * cont.width, tx_pins[0].cy())
             self.add_rect(METAL2, offset=offset, width=cont.second_layer_width,
-                          height=tx_pins[1].cy() - offset.y)
+                          height=y_top - offset.y)
             # create pins and join to nmos drains
             bottom_cont = contacts[0]
             self.add_layout_pin(pin_name, METAL2, offset=vector(bitcell_pin.lx(), 0),
@@ -208,19 +235,25 @@ class CamPrecharge(precharge_characterization, design):
                           height=bitcell_pin.width())
 
             # extend pmos pins to vdd
-            top_cont = contacts[1]
-            y_offset = top_cont.uy() - bitcell_pin.width()
-            self.add_rect(METAL2, offset=vector(bitcell_pin.lx(), y_offset),
-                          width=tx_pins[0].cx() - bitcell_pin.lx(),
+            if self.has_precharge:
+                top_cont = contacts[1]
+                y_offset = top_cont.uy() - bitcell_pin.width()
+                self.add_rect(METAL2, offset=vector(bitcell_pin.lx(), y_offset),
+                              width=bitcell_pin.width(),
+                              height=self.height - y_offset)
+            else:
+                y_offset = self.height - bitcell_pin.width()
+
+            rect_edge = bitcell_pin.lx() if i == 0 else bitcell_pin.rx()
+
+            self.add_rect(METAL2, offset=vector(rect_edge, y_offset),
+                          width=tx_pins[0].cx() - rect_edge,
                           height=bitcell_pin.width())
-            self.add_rect(METAL2, offset=vector(bitcell_pin.lx(), y_offset),
-                          width=bitcell_pin.width(),
-                          height=self.height - y_offset)
 
     def connect_power(self):
         y_offsets = [0.5 * self.contact_implant_height,
                      self.height - 0.5 * self.contact_implant_height]
-        for i, tx in enumerate([self.nmos_inst, self.pmos_inst]):
+        for i, tx in enumerate(self.ptx_insts):
             source_drain = list(sorted(tx.get_pins("S") + tx.get_pins("D"),
                                        key=lambda x: x.lx()))
             for pin_index in [0, 3]:
@@ -238,7 +271,7 @@ class CamPrecharge(precharge_characterization, design):
         pin_names = ["gnd", "vdd"]
         implants = [PIMP, NIMP]
         y_offsets = [0, self.nwell_cont_y]
-        for i in range(2):
+        for i in range(len(self.ptx_insts)):
             mid_y = y_offsets[i] + 0.5 * self.contact_implant_height
 
             cont_y = mid_y - 0.5 * sample.width
@@ -271,9 +304,9 @@ class CamPrecharge(precharge_characterization, design):
         y_offsets = [-extension, self.height + extension]
         layers = [PWELL, NWELL]
         implants = [NIMP, PIMP]
-        all_tx = [self.nmos_inst, self.pmos_inst]
+        all_tx = self.ptx_insts
 
-        for i in range(2):
+        for i in range(len(all_tx)):
             implant_rect = max(all_tx[i].get_layer_shapes(implants[i]),
                                key=lambda x: x.width * x.height)
             self.add_rect(implants[i], offset=vector(0, implant_rect.by()),

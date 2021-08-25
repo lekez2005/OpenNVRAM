@@ -5,6 +5,7 @@ from modules.baseline_sram import BaselineSram
 
 
 class Cam(BaselineSram):
+
     def create_layout(self):
         assert not OPTS.independent_banks, "Independent banks not supported for CAMs"
         super().create_layout()
@@ -23,9 +24,9 @@ class Cam(BaselineSram):
 
     def get_bank_connections(self, bank_num, bank_mod):
         connections = super().get_bank_connections(bank_num, bank_mod)
-        if bank_num == 1:
-            connections = bank_mod.connections_from_mod(connections,
-                                                        [("search_out[", "search_out_1[")])
+        if bank_num > 0:
+            replacements = [("search_out[", f"search_out_{bank_num}[")]
+            connections = bank_mod.connections_from_mod(connections, replacements)
         return connections
 
     def get_schematic_pins(self):
@@ -34,6 +35,23 @@ class Cam(BaselineSram):
         if self.num_banks == 2:
             search_pins.extend([f"search_out[{row}]" for row in range(self.num_rows)])
 
+        search_pins.append("search_ref")
         index = pins.index(f"ADDR[{self.bank_addr_size - 1}]") + 1
         pins[index:index] = search_pins
         return pins
+
+    def copy_layout_pins(self):
+        super().copy_layout_pins()
+        self.copy_layout_pin(self.bank_inst, "search_ref")
+        for bank_inst in self.bank_insts:
+            conn = self.conns[self.insts.index(bank_inst)]
+            for pin_index, pin_name in enumerate(bank_inst.mod.pins):
+                if "search_out" in pin_name:
+                    net = conn[pin_index]
+                    self.copy_layout_pin(bank_inst, pin_name, net)
+
+    def join_bank_controls(self):
+        control_inputs = self.control_inputs
+        self.control_inputs = control_inputs + ["search_ref"]
+        super().join_bank_controls()
+        self.control_inputs = control_inputs

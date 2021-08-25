@@ -19,13 +19,15 @@ class MatchlinePrecharge(precharge_characterization, design):
     bitcell = None
     test_contact = None
 
-    def __init__(self, size=1):
-        design.__init__(self, "matchline_precharge")
+    def __init__(self, size=1, name=None):
+        name = name or "matchline_precharge"
+        design.__init__(self, name)
         debug.info(2, "Create matchline_precharge with size {}".format(size))
 
         self.bitcell = self.create_mod_from_str(OPTS.bitcell)
 
         self.beta = parameter["beta"]
+        self.size = size
         self.ptx_width = size * self.beta * parameter["min_tx_size"]
         self.height = self.bitcell.height
 
@@ -239,7 +241,8 @@ class MatchlinePrecharge(precharge_characterization, design):
                             height=self.gnd_rail_height, width=self.width)
 
     def add_ptx_spice(self):
-        self.ptx = ptx_spice(width=self.ptx_width, mults=self.tx_mults, tx_type="pmos")
+        self.ptx = self.pmos = ptx_spice(width=self.ptx_width,
+                                         mults=self.tx_mults, tx_type="pmos")
         self.add_mod(self.ptx)
         self.ptx_inst = self.add_inst("ptx", mod=self.ptx, offset=vector(0, 0))
         self.connect_inst(["ml", "precharge_en_bar", "vdd", "vdd"])

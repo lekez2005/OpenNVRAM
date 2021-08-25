@@ -12,7 +12,7 @@ plot_exclusions = ["sense_en", "outb_int"]
 
 def print_max_delay(desc, val):
     if val > 0:
-        print("{} delay = {:.4g}p".format(desc, val * 1e12))
+        print("{} delay = {:.4g}p".format(desc, val * 1e12), flush=True)
 
 
 class SimAnalyzerTest(SimulatorBase):
@@ -41,11 +41,7 @@ class SimAnalyzerTest(SimulatorBase):
         self.state_probes = self.analyzer.state_probes
 
     def analyze(self):
-        opts = self.cmd_line_opts
-        self.all_read_events = (self.analyzer.load_events("Read")
-                                if not opts.skip_read_check else [])
-        self.all_write_events = (self.analyzer.load_events("Write")
-                                 if not opts.skip_write_check else [])
+        self.load_events()
 
         self.analyze_precharge_decoder(self.all_read_events +
                                        self.all_write_events)
@@ -59,6 +55,13 @@ class SimAnalyzerTest(SimulatorBase):
         self.evaluate_write_critical_path(max_write_event, max_write_bit_delays)
 
         self.run_plots()
+
+    def load_events(self):
+        opts = self.cmd_line_opts
+        self.all_read_events = (self.analyzer.load_events("Read")
+                                if not opts.skip_read_check else [])
+        self.all_write_events = (self.analyzer.load_events("Write")
+                                 if not opts.skip_write_check else [])
 
     def evaluate_num_words(self):
         from globals import OPTS
@@ -227,32 +230,35 @@ class SimAnalyzerTest(SimulatorBase):
         return delay_func(probe, self.probe_start_time, self.probe_end_time,
                           num_bits=1, bus_edge=edge)
 
-    def get_wordline_en_delay(self):
+    def print_wordline_en_delay(self):
         probes = self.voltage_probes["control_buffers"][str(self.probe_bank)]["wordline_en"]
         max_row = max(map(int, probes.keys()))
-        return self.voltage_probe_delay("control_buffers", "wordline_en", self.probe_bank,
-                                        bit=max_row, edge=self.RISING_EDGE)
+        delay = self.voltage_probe_delay("control_buffers", "wordline_en", self.probe_bank,
+                                         bit=max_row, edge=self.RISING_EDGE)
+        print_max_delay("Wordline EN", delay)
 
-    def get_wordline_delay(self, max_read_address):
-        return self.voltage_probe_delay("wl", None, None, bit=max_read_address,
-                                        edge=self.RISING_EDGE)
+    def print_wordline_delay(self, max_read_address):
+        delay = self.voltage_probe_delay("wl", None, None, bit=max_read_address,
+                                         edge=self.RISING_EDGE)
+        print_max_delay("Wordline ", delay)
 
-    def get_read_sample_delay(self):
+    def print_read_sample_delay(self):
         delay_func = self.voltage_probe_delay
         bank, bit = self.probe_bank, self.probe_control_bit
-        sample_fall_delay = sample_rise_delay = None
         if "sample_en_bar" in self.voltage_probes["control_buffers"]:
             sample_fall_delay = delay_func("control_buffers", "sample_en_bar", bank,
                                            bit, edge=self.FALLING_EDGE)
             sample_rise_delay = delay_func("control_buffers", "sample_en_bar", bank,
                                            bit, edge=self.RISING_EDGE)
-        return sample_fall_delay, sample_rise_delay
+            print_max_delay("Sample Fall", sample_fall_delay)
+            print_max_delay("Sample Rise", sample_rise_delay)
 
-    def get_sense_en_delay(self):
-        return self.voltage_probe_delay("control_buffers", "sense_en", self.probe_bank,
-                                        self.probe_control_bit, edge=self.RISING_EDGE)
+    def print_sense_en_delay(self):
+        delay = self.voltage_probe_delay("control_buffers", "sense_en", self.probe_bank,
+                                         self.probe_control_bit, edge=self.RISING_EDGE)
+        print_max_delay("Sense EN", delay)
 
-    def get_sense_bl_br_delay(self):
+    def print_sense_bl_br_delay(self):
         bank = self.probe_bank
         voltage_probe_delay = self.voltage_probe_delay
         bl_delay = voltage_probe_delay("sense_amp_array", "bl", bank,
@@ -262,30 +268,21 @@ class SimAnalyzerTest(SimulatorBase):
                                            self.probe_control_bit)
         else:
             br_delay = voltage_probe_delay("br", None, bank, col=self.probe_col)
-        return bl_delay, br_delay
-
-    def get_sense_out_delay(self):
-        return self.voltage_probe_delay("sense_amp_array", "dout", self.probe_bank,
-                                        self.probe_control_bit)
-
-    def print_read_critical_path(self, address):
-        wordline_en_delay = self.get_wordline_en_delay()
-        wordline_delay = self.get_wordline_delay(address)
-        sample_delays = self.get_read_sample_delay()
-        sample_fall_delay, sample_rise_delay = sample_delays
-        sense_en_delay = self.get_sense_en_delay()
-        bl_delay, br_delay = self.get_sense_bl_br_delay()
-        sense_out_delay = self.get_sense_out_delay()
-
-        print_max_delay("Wordline EN", wordline_en_delay)
-        print_max_delay("Wordline ", wordline_delay)
-        if sample_rise_delay is not None and sample_rise_delay is not None:
-            print_max_delay("Sample Fall", sample_fall_delay)
-            print_max_delay("Sample Rise", sample_rise_delay)
-        print_max_delay("Sense EN", sense_en_delay)
         print_max_delay("BL", bl_delay)
         print_max_delay("BR", br_delay)
-        print_max_delay("Sense out", sense_out_delay)
+
+    def print_sense_out_delay(self):
+        delay = self.voltage_probe_delay("sense_amp_array", "dout", self.probe_bank,
+                                         self.probe_control_bit)
+        print_max_delay("Sense out", delay)
+
+    def print_read_critical_path(self, address):
+        self.print_wordline_en_delay()
+        self.print_wordline_delay(address)
+        self.print_sense_bl_br_delay()
+        self.print_read_sample_delay()
+        self.print_sense_en_delay()
+        self.print_sense_out_delay()
 
     def set_critical_path_params(self, event, bit_delays, settling_time):
         start_time, address, period, _, row = event[:5]

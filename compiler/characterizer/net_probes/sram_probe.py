@@ -293,10 +293,13 @@ class SramProbe(object):
                                              suffix="")
         self.update_current_probes(probes, "precharge_array", bank)
 
+    def get_bitcell_current_nets(self):
+        return ["q", "qbar"]
+
     def get_bank_bitcell_current_probes(self, bank, bits, row, col_index):
         cols = [col_index + bit * self.sram.words_per_row for bit in bits]
         template = "Xbank{bank}.Xbitcell_array.Xbit_r" + str(row) + "_c{bit}.{net}"
-        nets = ["q", "qbar"]
+        nets = self.get_bitcell_current_nets()
         replacements = [("r([0-9]+)_c([0-9]+)", "r\g<1>_c{bit}")]
         probes = self.driver_current_probes(template, nets, cols,
                                             modules=["bitcell_array"],
@@ -486,7 +489,6 @@ class SramProbe(object):
         self.sense_amp_current_probes(bank, bits)
         self.tri_state_current_probes(bank, bits)
         self.precharge_current_probes(bank, cols)
-        self.control_buffers_current_probes(bank)
         self.control_buffers_current_probes(bank)
 
     def probe_bank(self, bank):

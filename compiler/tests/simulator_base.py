@@ -29,7 +29,7 @@ class SimulatorBase(OpenRamTest):
         sram_class = self.get_sram_class()
         sram = sram_class(word_size=OPTS.word_size, num_words=OPTS.num_words,
                           num_banks=OPTS.num_banks, words_per_row=OPTS.words_per_row,
-                          name="sram1", add_power_grid=True)
+                          name="sram1", add_power_grid=False)
         return sram
 
     def run_simulation(self):
@@ -47,6 +47,11 @@ class SimulatorBase(OpenRamTest):
         else:
             netlist_generator.write_delay_stimulus()
         netlist_generator.stim.run_sim()
+        self.print_sim_information(netlist_generator)
+
+    def print_sim_information(self, netlist_generator):
+        from globals import OPTS
+        import debug
 
         debug.info(1, "Read Period = {:3g}".format(netlist_generator.read_period))
         debug.info(1, "Read Duty Cycle = {:3g}".format(netlist_generator.read_duty_cycle))
@@ -124,6 +129,7 @@ class SimulatorBase(OpenRamTest):
     def update_global_opts(self):
         options = self.cmd_line_opts
         from globals import OPTS
+        self.corner = (OPTS.process_corners[0], OPTS.supply_voltages[0], OPTS.temperatures[0])
         OPTS.use_pex = not options.schematic
         OPTS.run_drc = options.run_drc
         OPTS.run_lvs = options.run_lvs

@@ -1,6 +1,6 @@
 from copy import copy
 
-independent_banks = False
+independent_banks = True
 
 # modules
 bitcell = "cam_bitcell"

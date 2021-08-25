@@ -22,8 +22,6 @@ class MramSimulator(SimulatorBase):
 
     @classmethod
     def parse_options(cls):
-        import debug
-        # debug.pycharm_debug()
         options = super(MramSimulator, cls).parse_options()
 
         cls.config_template = f"config_mram_{options.mode}_{{}}"

@@ -40,6 +40,17 @@ def address_to_int(vec_str):
     return vector_to_int(vec_str.replace(",", "").replace(" ", ""))
 
 
+def print_vectors(comments, data):
+    widths = [len(str(x)) for x in data[0]]
+    str_formats = ["{:<" + str(x) + "}" for x in widths]
+
+    for i in range(3):
+        print("{:<10}: \t[{}]".
+              format(comments[i],
+                     " ".join([str_formats[j].format(data[i][j]) for j in
+                               range(len(data[i]))])))
+
+
 def debug_error(comment, expected_data, actual_data):
     equal_vec = np.equal(actual_data, expected_data)
     if not np.all(equal_vec):
@@ -48,15 +59,8 @@ def debug_error(comment, expected_data, actual_data):
         print("{} btw bits {}, {}".format(comment, wrong_bits[0], wrong_bits[-1]))
         print_data = [list(reversed(range(len(actual_data)))), expected_data, actual_data]
         print_comments = ["", "expected", "actual"]
+        print_vectors(print_comments, print_data)
 
-        widths = [len(str(x)) for x in print_data[0]]
-        str_formats = ["{:<" + str(x) + "}" for x in widths]
-
-        for i in range(3):
-            print("{:<10}: \t[{}]".
-                  format(print_comments[i],
-                         " ".join([str_formats[j].format(print_data[i][j]) for j in
-                                   range(len(actual_data))])))
     return np.all(equal_vec)
 
 

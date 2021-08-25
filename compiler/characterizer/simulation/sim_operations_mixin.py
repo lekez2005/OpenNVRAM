@@ -16,6 +16,7 @@ LH = "LH"
 HL = "HL"
 FALL = "FALL"
 RISE = "RISE"
+CROSS = "CROSS"
 
 
 class SimOperationsMixin(SpiceCharacterizer):
@@ -146,16 +147,20 @@ class SimOperationsMixin(SpiceCharacterizer):
 
         self.sf.close()
 
+    def get_saved_nodes(self):
+        return list(sorted(list(self.probe.saved_nodes) +
+                           list(self.dout_probes.values()) +
+                           list(self.probe.data_in_probes.values()) +
+                           list(self.mask_probes.values())))
+
     def finalize_sim_file(self):
-        self.saved_nodes = list(sorted(list(self.probe.saved_nodes) +
-                                       list(self.dout_probes.values()) +
-                                       list(self.probe.data_in_probes.values()) +
-                                       list(self.mask_probes.values())))
+        self.saved_nodes = self.get_saved_nodes()
 
         self.saved_currents = self.probe.current_probes
 
         for node in self.saved_nodes:
             self.sf.write(".probe tran V({0}) \n".format(node))
+        # self.sf.write(".probe tran v(*)\n")
         self.sf.write(".probe tran v(vdd)\n")
         self.sf.write(".probe tran I(vvdd)\n")
 
@@ -175,7 +180,7 @@ class SimOperationsMixin(SpiceCharacterizer):
 
         self.sf.close()
 
-    def test_address(self, address, bank=None, dummy_address=None, data=None, mask=None):
+    def normalize_test_data(self, address, bank=None, dummy_address=None, data=None, mask=None):
         if bank is not None:
             address = self.offset_address_by_bank(address, bank)
 
@@ -196,6 +201,11 @@ class SimOperationsMixin(SpiceCharacterizer):
             data = [1, 0] * int(self.word_size / 2)
 
         data_bar = [int(not x) for x in data]
+        return address, bank, dummy_address, data, mask, data_bar
+
+    def test_address(self, address, bank=None, dummy_address=None, data=None, mask=None):
+        test_data = self.normalize_test_data(address, bank, dummy_address, data, mask)
+        address, bank, dummy_address, data, mask, data_bar = test_data
 
         # initial read to charge up nodes
         self.read_address(address)
@@ -310,7 +320,12 @@ class SimOperationsMixin(SpiceCharacterizer):
             direction = FALL
         return trig, targ, direction
 
+    def get_time_suffix(self):
+        return f"{self.current_time:.2g}".replace('.', '_')
+
     def setup_write_measurements(self, address_int):
+        self.period = self.write_period
+        self.duty_cycle = self.write_duty_cycle
         """new_val is MSB first"""
         bank_index, _, row, col_index = self.probe.decode_address(address_int)
         self.sf.write("* -- Write : [{0}, {1}, {2}, {3}, {4}, {5}, {6}]\n".format(
@@ -318,14 +333,9 @@ class SimOperationsMixin(SpiceCharacterizer):
             self.write_duty_cycle))
 
         time = self.current_time
-        # power measurement
-        time_suffix = "{:.2g}".format(time).replace('.', '_')
-        meas_name = "WRITE_POWER_t{}".format(time_suffix)
-        self.stim.gen_meas_power(meas_name=meas_name,
-                                 t_initial=time - self.setup_time,
-                                 t_final=time + self.period - self.setup_time)
-        # decoder delay
+        self.generate_power_measurement("WRITE")
         self.setup_decoder_delays()
+        time_suffix = self.get_time_suffix()
 
         # Internal bitcell Q state transition delay
         state_labels = self.state_probes[address_int]
@@ -378,7 +388,7 @@ class SimOperationsMixin(SpiceCharacterizer):
     def setup_precharge_measurement(self, bank, col_index):
         time = self.current_time
         # power measurement
-        time_suffix = "{:.2g}".format(time).replace('.', '_')
+        time_suffix = self.get_time_suffix()
         trig_val = 0.1 * self.vdd_voltage
         targ_val = 0.9 * self.vdd_voltage
         half_word = int(0.5 * self.word_size)
@@ -401,8 +411,17 @@ class SimOperationsMixin(SpiceCharacterizer):
                                          targ_name=probe, targ_val=targ_val, targ_dir="RISE",
                                          targ_td=time)
 
+    def generate_power_measurement(self, op_name):
+        time = self.current_time
+        meas_name = f"{op_name}_POWER_t{self.get_time_suffix()}"
+        self.stim.gen_meas_power(meas_name=meas_name,
+                                 t_initial=time - self.setup_time,
+                                 t_final=time + self.period - self.setup_time)
+
     def setup_read_measurements(self, address_int, expected_data=None):
         """new_val is MSB first"""
+        self.period = self.read_period
+        self.duty_cycle = self.read_duty_cycle
 
         bank_index, _, row, col_index = self.probe.decode_address(address_int)
         clk_buf_probe = self.probe.clk_probes[bank_index]
@@ -412,14 +431,10 @@ class SimOperationsMixin(SpiceCharacterizer):
             self.read_duty_cycle))
 
         self.setup_precharge_measurement(bank_index, col_index)
+        self.generate_power_measurement("READ")
 
         time = self.current_time
-        # power measurement
-        time_suffix = "{:.2g}".format(time).replace('.', '_')
-        meas_name = "READ_POWER_t{}".format(time_suffix)
-        self.stim.gen_meas_power(meas_name=meas_name,
-                                 t_initial=time - self.setup_time,
-                                 t_final=time + self.period - self.setup_time)
+        time_suffix = self.get_time_suffix()
         # decoder delay
         self.setup_decoder_delays()
 

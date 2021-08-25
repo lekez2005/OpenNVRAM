@@ -23,6 +23,9 @@ if not OPTS.analytical_delay:
         debug.error("No recognizable spice version found. Unable to perform characterization.", 1)
 
     if OPTS.spice_name in ["hspice", "spectre"]:
-        from characterizer.simulation.psf_reader import PsfReader as SpiceReader
+        try:
+            from characterizer.simulation.psf_reader import PsfReader as SpiceReader
+        except:
+            debug.warning(f"Invalid spice reader for spice name {OPTS.spice_name}")
     else:
         raise ValueError(f"Invalid spice reader for spice name {OPTS.spice_name}")

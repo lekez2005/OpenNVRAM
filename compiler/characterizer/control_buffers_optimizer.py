@@ -265,7 +265,7 @@ class ControlBufferOptimizer:
         for key in unique_config_keys.keys():
             config = unique_config_keys[key]["config"]
             class_name, suffix_key, buffer_mod, in_pin, out_pin, max_buffer_size, size_func = config
-            debug.info(1, "\n{}".format(key))
+            debug.info(1, " {}".format(key))
 
             cin, cout, resistance, gm = [], [], [], []
             actual_sizes = []
@@ -436,6 +436,29 @@ class ControlBufferOptimizer:
             "precharge_buffers": self.create_precharge_optimization_func
         }
 
+    def create_dynamic_opt_func(self, config_key, loads, fixed_load, num_elements,
+                                eval_buffer_stage_delay_slew):
+        penalty = OPTS.buffer_optimization_size_penalty
+
+        def eval_precharge_delays(stages_list):
+            precharge_size = stages_list[-1]
+            cin, cout, res, gm = self.evaluate_instance_params(precharge_size, config_key)
+            enable_in = cin * num_elements
+            stage_loads = [x for x in loads]
+            stage_loads[-1] += enable_in
+            delays, slew = eval_buffer_stage_delay_slew(stages_list[:-1], stage_loads)
+            tau = res * (fixed_load + cout)
+            beta = 1 / (gm * res)
+            alpha = slew / tau
+            delay, slew = self.bank.horowitz_delay(tau, beta, alpha)
+            delays.append(delay)
+            return delays
+
+        def eval_precharge_delay(stage_list):
+            return sum(eval_precharge_delays(stage_list)) * 1e12 + penalty * sum(stage_list)
+
+        return (eval_precharge_delay, eval_precharge_delays), loads
+
     def create_precharge_optimization_func(self, driver_params, driver_config, loads, eval_buffer_stage_delay_slew):
         penalty = OPTS.buffer_optimization_size_penalty
 
@@ -446,25 +469,10 @@ class ControlBufferOptimizer:
 
         num_cols = self.bank.num_cols
 
-        def eval_precharge_delays(stages_list):
-            precharge_size = stages_list[-1]
-            cin, cout, res, gm = self.evaluate_instance_params(precharge_size, precharge_config_key)
-            enable_in = cin * num_cols
-            stage_loads = [x for x in loads]
-            stage_loads[-1] += enable_in
-
-            delays, slew = eval_buffer_stage_delay_slew(stages_list[:-1], stage_loads)
-            tau = res * (bitline_in_cap + cout)
-            beta = 1 / (gm * res)
-            alpha = slew / tau
-            delay, slew = precharge_cell.horowitz_delay(tau, beta, alpha)
-            delays.append(delay)
-            return delays
-
-        def eval_precharge_delay(stage_list):
-            return sum(eval_precharge_delays(stage_list)) * 1e12 + penalty * sum(stage_list)
-
-        return (eval_precharge_delay, eval_precharge_delays), loads
+        return self.create_dynamic_opt_func(config_key=precharge_config_key, loads=loads,
+                                            fixed_load=bitline_in_cap, num_elements=num_cols,
+                                            eval_buffer_stage_delay_slew=
+                                            eval_buffer_stage_delay_slew)
 
     def create_optimization_func(self, initial_stages, slew_in, driver_params,
                                  buffer_mod, buffer_loads, driver_config):
@@ -579,6 +587,10 @@ class ControlBufferOptimizer:
                 all_num_stages = {2}
         return all_num_stages
 
+    @staticmethod
+    def get_is_precharge(buffer_stages_str):
+        return buffer_stages_str == "precharge_buffers"
+
     def optimize_all(self):
 
         self.create_parameter_convex_spline_fit(num_sizes=60)  # TODO make configurable
@@ -608,7 +620,7 @@ class ControlBufferOptimizer:
                 assert False, "Deal with no load"
 
             buffer_stages_str = driver_config["buffer_stages_str"]
-            is_precharge = buffer_stages_str == "precharge_buffers"
+            is_precharge = self.get_is_precharge(buffer_stages_str)
 
             initial_stages = buffer_mod.buffer_stages
             all_num_stages = self.get_config_num_stages(buffer_mod, buffer_stages_str, buffer_loads)
@@ -651,13 +663,20 @@ class ControlBufferOptimizer:
             min_stages = min_stages.tolist()
             if len(all_num_stages) > 1:
                 debug.info(1, "\t Selected: {}".format(list_format(min_stages)))
-            if is_precharge:
-                OPTS.precharge_size = min_stages[-1]
-                min_stages = min_stages[:-1]
-            elif buffer_stages_str == "predecoder_buffers":
-                OPTS.predecode_sizes = parent_mod.buffer_sizes[:1] + min_stages
+
+            min_stages = self.post_process_buffer_sizes(min_stages, buffer_stages_str, parent_mod)
+
             setattr(OPTS, buffer_stages_str + "_old", initial_stages)
             setattr(OPTS, buffer_stages_str, min_stages)
+
+    def post_process_buffer_sizes(self, stages, buffer_stages_str, parent_mod):
+        is_precharge = self.get_is_precharge(buffer_stages_str)
+        if is_precharge:
+            OPTS.precharge_size = stages[-1]
+            stages = stages[:-1]
+        elif buffer_stages_str == "predecoder_buffers":
+            OPTS.predecode_sizes = parent_mod.buffer_sizes[:1] + stages
+        return stages
 
     def create_config_keys(self):
         """Create all unique module types and configurations

@@ -387,9 +387,9 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
     def connect_control_buffers(self):
         operation_net = self.get_operation_net()
         connections = self.connections_from_mod(self.control_buffers, [
-            ("bank_sel", "bank_sel_buf"),
-            (operation_net, f"{operation_net}_buf"),
-            ("chip_sel", "chip_sel_buf")
+            ("bank_sel", "bank_sel_buf", EXACT),
+            (operation_net, f"{operation_net}_buf", EXACT),
+            ("chip_sel", "chip_sel_buf", EXACT)
         ])
         self.connect_inst(connections)
 
@@ -795,7 +795,6 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                                                              self.precharge_array, num_rails=0)
         return self.precharge_array_inst.uy() + y_space
 
-
     def add_bitcell_array(self):
         """ Adding Bitcell Array """
         y_offset = self.get_bitcell_array_y_offset()
@@ -1061,7 +1060,8 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                                bottom_suffix="", word_size=self.num_cols)
         else:
             precharge_bl = self.precharge_array_inst.get_pin("bl[0]")
-            sense_bl = self.sense_amp_array_inst.get_pin("bl[0]")
+            bottom_inst = self.sense_amp_array_inst or self.write_driver_array_inst
+            sense_bl = bottom_inst.get_pin("bl[0]")
 
             vias, _, fill_layers = contact.get_layer_vias(sense_bl.layer,
                                                           METAL2,
@@ -1072,7 +1072,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
             else:
                 rect_align = JOIN_BOT_ALIGN
             self.join_bitlines(top_instance=self.precharge_array_inst, top_suffix="",
-                               bottom_instance=self.sense_amp_array_inst,
+                               bottom_instance=bottom_inst,
                                bottom_suffix="", rect_align=rect_align)
 
     def route_column_mux(self):

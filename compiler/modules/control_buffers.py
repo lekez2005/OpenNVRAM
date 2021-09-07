@@ -661,12 +661,21 @@ class ControlBuffers(design, ABC):
                 self.route_adjacent_nets(pin_connection)
             elif pin_connection.conn_type == PinConnection.DIRECT_VERT:
                 rail = self.rails[pin_connection.net_name].rect
-                close_connection = self.locate_close_connection(pin_connection.x_offset, rail)
+                inst = self.inst_dict[pin_connection.inst_name]
+                if inst in self.top_insts:
+                    close_connection = None
+                else:
+                    close_connection = self.locate_close_connection(pin_connection.x_offset,
+                                                                    rail)
                 if close_connection:  # to avoid min via space issue
                     width = close_connection.x_offset - pin_connection.x_offset
+                    x_offset = pin_connection.x_offset
                     if width > 0:
                         width += self.m2_width
-                    self.add_rect(METAL2, offset=vector(pin_connection.x_offset,
+                    else:
+                        width -= self.m2_width
+                        x_offset += self.m2_width
+                    self.add_rect(METAL2, offset=vector(x_offset,
                                                         rail.cy() - 0.5 * self.m2_width),
                                   width=width)
                     self.route_direct_rail_to_pin(pin_connection, rail, pin_connection.x_offset,

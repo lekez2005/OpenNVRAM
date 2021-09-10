@@ -383,7 +383,7 @@ class bitcell_array(design.design):
 
             # add wl label and offset
             self.add_layout_pin(text="wl[{0}]".format(row),
-                                layer="metal1",
+                                layer=wl_pin.layer,
                                 offset=vector(0, wl_pin.by()),
                                 width=full_width,
                                 height=wl_pin.height())

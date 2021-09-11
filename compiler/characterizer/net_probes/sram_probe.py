@@ -496,6 +496,7 @@ class SramProbe(object):
 
         self.probe_bitlines(bank)
         self.probe_write_drivers(bank)
+        self.probe_precharge_nets(bank)
         self.probe_sense_amps(bank)
         self.control_buffers_voltage_probes(bank)
 
@@ -531,13 +532,17 @@ class SramProbe(object):
         pass
 
     @staticmethod
-    def get_full_bank_net(net, prefix, suffix, bank_inst):
+    def get_full_bank_net(net, prefix, suffix, bank_inst, sram):
         separator = "_" if OPTS.use_pex else "."
         if net not in bank_inst.mod.pins:
             prefix = "{}{}".format(separator, prefix) if prefix else ""
             prefix = "X{}{}{}{}".format(bank_inst.name, prefix, separator, net)
         else:
-            prefix = "{}".format(net)
+            pin_index = bank_inst.mod.pins.index(net)
+            inst_index = sram.insts.index(bank_inst)
+            conn = sram.conns[inst_index]
+            parent_net = conn[pin_index]
+            prefix = "{}".format(parent_net)
         if OPTS.use_pex:
             suffix = "X{}{}{}".format(bank_inst.name, separator, suffix)
             prefix = "N_{}".format(prefix) if OPTS.use_pex else prefix
@@ -574,9 +579,9 @@ class SramProbe(object):
             prefix, parent_net, suffix = res
 
             if OPTS.use_pex:
-                full_net = self.get_full_bank_net(parent_net, prefix, suffix, bank_inst)
+                full_net = self.get_full_bank_net(parent_net, prefix, suffix, bank_inst, self.sram)
             else:
-                full_net = self.get_full_bank_net(parent_net, prefix, "", bank_inst)
+                full_net = self.get_full_bank_net(parent_net, prefix, "", bank_inst, self.sram)
 
             template = full_net.replace("Xmod_0", "Xmod_{bit}")
             template = template.replace("[0]", "[{bit}]")
@@ -614,13 +619,13 @@ class SramProbe(object):
                                        parent_mod=bank_mod)
             prefix, parent_net, suffix = _
             probes[-1] = self.get_full_bank_net(parent_net, prefix,
-                                                suffix, bank_inst)
+                                                suffix, bank_inst, self.sram)
 
             # loads
             for inst, pin_name in bank_mod.get_net_loads(net):
                 prefix, parent_net, suffix = self.get_extracted_net(net, destination_inst=inst,
                                                                     parent_mod=bank_mod)
-                full_net = self.get_full_bank_net(parent_net, prefix, suffix, bank_inst)
+                full_net = self.get_full_bank_net(parent_net, prefix, suffix, bank_inst, self.sram)
                 full_net = re.sub(r"mod_[0-9]+([_\.])?", r"mod_{bit}\g<1>", full_net)
                 bits = self.get_control_buffers_probe_bits(inst, bank)
                 for bit in bits:
@@ -699,6 +704,16 @@ class SramProbe(object):
 
         self.probe_internal_nets(bank_, sample_net=bl_net, array_inst=sense_amp_inst,
                                  internal_nets=self.get_sense_amp_internal_nets())
+
+    def probe_precharge_nets(self, bank_):
+        bank_name = 'bank{}'.format(bank_)
+        bank_inst = get_instance_module(bank_name, self.sram)
+        precharge_inst = bank_inst.mod.precharge_array_inst
+        if "vdd" not in precharge_inst.mod.pins:
+            return
+        bl_net = "bl[0]"
+        self.probe_internal_nets(bank_, sample_net=bl_net, array_inst=precharge_inst,
+                                 internal_nets=["vdd"])
 
     def extract_nested_probe(self, key, container, existing_mappings):
         # tries to maintain original container to references don't get lost

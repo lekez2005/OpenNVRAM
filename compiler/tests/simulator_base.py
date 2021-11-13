@@ -13,7 +13,7 @@ else:
 
 class SimulatorBase(OpenRamTest):
     DEFAULT_WORD_SIZE = 32
-    sim_dir_suffix = ""
+    sim_dir_suffix = "cmos"
     CMOS_MODE = "cmos"
     valid_modes = [CMOS_MODE]
 
@@ -29,7 +29,7 @@ class SimulatorBase(OpenRamTest):
         sram_class = self.get_sram_class()
         sram = sram_class(word_size=OPTS.word_size, num_words=OPTS.num_words,
                           num_banks=OPTS.num_banks, words_per_row=OPTS.words_per_row,
-                          name="sram1", add_power_grid=False)
+                          name="sram1", add_power_grid=True)
         return sram
 
     def run_simulation(self):
@@ -43,7 +43,7 @@ class SimulatorBase(OpenRamTest):
         netlist_generator = self.create_netlist_generator(self.sram)
         netlist_generator.configure_timing(self.sram)
         if self.cmd_line_opts.energy:
-            netlist_generator.write_generic_stimulus()
+            netlist_generator.write_power_stimulus()
         else:
             netlist_generator.write_delay_stimulus()
         netlist_generator.stim.run_sim()
@@ -152,6 +152,7 @@ class SimulatorBase(OpenRamTest):
 
     @classmethod
     def get_sim_directory(cls, cmd_line_opts):
+        sim_suffix = cls.sim_dir_suffix + os.environ.get("SIM_SUFFIX", "")
         bank_suffix = "_bank2" if cmd_line_opts.num_banks == 2 else ""
         if cmd_line_opts.num_banks == 2 and cmd_line_opts.independent:
             bank_suffix += "_independent"
@@ -168,6 +169,6 @@ class SimulatorBase(OpenRamTest):
         sim_directory = f"{op.mode}_{op.num_words}_c_{op.num_cols}" \
                         f"{word_size_suffix}{bank_suffix}{schem_suffix}{energy_suffix}"
         openram_temp_ = os.path.join(os.environ["SCRATCH"], "openram",
-                                     cmd_line_opts.tech_name, cls.sim_dir_suffix,
+                                     cmd_line_opts.tech_name, sim_suffix,
                                      sim_directory)
         return openram_temp_

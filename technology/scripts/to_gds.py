@@ -43,7 +43,7 @@ def export_gds(library, cell_views, output_dir, setup):
                 print(command)
             else:
                 results.append(os.path.join(output_dir, gds_name))
-        return results
+    return results
 
 
 if __name__ == "__main__":

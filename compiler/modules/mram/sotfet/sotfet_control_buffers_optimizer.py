@@ -18,7 +18,7 @@ class SotfetControlBuffersOptimizer(ControlBufferOptimizer):
 
     def get_config_num_stages(self, buffer_mod, buffer_stages_str, buffer_loads):
         if "sampleb_buffers" == buffer_stages_str:
-            return {2, 4}
+            return {3, 5}
         return super().get_config_num_stages(buffer_mod, buffer_stages_str, buffer_loads)
 
     def extract_wordline_driver_loads(self):
@@ -44,8 +44,8 @@ class SotfetControlBuffersOptimizer(ControlBufferOptimizer):
         config_keys.append((precharge, in_pin, "bl", OPTS.max_precharge_size, numpy.linspace))
 
     def get_sorted_driver_loads(self):
+        """ put br_reset_buffers at the end so precharge_en is optimized first """
         driver_loads = list(self.driver_loads.values())
-        # put br_reset_buffers at the end so precharge_en is optimized first
         driver_loads = list(sorted(driver_loads,
                                    key=lambda x: x["buffer_stages_str"] in
                                                  ["br_reset_buffers", "bl_reset_buffers"]))
@@ -82,14 +82,4 @@ class SotfetControlBuffersOptimizer(ControlBufferOptimizer):
         br_reset_cap, _ = precharge_array.get_input_cap(pin_name)
         loads[-1] += br_reset_cap
 
-        penalty = OPTS.buffer_optimization_size_penalty
-
-        def evaluate_delays(stages_list):
-            stage_loads = [x for x in loads]
-            delays, slew = eval_buffer_stage_delay_slew(stages_list, stage_loads)
-            return delays
-
-        def total_delay(stage_list):
-            return sum(evaluate_delays(stage_list)) * 1e12 + penalty * sum(stage_list)
-
-        return (total_delay, evaluate_delays), loads
+        return self.adjust_optimization_loads(loads, eval_buffer_stage_delay_slew)

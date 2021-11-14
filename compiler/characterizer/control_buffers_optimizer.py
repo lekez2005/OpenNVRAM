@@ -413,6 +413,9 @@ class ControlBufferOptimizer:
         driver_mod = parent_mod.insts[driver_index].mod
         driver_pin_index = parent_mod.conns[driver_index].index(buffer_input_net)
         driver_pin_name = driver_mod.pins[driver_pin_index]
+        if isinstance(driver_mod, LogicBuffer):
+            # is already driving another cap, so use min size to minimize additional load
+            driver_mod = self.control_buffer.inv
         res = driver_mod.get_driver_resistance(pin_name=driver_pin_name, use_max_res=True)
         gm = driver_mod.evaluate_driver_gm(pin_name=driver_pin_name)
         # loads except buffer input
@@ -459,8 +462,23 @@ class ControlBufferOptimizer:
 
         return (eval_precharge_delay, eval_precharge_delays), loads
 
-    def create_precharge_optimization_func(self, driver_params, driver_config, loads, eval_buffer_stage_delay_slew):
+    @staticmethod
+    def adjust_optimization_loads(new_loads, eval_buffer_stage_delay_slew):
+        """Modify optimization objective function 'eval_buffer_stage_delay_slew'
+            to use 'new_loads'"""
         penalty = OPTS.buffer_optimization_size_penalty
+
+        def evaluate_delays(stages_list):
+            stage_loads = [x for x in new_loads]
+            delays, slew = eval_buffer_stage_delay_slew(stages_list, stage_loads)
+            return delays
+
+        def total_delay(stage_list):
+            return sum(evaluate_delays(stage_list)) * 1e12 + penalty * sum(stage_list)
+
+        return (total_delay, evaluate_delays), new_loads
+
+    def create_precharge_optimization_func(self, driver_params, driver_config, loads, eval_buffer_stage_delay_slew):
 
         precharge_cell = self.bank.precharge_array.child_insts[0].mod
         self.precharge_cell = precharge_cell
@@ -498,7 +516,10 @@ class ControlBufferOptimizer:
         loads[0] = driver_load
 
         for pin_name, cap_val in buffer_loads:
-            if pin_name in ["out_inv", "Z"]:
+            if num_stages == 1:
+                # e.g. flop buffers in which polarity of dout can be flipped by flipping flop output
+                load_index = -1
+            elif pin_name in ["out_inv", "Z"]:
                 if num_stages % 2 == 0:
                     load_index = -2
                 else:
@@ -549,6 +570,11 @@ class ControlBufferOptimizer:
         else:
             return (eval_buffer_stage_delay, eval_buffer_stage_delays), loads
 
+    def adjust_optimization_bounds(self, lower_bounds, upper_bounds, buffer_stages_str):
+        is_precharge = self.get_is_precharge(buffer_stages_str)
+        if is_precharge:
+            upper_bounds[-1] = OPTS.max_precharge_size
+
     def optimize_config(self, optimization_func, buffer_stages_str, initial_stages, is_precharge,
                         method):
         """Run actual optimization using scipy.minimize
@@ -562,8 +588,7 @@ class ControlBufferOptimizer:
         max_buffer_size = getattr(OPTS, "max_" + buffer_stages_str, default_max_size)
         lower_bounds = np.ones(len(initial_stages))
         upper_bounds = max_buffer_size * lower_bounds
-        if is_precharge:
-            upper_bounds[-1] = OPTS.max_precharge_size
+        self.adjust_optimization_bounds(lower_bounds, upper_bounds, buffer_stages_str)
         bounds = Bounds(lower_bounds, upper_bounds)
         stages = minimize(optimization_func, initial_stages, method=method, bounds=bounds)
         return stages, initial_stages

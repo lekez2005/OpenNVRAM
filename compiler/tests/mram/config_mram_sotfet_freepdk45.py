@@ -34,9 +34,7 @@ sense_amp_array = "sense_amp_array"
 precharge_bl = True
 has_br_reset = True
 
-body_tap = "sotfet_mram_bitcell_tap"
-control_buffers_num_rows = 2
-route_control_signals_left = True
+control_buffers_num_rows = 1
 independent_banks = False
 
 model_file = "mram/sotfet_cell.sp"
@@ -49,16 +47,45 @@ llg_prescale = 0.001  # prescale internal llg model voltages
 
 def configure_timing(sram, OPTS):
     num_rows = sram.bank.num_rows
+    num_cols = sram.bank.num_cols
     OPTS.sense_trigger_setup = 0.15
 
-    write_settling_time = 2
+    write_settling_time = 1.5
 
     if OPTS.precharge_bl:
         OPTS.sense_amp_vref = 0.85
     else:
         OPTS.sense_amp_vref = 0.4
 
-    if num_rows < 64:
+    if num_rows == 16 and num_cols == 64:
+        OPTS.sense_amp_vref = 0.5
+        first_read = 0.45
+        second_read = 0.65
+        OPTS.sense_trigger_delay = second_read - 0.25
+        first_write = 0.4
+        write_trigger_delay = 0.4
+    elif num_rows == 64 and num_cols == 64:
+        OPTS.sense_amp_vref = 0.45
+        first_read = 0.5
+        second_read = 0.9
+        OPTS.sense_trigger_delay = second_read - 0.3
+        first_write = 0.45
+        write_trigger_delay = 0.4
+    elif num_rows == 128 and num_cols == 128:
+        OPTS.sense_amp_vref = 0.45
+        first_read = 0.5
+        second_read = 1.2
+        OPTS.sense_trigger_delay = second_read - 0.3
+        first_write = 0.5
+        write_trigger_delay = 0.45
+    elif num_rows == 256 and num_cols == 128:
+        OPTS.sense_amp_vref = 0.4
+        first_read = 0.5
+        second_read = 1.9
+        OPTS.sense_trigger_delay = second_read - 0.5
+        first_write = 0.5
+        write_trigger_delay = 0.8
+    elif num_rows < 64:
         if OPTS.num_banks == 1:
             first_read = 0.8
             second_read = 0.8

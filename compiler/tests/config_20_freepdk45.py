@@ -2,8 +2,9 @@ from config_baseline import *
 from config_baseline import configure_modules as default_configure_modules
 from freepdk45_common_config import *
 
-setup_time = 0.04  # in nanoseconds
-precharge_size = 6
+setup_time = 0.05  # in nanoseconds
+precharge_size = 5
+max_precharge_size = 6.5
 max_precharge_buffers = 60
 
 write_driver_mod = "write_driver_mux_buffer"
@@ -22,14 +23,39 @@ def configure_modules(bank, OPTS):
 
 def configure_timing(sram, OPTS):
     num_rows = sram.bank.num_rows
+    num_cols = sram.bank.num_cols
     OPTS.sense_trigger_setup = 0.15
-    if num_rows <= 64:
-        first_read = 0.5
-        second_read = 0.7
-        OPTS.sense_trigger_delay = second_read - 0.25
-        OPTS.precharge_trigger_delay = 0.6
+    OPTS.precharge_trigger_delay = 0.6
+    if num_rows == 16 and num_cols == 64:
+        first_read = 0.3
+        second_read = 0.4
+        OPTS.sense_trigger_delay = second_read - 0.2
+        first_write = 0.3
+        second_write = 0.3
+    elif num_rows == 64 and num_cols == 64:
+        first_read = 0.4
+        second_read = 0.45
+        OPTS.sense_trigger_delay = second_read - 0.2
         first_write = 0.4
-        second_write = 0.9
+        second_write = 0.45
+    elif num_rows == 128 and num_cols == 128:
+        first_read = 0.6
+        second_read = 0.65
+        OPTS.sense_trigger_delay = second_read - 0.2
+        first_write = 0.6
+        second_write = 0.7
+    elif num_rows == 256 and num_cols == 128:
+        first_read = 0.9
+        second_read = 0.75
+        OPTS.sense_trigger_delay = second_read - 0.2
+        first_write = 0.9
+        second_write = 1.15
+    elif num_rows == 64 and num_cols == 128:  # upstream comparison
+        first_read = 0.5
+        second_read = 0.5
+        OPTS.sense_trigger_delay = second_read - 0.2
+        first_write = 0.4
+        second_write = 0.55
     else:
         if OPTS.num_banks == 1:
             OPTS.precharge_trigger_delay = 1

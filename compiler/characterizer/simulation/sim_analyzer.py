@@ -64,6 +64,41 @@ def debug_error(comment, expected_data, actual_data):
     return np.all(equal_vec)
 
 
+def measure_delay_from_meas_str(meas_str, prefix, max_delay=None, event_time=None,
+                                index_pattern=""):
+    """Get measured delay from measurement result file"""
+    if event_time is not None:
+        time_suffix = "t{:.2g}".format(event_time * 1e9).replace('.', '_')
+    else:
+        time_suffix = ""
+
+    pattern_str = rf'{prefix}_{index_pattern}.*{time_suffix}' + r"\s*=\s+(?P<delay>\S+)\s?\n"
+
+    pattern = re.compile(pattern_str)
+    invalid_results = ["failed"]
+
+    if index_pattern:
+        matches = [x for x in pattern.findall(meas_str)
+                   if x[1] not in invalid_results]
+        bit_delays = [(int(x), float(y)) for x, y in matches]
+        delays = [0] * len(bit_delays)
+        for bit_, delay_ in bit_delays:
+            delays[bit_] = delay_
+        delays = list(reversed(delays))
+    else:
+        delays = [float(x) for x in pattern.findall(meas_str)
+                  if not x.lower() == "failed"]
+
+    if max_delay is None:
+        max_delay = np.inf
+    valid_delays = list(filter(lambda x: x < max_delay, delays))
+    if len(valid_delays) > 0:
+        max_delay = max(valid_delays)
+    else:
+        max_delay = 0
+    return max_delay, delays
+
+
 class SimAnalyzer:
     RISING_EDGE = RISING_EDGE
     FALLING_EDGE = FALLING_EDGE
@@ -86,8 +121,11 @@ class SimAnalyzer:
 
         file_contents = []
         for file_name in [self.meas_file, self.stim_file]:
-            with open(file_name, "r") as f:
-                file_contents.append(f.read())
+            if os.path.exists(file_name):
+                with open(file_name, "r") as f:
+                    file_contents.append(f.read())
+            else:
+                file_contents.append(None)
         self.meas_str, self.stim_str = file_contents
 
         self.load_probes()
@@ -114,7 +152,8 @@ class SimAnalyzer:
                 json_contents.append(json.load(f))
         self.state_probes, self.voltage_probes, self.current_probes = json_contents
 
-        self.clk_reference = self.voltage_probes["clk"]["0"]
+        if "clk" in self.voltage_probes:
+            self.clk_reference = self.voltage_probes["clk"]["0"]
 
         values = []
         for name in ["cols", "bits"]:
@@ -132,8 +171,8 @@ class SimAnalyzer:
                           * 1e-9)
         self.period = max(values)
         self.read_period, self.write_period = values
-        debug.info(1, "Read period  = %.3g Write period = %.3g",
-                   self.read_period, self.write_period)
+        debug.info(1, "Read period  = %.3g ns Write period = %.3g ns",
+                   self.read_period * 1e9, self.write_period * 1e9)
 
     def get_command(self, label):
         command_pattern = re.compile(MEAS_PATTERN.format(label), re.IGNORECASE)
@@ -175,37 +214,8 @@ class SimAnalyzer:
 
     def measure_delay_from_stim_measure(self, prefix, max_delay=None, event_time=None,
                                         index_pattern=""):
-        """Get measured delay from measurement result file"""
-        if event_time is not None:
-            time_suffix = "t{:.2g}".format(event_time * 1e9).replace('.', '_')
-        else:
-            time_suffix = ""
-
-        pattern_str = rf'{prefix}_{index_pattern}.*{time_suffix}' + r"\s*=\s+(?P<delay>\S+)\s?\n"
-
-        pattern = re.compile(pattern_str)
-        invalid_results = ["failed"]
-
-        if index_pattern:
-            matches = [x for x in pattern.findall(self.meas_str)
-                       if x[1] not in invalid_results]
-            bit_delays = [(int(x), float(y)) for x, y in matches]
-            delays = [0] * len(bit_delays)
-            for bit_, delay_ in bit_delays:
-                delays[bit_] = delay_
-            delays = list(reversed(delays))
-        else:
-            delays = [float(x) for x in pattern.findall(self.meas_str)
-                      if not x.lower() == "failed"]
-
-        if max_delay is None:
-            max_delay = np.inf
-        valid_delays = list(filter(lambda x: x < max_delay, delays))
-        if len(valid_delays) > 0:
-            max_delay = max(valid_delays)
-        else:
-            max_delay = 0
-        return max_delay, delays
+        return measure_delay_from_meas_str(self.meas_str, prefix, max_delay,
+                                           event_time, index_pattern)
 
     def get_address_data(self, address, time, threshold=None):
         if threshold is None:
@@ -255,7 +265,7 @@ class SimAnalyzer:
         settling_time = write_period
         actual_data = self.get_address_data(write_address, write_time + settling_time)
 
-        correct = debug_error(f"Write failure: At time {write_time:.3g} "
+        correct = debug_error(f"Write failure: At time {write_time * 1e9:.3g} n "
                               f"address {write_address}",
                               expected_data, actual_data)
         return correct
@@ -269,7 +279,7 @@ class SimAnalyzer:
         if negate:
             actual_data = [int(not x) for x in actual_data]
 
-        correct = debug_error(f"Read failure: At time {read_time:.3g}"
+        correct = debug_error(f"Read failure: At time {read_time * 1e9:.3g} n"
                               f" address {read_address}", expected_data, actual_data)
         return correct
 

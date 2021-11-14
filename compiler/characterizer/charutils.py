@@ -15,6 +15,8 @@ def get_measurement_file():
         # customsim has a different output file name
         return "xa.meas"
     elif OPTS.spice_name == "spectre":
+        if OPTS.use_ultrasim:
+            return "stim.meas0"
         return "stim.measure"
     elif OPTS.spice_name == "hspice":
         return "timing.mt0"

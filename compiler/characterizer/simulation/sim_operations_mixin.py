@@ -56,12 +56,15 @@ class SimOperationsMixin(SpiceCharacterizer):
         OPTS.spectre_save = "selected"
         self.all_addresses = [0]
 
-        if OPTS.verbose_save:
-            self.probe_all_addresses(self.all_addresses, self.get_energy_probe_cols())
-        else:
+        OPTS.probe_cols = OPTS.probe_bits = []
+
+        self.probe_all_addresses(self.all_addresses, self.get_energy_probe_cols())
+
+        if not OPTS.verbose_save:
             # minimize saved data to make simulation faster
             self.probe.current_probes = ["vvdd"]
-            self.probe.saved_nodes.update(["vdd", "Csb", "Web"])
+            self.probe.voltage_probes = {}
+            self.probe.probe_labels = {"vdd", "Csb", "Web"}
             self.dout_probes = SpiceCharacterizer.mask_probes = {}
 
     def probe_delay_addresses(self):
@@ -231,21 +234,17 @@ class SimOperationsMixin(SpiceCharacterizer):
             self.test_address(addresses[i])
 
     def generate_energy_steps(self):
+        if OPTS.use_pex:
+            decoder_clk = self.probe.extract_from_pex("decoder_clk")
+        else:
+            decoder_clk = "v(Xsram.decoder_clk)"
+        self.probe.saved_nodes.add(decoder_clk)
+        self.sf.write(f"*-- decoder_clk = {decoder_clk}\n")
+
         num_sims = OPTS.energy
-        # num_sims = 1
-        mask = [1] * self.word_size
-
-        ops = ["read", "write"]
         for i in range(num_sims):
-            address = randint(0, self.sram.num_words - 1)
+            op = self.generate_energy_op(i)
 
-            # op = ops[randint(0, 1)]
-            op = ops[i % 2]
-            if op == "read":
-                self.read_address(address)
-            else:
-                data = [randint(0, 1) for _ in range(self.word_size)]
-                self.write_address(address, data, mask)
             self.sf.write("* -- {}: t = {:.5g} period = {}\n".
                           format(op.upper(), self.current_time - self.period,
                                  self.period))
@@ -254,6 +253,22 @@ class SimOperationsMixin(SpiceCharacterizer):
         self.chip_enable = 0
         self.update_output()
 
+        self.generate_leakage_energy()
+
+    def generate_energy_op(self, op_index):
+        mask = [1] * self.word_size
+        address = randint(0, self.sram.num_words - 1)
+        ops = ["read", "write"]
+        op = ops[op_index % 2]
+        if op == "read":
+            self.read_address(address)
+        else:
+            data = [randint(0, 1) for _ in range(self.word_size)]
+            self.write_address(address, data, mask)
+        return op
+
+    def generate_leakage_energy(self):
+        return
         # clock gating
         leakage_cycles = 10000
         start_time = self.current_time
@@ -321,7 +336,7 @@ class SimOperationsMixin(SpiceCharacterizer):
         return trig, targ, direction
 
     def get_time_suffix(self):
-        return f"{self.current_time:.2g}".replace('.', '_')
+        return f"{self.current_time:.3g}".replace('.', '_')
 
     def setup_write_measurements(self, address_int):
         self.period = self.write_period

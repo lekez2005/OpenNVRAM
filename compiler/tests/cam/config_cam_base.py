@@ -14,6 +14,7 @@ ml_precharge_array = "matchline_precharge_array.MatchlinePrechargeArray"
 precharge = "cam_precharge.CamPrecharge"
 precharge_array = "cam_precharge_array.CamPrechargeArray"
 ml_precharge_size = 4
+max_ml_precharge_size = 8
 
 write_driver_mod = "write_driver_mux_buffer"
 

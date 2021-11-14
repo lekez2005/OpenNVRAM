@@ -3,7 +3,6 @@
 """
 Run a delay test on mram using spectre/hspice
 """
-import test_base
 from simulator_base import SimulatorBase
 
 
@@ -20,6 +19,11 @@ class MramSimulator(SimulatorBase):
         parser.add_argument("--precharge", action="store_true")
         return parser
 
+    def update_global_opts(self):
+        super().update_global_opts()
+        from globals import OPTS
+        OPTS.precharge_bl = self.cmd_line_opts.precharge
+
     @classmethod
     def parse_options(cls):
         options = super(MramSimulator, cls).parse_options()
@@ -28,14 +32,13 @@ class MramSimulator(SimulatorBase):
         return options
 
     def get_netlist_gen_class(self):
-        from mram.mram_sim_steps_generator import MramSimStepsGenerator
+        from modules.mram.mram_sim_steps_generator import MramSimStepsGenerator
         return MramSimStepsGenerator
 
     @classmethod
     def get_sim_directory(cls, cmd_line_opts):
-
         cls.sim_dir_suffix = f"{cmd_line_opts.mode}_mram"
-        openram_temp_ = SimulatorBase.get_sim_directory(cmd_line_opts)
+        openram_temp_ = super(MramSimulator, cls).get_sim_directory(cmd_line_opts)
         suffix = ""
         if cmd_line_opts.precharge:
             suffix = "_precharge"

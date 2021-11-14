@@ -1,4 +1,5 @@
 from tests.config_baseline import *
+
 python_path = ["modules/mram/sotfet"]
 
 mram = "sotfet"
@@ -34,9 +35,9 @@ wordline_beta = [1, 0.9, 2.2]  # critical path is for Low to High
 
 num_write_en_stages = 3
 write_buffers = [3.56, 12.6, 45]
-sense_en_bar_buffers = [3.56, 12.6, 45]
+sense_en_bar_buffers = [1, 3.42, 11.7, 40]
 
-br_reset_buffers = [3.1, 9.65, 30]
+br_reset_buffers = [1, 3.42, 11.7, 40]
 bl_reset_buffers = [3.1, 9.65, 30]
 
 num_wordline_en_stages = 3
@@ -47,10 +48,17 @@ rwl_en_buffers = [3.56, 12.6, 45]
 wwl_buffers = [1, 5, 20]
 rwl_buffers = [1, 5, 20]
 
+sampleb_buffers = [3.56, 12.6, 45]
+
 
 def configure_modules(bank, OPTS):
     num_rows = bank.num_rows
     num_cols = bank.num_cols
+
+    if OPTS.precharge_bl:
+        OPTS.sense_amp_mod = "mram/sotfet_sense_amp_mram"
+    else:
+        OPTS.sense_amp_mod = "mram/sotfet_discharge_sense_amp"
 
     if num_rows >= 256:
         OPTS.precharge_size = 8

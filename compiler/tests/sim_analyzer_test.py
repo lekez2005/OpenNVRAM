@@ -15,6 +15,10 @@ def print_max_delay(desc, val):
         print("{} delay = {:.4g}p".format(desc, val * 1e12), flush=True)
 
 
+def energy_format(l):
+    return ", ".join(["{:.3g}".format(x) for x in l])
+
+
 class SimAnalyzerTest(SimulatorBase):
 
     def setUp(self):
@@ -29,7 +33,7 @@ class SimAnalyzerTest(SimulatorBase):
         self.debug.info(1, "Simulation end: %s",
                         time.ctime(os.path.getmtime(self.analyzer.stim_file)))
         self.sim_data = self.analyzer.sim_data
-        self.read_settling_time = 100e-12
+        self.read_settling_time = 150e-12
         self.write_settling_time = 200e-12
 
         with open(os.path.join(self.temp_folder, "sim_saves.txt"), "w") as f:
@@ -38,9 +42,14 @@ class SimAnalyzerTest(SimulatorBase):
         self.RISING_EDGE = self.analyzer.RISING_EDGE
         self.FALLING_EDGE = self.analyzer.FALLING_EDGE
         self.voltage_probes = self.analyzer.voltage_probes
+        self.current_probes = self.analyzer.current_probes
         self.state_probes = self.analyzer.state_probes
 
     def analyze(self):
+        from globals import OPTS
+        if OPTS.energy:
+            self.analyze_energy()
+            return
         self.load_events()
 
         self.analyze_precharge_decoder(self.all_read_events +
@@ -55,6 +64,57 @@ class SimAnalyzerTest(SimulatorBase):
         self.evaluate_write_critical_path(max_write_event, max_write_bit_delays)
 
         self.run_plots()
+
+    def set_energy_vdd(self):
+        self.sim_data.vdd = self.sim_data.get_signal("v(vdd)")[0]
+        from characterizer.simulation import sim_analyzer
+        sim_analyzer.VDD_CURRENT = 'i1(vvdd)'
+
+    def analyze_energy(self):
+        self.set_energy_vdd()
+        op_energies, self.read_period = self.analyze_energy_events("READ")
+        op_energies, self.write_period = self.analyze_energy_events("WRITE")
+
+    def analyze_energy_events(self, event_name):
+        op_pattern = r"-- {}.*t = ([0-9\.]+) period = ([0-9\.]+)".format(event_name)
+        decoder_clk = re.search(r"-- decoder_clk = (\S+)", self.analyzer.stim_str).group(1)
+        events = re.findall(op_pattern, self.analyzer.stim_str)
+        op_period = None
+
+        op_energies = []
+        for op_time, op_period in events:
+            op_time = float(op_time) * 1e-9
+            op_period = float(op_period) * 1e-9
+            max_op_start = op_time + 0.5 * op_period
+            clk_ref_time = self.sim_data.get_transition_time_thresh(decoder_clk, op_time,
+                                                                    stop_time=max_op_start,
+                                                                    edgetype=self.RISING_EDGE)
+            op_energy = self.analyzer.measure_energy([clk_ref_time, clk_ref_time + op_period])
+            op_energies.append(op_energy)
+
+        op_energies = [x * 1e12 for x in op_energies]
+        print("\nInitial energies", energy_format(op_energies))
+        op_energies = op_energies[2:]
+        print("Used energies: ", energy_format(op_energies))
+
+        print("Mean {} energy = {:.3g} pJ".format(event_name.capitalize(),
+                                                  sum(op_energies) / len(op_energies)))
+        return op_energies, op_period
+
+    def analyze_leakage(self):
+        time = self.sim_data.time
+        num_points = 2
+        leakage_start = time[-num_points]
+        leakage_end = time[-1]
+        total_leakage = self.analyzer.measure_energy([leakage_start, leakage_end])
+
+        leakage_power = total_leakage / (leakage_end - leakage_start)
+        leakage_write = leakage_power * self.write_period
+        leakage_read = leakage_power * self.read_period
+
+        print("Leakage Power = {:.3g} mW".format(leakage_power * 1e3))
+        print("Write leakage = {:.3g} pJ".format(leakage_write * 1e12))
+        print("Read leakage = {:.3g} pJ".format(leakage_read * 1e12))
 
     def load_events(self):
         opts = self.cmd_line_opts
@@ -107,12 +167,11 @@ class SimAnalyzerTest(SimulatorBase):
     def get_analysis_events(self, events, max_event):
         op_index = self.cmd_line_opts.analysis_op_index
         if op_index is not None:
-            analysis_events = events[op_index:op_index + 1]
+            return events[min(op_index, len(events) - 1)]
         elif max_event is not None:
-            analysis_events = [max_event]
+            return max_event
         else:
-            analysis_events = events
-        return analysis_events
+            return None
 
     def get_read_negation(self):
         return False
@@ -129,9 +188,11 @@ class SimAnalyzerTest(SimulatorBase):
         from characterizer.simulation.sim_analyzer import DATA_OUT_PATTERN
         max_dout = 0
 
-        analysis_events = self.get_analysis_events(self.all_read_events, max_read_event)
+        max_read_event = self.get_analysis_events(self.all_read_events, max_read_event)
+        max_delay_event = max_read_event
+
         max_read_bit_delays = [0] * self.word_size
-        for index, read_event in enumerate(analysis_events):
+        for index, read_event in enumerate(self.all_read_events):
             start_time = read_event[0]
             end_time = read_event[0] + read_event[2] + self.read_settling_time
 
@@ -139,9 +200,10 @@ class SimAnalyzerTest(SimulatorBase):
                                                           end_time, num_bits=self.word_size)
 
             if max(d_delays) > max_dout or index == 0:
-                max_read_event = read_event
+                max_delay_event = read_event
                 max_dout = max(d_delays)
                 max_read_bit_delays = d_delays
+        max_read_event = max_read_event or max_delay_event
         return max_read_event, max_read_bit_delays, max_dout
 
     def print_read_measurements(self, max_dout):
@@ -178,22 +240,23 @@ class SimAnalyzerTest(SimulatorBase):
         return max_write_event
 
     def eval_write_delays(self, max_write_event):
-
-        analysis_events = self.get_analysis_events(self.all_write_events, max_write_event)
+        max_write_event = self.get_analysis_events(self.all_write_events, max_write_event)
+        max_delay_event = None
         max_q_delay = 0
         max_write_bit_delays = [0] * self.word_size
 
         meas_func = self.analyzer.measure_delay_from_stim_measure
-        for index, write_event in enumerate(analysis_events):
+        for index, write_event in enumerate(self.all_write_events):
             max_valid_delay = write_event[2]
             max_q_, q_delays = meas_func("state_delay", event_time=write_event[0],
                                          max_delay=max_valid_delay,
                                          index_pattern="a[0-9]+_c(?P<bit>[0-9]+)_")
             if max_q_ > max_q_delay or index == 0:
                 max_q_delay = max_q_
-                max_write_event = write_event
+                max_delay_event = write_event
                 max_write_bit_delays = q_delays
 
+        max_write_event = max_write_event or max_delay_event
         return max_write_event, max_write_bit_delays, max_q_delay
 
     def print_write_measurements(self, max_write_event, max_q_delay):
@@ -402,20 +465,38 @@ class SimAnalyzerTest(SimulatorBase):
                       label=f"bl[{self.probe_col}]")
         self.plot_sig(self.get_plot_probe("br", None, self.probe_col),
                       label=f"br[{self.probe_col}]")
-        if self.words_per_row > 1:
+        if self.words_per_row > 1 and "sense_amp_array" in self.voltage_probes:
             self.plot_sig(self.get_plot_probe("sense_amp_array", "bl"),
                           label=f"bl_out[{self.probe_control_bit}]")
 
         address = self.probe_address
         row = self.probe_row
-        self.plot_sig(self.voltage_probes[self.get_wl_name()][str(address)],
-                      label="wl[{}]".format(row))
+        wl_name = self.get_wl_name()
+        self.plot_sig(self.voltage_probes[wl_name][str(address)],
+                      label=f"{wl_name}[{row}]")
         self.plot_sig(self.probe_q_net, label="Q")
 
     def plot_write_signals(self):
         self.plot_sig(self.get_plot_probe("control_buffers", "write_en",
                                           self.probe_control_bit),
                       label="write_en")
+
+    def plot_mram_current(self):
+        address = str(self.probe_address)
+        q_bit = str(self.probe_control_bit)
+        write_current_net = self.current_probes["bitcell_array"][address][q_bit]
+        write_current_net = "i1({})".format(write_current_net)
+
+        from_t = self.probe_start_time
+        to_t = self.probe_end_time
+        write_current_time = self.sim_data.get_signal_time(write_current_net,
+                                                           from_t=from_t, to_t=to_t)
+        write_current = write_current_time[1] * 1e6
+        ax2 = self.ax1.twinx()
+
+        ax2.plot(write_current_time[0], write_current, ':k', label="current")
+        ax2.set_ylabel("Write Current (uA)")
+        ax2.legend()
 
     def plot_internal_sense_amp(self):
         for net in ["out_int", "outb_int"]:
@@ -461,8 +542,8 @@ class SimAnalyzerTest(SimulatorBase):
         plt.axhline(y=0.5 * self.sim_data.vdd, linestyle='--', linewidth=0.5)
         plt.axhline(y=self.sim_data.vdd, linestyle='--', linewidth=0.5)
 
-        plt.grid()
-        plt.legend(loc="center left", fontsize="x-small")
+        self.ax1.grid()
+        self.ax1.legend(loc="center left", fontsize="x-small")
         plt.title("{}: bit = {} col = {} addr = {}".format(os.path.basename(self.temp_folder),
                                                            self.probe_control_bit,
                                                            self.probe_col,

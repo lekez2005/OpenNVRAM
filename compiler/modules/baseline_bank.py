@@ -1038,7 +1038,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         bitcell_array_col = min(range(self.num_cols),
                                 key=lambda col: abs(x_offset - mid_x_offsets[col]))
 
-        return self.bitcell_array_inst.get_pin("{}[{}]".format(pin_name, bitcell_array_col))
+        return self.bitcell_array_inst.get_pin("{}[{}]".format(pin_name, bitcell_array_col)), bitcell_array_col
 
     def route_precharge(self):
         """precharge bitlines to bitcell bitlines
@@ -1285,9 +1285,20 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
             offset = vector(x_offset, y_offset)
             self.add_rect(METAL2, offset=offset, height=data_in.by() - y_offset)
             cont = self.add_contact(m2m3.layer_stack, offset=offset)
-            br_pin = bl_inst.get_pin("br[{}]".format(word))
-            x_offset = br_pin.lx()
-            self.join_pins_with_m3(cont, br_pin, cont.cy(), fill_width, fill_height)
+            mux_out_pin = bl_inst.get_pin("br[{}]".format(word))
+
+            bl_pin, column_index = self.get_closest_bitline_pin(mux_out_pin.lx(), "bl")
+            br_pin, _ = self.get_closest_bitline_pin(mux_out_pin.lx(), "br")
+
+            # prevent clash with inter-array vdd/gnd rails
+            power_rail_width = m3m4.height
+            if abs(bl_pin.cx() - br_pin.cx()) <= (2 * power_rail_width + self.m4_space):
+                self.occupied_m4_bitcell_indices.append(column_index)
+
+            left_bitline, right_bitline = sorted([bl_pin, br_pin], key=lambda x: x.lx())
+
+            x_offset = right_bitline.lx()
+            self.join_pins_with_m3(cont, right_bitline, cont.cy(), fill_width, fill_height)
 
             self.add_contact(m3m4.layer_stack, offset=vector(x_offset, y_offset +
                                                              0.5 * m2m3.second_layer_height -
@@ -1300,16 +1311,16 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                 continue
             # align mask flop in with bl
             mask_in = self.mask_in_flops_inst.get_pin("din[{}]".format(word))
-            bl_pin = bl_inst.get_pin("bl[{}]".format(word))
+
             y_offset = mask_via_y
 
             self.add_rect(METAL2, offset=vector(mask_in.lx(), mask_via_y),
                           height=mask_in.by() - mask_via_y)
             via_offset = vector(mask_in.lx(), y_offset)
             cont = self.add_contact(m2m3.layer_stack, offset=via_offset)
-            self.join_pins_with_m3(cont, bl_pin, cont.cy(), fill_width, fill_height)
+            self.join_pins_with_m3(cont, left_bitline, cont.cy(), fill_width, fill_height)
 
-            via_offset = vector(bl_pin.lx(), y_offset)
+            via_offset = vector(left_bitline.lx(), y_offset)
             self.add_contact(m3m4.layer_stack, offset=via_offset)
             self.add_layout_pin("MASK[{}]".format(word), METAL4,
                                 offset=vector(via_offset.x, self.min_point),
@@ -1345,22 +1356,24 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         for word in range(self.word_size):
             tri_in = self.tri_gate_array_inst.get_pin(tri_pin_name.format(word))
             bl_pin = self.sense_amp_array_inst.get_pin("bl[{}]".format(word))
+            br_pin = self.sense_amp_array_inst.get_pin("br[{}]".format(word))
+            left_bitline = min([bl_pin, br_pin], key=lambda x: x.lx())
             # tri input to align with bl
             y_offset = tri_in_via_y
-            x_offset = bl_pin.lx()
+            x_offset = left_bitline.lx()
             self.add_rect(METAL2, offset=tri_in.ul(), height=y_offset - tri_in.uy())
             cont = self.add_contact(m2m3.layer_stack, offset=vector(tri_in.lx(), y_offset))
 
-            self.join_pins_with_m3(cont, bl_pin, cont.cy(), fill_width, fill_height)
-            self.add_contact_center(m3m4.layer_stack, offset=vector(bl_pin.cx(),
+            self.join_pins_with_m3(cont, left_bitline, cont.cy(), fill_width, fill_height)
+            self.add_contact_center(m3m4.layer_stack, offset=vector(left_bitline.cx(),
                                                                     cont.cy()))
             self.add_rect(METAL4, offset=vector(x_offset, y_offset),
                           height=sense_out_y - y_offset + m3m4.height,
-                          width=bl_pin.width())
+                          width=left_bitline.width())
             # sense_out_y to sense amp out
             sense_out = self.sense_amp_array_inst.get_pin(sense_pin_name.format(word))
             via_y = sense_out_y + 0.5 * m3m4.height
-            cont = self.add_contact_center(m3m4.layer_stack, offset=vector(bl_pin.cx(), via_y))
+            cont = self.add_contact_center(m3m4.layer_stack, offset=vector(left_bitline.cx(), via_y))
             self.join_pins_with_m3(cont, sense_out, cont.cy(), fill_width, fill_height)
             self.add_contact_center(m2m3.layer_stack, offset=vector(sense_out.cx(), via_y))
             self.add_rect(METAL2, offset=vector(sense_out.lx(), sense_out_y),
@@ -1700,6 +1713,8 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
             self.add_power_via(pin, self.right_vdd, via_rotate=via_rotate)
 
     def route_all_power_to_rail(self, instance, rail_name, rail):
+        if rail_name not in instance.mod.pins:
+            return
         for pin in instance.get_pins(rail_name):
             if pin.lx() < rail.lx():
                 start_x, end_x = pin.rx(), rail.rx()
@@ -1932,7 +1947,14 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                                          height=fill_height)
 
     def get_intra_array_grid_top(self):
-        return self.mid_vdd.uy()
+        inst_stack = self.get_vertical_instance_stack()
+        grid_top = self.mid_vdd.uy()
+        for inst in inst_stack:
+            if inst == self.bitcell_array_inst:
+                continue
+            if inst.get_layer_shapes(METAL4):
+                grid_top = min(grid_top, inst.by())
+        return grid_top
 
     def route_intra_array_power_grid(self):
         """Add M4 rails along bitcell arrays columns"""

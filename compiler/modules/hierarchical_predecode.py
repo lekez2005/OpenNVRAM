@@ -88,6 +88,7 @@ class hierarchical_predecode(design.design):
         if not self.route_top_rail:
             self.top_output_buffer = BufferStage(buffer_stages=self.buffer_sizes[1:],
                                                  route_outputs=False, contact_nwell=False,
+                                                 contact_pwell=False,
                                                  height=self.module_height)
             self.add_mod(self.top_output_buffer)
             self.top_nand = self.create_nand(self.number_of_inputs)

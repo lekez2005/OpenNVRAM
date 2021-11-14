@@ -5,12 +5,15 @@ from modules.logic_buffer import LogicBuffer
 
 class CamControlBuffers(LatchedControlBuffers):
 
+    def has_precharge(self):
+        return self.bank.words_per_row > 1
+
     def get_schematic_pins(self):
         in_pins = self.get_input_schematic_pins()
         in_pins[in_pins.index("read")] = "search"
 
         decoder_clk = ["decoder_clk"] * self.use_decoder_clk
-        if self.bank.words_per_row == 1:
+        if not self.has_precharge():
             precharge_pins = ["ml_precharge_bar", "discharge"]
         else:
             precharge_pins = ["ml_precharge_bar", "discharge", "precharge_en_bar"]
@@ -37,6 +40,8 @@ class CamControlBuffers(LatchedControlBuffers):
                                              buffer_stages="ml_buffers",
                                              logic="pnor2")
 
+        assert len(OPTS.precharge_buffers) % 2 == 1, \
+            "Number of precharge_buffers should be odd"
         self.precharge_buf = self.create_mod(LogicBuffer,
                                              buffer_stages="precharge_buffers",
                                              logic="pnor2")
@@ -68,7 +73,7 @@ class CamControlBuffers(LatchedControlBuffers):
 
         conns = [
             ("bar_sel_clk", self.nand_x2, ["bank_sel", precharge_in, "bar_sel_clk"]),
-            ("search_bar", self.inv, ["search", "search_bar"]),
+            ("search_bar", self.inv_x2, ["search", "search_bar"]),
             ("matchline_buf", self.matchline_buf,
              ["search_bar", "bar_sel_clk", "ml_precharge_buf", "ml_precharge_bar"]),
             ("discharge_buf", self.discharge_buf,
@@ -81,7 +86,7 @@ class CamControlBuffers(LatchedControlBuffers):
 
     def add_write_connections(self, connections):
         conns = [
-            ("clk_bar_in", self.inv, ["clk", "clk_bar_int"]),
+            ("clk_bar_int", self.inv, ["clk", "clk_bar_int"]),
             ("write_buf", self.write_buf,
              ["bank_sel", "clk_bar_int", "write_en_bar", "write_en"]),
             ("wordline_buf", self.wordline_buf,

@@ -35,10 +35,13 @@ class CamProbe(SramProbe):
     def tri_state_current_probes(self, bank, bits):
         pass
 
-    def get_control_buffers_probe_bits(self, destination_inst, bank):
+    def get_control_buffers_probe_bits(self, destination_inst, bank, net=None):
         name = destination_inst.name
         if name == "search_sense_amps":
-            return list(range(self.sram.bank.num_rows))
+            if net in ["dout", "vin"]:
+                return list(range(self.sram.bank.num_rows))
+            points = 5
+            return list(map(int, np.linspace(0, self.sram.bank.num_rows - 1, points)))
         return super().get_control_buffers_probe_bits(destination_inst, bank)
 
     def precharge_current_probes(self, bank, cols):
@@ -75,4 +78,4 @@ class CamProbe(SramProbe):
         else:
             suffix = ""
         for row in range(self.sram.bank.num_rows):
-            probes[row] = f"search_out[{row}]{suffix}"
+            probes[row] = f"search_out{suffix}[{row}]"

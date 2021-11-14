@@ -187,7 +187,7 @@ def read_config(config_file, is_unit_test=True, openram_temp=None):
     options. 
     """
     global OPTS
-    
+
     # Create a full path relative to current dir unless it is already an abs path
     if not os.path.isabs(config_file):
         config_file = os.path.join(os.getcwd(), config_file)
@@ -202,8 +202,8 @@ def read_config(config_file, is_unit_test=True, openram_temp=None):
             spec.loader.exec_module(config)
         else:
             config = importlib.import_module(os.path.basename(config_file))
-    except:
-        debug.error("Unable to read configuration file: {0}".format(config_file), 2)
+    except Exception as ex:
+        debug.error(f"Unable to read configuration file: {config_file}\n{ex}", 2)
 
     for k,v in config.__dict__.items():
         # The command line will over-ride the config file

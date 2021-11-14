@@ -59,7 +59,6 @@ class SearchSenseAmpArray(design.design):
             self.child_insts.append(self.add_inst(f"mod_{row}", mod=self.amp,
                                                   offset=vector(0, y_offset),
                                                   mirror=mirror))
-            "dout en gnd vcomp vdd vin"
             self.connect_inst([f"dout[{row}]", "en", "gnd", "vcomp", "vdd", f"ml[{row}]"])
 
     def add_layout_pins(self):
@@ -72,6 +71,6 @@ class SearchSenseAmpArray(design.design):
             self.copy_layout_pin(inst, "vin", "ml[{}]".format(i))
             self.copy_layout_pin(inst, "dout", "dout[{}]".format(i))
 
-        for inst in set(self.child_insts[::2] + [self.child_insts[-1]]):
+        for inst in self.child_insts:
             self.copy_layout_pin(inst, "vdd", "vdd")
             self.copy_layout_pin(inst, "gnd", "gnd")

@@ -385,7 +385,7 @@ class SramProbe(object):
         else:
             return elements
 
-    def get_control_buffers_probe_bits(self, destination_inst, bank):
+    def get_control_buffers_probe_bits(self, destination_inst, bank, net=None):
         name = destination_inst.name
         if name in ["wordline_driver"]:
             return [self.sram.bank.num_rows - 1]
@@ -585,7 +585,7 @@ class SramProbe(object):
 
             template = full_net.replace("Xmod_0", "Xmod_{bit}")
             template = template.replace("[0]", "[{bit}]")
-            for bit in self.get_control_buffers_probe_bits(array_inst, bank_):
+            for bit in self.get_control_buffers_probe_bits(array_inst, bank_, net):
                 full_net = template.format(bit=bit)
                 net_probes[bit] = full_net
                 self.probe_labels.add(full_net)
@@ -609,7 +609,7 @@ class SramProbe(object):
             if not OPTS.use_pex:
                 probes[-1] = "Xsram.{}".format(bank_net)
                 for inst, _ in bank_mod.get_net_loads(net):
-                    for bit in self.get_control_buffers_probe_bits(inst, bank):
+                    for bit in self.get_control_buffers_probe_bits(inst, bank, net):
                         probes[bit] = probes[-1]
                 self.probe_labels.update(probes.values())
                 continue

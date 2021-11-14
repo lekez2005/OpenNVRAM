@@ -1,9 +1,4 @@
-import debug
-from base import design
-from base import utils
-from globals import OPTS
 from modules import bitcell
-from tech import GDS, layer
 
 
 class cam_bitcell(bitcell.bitcell):

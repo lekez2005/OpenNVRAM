@@ -343,8 +343,8 @@ def evaluate_well_active_enclosure_spacing(top_module: design, bottom_module: de
     return min_space
 
 
-def evaluate_vertical_module_spacing(top_modules: List[design],
-                                     bottom_modules: List[design],
+def evaluate_vertical_module_spacing(top_modules: List[design_inst],
+                                     bottom_modules: List[design_inst],
                                      layers=None, min_space=None, num_cols=64):
     """
     Evaluate spacing between two modules vertically arranged

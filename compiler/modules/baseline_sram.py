@@ -200,8 +200,7 @@ class BaselineSram(design):
     @staticmethod
     def create_column_decoder_modules(words_per_row):
         if words_per_row == 2:
-            column_decoder = FlopBuffer(OPTS.control_flop, OPTS.column_decoder_buffers,
-                                        name="col_decoder_flop")
+            column_decoder = FlopBuffer(OPTS.control_flop, OPTS.column_decoder_buffers)
         else:
             col_buffers = OPTS.column_decoder_buffers
             buffer_sizes = [OPTS.predecode_sizes[0]] + col_buffers
@@ -520,8 +519,7 @@ class BaselineSram(design):
             x_offset = self.leftmost_m2_rail_x
             rails_x = [x_offset + i * self.bus_pitch for i in range(self.words_per_row)]
         else:
-            base_x = (self.bank.leftmost_control_rail.offset.x -
-                      self.bus_pitch * self.words_per_row) - self.bus_space
+            base_x = self.leftmost_m2_rail_x
             rails_y = []
             rails_x = []
         x_offsets = [base_x + i * self.bus_pitch for i in range(self.words_per_row)]

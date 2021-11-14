@@ -164,7 +164,7 @@ class bitcell_array(design.design):
             self.dummy_rows = self.dummy_cols = []
             return
 
-        num_bitcell_dummies = OPTS.num_bitcell_dummies
+        num_dummies = OPTS.num_bitcell_dummies
         cols = self.dummy_cols
         rows = self.dummy_rows
 

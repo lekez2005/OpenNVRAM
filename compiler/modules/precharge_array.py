@@ -1,6 +1,7 @@
 import debug
 from base import design
 from base.design import NWELL, PWELL
+from base.geometry import NO_MIRROR
 from base.vector import vector
 from globals import OPTS
 from modules.precharge import precharge, precharge_tap
@@ -59,14 +60,20 @@ class precharge_array(design.design):
         offsets = bitcell_array_cls.calculate_x_offsets(num_cols=self.columns)
         (self.bitcell_offsets, self.tap_offsets, _) = offsets
 
+    def get_cell_offset(self, column):
+        offset = vector(self.bitcell_offsets[column], 0)
+        mirror = NO_MIRROR
+        return offset, mirror
+
     def add_insts(self):
         """Creates a precharge array by horizontally tiling the precharge cell"""
         self.load_bitcell_offsets()
         self.child_insts = []
         for i in range(self.columns):
             name = "mod_{0}".format(i)
-            offset = vector(self.bitcell_offsets[i], 0)
-            inst = self.add_inst(name=name, mod=self.pc_cell, offset=offset)
+            offset, mirror = self.get_cell_offset(i)
+            inst = self.add_inst(name=name, mod=self.pc_cell, offset=offset,
+                                 mirror=mirror)
             self.child_insts.append(inst)
             self.copy_layout_pin(inst, "bl", "bl[{0}]".format(i))
             self.copy_layout_pin(inst, "br", "br[{0}]".format(i))

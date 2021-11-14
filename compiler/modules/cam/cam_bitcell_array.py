@@ -21,12 +21,15 @@ class cam_bitcell_array(bitcell_array.bitcell_array):
         self.add_pin("vdd")
         self.add_pin("gnd")
 
-    def connect_inst(self, args, check=True):
-        if self.insts[-1].mod.name == "cam_cell_6t":
-            all_args = " ".join(args)
-            col = re.match(".*bl\[(?P<col>\d+)\]", all_args).group('col')
-            row = re.match(".*wl\[(?P<row>\d+)\]", all_args).group('row')
+    def get_conns_row_col(self, connections):
+        all_args = " ".join(connections)
+        col = re.match(".*bl\[(?P<col>\d+)\]", all_args).group('col')
+        row = re.match(".*wl\[(?P<row>\d+)\]", all_args).group('row')
+        return row, col
 
+    def connect_inst(self, args, check=True):
+        if self.insts[-1].mod.name == self.cell.name:
+            row, col = self.get_conns_row_col(args)
             args = [
                 "bl[{0}]".format(col), "br[{0}]".format(col),
                 "wl[{0}]".format(row), "ml[{0}]".format(row),

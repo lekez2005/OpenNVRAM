@@ -1,5 +1,7 @@
-from cam_dut import CamDut
-from cam_probe import CamProbe
+from random import randint
+
+from modules.cam.cam_dut import CamDut
+from modules.cam.cam_probe import CamProbe
 from characterizer import SpiceCharacterizer
 from characterizer.simulation.sim_operations_mixin import FALL, CROSS, RISE
 from globals import OPTS
@@ -55,6 +57,19 @@ class CamSpiceCharacterizer(SpiceCharacterizer):
             # off by one mismatch
             self.setup_search_measurements(address)
             self.search_data(off_by_one, mask)
+
+    def generate_energy_op(self, op_index):
+        mask = [1] * self.word_size
+        address = randint(0, self.sram.num_words - 1)
+        ops = ["search", "write"]
+        op = ops[op_index % 2]
+
+        data = [randint(0, 1) for _ in range(self.word_size)]
+        if op == "search":
+            self.search_data(data, mask)
+        else:
+            self.write_address(address, data, mask)
+        return op
 
     def search_data(self, data_v, mask_v):
         self.command_comments.append(f"* [{self.current_time: >20}] search {data_v} "
@@ -120,7 +135,7 @@ class CamSpiceCharacterizer(SpiceCharacterizer):
             def trig_probes(bank_, row_):
                 return self.probe.dout_probes[bank_, row_]
 
-            self.generate_delay_measurements("SEARCH_DELAY", trig_probes,
+            self.generate_delay_measurements("SEARCH", trig_probes,
                                              self.probe.dout_probes,
                                              trig_thresh=0.1 * self.vdd_voltage,
                                              targ_thresh=0.9 * self.vdd_voltage,

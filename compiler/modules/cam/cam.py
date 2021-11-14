@@ -7,7 +7,8 @@ from modules.baseline_sram import BaselineSram
 class Cam(BaselineSram):
 
     def create_layout(self):
-        assert not OPTS.independent_banks, "Independent banks not supported for CAMs"
+        assert (self.num_banks == 1 or OPTS.independent_banks), \
+            "Dependent banks not supported for CAMs"
         super().create_layout()
 
     @staticmethod
@@ -33,7 +34,7 @@ class Cam(BaselineSram):
         pins = super().get_schematic_pins()
         search_pins = [f"search_out[{row}]" for row in range(self.num_rows)]
         if self.num_banks == 2:
-            search_pins.extend([f"search_out[{row}]" for row in range(self.num_rows)])
+            search_pins.extend([f"search_out_1[{row}]" for row in range(self.num_rows)])
 
         search_pins.append("search_ref")
         index = pins.index(f"ADDR[{self.bank_addr_size - 1}]") + 1
@@ -52,6 +53,6 @@ class Cam(BaselineSram):
 
     def join_bank_controls(self):
         control_inputs = self.control_inputs
-        self.control_inputs = control_inputs + ["search_ref"]
+        self.control_inputs = ["search_ref"] + control_inputs
         super().join_bank_controls()
         self.control_inputs = control_inputs

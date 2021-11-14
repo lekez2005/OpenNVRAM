@@ -13,7 +13,7 @@ from tech import parameter, add_tech_layers
 
 class CamPrecharge(precharge_characterization, design):
 
-    def __init__(self, name, size=1, words_per_row=1):
+    def __init__(self, name, size=1, has_precharge=True):
         design.__init__(self, name)
         debug.info(2, "create single precharge cell: {0}".format(name))
 
@@ -25,8 +25,7 @@ class CamPrecharge(precharge_characterization, design):
         self.ptx_width = utils.round_to_grid(size * self.beta * parameter["min_tx_size"])
         self.size = self.ptx_width / (self.beta * parameter["min_tx_size"])
         self.width = self.bitcell.width
-        self.words_per_row = words_per_row
-        self.has_precharge = words_per_row > 1
+        self.has_precharge = has_precharge
 
         self.add_pins()
         self.create_layout()
@@ -172,17 +171,45 @@ class CamPrecharge(precharge_characterization, design):
                 self.add_rect_center(METAL2, offset=vector(0, gate_pin.cy()),
                                      width=fill_width, height=fill_height)
 
-    def add_bitlines(self):
+    @staticmethod
+    def get_bitline_drain_source_indices():
+        return [1, 2]
+
+    def get_bitline_width(self):
+        # calculate max bitline width
+        sample_pin = self.bitcell.get_pin("bl")
+        m2_space = self.get_parallel_space(METAL2)
+        bitline_width = min(sample_pin.width(),
+                            0.5 * self.width - 0.5 * m1m2.width - m2_space - sample_pin.lx())
+        return utils.floor(bitline_width)
+
+    def fill_source_drain(self, pin_name, tx_pin, tx_inst, pin_contact, layer):
 
         # calculate fills
-        fill_edge_to_mid_cont = 0.5 * (self.poly_pitch - self.get_parallel_space(METAL1))
+        fill_edge_to_mid_cont = 0.5 * (self.poly_pitch - self.get_parallel_space(layer))
         active_width = self.nmos.get_layer_shapes(ACTIVE)[0].width
-        fill_width = 0.5 * (active_width - 3 * self.get_parallel_space(METAL1) -
+        fill_width = 0.5 * (active_width - 3 * self.get_parallel_space(layer) -
                             2 * m1m2.first_layer_width)
         fill_height = utils.ceil(self.get_min_area(METAL1) / fill_width)
+        # add m1 fill
+        if fill_height > self.m1_width:
+            if tx_inst == self.nmos_inst:
+                y_offset = pin_contact.uy() - fill_height
+            else:
+                y_offset = pin_contact.by()
+            if pin_name == "bl":
+                x_offset = tx_pin.cx() + fill_edge_to_mid_cont - fill_width
+            else:
+                x_offset = tx_pin.cx() - fill_edge_to_mid_cont
+
+            self.add_rect(layer, offset=vector(x_offset, y_offset),
+                          width=fill_width, height=fill_height)
+
+    def add_bitlines(self):
+        bitline_width = self.get_bitline_width()
 
         pin_names = ["bl", "br"]
-        pin_indices = [1, 2]
+        pin_indices = self.get_bitline_drain_source_indices()
         for i in range(2):
             pin_name = pin_names[i]
             bitcell_pin = self.bitcell.get_pin(pin_name)
@@ -203,19 +230,7 @@ class CamPrecharge(precharge_characterization, design):
                                 tx_pin.cy() - 0.5 * cont.height)
                 contacts.append(self.add_inst(cont.name, cont, offset=offset))
                 self.connect_inst([])
-                # add m1 fill
-                if fill_height > self.m1_width:
-                    if tx == self.nmos_inst:
-                        y_offset = contacts[-1].uy() - fill_height
-                    else:
-                        y_offset = contacts[-1].by()
-                    if i == 0:
-                        x_offset = tx_pin.cx() + fill_edge_to_mid_cont - fill_width
-                    else:
-                        x_offset = tx_pin.cx() - fill_edge_to_mid_cont
-
-                    self.add_rect(METAL1, offset=vector(x_offset, y_offset),
-                                  width=fill_width, height=fill_height)
+                self.fill_source_drain(pin_name, tx_pin, tx, contacts[-1], METAL1)
 
             # join nmos pmos
             if self.has_precharge:
@@ -227,32 +242,37 @@ class CamPrecharge(precharge_characterization, design):
                           height=y_top - offset.y)
             # create pins and join to nmos drains
             bottom_cont = contacts[0]
-            self.add_layout_pin(pin_name, METAL2, offset=vector(bitcell_pin.lx(), 0),
-                                width=bitcell_pin.width(),
-                                height=bottom_cont.by() + bitcell_pin.width())
-            self.add_rect(METAL2, offset=vector(bitcell_pin.lx(), bottom_cont.by()),
-                          width=tx_pins[0].cx() - bitcell_pin.lx(),
-                          height=bitcell_pin.width())
+            x_offset = bitcell_pin.lx() if i == 0 else bitcell_pin.rx() - bitline_width
+            self.add_layout_pin(pin_name, METAL2, offset=vector(x_offset, 0),
+                                width=bitline_width,
+                                height=bottom_cont.by() + bitline_width)
+            self.add_rect(METAL2, offset=vector(x_offset, bottom_cont.by()),
+                          width=tx_pins[0].cx() - x_offset,
+                          height=bitline_width)
 
             # extend pmos pins to vdd
             if self.has_precharge:
                 top_cont = contacts[1]
-                y_offset = top_cont.uy() - bitcell_pin.width()
-                self.add_rect(METAL2, offset=vector(bitcell_pin.lx(), y_offset),
-                              width=bitcell_pin.width(),
+                y_offset = top_cont.uy() - bitline_width
+                self.add_rect(METAL2, offset=vector(x_offset, y_offset),
+                              width=bitline_width,
                               height=self.height - y_offset)
             else:
-                y_offset = self.height - bitcell_pin.width()
+                y_offset = self.height - bitline_width
 
             rect_edge = bitcell_pin.lx() if i == 0 else bitcell_pin.rx()
 
             self.add_rect(METAL2, offset=vector(rect_edge, y_offset),
                           width=tx_pins[0].cx() - rect_edge,
-                          height=bitcell_pin.width())
+                          height=bitline_width)
+
+    def get_rail_height(self):
+        return max(self.rail_height, self.contact_implant_height)
 
     def connect_power(self):
-        y_offsets = [0.5 * self.contact_implant_height,
-                     self.height - 0.5 * self.contact_implant_height]
+        rail_height = self.get_rail_height()
+        y_offsets = [0.5 * self.contact_implant_height - 0.5 * rail_height,
+                     self.height - 0.5 * self.contact_implant_height + 0.5 * rail_height]
         for i, tx in enumerate(self.ptx_insts):
             source_drain = list(sorted(tx.get_pins("S") + tx.get_pins("D"),
                                        key=lambda x: x.lx()))
@@ -262,7 +282,7 @@ class CamPrecharge(precharge_characterization, design):
                               width=pin.width(), height=y_offsets[i] - pin.cy())
 
     def add_body_taps(self):
-        rail_height = max(self.rail_height, self.contact_implant_height)
+        rail_height = self.get_rail_height()
         fill_height = rail_height
         _, fill_width = self.calculate_min_area_fill(fill_height, layer=METAL2)
 

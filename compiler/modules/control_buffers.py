@@ -184,6 +184,7 @@ class ControlBuffers(design, ABC):
         self.nand3 = self.create_mod(pnand3, size=1)
         self.nor = self.create_mod(pnor2)
         self.inv = self.create_mod(pinv)
+        self.inv_x2 = self.create_mod(pinv, size=2)
 
     def create_clk_buf(self):
         self.clk_buf = self.create_mod(LogicBuffer, buffer_stages="clk_buffers",

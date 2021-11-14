@@ -1,9 +1,9 @@
 import numpy as np
-from mram_probe import MramProbe
+from modules.mram.mram_probe import MramProbe
 
 from characterizer import SpiceCharacterizer
 from globals import OPTS
-from mram.spice_dut import SpiceDut
+from modules.mram.spice_dut import SpiceDut
 
 
 class MramSimStepsGenerator(SpiceCharacterizer):
@@ -37,7 +37,7 @@ class MramSimStepsGenerator(SpiceCharacterizer):
                 pattern = self.probe.get_storage_node_pattern()
                 pattern = pattern.replace("Xbit_r", "Xref_r")
 
-                data = [0, 1]
+                data = [1, 0]
 
                 num_rows = bank.num_rows
                 for i in range(0, OPTS.num_reference_cells, 2):
@@ -49,6 +49,10 @@ class MramSimStepsGenerator(SpiceCharacterizer):
                                                       name="Xref")
                             self.write_ic(ic, col_node, col_voltage)
             ic.flush()
+
+    def finalize_sim_file(self):
+        self.stim.replace_bitcell(self)
+        super().finalize_sim_file()
 
     def is_signal_updated(self, key):
         """Determine whether signal should be updated depending on key and current operation"""

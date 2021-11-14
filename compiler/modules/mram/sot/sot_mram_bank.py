@@ -1,4 +1,4 @@
-from modules.baseline_bank import LEFT_FILL, RIGHT_FILL, JOIN_BOT_ALIGN, JOIN_TOP_ALIGN
+from modules.baseline_bank import LEFT_FILL, RIGHT_FILL, JOIN_BOT_ALIGN, JOIN_TOP_ALIGN, BaselineBank
 from modules.mram.sot.sot_mram_control_buffers import SotMramControlBuffers
 from modules.mram.sotfet.mram_bank import MramBank
 
@@ -6,7 +6,7 @@ from modules.mram.sotfet.mram_bank import MramBank
 class SotMramBank(MramBank):
 
     def add_pins(self):
-        super().add_pins()
+        BaselineBank.add_pins(self)
         self.add_pin("vclamp")
 
     def create_control_buffers(self):

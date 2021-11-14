@@ -10,6 +10,12 @@ from modules.baseline_bank import BaselineBank, JOIN_BOT_ALIGN
 
 class CamBank(BaselineBank):
 
+    def get_non_flop_control_inputs(self):
+        """Get control buffers inputs that don't go through flops"""
+        precharge_trigger = ["precharge_trig"] * self.control_buffers.use_precharge_trigger
+        write_trigger = ["write_trig"] * ("write_trig" in self.control_buffers.pins)
+        return ["sense_trig"] + precharge_trigger + write_trigger
+
     def create_optimizer(self):
         from modules.cam.cam_control_buffers_optimizer import CamControlBuffersOptimizer
         self.optimizer = CamControlBuffersOptimizer(self)
@@ -23,7 +29,7 @@ class CamBank(BaselineBank):
     def create_precharge_array(self):
         self.precharge_array = self.create_module('precharge_array', columns=self.num_cols,
                                                   size=OPTS.precharge_size,
-                                                  words_per_row=self.words_per_row)
+                                                  has_precharge=self.words_per_row > 1)
         self.create_matchline_modules()
 
     def create_matchline_modules(self):
@@ -182,6 +188,8 @@ class CamBank(BaselineBank):
 
         space_power = False
         for pin_name in ["vdd", "gnd"]:
+            if pin_name not in bitcell.pins or pin_name not in sense_amp.pins:
+                continue
             for bitcell_pin in bitcell.get_pins(pin_name):
                 for sense_pin in sense_amp.get_pins(pin_name):
                     if not bitcell_pin.cy() == sense_pin.cy():
@@ -235,6 +243,9 @@ class CamBank(BaselineBank):
         self.route_all_power_to_rail(self.bitcell_array_inst, "vdd", self.mid_vdd)
         self.route_all_power_to_rail(self.bitcell_array_inst, "gnd", self.mid_gnd)
         for pin_name in ["vdd", "gnd"]:
+            if (pin_name not in self.search_sense_inst.mod.pins or
+                    pin_name not in self.bitcell_array_inst.mod.pins):
+                continue
             sense_pins = self.search_sense_inst.get_pins(pin_name)
             for pin in self.bitcell_array_inst.get_pins(pin_name):
                 if not pin.layer == METAL1:
@@ -252,9 +263,9 @@ class CamBank(BaselineBank):
                               width=x_offset - pin.rx() + width)
                 self.add_rect(pin.layer, offset=vector(x_offset, closest_sense.cy()),
                               width=width, height=pin.cy() - closest_sense.cy())
-                y_offset = closest_sense.cy() - 0.5 * width
-                self.add_rect(pin.layer, offset=vector(x_offset, y_offset),
-                              height=width, width=closest_sense.lx() - x_offset)
+                self.add_rect(pin.layer, offset=vector(x_offset, closest_sense.by()),
+                              height=closest_sense.height(),
+                              width=closest_sense.lx() - x_offset)
 
     def get_mask_flop_via_y(self):
         """Get y offset to route m2->m4 mask flop input"""
@@ -273,10 +284,31 @@ class CamBank(BaselineBank):
         pass
 
     def get_decoder_enable_y(self):
+
         en_pin = self.wordline_driver_inst.get_pin("en")
         precharge_pin = self.ml_precharge_array_inst.get_pin("precharge_en_bar")
         y_offset = min(en_pin.by(), precharge_pin.by())
         y_offset -= (self.get_line_end_space(METAL2) + self.bus_width)
+
+        en_rail = getattr(self, "wordline_en_rail")
+
+        # avoid clash with precharge inputs
+        space = self.get_parallel_space(METAL3) + self.bus_width
+        bitline_precharge_pins = [self.precharge_array_inst.get_pin(x)
+                                  for x in self.precharge_array.get_input_pins()]
+        bitline_precharge_pins = [x for x in bitline_precharge_pins if x.width() > x.height()]
+        bitline_precharge_pins = list(sorted(bitline_precharge_pins, key=lambda x: x.by()))
+        for pin in reversed(bitline_precharge_pins):
+            pin_index = self.precharge_array_inst.mod.pins.index(pin.name)
+            bank_net = self.conns[self.insts.index(self.precharge_array_inst)][pin_index]
+            precharge_rail = getattr(self, f"{bank_net}_rail")
+            if en_rail.lx() + self.bus_pitch <= precharge_rail.lx():
+                continue
+            if y_offset - space <= pin.by() <= y_offset + space:
+                y_offset = pin.by() - space
+            else:
+                break
+
         return y_offset
 
     def add_m1_m3_via(self, mid_x, mid_y, fill_up):
@@ -289,6 +321,18 @@ class CamBank(BaselineBank):
             fill_y = cont.by() if fill_up else cont.uy() - fill_height
             self.add_rect(METAL2, offset=vector(cont.cx() - 0.5 * self.m2_width,
                                                 fill_y), height=fill_height)
+
+    def route_wl_to_bitcell_m3(self, bitcell_pin):
+        driver_pin = self.wordline_driver_inst.get_pin(bitcell_pin.name)
+        y_offset = min([driver_pin.by(), driver_pin.uy()],
+                       key=lambda x: abs(x - bitcell_pin.cy()))
+        self.add_rect(METAL2, vector(driver_pin.cx() - 0.5 * self.m2_width, bitcell_pin.cy()),
+                      height=y_offset - bitcell_pin.cy())
+        design.add_cross_contact_center(self, cross_m2m3,
+                                        offset=vector(driver_pin.cx(), bitcell_pin.cy()))
+        x_offset = driver_pin.cx() - 0.5 * cross_m2m3.second_layer_width
+        self.add_rect(METAL3, vector(x_offset, bitcell_pin.by()),
+                      width=bitcell_pin.lx() - x_offset, height=bitcell_pin.height())
 
     def route_wl_to_bitcell(self):
         """Route wordline output to bitcell"""
@@ -303,6 +347,9 @@ class CamBank(BaselineBank):
         for row in range(self.num_rows):
             pin_name = f"wl[{row}]"
             bitcell_pin = self.bitcell_array_inst.get_pin(pin_name)
+            if bitcell_pin.layer == METAL3:
+                self.route_wl_to_bitcell_m3(bitcell_pin)
+                continue
             ml_pin = self.ml_precharge_array_inst.get_pin(f"ml[{row}]")
 
             # driver out to m3 at x_offset
@@ -350,9 +397,12 @@ class CamBank(BaselineBank):
         # matchline enable
         enable_pin = self.ml_precharge_array_inst.get_pin("precharge_en_bar")
         enable_rail = getattr(self, "ml_precharge_bar_rail")
+        y_offset = enable_pin.by() - self.bus_width
         self.add_rect(METAL2, enable_rail.ul(), width=enable_rail.width,
-                      height=enable_pin.by() + self.bus_width - enable_rail.uy())
-        self.add_rect(METAL2, enable_pin.ll(), width=enable_rail.cx() - enable_pin.lx(),
+                      height=y_offset + self.bus_width - enable_rail.uy())
+        x_offset = min(enable_pin.lx(), enable_rail.lx())
+        width = max(enable_pin.rx(), enable_rail.rx()) - x_offset
+        self.add_rect(METAL2, vector(x_offset, y_offset), width=width,
                       height=self.bus_width)
 
         precharge_x = self.ml_wl_x_offset
@@ -414,7 +464,7 @@ class CamBank(BaselineBank):
                 vector(x_offset, bitcell_pin.cy()),
                 vector(x_offset, sense_pin.cy()),
                 sense_pin.lc()
-            ])
+            ], width=self.bus_width)
 
     def route_search_sense_en(self):
         rail = getattr(self, "search_sense_en_rail")

@@ -15,7 +15,8 @@ class SotfetMram(BaselineSram):
             self.fixed_controls = ["vref"]
         else:
             self.fixed_controls = ["vclamp"]
-        kwargs = {"word_size": self.word_size,
+        kwargs = {"name": "bank",
+                  "word_size": self.word_size,
                   "num_words": self.num_words_per_bank,
                   "words_per_row": self.words_per_row,
                   "num_banks": self.num_banks}
@@ -25,6 +26,7 @@ class SotfetMram(BaselineSram):
         if self.num_banks == 2:
             debug.info(1, "Creating left bank")
             kwargs["adjacent_bank"] = self.bank
+            kwargs["name"] = "left_bank"
             self.left_bank = self.create_mod_from_str(OPTS.bank_class, **kwargs)
 
     def join_decoder_wells(self):

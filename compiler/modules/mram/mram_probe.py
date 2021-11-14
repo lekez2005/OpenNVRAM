@@ -20,7 +20,7 @@ class MramProbe(SramProbe):
             results.append((bit, template.format(bank, row, col)))
         return results
 
-    def get_control_buffers_probe_bits(self, destination_inst, bank):
+    def get_control_buffers_probe_bits(self, destination_inst, bank, net=None):
         name = destination_inst.name
         if name in ["wwl_driver", "rwl_driver"]:
             return [self.sram.bank.num_rows - 1]

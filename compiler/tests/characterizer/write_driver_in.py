@@ -7,61 +7,53 @@ from distributed_load_base import DistributedLoadMixin
 
 class WriteDriverIn(DistributedLoadMixin, CharTestBase):
     instantiate_dummy = True
+    fixed_pins = ["data[0]", "data_bar[0]", "mask[0]", "mask_bar[0]"]
 
     def setUp(self):
         super().setUp()
         self.set_cell_mod()
 
+    def save_result(self, cell_name, pin, *args, **kwargs):
+        pin = pin.replace("[0]", "")
+        super(WriteDriverIn, self).save_result(cell_name, pin, *args, **kwargs)
+
     def set_cell_mod(self):
         from globals import OPTS
-        OPTS.write_driver = self.options.write_driver
-        OPTS.write_driver_mod = self.options.write_driver_mod
-        OPTS.write_driver_tap = self.options.write_driver_tap
+        OPTS.write_driver_array = self.options.write_driver_array or OPTS.write_driver_array
 
     @classmethod
     def add_additional_options(cls):
-        cls.parser.add_argument("--write_driver_array", default="write_driver_array")
-        cls.parser.add_argument("--write_driver", default="write_driver")
-        cls.parser.add_argument("--write_driver_mod", default="write_driver")
-        cls.parser.add_argument("--write_driver_tap", default="write_driver_tap")
+        cls.parser.add_argument("--write_driver_array", default=None)
 
     def get_cell_name(self):
-        from globals import OPTS
-        return OPTS.write_driver_mod
+        if not hasattr(self, "sample_array"):
+            self.sample_array = self.create_class_from_opts("write_driver_array",
+                                                            columns=32,
+                                                            word_size=32)
+        return self.sample_array.child_mod.name
 
     def get_pins(self):
-        if self.options.write_driver == "write_driver":
-            return ["en"]
-        elif self.options.write_driver == "write_driver_mask":
-            return ["en", "en_bar"]
+        pins = self.sample_array.child_mod.get_input_pins()
+        if self.options.plot:
+            return pins
+
+        return [x if x.startswith("en") else x + "[0]" for x in pins]
 
     def make_dut(self, num_elements):
-
-        mod_class = self.load_module_from_str(self.options.write_driver_array)
-        load = mod_class(columns=num_elements, word_size=num_elements)
+        load = self.create_class_from_opts("write_driver_array",
+                                           columns=num_elements, word_size=num_elements)
         return load
 
     def get_dut_instance_statement(self, pin):
+        conns = [x for x in self.load.pins]
+        conns[conns.index(pin)] = "d"
 
-        cols = self.load.original_dut.word_size
+        input_pins = self.load.original_dut.get_input_pins()
+        for input_pin in input_pins:
+            if not input_pin == pin:
+                conns[conns.index(input_pin)] = "d_dummy"
 
-        dut_instance = "X4 " + " ".join([" vdd gnd "] * cols)
-
-        for col in range(cols):
-            dut_instance += " bl[{0}] br[{0}] ".format(col)
-        dut_instance += " ".join([" gnd "] * cols)
-
-        if self.options.write_driver == "write_driver":
-            dut_instance += " d "
-        else:
-            # en pin is just before en_bar pin
-            if pin == "en":
-                dut_instance += " d d_dummy "
-            else:
-                dut_instance += " d_dummy d "
-
-        dut_instance += " vdd gnd {} \n".format(self.load.name)
-        return dut_instance
+        return f"X4 {' '.join(conns)} {self.load.name}"
 
 
 WriteDriverIn.run_tests(__name__)

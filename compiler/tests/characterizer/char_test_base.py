@@ -13,7 +13,7 @@ import numpy as np
 
 from characterization_utils import parse_options
 
-sys.path.append('..')
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 import testutils
 
@@ -46,7 +46,6 @@ def parallel_sim(command_iterator, max_jobs=50, nice=15, **subprocess_params):
 
 
 class CharTestBase(testutils.OpenRamTest):
-    config_template = os.path.dirname(os.path.dirname(__file__)) + "/config_20_{}"
     spice_template = "cin_template.sp"
     run_pex = True
     instantiate_dummy = False
@@ -64,6 +63,13 @@ class CharTestBase(testutils.OpenRamTest):
     def run_tests(cls, name):
         if name == "__main__":
             cls.parse_custom_options()
+            if cls.options.config:
+                config_template = cls.options.config
+            else:
+                config_template = (os.path.dirname(os.path.dirname(__file__)) +
+                                   "/config_20_{}")
+            sys.path.append(os.path.dirname(config_template))
+            cls.config_template = config_template
             testutils.parse_args()
             unittest.main()
 
@@ -97,6 +103,7 @@ class CharTestBase(testutils.OpenRamTest):
         parser.add_argument("-p", "--plot", action="store_true")
         parser.add_argument("--scale_by_x", action="store_true")
         parser.add_argument("--save_plot", action="store_true")
+        parser.add_argument("--config", default=None, type=str)
 
         parser.add_argument("--subprocess_nice", default=15, type=int)
 
@@ -128,6 +135,9 @@ class CharTestBase(testutils.OpenRamTest):
         OPTS.spice_name = self.options.spice_name
         OPTS.spectre_command_options = " +aps +mt=16 "
 
+        import characterizer
+        reload(characterizer)
+
         self.set_beta(self.options)
 
         if self.options.driver_stages is not None:
@@ -156,14 +166,15 @@ class CharTestBase(testutils.OpenRamTest):
 
     @staticmethod
     def set_temp_folder(dir_name):
+        import debug
         from globals import OPTS
-        openram_temp_ = os.path.join(CharTestBase.temp_folder, dir_name)
+        openram_temp_ = os.path.join(CharTestBase.temp_folder, OPTS.tech_name, dir_name)
         if openram_temp_ == OPTS.openram_temp:
             return
         OPTS.openram_temp = openram_temp_
         if not os.path.exists(OPTS.openram_temp):
             pathlib.Path(OPTS.openram_temp).mkdir(parents=True, exist_ok=True)
-        print("\n Temp folder = {}".format(OPTS.openram_temp))
+        debug.info(1, "Temp folder = {}".format(OPTS.openram_temp))
 
     def run_pex_extraction(self, module, name_prefix, run_drc=False, run_lvs=False):
         import verify
@@ -472,7 +483,8 @@ mvarsearch {{
                 else:
                     y_data = data[:, 1]
                 plt_func = ax.semilogx if log_x else ax.plot
-                plt_func(data[:, 0] * x_scale, y_data * y_scale, "-o", label=key)
+                label = key if len(keys) > 1 else None
+                plt_func(data[:, 0] * x_scale, y_data * y_scale, "-o", label=label)
 
             # add legends if not empty
             if "".join(keys) and show_legend:

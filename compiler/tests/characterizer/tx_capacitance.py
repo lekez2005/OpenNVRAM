@@ -62,7 +62,7 @@ class TxCapacitance(CharTestBase):
         for tx_type in [NMOS, PMOS]:
             self.options.tx_type = tx_type
             print("\n{}".format(tx_type))
-            for num_fingers in [1, 2, 3, 4, 6, 10, 20, 40]:
+            for num_fingers in [1, 2, 3, 4, 5, 6, 10, 20, 40]:
 
                 print("  fingers: {}".format(num_fingers))
                 self.options.num_fingers = num_fingers
@@ -76,14 +76,13 @@ class TxCapacitance(CharTestBase):
                     self.options.min_c = default_min_c
                     design.name_map.clear()
 
-                    sizes = [1, 1.5, 2, 3, 5, 10]
+                    sizes = [1, 1.25, 1.5, 1.75, 2, 2.5, 3, 5, 10]
                     for i in range(len(sizes)):
                         size = sizes[i]
                         self.options.size = size
 
                         if i > 0:
-                            self.options.max_c = (2 * total_cap * self.default_cols[i] /
-                                                  self.default_cols[i - 1])
+                            self.options.max_c = (4 * total_cap)
                             self.options.min_c = 0.5 * total_cap
 
                         total_cap, _, cap_per_tx_micron, _ = self.run_single_sim()
@@ -205,6 +204,14 @@ class TxCapacitance(CharTestBase):
                                   width=rect_right - rect_left,
                                   height=rect_top - rect_bottom)
         return MosWrapper
+
+    @staticmethod
+    def create_pgate_wrapper(dut, options):
+        if options.horizontal:
+            pass
+        else:
+            pass
+        name = "wrap_" + dut.name
 
     def run_single_sim(self):
         from globals import OPTS

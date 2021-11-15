@@ -72,7 +72,6 @@ class MeasureResistance(CharTestBase):
         from modules.buffer_stage import BufferStage
         from pgates_caps import PINV
         from pgates_caps import PgateCaps
-        from characterizer.stimuli import stimuli
         from tx_capacitance import TxCapacitance
         from pgates.ptx import ptx
 
@@ -158,6 +157,14 @@ class MeasureResistance(CharTestBase):
             "fall_end": fall_end
         }
 
+        res = self.generate_and_run(self, size, buffer_pex, c_load, args)
+        r_n, r_p, fall_time, rise_time, scale_factor = res
+
+        return r_n, r_p, fall_time, rise_time, scale_factor
+
+    @staticmethod
+    def generate_and_run(self, size, buffer_pex, c_load, args):
+        from characterizer.stimuli import stimuli
         spice_content = spice_template.format(**args)
 
         self.stim_file_name = self.prefix("stim.sp")
@@ -171,14 +178,19 @@ class MeasureResistance(CharTestBase):
 
         stim.run_sim()
 
-        meas_file = self.prefix("stim.measure")
-        fall_time = float(search_meas("fall_time", meas_file))
-        rise_time = float(search_meas("rise_time", meas_file))
-
         scale_factor = get_scale_factor(self.options.method)
+        r_n = r_p = None
 
-        r_n = fall_time / (scale_factor * c_load) * size
-        r_p = rise_time / (scale_factor * c_load) * size
+        meas_file = self.prefix("stim.measure")
+        fall_time = search_meas("fall_time", meas_file)
+        if fall_time is not None:
+            fall_time = float(fall_time)
+            r_n = fall_time / (scale_factor * c_load) * size
+
+        rise_time = search_meas("rise_time", meas_file)
+        if rise_time is not None:
+            rise_time = float(rise_time) if rise_time is not None else None
+            r_p = rise_time / (scale_factor * c_load) * size
 
         return r_n, r_p, fall_time, rise_time, scale_factor
 

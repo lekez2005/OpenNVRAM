@@ -1,0 +1,38 @@
+{
+  "bl": {
+    "size_1_cols_1_wire_0": 6.37315e-16,
+    "size_1_cols_4_wire_0": 6.0279e-16,
+    "size_1_cols_8_wire_0": 5.8706625e-16,
+    "size_1_cols_16_wire_0": 5.7939125e-16,
+    "size_1_cols_32_wire_0": 5.7479375e-16,
+    "size_1_cols_64_wire_0": 5.69675e-16,
+    "size_1_cols_128_wire_0": 5.4407265625e-16
+  },
+  "br": {
+    "size_1_cols_1_wire_0": 6.10998e-16,
+    "size_1_cols_4_wire_0": 5.7018e-16,
+    "size_1_cols_8_wire_0": 5.500225e-16,
+    "size_1_cols_16_wire_0": 5.3977875e-16,
+    "size_1_cols_32_wire_0": 5.3375e-16,
+    "size_1_cols_64_wire_0": 5.283046875e-16,
+    "size_1_cols_128_wire_0": 5.0417421875e-16
+  },
+  "wl": {
+    "size_1_cols_1_wire_0": 4.84637e-16,
+    "size_1_cols_4_wire_0": 4.503925e-16,
+    "size_1_cols_8_wire_0": 4.48475e-16,
+    "size_1_cols_16_wire_0": 4.46945625e-16,
+    "size_1_cols_32_wire_0": 4.43684375e-16,
+    "size_1_cols_64_wire_0": 4.355375e-16,
+    "size_1_cols_128_wire_0": 4.176484375e-16
+  },
+  "ml": {
+    "size_1_cols_1_wire_0": 9.94995e-16,
+    "size_1_cols_4_wire_0": 9.8025e-16,
+    "size_1_cols_8_wire_0": 9.7655875e-16,
+    "size_1_cols_16_wire_0": 9.74625e-16,
+    "size_1_cols_32_wire_0": 9.67696875e-16,
+    "size_1_cols_64_wire_0": 9.4776875e-16,
+    "size_1_cols_128_wire_0": 9.022421875e-16
+  }
+}

@@ -4,7 +4,8 @@ from typing import List, Tuple
 
 class DistributedLoadMixin:
 
-    default_cols = [1, 4, 8, 16, 32, 64, 128, 256]
+    default_cols = [1, 4, 8, 16, 32, 64, 128]
+    fixed_pins = None  # pins that do not scale with cols
 
     @staticmethod
     def load_module_from_str(module_name):
@@ -41,6 +42,7 @@ class DistributedLoadMixin:
         if self.options.plot:
             return
 
+        import debug
         from characterization_utils import wrap_cell, search_meas
         from base.design import design
 
@@ -54,15 +56,21 @@ class DistributedLoadMixin:
 
         total_cap = self.options.max_c
 
+        fixed_pins = self.fixed_pins or []
+
         for pin in self.get_pins():
+            debug.info(0, "Pin = %s", pin)
 
             self.dut_pin = pin
 
             self.options.max_c = default_max_c
             self.options.min_c = default_min_c
             self.options.period = default_period
-            for i in range(len(self.default_cols)):
-                cols = self.default_cols[i]
+
+            all_cols = [1] if pin in fixed_pins else self.default_cols
+
+            for i in range(len(all_cols)):
+                cols = all_cols[i]
                 if i > 0:
                     self.options.max_c = (2 * total_cap * self.default_cols[i] /
                                           self.default_cols[i - 1])
@@ -90,8 +98,10 @@ class DistributedLoadMixin:
 
                 self.run_optimization()
                 total_cap = self.get_optimization_result()
-                cap_per_stage = total_cap / cols
                 size = getattr(self.options, "size", 1)
+                cap_per_stage = total_cap / cols / size
+
+                debug.info(0, "\t Cols = %4s, caps = %g", cols, cap_per_stage)
                 self.save_result(self.get_cell_name(), pin, cap_per_stage, size=size,
                                  size_suffixes=self.get_size_suffixes(cols),
                                  file_suffixes=self.get_file_suffixes(cols))

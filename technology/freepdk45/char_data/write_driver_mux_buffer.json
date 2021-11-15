@@ -1,0 +1,20 @@
+{
+  "data": {
+    "size_1_cols_1_wire_0": 1.19415e-15
+  },
+  "data_bar": {
+    "size_1_cols_1_wire_0": 1.18775e-15
+  },
+  "en": {
+    "size_1_cols_1_wire_0": 7.87163e-16,
+    "size_1_cols_4_wire_0": 7.58855e-16,
+    "size_1_cols_8_wire_0": 7.503025e-16,
+    "size_1_cols_16_wire_0": 7.424625e-16,
+    "size_1_cols_32_wire_0": 7.296625e-16,
+    "size_1_cols_64_wire_0": 7.036171875e-16,
+    "size_1_cols_128_wire_0": 6.561640625e-16
+  },
+  "mask": {
+    "size_1_cols_1_wire_0": 7.01323e-16
+  }
+}

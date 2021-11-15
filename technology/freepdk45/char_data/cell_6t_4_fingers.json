@@ -1,0 +1,29 @@
+{
+  "wl": {
+    "size_1_cols_1_wire_0": 2.12535e-15,
+    "size_1_cols_4_wire_0": 2.124105e-15,
+    "size_1_cols_8_wire_0": 2.1098e-15,
+    "size_1_cols_16_wire_0": 2.05390625e-15,
+    "size_1_cols_32_wire_0": 1.88124375e-15,
+    "size_1_cols_64_wire_0": 1.4798265625e-15,
+    "size_1_cols_128_wire_0": 1.4349296875e-15
+  },
+  "bl": {
+    "size_1_cols_1_wire_0": 1.28483e-15,
+    "size_1_cols_4_wire_0": 1.27998e-15,
+    "size_1_cols_8_wire_0": 1.2770875e-15,
+    "size_1_cols_16_wire_0": 1.26794375e-15,
+    "size_1_cols_32_wire_0": 1.2406e-15,
+    "size_1_cols_64_wire_0": 1.149746875e-15,
+    "size_1_cols_128_wire_0": 1.028984375e-15
+  },
+  "br": {
+    "size_1_cols_1_wire_0": 1.27339e-15,
+    "size_1_cols_4_wire_0": 1.26846e-15,
+    "size_1_cols_8_wire_0": 1.2655875e-15,
+    "size_1_cols_16_wire_0": 1.25664375e-15,
+    "size_1_cols_32_wire_0": 1.230153125e-15,
+    "size_1_cols_64_wire_0": 1.1418484375e-15,
+    "size_1_cols_128_wire_0": 1.02565625e-15
+  }
+}

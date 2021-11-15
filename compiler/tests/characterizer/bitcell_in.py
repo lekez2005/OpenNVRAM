@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-import shutil
-
 from char_test_base import CharTestBase
 from distributed_load_base import DistributedLoadMixin
 
@@ -9,23 +7,36 @@ from distributed_load_base import DistributedLoadMixin
 class BitcellIn(DistributedLoadMixin, CharTestBase):
     instantiate_dummy = True
     num_rows = num_cols = 1
+    default_cols = [1]
 
     def save_result(self, cell_name, pin, *args, **kwargs):
         pin = pin.replace("[0]", "")
         super(BitcellIn, self).save_result(cell_name, pin, *args, **kwargs)
 
+    def test_plot(self):
+        if not self.options.plot:
+            return
+        pins = self.get_pins()
+        for pin in pins:
+            sweep_variable = "cols"
+            # if pin.startswith("w"):
+            #     sweep_variable = "cols"
+            # else:
+            #     sweep_variable = "rows"
+            show_plot = pin == pins[-1]
+            self.plot_results(self.get_cell_name(), [pin],
+                              scale_by_x=self.options.scale_by_x, show_legend=True,
+                              sweep_variable=sweep_variable, save_plot=self.options.save_plot,
+                              show_plot=show_plot)
+
     def get_size_suffixes(self, num_elements):
-        if self.dut_pin == "bl[0]":
-            return [("rows", num_elements), ("wire", self.load.wire_length)]
-        else:
-            return [("cols", num_elements), ("wire", self.load.wire_length)]
-        
+        return [("cols", num_elements), ("wire", self.load.wire_length)]
 
     @classmethod
     def add_additional_options(cls):
-        cls.parser.add_argument("--bitcell", default="bitcell")
-        cls.parser.add_argument("--bitcell_array", default="bitcell_array")
-        cls.parser.add_argument("--bitcell_tap", default="body_tap")
+        cls.parser.add_argument("--bitcell_array", default=None)
+        cls.parser.add_argument("-l", "--load", default=30e-15, type=float,
+                                help="Capacitive load for resistance measurement")
 
     def setUp(self):
         super().setUp()
@@ -33,22 +44,21 @@ class BitcellIn(DistributedLoadMixin, CharTestBase):
 
     def set_cell_mod(self):
         from globals import OPTS
-        OPTS.bitcell = self.options.bitcell
-        OPTS.bitcell_array = self.options.bitcell_array
-        OPTS.body_tap = self.options.bitcell_tap
+        OPTS.bitcell_array = self.options.bitcell_array or OPTS.bitcell_array
 
     def get_cell_name(self) -> str:
-        from globals import OPTS
-        return self.load_module_from_str(OPTS.bitcell)().name
+        return self.create_class_from_opts("bitcell").name
 
     def get_pins(self):
-        return ["bl[0]", "wl[0]"]
+        bitcell = self.create_class_from_opts("bitcell")
+        pins = bitcell.get_input_pins() + bitcell.get_output_pins()
+        if self.options.plot:
+            return pins
+        return [x + "[0]" for x in pins]
 
     def make_dut(self, num_elements):
-        bitcell_array_class = self.load_module_from_str(self.options.bitcell_array)
-
         pin = self.dut_pin
-        if pin == "bl[0]":
+        if pin.startswith("b"):
             self.num_rows = num_elements
             self.num_cols = 1
         else:
@@ -56,35 +66,40 @@ class BitcellIn(DistributedLoadMixin, CharTestBase):
             self.num_cols = num_elements
 
         name = "bitcell_array_r{}_c{}".format(self.num_rows, self.num_cols)
-        load = bitcell_array_class(cols=self.num_cols, rows=self.num_rows,
-                                  name=name)
+        load = self.create_class_from_opts("bitcell_array", cols=self.num_cols, rows=self.num_rows,
+                                           name=name)
         return load
 
     def get_dut_instance_statement(self, pin) -> str:
-        cols = self.num_cols
-        rows = self.num_rows
+        connections = []
+        for conn in self.load.pins:
+            if conn.startswith(pin):
+                connections.append("d")
+            elif pin.startswith("w") or pin.startswith("wwl") or pin.startswith("rwl"):
+                if conn.startswith("b"):
+                    # test wordline: set bitlines to vdd
+                    connections.append("vdd")
+                elif conn.startswith("w"):  # other word lines
+                    connections.append("gnd")
+                else:
+                    connections.append(conn)
+            elif pin.startswith("b"):
+                if conn.startswith("w"):
+                    # test bitline: set wordlines to gnd
+                    connections.append("gnd")
+                elif conn.startswith("b"):  # other bitlines
+                    connections.append("d_dummy")
+                else:
+                    connections.append(conn)
+            elif pin.startswith("ml"):
+                if conn[:2] in ["wl", "bl", "br"]:
+                    connections.append("gnd")
+                else:
+                    connections.append(conn)
+            else:
+                connections.append(conn)
 
-        dut_instance = "X4 "
-
-        # bit-lines
-        if "bl" in pin:
-            dut_instance += " d d_dummy "
-        else:
-            # connect all bitlines to vdd
-            for col in range(cols):
-                dut_instance += " vdd vdd "
-
-        # word-lines
-        if "wl" in pin:
-            dut_instance += " d "
-        # connect word-lines to gnd
-        else:
-            for row in range(rows):
-                dut_instance += " gnd "
-
-        dut_instance += " vdd gnd {} \n".format(self.load.name)
-
-        return dut_instance
+        return f"X4 {' '.join(connections)} {self.load.name} \n"
 
 
 BitcellIn.run_tests(__name__)

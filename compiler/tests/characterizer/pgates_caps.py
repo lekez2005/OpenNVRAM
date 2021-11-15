@@ -34,16 +34,18 @@ class PgateCaps(CharTestBase):
         cls.parser.add_argument("-s", "--size",
                                 default=1, type=float, help="Inverter size")
         cls.parser.add_argument("--max_size",
-                                default=50, type=float, help="Inverter size")
+                                default=50, type=float, help="Max inverter size")
         cls.parser.add_argument("--num_sizes",
-                                default=20, type=float, help="Inverter size")
+                                default=20, type=float, help="Number of sizes to sweep")
 
     def test_single_sim(self):
         import debug
         if not self.options.action == ACTION_SINGLE:
             return
-        cap_val, num_fingers = self.run_sim()
-        debug.info(0, "Size = {:.3g}, fingers = ".format(self.options.size, num_fingers))
+        self.options.pin_name = "A"
+        cap_val, dut = self.run_sim()
+        num_fingers = dut.tx_mults
+        debug.info(0, "Size = {:.3g}, fingers = {}".format(self.options.size, num_fingers))
         debug.info(0, "Cap = {}fF".format(cap_val * 1e15))
         debug.info(0, "Cap per unit inverter = {}fF".format(cap_val * 1e15 / self.options.size))
 
@@ -64,7 +66,9 @@ class PgateCaps(CharTestBase):
             self.options.gate = gate
 
             if gate == PINV:
-                sizes = np.linspace(1, self.options.max_size, self.options.num_sizes)
+                max_log = np.log10(self.options.max_size)
+                sizes = np.logspace(0, max_log, self.options.num_sizes)
+                # sizes = np.linspace(1, self.options.max_size, self.options.num_sizes)
                 pins = ["A"]
             else:
                 # sizes = [self.options.size]
@@ -81,20 +85,35 @@ class PgateCaps(CharTestBase):
                 for pin_name in pins:
                     self.options.pin_name = pin_name
                     design.name_map.clear()
-                    cap_val = self.run_sim()
+                    try:
+                        cap_val, dut = self.run_sim()
+                    except AssertionError as ex:
+                        if str(ex).startswith("Only Single"):
+                            # ignore if size doesn't fit height
+                            continue
+                        else:
+                            raise ex
+
                     cap_per_size = cap_val / size
 
                     file_suffixes = [("beta", self.options.beta)]
+                    if not self.options.horizontal:
+                        file_suffixes.append(("contacts", int(not self.options.no_contacts)))
 
-                    self.save_result(gate, pin_name, value=cap_per_size, size=size,
-                                     file_suffixes=file_suffixes)
-
+                    size_suffixes = [("height", dut.height)]
+                    self.save_result(gate, pin_name.lower(), value=cap_per_size, size=size,
+                                     file_suffixes=file_suffixes, size_suffixes=size_suffixes)
                     print("    {}:\t Cap = {:5.5g} fF".format(
                         pin_name, 1e15 * cap_val / size))
 
+                    if pin_name == "A":
+                        # Z pin
+                        _, cap_per_unit = dut.compute_input_cap("z")
+                        self.save_result(gate, "z", value=cap_per_unit, size=size,
+                                         file_suffixes=file_suffixes, size_suffixes=size_suffixes)
+
     @staticmethod
-    def get_pgate_params(gate, pin_name, size):
-        from globals import OPTS
+    def get_pgate_params(gate, pin_name, size, height, options):
 
         from pgates.pinv import pinv
         from pgates.pnand2 import pnand2
@@ -126,8 +145,6 @@ class PgateCaps(CharTestBase):
 
         mod = modules_dict[gate]
 
-        module_args = {"size": size, "height": OPTS.logic_buffers_height,
-                       "contact_nwell": True, "contact_pwell": True}
         if gate == PINV:
             num_inputs = 1
         elif gate == PNAND3:
@@ -147,6 +164,7 @@ class PgateCaps(CharTestBase):
         return mod, module_args, terminals
 
     def run_sim(self):
+        from globals import OPTS
 
         self.driver_size = self.options.driver_size
 
@@ -157,10 +175,13 @@ class PgateCaps(CharTestBase):
         sim_dir = "{}_beta_{:.3g}".format(gate, self.options.beta)
         self.set_temp_folder(sim_dir)
 
-        mod, module_args, terminals = self.get_pgate_params(gate, pin_name, size)
+        height = self.options.height or OPTS.logic_buffers_height
+        mod, module_args, terminals = self.get_pgate_params(gate, pin_name, size, height, self.options)
         connections = " ".join(terminals)
 
         dut = mod(**module_args)
+        if self.options.no_contacts or self.options.horizontal:
+            dut = self.wrap_pgate()
 
         dut_pex = self.run_pex_extraction(dut, dut.name)
 
@@ -170,9 +191,10 @@ class PgateCaps(CharTestBase):
         self.dut_instance = "X4 {connections}    {dut_name}          * real load".format(
             connections=connections, dut_name=self.dut_name)
 
+        # total_cap = self.run_ac_cap_measurement(pin_name, dut)
         self.run_optimization()
         total_cap = self.get_optimization_result()
-        return total_cap
+        return total_cap, dut
 
     def test_plot(self):
 

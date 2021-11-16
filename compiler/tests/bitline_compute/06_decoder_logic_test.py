@@ -9,9 +9,8 @@ from test_base import TestBase
 class DecoderLogicTest(TestBase):
     def test_control_buffers(self):
         from modules.bitline_compute.decoder_logic import DecoderLogic
-        import tech
-        tech.drc_exceptions["DecoderLogic"] = tech.drc_exceptions["latchup"]
         a = DecoderLogic(num_rows=64)
+        a.add_body_taps()
         self.local_check(a)
 
 

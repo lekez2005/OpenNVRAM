@@ -2,11 +2,11 @@ from base import contact
 from base import design
 from base.contact import m1m2
 from base.vector import vector
-from globals import OPTS
+from modules.bitcell_vertical_aligned import BitcellVerticalAligned
 from modules.logic_buffer import LogicBuffer
 
 
-class wordline_driver_array(design.design):
+class wordline_driver_array(BitcellVerticalAligned):
     """
     Creates a Wordline Driver using LogicBuffer cells
     Re-write of existing wordline_driver supporting drive strength configurability
@@ -23,7 +23,7 @@ class wordline_driver_array(design.design):
             name = "wordline_driver"
         design.design.__init__(self, name)
 
-        self.rows = rows
+        self.rows = self.num_rows = rows
         self.buffer_stages = buffer_stages
 
         self.buffer_insts = []
@@ -53,27 +53,12 @@ class wordline_driver_array(design.design):
         self.module_insts = self.logic_buffer.buffer_mod.module_insts
 
     def create_modules(self):
-        self.bitcell = self.create_mod_from_str(OPTS.bitcell)
+        self.create_bitcell()
 
         self.logic_buffer = LogicBuffer(self.buffer_stages, logic="pnand2", height=self.bitcell.height,
                                         route_outputs=False, route_inputs=False,
                                         contact_pwell=False, contact_nwell=False, align_bitcell=True)
         self.add_mod(self.logic_buffer)
-
-    def calculate_y_offsets(self):
-        bitcell_array_cls = self.import_mod_class_from_str(OPTS.bitcell_array)
-        offsets = bitcell_array_cls.calculate_y_offsets(num_rows=self.rows)
-        self.bitcell_offsets, self.tap_offsets, self.dummy_offsets = offsets
-        self.height = max(self.bitcell_offsets + self.dummy_offsets) + self.bitcell.height
-
-    def get_row_y_offset(self, row):
-        y_offset = self.bitcell_offsets[row]
-        if (row % 2) == 0:
-            y_offset += self.logic_buffer.height
-            mirror = "MX"
-        else:
-            mirror = "R0"
-        return y_offset, mirror
 
     def route_en_pin(self, buffer_inst, en_pin):
         # route en input pin
@@ -124,7 +109,7 @@ class wordline_driver_array(design.design):
             # add logic buffer
             buffer_inst = self.add_inst("mod_{}".format(row), mod=self.logic_buffer,
                                         offset=vector(x_offset, y_offset), mirror=mirror)
-            self.connect_inst(["en", "in[{}]".format(row), "wl_bar[{}]".format(row), "wl[{}]".format(row),  "vdd",
+            self.connect_inst(["en", "in[{}]".format(row), "wl_bar[{}]".format(row), "wl[{}]".format(row), "vdd",
                                "gnd"])
             self.buffer_insts.append(buffer_inst)
 
@@ -144,15 +129,8 @@ class wordline_driver_array(design.design):
                                     height=power_pin.height())
 
     def add_body_taps(self):
-        logic_inst = self.logic_buffer.logic_inst
-        body_tap = logic_inst.mod.create_pgate_tap()
-        x_offset = logic_inst.lx() + self.buffer_insts[0].lx() - body_tap.width
-
-        for row in range(self.rows):
-            y_offset, mirror = self.get_row_y_offset(row)
-            self.add_inst(body_tap.name, body_tap, vector(x_offset, y_offset),
-                          mirror=mirror)
-            self.connect_inst([])
+        self._add_body_taps(self.logic_buffer.logic_inst, self.buffer_insts,
+                            x_shift=self.buffer_insts[0].lx())
 
     def analytical_delay(self, slew, load=0):
         return self.logic_buffer.analytical_delay(slew, load)

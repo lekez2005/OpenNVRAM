@@ -18,16 +18,18 @@ class TestBase(testutils.OpenRamTest):
         OPTS.serial = getattr(self, "serial", False)
 
         if getattr(self, "latched", False):
-            OPTS.configure_sense_amps(OPTS.LATCHED_SENSE_AMP)
+            OPTS.sense_amp_type = OPTS.LATCHED_SENSE_AMP
         else:
-            OPTS.configure_sense_amps(OPTS.MIRROR_SENSE_AMP)
+            OPTS.sense_amp_type = OPTS.MIRROR_SENSE_AMP
+
+        OPTS.configure_sense_amps(OPTS)
 
     @staticmethod
     def run_tests(name):
         if name == "__main__":
             if "baseline" in sys.argv:
                 TestBase.baseline = True
-                TestBase.config_template = "config_baseline_{}"
+                TestBase.config_template = "config_bl_baseline_{}"
                 sys.argv.remove("baseline")
             elif "serial" in sys.argv:
                 TestBase.serial = True

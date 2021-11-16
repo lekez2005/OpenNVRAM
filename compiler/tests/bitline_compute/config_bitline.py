@@ -39,11 +39,11 @@ def configure_sense_amps(OPTS):
         # need large clk_buf to buffer the clk going to the latches
         OPTS.clk_buffers = [1, 5, 20, 60, 65]  # clk_buf drives two sets of latches
         if OPTS.baseline:
-            OPTS.sense_amp = "sense_amp"
+            OPTS.sense_amp_mod = "sense_amp"
             OPTS.sense_amp_tap = "sense_amp_tap"
             OPTS.sense_amp_array = "sense_amp_array"
         else:
-            OPTS.sense_amp = "dual_sense_amp"
+            OPTS.sense_amp_mod = "dual_sense_amp"
             OPTS.sense_amp_tap = "dual_sense_amp_tap"
             OPTS.sense_amp_array = "dual_sense_amp_array"
 

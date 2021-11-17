@@ -73,9 +73,20 @@ class PinConnection:
 class ControlBuffers(design, ABC):
     name = "control_buffers"
 
-    def __init__(self, contact_nwell=True, contact_pwell=True):
+    def __init__(self, contact_nwell=True, contact_pwell=True, bank=None):
+        self.use_precharge_trigger = OPTS.use_precharge_trigger
+        self.bank = bank
+        self.is_left_bank = bank and bank.is_left_bank
+
+        if self.is_left_bank:
+            self.name += "_left"
+
         design.__init__(self, self.name)
-        debug.info(2, "Create Logic Buffers gate")
+        debug.info(2, "Create Logic Buffers %s", self.name)
+
+        self.use_chip_sel = OPTS.num_banks == 2 and OPTS.independent_banks
+        self.use_decoder_clk = ((not self.is_left_bank) and
+                                (OPTS.create_decoder_clk or self.use_chip_sel))
 
         self.logic_heights = OPTS.logic_buffers_height
         self.contact_pwell = contact_pwell
@@ -105,6 +116,12 @@ class ControlBuffers(design, ABC):
     def get_schematic_pins(self) -> Tuple[List[str], List[str]]:
         """Tuple of ([input_pins], [output_pins])"""
         raise NotImplementedError
+
+    def get_input_schematic_pins(self):
+        precharge_trigger = ["precharge_trig"] * self.use_precharge_trigger
+        chip_sel = ["chip_sel"] * self.use_chip_sel
+        in_pins = chip_sel + ["bank_sel", "read", "clk", "sense_trig"] + precharge_trigger
+        return in_pins
 
     def create_modules(self):
         raise NotImplementedError
@@ -189,6 +206,37 @@ class ControlBuffers(design, ABC):
     def create_clk_buf(self):
         self.clk_buf = self.create_mod(LogicBuffer, buffer_stages="clk_buffers",
                                        logic="pnand2")
+
+    def create_decoder_clk(self):
+        if self.use_decoder_clk:
+            assert len(OPTS.decoder_clk_stages) % 2 == 1, "Number of decoder clk stages should be odd"
+            self.decoder_clk = self.create_mod(LogicBuffer, buffer_stages="decoder_clk_stages",
+                                               logic="pnand2")
+
+    def add_decoder_clk_connections(self, connections):
+        if not self.use_decoder_clk:
+            return
+
+        sel_net = "chip_sel" if self.use_chip_sel else "bank_sel"
+        connection = ("decoder_clk", self.decoder_clk, [sel_net, "clk", "decoder_clk_bar", "decoder_clk"])
+        connections.insert(0, connection)
+
+    def create_bank_sel(self):
+        if self.use_chip_sel:
+            assert len(OPTS.bank_sel_stages) % 2 == 1, "Number of bank sel stages should be odd"
+            self.bank_sel_buf = self.create_mod(LogicBuffer, buffer_stages="bank_sel_stages",
+                                                logic="pnand2")
+
+    def add_chip_sel_connections(self, connections):
+        if not self.use_chip_sel:
+            return
+        for _, _, nets in connections:
+            for index, item in enumerate(nets):
+                if item == "bank_sel":
+                    nets[index] = "bank_sel_buf"
+        connection = ("bank_sel_buf", self.bank_sel_buf,
+                      ["bank_sel", "chip_sel", "bank_sel_bar", "bank_sel_buf"])
+        connections.insert(0, connection)
 
     def create_wordline_en(self):
         assert len(OPTS.wordline_en_buffers) % 2 == 0, "Number of wordline buffers should be even"

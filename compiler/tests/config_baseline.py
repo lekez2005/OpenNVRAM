@@ -25,6 +25,7 @@ sense_amp_tap = "latched_sense_amp_tap"
 sense_amp_array = "latched_sense_amp_array"
 sense_amp_type = "latched_sense_amp"
 control_buffers_class = "baseline_latched_control_buffers.LatchedControlBuffers"
+bank_class = "baseline_bank.BaselineBank"
 
 run_optimizations = True
 

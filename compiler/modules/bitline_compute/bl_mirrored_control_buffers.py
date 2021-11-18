@@ -1,11 +1,10 @@
 from globals import OPTS
-from modules.baseline_latched_control_buffers import LatchedControlBuffers
+from modules.bitline_compute.bl_control_buffers_base import BlControlBuffersBase
 from modules.buffer_stage import BufferStage
-from modules.control_buffers import ControlBuffers
 from modules.logic_buffer import LogicBuffer
 
 
-class ControlBuffersSenseTrig(ControlBuffers):
+class BlMirroredControlBuffers(BlControlBuffersBase):
     """
     Generate and buffer control signals using bank_sel, clk and read
     Assumes write if read_bar, bitline computation vs read difference is handled at decoder level
@@ -24,6 +23,7 @@ class ControlBuffersSenseTrig(ControlBuffers):
 
     def create_modules(self):
         self.create_common_modules()
+        self.create_decoder_clk()
         self.create_clk_buf()
         self.create_wordline_en()
         self.create_write_buf()
@@ -46,13 +46,14 @@ class ControlBuffersSenseTrig(ControlBuffers):
              ["bank_sel_cbar", "read", "write_en", "write_en_bar"]),
             ("read_bar", self.inv, ["read", "read_bar"]),
             ("sense_amp_buf", self.sense_amp_buf,
-             ["sense_trig", "bank_sel", "sense_en_bar", "sense_en"]),
+             ["bank_sel_cbar", "read_bar", "sense_en", "sense_en_bar"]),
         ]
+        self.add_decoder_clk_connections(connections)
         return connections
 
     def create_sense_amp_buf(self):
         self.sense_amp_buf = self.create_mod(LogicBuffer, buffer_stages=OPTS.sense_amp_buffers,
-                                             logic="pnand2")
+                                             logic="pnor2")
 
     def create_precharge_buffers(self):
         assert len(OPTS.precharge_buffers) % 2 == 0, "Number of precharge buffers should be even"
@@ -61,17 +62,11 @@ class ControlBuffersSenseTrig(ControlBuffers):
 
     def create_wordline_en(self):
         assert len(OPTS.wordline_en_buffers) % 2 == 1, "Number of wordline buffers should be odd"
-        self.wordline_buf = self.create_mod(BufferStage, buffer_stages=OPTS.wordline_en_buffers)
-
-    def add_pins(self):
-        self.input_pins, self.output_pins = self.get_schematic_pins()
-        self.add_pin_list(
-            ["bank_sel", "read", "clk", "clk_buf", "clk_bar", "wordline_en",
-             "precharge_en_bar", "write_en", "write_en_bar", "sense_en",
-             "sense_en_bar", "vdd", "gnd", "sense_trig"])
+        self.wordline_buf = self.create_mod(BufferStage,
+                                            buffer_stages="wordline_en_buffers")
 
     def get_schematic_pins(self):
-        return (["bank_sel", "read", "clk", "sense_trig"],
-                ["clk_buf", "clk_bar", "wordline_en", "precharge_en_bar",
-                 "write_en", "write_en_bar", "sense_en", "tri_en",
-                 "tri_en_bar", "sample_en_bar"])
+        return (["bank_sel", "read", "clk"],
+                self.get_bank_clocks() +
+                ["clk_bar", "wordline_en", "precharge_en_bar",
+                 "write_en", "write_en_bar", "sense_en", "sense_en_bar"])

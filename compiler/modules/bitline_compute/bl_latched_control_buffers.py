@@ -1,11 +1,11 @@
 from globals import OPTS
+from modules.bitline_compute.bl_control_buffers_base import BlControlBuffersBase
 from modules.buffer_stage import BufferStage
-from modules.control_buffers import ControlBuffers
 from modules.logic_buffer import LogicBuffer
 from pgates.pnand3 import pnand3
 
 
-class LatchedControlBuffers(ControlBuffers):
+class LatchedControlBuffers(BlControlBuffersBase):
     """
     Differs from baseline control buffers in sense_en. sense_en is only disabled during precharge and sample
 
@@ -27,6 +27,7 @@ class LatchedControlBuffers(ControlBuffers):
     def create_modules(self):
         self.create_common_modules()
         self.nand3 = self.create_mod(pnand3, size=1.2)
+        self.create_decoder_clk()
         self.create_clk_buf()
         self.create_wordline_en()
         self.create_write_buf()
@@ -71,11 +72,13 @@ class LatchedControlBuffers(ControlBuffers):
             ("sense_amp_buf", self.sense_amp_buf,
              ["precharge_bar_int", "sample_bar_int", "sense_en_bar", "sense_en"])
         ]
+        self.add_decoder_clk_connections(connections)
         return connections
 
     def get_schematic_pins(self):
         return [
             ["bank_sel", "read", "clk", "sense_trig"],
-            ["clk_buf", "clk_bar", "wordline_en", "precharge_en_bar", "write_en",
+            self.get_bank_clocks() +
+            ["clk_bar", "wordline_en", "precharge_en_bar", "write_en",
              "write_en_bar", "sense_en", "sense_precharge_bar", "sample_en_bar"]
         ]

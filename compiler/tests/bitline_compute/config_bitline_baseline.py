@@ -1,5 +1,6 @@
 from config_bitline import *
 from config_bitline import buffer_repeater_sizes as baseline_repeater_sizes
+from config_baseline import bank_class, control_buffers_class
 
 baseline = True
 

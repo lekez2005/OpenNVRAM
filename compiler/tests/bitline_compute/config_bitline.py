@@ -33,6 +33,9 @@ buffer_repeater_sizes = [
     # ("sample_en_bar", ["sample_en_bar"], [10, 20]),
 ]
 
+bank_class = "bl_bank.BlBank"
+control_buffers_class = "bl_control_buffers_sense_trig.ControlBuffersSenseTrig"
+
 
 def configure_sense_amps(OPTS):
     if OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
@@ -42,14 +45,19 @@ def configure_sense_amps(OPTS):
             OPTS.sense_amp_mod = "sense_amp"
             OPTS.sense_amp_tap = "sense_amp_tap"
             OPTS.sense_amp_array = "sense_amp_array"
+            OPTS.control_buffers_class = \
+                "baseline_latched_control_buffers.LatchedControlBuffers"
+            OPTS.wordline_en_buffers = [2.83, 8.1, 23, 65]
         else:
             OPTS.sense_amp_mod = "dual_sense_amp"
             OPTS.sense_amp_tap = "dual_sense_amp_tap"
             OPTS.sense_amp_array = "dual_sense_amp_array"
+            OPTS.sense_amp_buffers = [1, 7, 50, 60]  # slow down sense_en to avoid glitch
+            OPTS.wordline_en_buffers = [1, 2.8, 8, 25, 65 ]  # make wordline en faster
+            OPTS.control_buffers_class = \
+                "bl_mirrored_control_buffers.BlMirroredControlBuffers"
 
         OPTS.precharge_buffers = [1, 3.9, 15, 60]
-        OPTS.sense_amp_buffers = [1, 7, 50, 60]  # slow down sense_en to avoid glitch
-        OPTS.wordline_en_buffers = [1, 3, 9, 25, 65]  # make wordline en faster
     else:
         OPTS.clk_buffers = [1, 5, 20, 65, 30]  # clk only used by decoders (no latches)
         OPTS.sampleb_buffers = [1, 3.7, 13.6, 50]
@@ -62,11 +70,14 @@ def configure_sense_amps(OPTS):
             OPTS.tri_en_buffers = [3.42, 11.7, 40, 40]
             OPTS.precharge_buffers = [1, 3.9, 15, 60]
             OPTS.precharge_size = 1.5
+            OPTS.control_buffers_class = \
+                "baseline_latched_control_buffers.LatchedControlBuffers"
         else:
             OPTS.sense_amp_mod = "dual_latched_sense_amp"
             OPTS.sense_amp_tap = "dual_latched_sense_amp_tap"
             OPTS.sense_amp_array = "dual_latched_sense_amp_array"
             OPTS.sense_amp_buffers = [3.56, 12.6, 45]
+            OPTS.wordline_en_buffers = [2.83, 8.1, 23, 65]  # make wordline en faster
 
             OPTS.precharge_buffers = [1, 3.9, 15, 60]
             OPTS.sense_precharge_buffers = [1, 3.1, 9.6, 30]
@@ -76,6 +87,8 @@ def configure_sense_amps(OPTS):
                 OPTS.sr_clk_buffers = [1, 3.53, 12.5, 44]
             else:
                 OPTS.sr_clk_buffers = [1, 6.6, 44]
+            OPTS.control_buffers_class = \
+                "bl_control_buffers_sense_trig.ControlBuffersSenseTrig"
 
 
 def configure_modules(bank, OPTS):

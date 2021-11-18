@@ -1,6 +1,6 @@
-from base import contact
 from base import design
 from base.contact import m1m2
+from base.design import PO_DUMMY
 from base.vector import vector
 from modules.bitcell_vertical_aligned import BitcellVerticalAligned
 from modules.logic_buffer import LogicBuffer
@@ -77,7 +77,7 @@ class wordline_driver_array(BitcellVerticalAligned):
         return self.logic_buffer.height * self.rows
 
     def add_en_pin(self):
-        en_pin_x = self.m1_space + self.m1_width
+        en_pin_x = self.m1_space
         en_pin = self.add_layout_pin(text="en",
                                      layer="metal2",
                                      offset=[en_pin_x, 0],
@@ -90,9 +90,14 @@ class wordline_driver_array(BitcellVerticalAligned):
         self.copy_layout_pin(buffer_inst, "B", "in[{}]".format(row))
 
     def get_buffer_x_offset(self, en_pin_x):
-        in_pin_width = en_pin_x + self.m2_width + self.parallel_line_space
-        m1m2_via_x = in_pin_width + contact.m1m2.first_layer_width
-        x_offset = m1m2_via_x + self.m2_space + 0.5 * contact.m1m2.first_layer_width
+        a_pin_x = self.logic_buffer.get_pin("A").lx()
+        min_en_pin_x = a_pin_x - m1m2.height - self.m2_width
+
+        x_offset = max(0, en_pin_x - min_en_pin_x)
+        if self.has_dummy:
+            dummy_polys = self.logic_buffer.get_layer_shapes(PO_DUMMY, recursive=True)
+            dummy_poly = min(dummy_polys, key=lambda x: x.lx())
+            x_offset = max(x_offset, dummy_poly.cx())
         return x_offset
 
     def add_modules(self):

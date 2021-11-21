@@ -29,6 +29,7 @@ class bitcell_array(design.design):
 
         mods = self.create_modules()
         self.cell, self.body_tap, self.dummy_cell = mods
+        self.child_mod = self.cell
         for mod in mods:
             if mod is not None:
                 self.add_mod(mod)
@@ -204,6 +205,7 @@ class bitcell_array(design.design):
             return
         if OPTS.use_x_body_taps:
             _, tap_offsets, _ = self.bitcell_x_offsets
+            tap_offsets = [x for x in tap_offsets]  # copy to prevent modification of original
             if hasattr(OPTS, "repeaters_array_space_offsets"):
                 tap_offsets += OPTS.repeaters_array_space_offsets
             cell_offsets, _, dummy_offsets = self.bitcell_y_offsets
@@ -464,8 +466,7 @@ class bitcell_array(design.design):
                                                     cell_grouping=OPTS.cells_per_group)
         add_repeaters = (OPTS.add_buffer_repeaters and
                          num_cols > OPTS.buffer_repeaters_col_threshold and
-                         len(OPTS.buffer_repeater_sizes) > 0 and
-                         OPTS.dedicated_repeater_space)
+                         len(OPTS.buffer_repeater_sizes) > 0)
         add_repeater_space = add_repeaters and OPTS.dedicated_repeater_space
 
         if add_repeater_space:
@@ -488,12 +489,13 @@ class bitcell_array(design.design):
                                                         all_offsets=x_offsets,
                                                         cell_grouping=OPTS.cells_per_group)
             closest_offset, x_offsets = res
-            OPTS.buffer_repeaters_x_offset = closest_offset + bitcell.width
+            OPTS.buffer_repeaters_x_offset = closest_offset
             if OPTS.use_x_body_taps:
                 OPTS.repeaters_array_space_offsets = [OPTS.buffer_repeaters_x_offset + i * tap_width
                                                       for i in range(rails_num_taps)]
         elif add_repeaters:
-            OPTS.buffer_repeaters_x_offset = OPTS.repeater_x_offset * max(sum(x_offsets))
+            max_x_offset = max([x[-1] for x in x_offsets if x])
+            OPTS.buffer_repeaters_x_offset = OPTS.repeater_x_offset * max_x_offset
         return x_offsets
 
     @staticmethod

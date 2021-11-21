@@ -9,7 +9,7 @@ from typing import List, Union
 import debug
 import tech
 from base import utils
-from base.contact import m2m3, m1m2, m3m4, contact, cross_m2m3, cross_m1m2
+from base.contact import m2m3, m1m2, m3m4, contact, cross_m2m3, cross_m1m2, cross_m3m4
 from base.design import design, METAL2, METAL3, METAL1, METAL4, DRAWING, NWELL, PWELL
 from base.geometry import NO_MIRROR, MIRROR_X_AXIS
 from base.vector import vector
@@ -408,6 +408,17 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                                                   offset=offset)
         self.connect_control_buffers()
 
+    def validate_control_flop_name(self, inst_name, inst):
+        operation_net = self.get_operation_net()
+        if inst_name == f"{operation_net}_buf":
+            setattr(self, f"{operation_net}_buf_inst", inst)
+        elif inst_name == "bank_sel_buf":
+            self.bank_sel_buf_inst = inst
+        elif inst_name == "chip_sel_buf":
+            self.chip_sel_buf_inst = inst
+        else:
+            raise ValueError("Invalid instance name: {}".format(inst_name))
+
     def add_control_flops(self):
 
         flop_connections = [(inst_name, *vals)
@@ -422,8 +433,6 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
 
         self.control_flop_insts = []
 
-        operation_net = self.get_operation_net()
-
         for i in range(len(flop_connections)):
             inst_name, net_in, net_out, flop_mod = flop_connections[i]
             if i % 2 == 0:
@@ -435,14 +444,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
             inst = self.add_inst(inst_name, mod=flop_mod, offset=offset, mirror=mirror)
             conn = [net_in, "clk", net_out, "vdd", "gnd"]
             self.connect_inst(conn)
-            if inst_name == f"{operation_net}_buf":
-                setattr(self, f"{operation_net}_buf_inst", inst)
-            elif inst_name == "bank_sel_buf":
-                self.bank_sel_buf_inst = inst
-            elif inst_name == "chip_sel_buf":
-                self.chip_sel_buf_inst = inst
-            else:
-                raise ValueError("Invalid instance name: {}".format(inst_name))
+            self.validate_control_flop_name(inst_name, inst)
             self.control_flop_insts.append((net_in, net_out, inst))
             y_offset += flop_mod.height
 
@@ -542,7 +544,8 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
 
         bank_sel_out_rail_x = (leftmost_top_rail_x - wide_space - num_inputs * self.bus_pitch
                                + self.bus_space)
-        x_offset = (bank_sel_out_rail_x - wide_space - self.control_flop.width)
+        widest_flop = max(self.control_flop_mods.values(), key=lambda x: x.width)
+        x_offset = (bank_sel_out_rail_x - wide_space - widest_flop.width)
 
         self.control_flop_y = y_offset
         return x_offset, y_offset
@@ -1263,6 +1266,9 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         """Get y offset to route m2->m4 mask flop input"""
         return self.get_m2_m3_below_instance(self.mask_in_flops_inst, 1)
 
+    def get_data_flop_via_y(self):
+        return self.get_m2_m3_below_instance(self.data_in_flops_inst, 1)
+
     def route_flops(self):
         """Route input pins for mask flops and data flops"""
         fill_height = m3m4.first_layer_height
@@ -1274,7 +1280,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
 
         bl_inst = self.sense_amp_array_inst or self.write_driver_array_inst
 
-        data_via_y = self.get_m2_m3_below_instance(self.data_in_flops_inst, 1)
+        data_via_y = self.get_data_flop_via_y()
         mask_via_y = self.get_mask_flop_via_y()
 
         for word in range(self.word_size):
@@ -1328,6 +1334,8 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
 
     def route_tri_gate(self):
         """Route sense amp data output to tri-state in, tri-state in to DATA (in)"""
+        if not self.tri_gate_array_inst:
+            return
         debug.info(1, "Route tri state array")
         self.route_all_instance_power(self.tri_gate_array_inst)
 
@@ -1398,7 +1406,8 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
 
         control_flop_insts = self.control_flop_insts
 
-        x_offset = control_flop_insts[0][2].rx() + wide_space
+        right_most_flop = max(control_flop_insts, key=lambda x: x[2].rx())
+        x_offset = right_most_flop[2].rx() + wide_space
 
         for i in range(len(control_flop_insts)):
             net_in, net_out, inst = control_flop_insts[i]
@@ -1435,6 +1444,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
 
             x_offset += self.bus_pitch
 
+        self.flop_output_rails = flop_output_rails
         self.m2_rails.extend(flop_output_rails)
         self.leftmost_control_rail = self.leftmost_rail
         self.leftmost_rail = min([self.leftmost_rail] + flop_output_rails,
@@ -1470,8 +1480,10 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                         self.get_non_flop_control_inputs()]
         control_pins = list(sorted(control_pins, key=lambda x: x.by()))
         for pin in control_pins:
-            new_pin = self.add_layout_pin(pin.name, METAL2, offset=vector(x_offset, self.min_point),
-                                          width=rail_height, height=pin.cy() - self.min_point)
+            new_pin = self.add_layout_pin(pin.name, METAL2,
+                                          offset=vector(x_offset, self.min_point),
+                                          width=rail_height,
+                                          height=pin.cy() - self.min_point)
             self.m2_rails.append(new_pin)
             self.add_cross_contact_center(cross_m2m3,
                                           offset=vector(x_offset + 0.5 * rail_height,
@@ -1504,7 +1516,11 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         adjacent_power_pins = get_power_pins(pin_instances)
 
         non_flop_input_pins = [self.get_pin(x) for x in self.get_non_flop_control_inputs()]
-        x_offset = max(non_flop_input_pins, key=lambda x: x.lx()).lx() + wide_space
+        if non_flop_input_pins:
+            adjacent_rails = non_flop_input_pins
+        else:
+            adjacent_rails = self.flop_output_rails
+        x_offset = max(adjacent_rails, key=lambda x: x.lx()).lx() + wide_space
 
         y_offsets = []
 
@@ -1593,6 +1609,8 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
 
         # clk to control_buffer
         non_flop_pins = [self.get_pin(x) for x in self.get_non_flop_control_inputs()]
+        if not non_flop_pins:
+            non_flop_pins = self.flop_output_rails
         right_most_pin = max(non_flop_pins, key=lambda x: x.rx())
         rail_x = right_most_pin.lx() + self.bus_pitch
         y_offset = self.cross_clk_rail_y
@@ -1846,11 +1864,16 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                                           height=rail_height)
                 self.connect_control_buffers_power_to_grid(pin)
 
+    def get_power_grid_x_shift(self):
+        self.m4_power_rail_width = m3m4.height
+        return 0.5 * self.bitcell.width
+
     def get_inter_array_power_grid_indices(self):
         """Using flop array, get spaces without instances. Mostly useful when words_per_row > 1"""
         cell_offsets = self.bitcell_array.bitcell_offsets
+        power_grid_x_shift = self.get_power_grid_x_shift()
 
-        mid_x_offsets = [x + 0.5 * self.bitcell.width for x in cell_offsets]
+        mid_x_offsets = [x + power_grid_x_shift for x in cell_offsets]
         # find actual flop instances
         flop_array = self.data_in_flops_inst.mod
         flop_instances = [flop_array.insts[i] for i in range(len(flop_array.conns))
@@ -1910,7 +1933,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
             Otherwise, group empty spaces that are contiguous and choose the middle empty space
              closest to prediction by 'OPTS.bitcell_vdd_spacing'
         """
-        rail_width = m3m4.height
+        rail_width = self.m4_power_rail_width
 
         power_grid_indices, mid_x_offsets = self.get_inter_array_power_grid_indices()
         power_groups = {"vdd": [], "gnd": []}
@@ -1938,13 +1961,20 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
             control_power = self.control_buffers_inst.get_pins(grid_pin.name)
             for power_pin in control_power:
                 offset = vector(grid_pin.cx(), power_pin.cy())
-                for via in [m1m2, m2m3, m3m4]:
+                for via in [m1m2, m2m3]:
                     self.add_contact_center(via.layer_stack, offset=offset, rotate=90)
+                design.add_cross_contact_center(self, cross_m3m4, offset, rotate=True)
                 for layer in [METAL2, METAL3]:
                     fill_height, fill_width = self.calculate_min_area_fill(power_pin.height(),
                                                                            layer=layer)
                     self.add_rect_center(layer, offset=offset, width=fill_width,
                                          height=fill_height)
+
+    def connect_m4_grid_instance_power(self, instance_pin, power_rail):
+        if power_rail.lx() > instance_pin.lx() and power_rail.rx() < instance_pin.rx():
+            self.add_contact_center(m3m4.layer_stack,
+                                    offset=vector(power_rail.cx(), instance_pin.cy()),
+                                    rotate=90)
 
     def get_intra_array_grid_top(self):
         inst_stack = self.get_vertical_instance_stack()
@@ -1976,7 +2006,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
 
         power_groups = {k: list(v) for k, v in itertools.groupby(all_power_pins,
                                                                  key=lambda x: x.name)}
-        rail_width = m3m4.height
+        rail_width = self.m4_power_rail_width
 
         for pin_name, x_offsets in self.get_inter_array_power_grid_offsets().items():
             instance_power_pins = power_groups[pin_name]
@@ -1986,10 +2016,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                                               offset=vector(x_offset, self.min_point),
                                               width=rail_width, height=rail_top - self.min_point)
                 for power_pin in instance_power_pins:
-                    if new_pin.lx() > power_pin.lx() and new_pin.rx() < power_pin.rx():
-                        self.add_contact_center(m3m4.layer_stack,
-                                                offset=vector(new_pin.cx(), power_pin.cy()),
-                                                rotate=90)
+                    self.connect_m4_grid_instance_power(power_pin, new_pin)
                 self.connect_control_buffers_power_to_grid(new_pin)
 
     def get_vertical_instance_stack(self):

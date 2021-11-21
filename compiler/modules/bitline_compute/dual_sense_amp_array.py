@@ -21,6 +21,6 @@ class dual_sense_amp_array(sense_amp_array):
 
         self.add_pin("en")
         self.add_pin("en_bar")
-        self.add_pin("search_ref")
+        self.add_pin("vref")
         self.add_pin("vdd")
         self.add_pin("gnd")

@@ -2,6 +2,9 @@ from config_baseline import *
 
 python_path = ["modules/bitline_compute"]
 
+run_optimizations = True
+control_buffers_num_rows = 1
+
 # temp dir
 openram_temp = os.path.join(os.environ["SCRATCH"], "openram", "bitline_compute")
 
@@ -34,7 +37,7 @@ buffer_repeater_sizes = [
 ]
 
 bank_class = "bl_bank.BlBank"
-control_buffers_class = "bl_control_buffers_sense_trig.ControlBuffersSenseTrig"
+control_buffers_class = "bl_latched_control_buffers.LatchedControlBuffers"
 
 
 def configure_sense_amps(OPTS):
@@ -88,7 +91,7 @@ def configure_sense_amps(OPTS):
             else:
                 OPTS.sr_clk_buffers = [1, 6.6, 44]
             OPTS.control_buffers_class = \
-                "bl_control_buffers_sense_trig.ControlBuffersSenseTrig"
+                "bl_latched_control_buffers.LatchedControlBuffers"
 
 
 def configure_modules(bank, OPTS):

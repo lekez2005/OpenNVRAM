@@ -37,7 +37,7 @@ class DecoderLogic(BitcellVerticalAligned):
         for row in range(self.num_rows):
             self.add_pin('in_0[{}]'.format(row))
             self.add_pin('in_1[{}]'.format(row))
-            self.add_pin('out_bar[{}]'.format(row))
+            self.add_pin('out[{}]'.format(row))
 
         self.add_pin("en_1")
         self.add_pin_list(["vdd", "gnd"])
@@ -71,7 +71,7 @@ class DecoderLogic(BitcellVerticalAligned):
             self.en_bar_insts.append(self.add_inst('en_bar_{}'.format(row), mod=self.nand,
                                                    offset=vector(x_offset, y_offset), mirror=mirror))
             self.connect_inst(["in_0_bar[{}]".format(row), "in_1_bar[{}]".format(row),
-                               "out_bar[{}]".format(row), "vdd", "gnd"])
+                               "out[{}]".format(row), "vdd", "gnd"])
 
     def get_bot_rail_y(self, row):
         return self.in_1_bar_insts[row].by() + 0.5 * self.rail_height
@@ -152,7 +152,7 @@ class DecoderLogic(BitcellVerticalAligned):
                             height=self.height)
 
         for row in range(self.num_rows):
-            self.copy_layout_pin(self.en_bar_insts[row], "Z", "out_bar[{}]".format(row))
+            self.copy_layout_pin(self.en_bar_insts[row], "Z", "out[{}]".format(row))
             self.copy_layout_pin(self.en_bar_insts[row], "vdd", "vdd".format(row))
             self.copy_layout_pin(self.en_bar_insts[row], "gnd", "gnd".format(row))
 

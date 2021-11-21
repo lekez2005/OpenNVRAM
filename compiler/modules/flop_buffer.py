@@ -2,7 +2,7 @@ from importlib import reload
 
 import debug
 from base.contact import m1m2
-from base.design import design, ACTIVE
+from base.design import design, ACTIVE, PIMP
 from base.unique_meta import Unique
 from base.vector import vector
 from base.well_implant_fills import get_default_fill_layers
@@ -13,6 +13,7 @@ class FlopBuffer(design, metaclass=Unique):
     """
     Flop a signal and buffer given input buffer sizes
     """
+
     @classmethod
     def get_name(cls, _, buffer_stages, negate=False, name=None):
         if name is not None:
@@ -85,7 +86,7 @@ class FlopBuffer(design, metaclass=Unique):
         if self.has_dummy:
             poly_dummies = self.flop.get_gds_layer_rects("po_dummy", "po_dummy", recursive=True)
             right_most = max(poly_dummies, key=lambda x: x.rx())
-            center_poly = 0.5*(right_most.lx() + right_most.rx())
+            center_poly = 0.5 * (right_most.lx() + right_most.rx())
             x_space = center_poly - self.flop.width
         else:
             x_space = 0
@@ -96,47 +97,48 @@ class FlopBuffer(design, metaclass=Unique):
         path_start = vector(flop_out.rx(), flop_out.uy() - 0.5 * self.m2_width)
 
         buffer_in = self.buffer_inst.get_pin("in")
-        mid_x = 0.5*(buffer_in.lx() + flop_out.rx())
+        mid_x = 0.5 * (buffer_in.lx() + flop_out.rx())
         self.add_path("metal2", [path_start, vector(mid_x, path_start[1]), buffer_in.lc()])
 
-        self.add_contact(m1m2.layer_stack, offset=vector(buffer_in.lx()+m1m2.second_layer_height,
-                                                         buffer_in.cy()-0.5*m1m2.second_layer_width),
+        self.add_contact(m1m2.layer_stack, offset=vector(buffer_in.lx() + m1m2.second_layer_height,
+                                                         buffer_in.cy() - 0.5 * m1m2.second_layer_width),
                          rotate=90)
 
     def fill_layers(self):
-        inverter = self.buffer.module_insts[0].mod
         layers, purposes = get_default_fill_layers()
         for i in range(len(layers)):
             layer = layers[i]
             if layer == ACTIVE:
                 continue
-            inv_layer = inverter.get_layer_shapes(layer, purposes[i])[0]
-            flop_layers = self.flop.get_gds_layer_rects(layer, purposes[i],
-                                                        recursive=True)
-            rightmost = max(flop_layers, key=lambda x: x.rx())
+            buffer_shapes = self.buffer_inst.get_layer_shapes(layer, purposes[i], recursive=True)
+            flop_shapes = self.flop_inst.get_layer_shapes(layer, purposes[i], recursive=True)
 
             # there could be multiple implants, one for the tx and one for the tap
             if "implant" in layer:
-                all_right_rects = list(filter(lambda x: x.rx() == rightmost.rx(), flop_layers))
-                # find the closest one to the middle
-                rightmost = max(all_right_rects, key=lambda x: x.height)
-                tap_rect = min(all_right_rects, key=lambda x: x.height)
-                # add tap rect
-                left = rightmost.rx()
-                # leave space to avoid spacing issues with adjacent modules
-                implant_space = self.get_space_by_width_and_length(layer)
-                right = inv_layer.rx() + self.buffer_inst.lx() - implant_space
-                self.add_rect(layer, offset=vector(left, tap_rect.by()), width=right - left,
-                              height=tap_rect.height)
-
-            top = min(inv_layer.uy(), rightmost.uy())
-            left = rightmost.rx()
-            right = inv_layer.lx() + self.buffer_inst.lx()
-            bottom = max(inv_layer.by(), rightmost.by())
-            width = right - left
-            if width > 0:
-                self.add_rect(layer, offset=vector(left, bottom), width=right - left,
+                right_most_flop_rect = max(flop_shapes, key=lambda x: x.rx())
+                all_right_rects = list(filter(lambda x: x.rx() == right_most_flop_rect.rx(),
+                                              flop_shapes))
+                right_most_flop_rect = max(all_right_rects, key=lambda x: x.height)
+                left_most_buffer_rect = min(buffer_shapes, key=lambda x: x.lx())
+                x_offset = right_most_flop_rect.rx()
+                width = left_most_buffer_rect.rx() - x_offset
+                if layer == PIMP:
+                    top, bottom = self.height + 0.5 * self.implant_width, left_most_buffer_rect.by()
+                else:
+                    top, bottom = left_most_buffer_rect.uy(), - 0.5 * self.implant_width
+                self.add_rect(layer, offset=vector(x_offset, bottom), width=width,
                               height=top - bottom)
+            else:
+                right_most_flop_rect = max(flop_shapes, key=lambda x: x.rx())
+                left_most_buffer_rect = min(buffer_shapes, key=lambda x: x.lx())
+                top = min(right_most_flop_rect.uy(), left_most_buffer_rect.uy())
+                left = right_most_flop_rect.rx()
+                right = left_most_buffer_rect.lx()
+                bottom = max(right_most_flop_rect.by(), left_most_buffer_rect.by())
+                width = right - left
+                if width > 0:
+                    self.add_rect(layer, offset=vector(left, bottom), width=right - left,
+                                  height=top - bottom)
 
     def add_layout_pins(self):
         self.copy_layout_pin(self.flop_inst, "clk", "clk")

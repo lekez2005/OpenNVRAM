@@ -277,6 +277,10 @@ class ControlSignalsMixin(BaselineBank):
                                                                 y_offset + 0.5 * self.bus_width))
         self.add_rect(METAL3, offset=vector(rail.min_x, y_offset),
                       width=rail.max_x - rail.min_x, height=self.bus_width)
+        if not destination_pins:
+            m3_rail = self.add_rect(METAL3, vector(rail.max_x - self.m3_width, y_offset))
+            setattr(self, rail_name + "_rail", m3_rail)
+            return
         rail_top = (max(destination_pins, key=lambda x: x.uy()).cy() +
                     0.5 * cross_m3m4.second_layer_width)
 

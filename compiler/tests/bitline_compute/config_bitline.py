@@ -3,6 +3,7 @@ from config_baseline import *
 python_path = ["modules/bitline_compute"]
 
 run_optimizations = True
+route_control_signals_left = True
 control_buffers_num_rows = 1
 
 # temp dir
@@ -59,6 +60,10 @@ def configure_sense_amps(OPTS):
             OPTS.wordline_en_buffers = [1, 2.8, 8, 25, 65 ]  # make wordline en faster
             OPTS.control_buffers_class = \
                 "bl_mirrored_control_buffers.BlMirroredControlBuffers"
+            if OPTS.serial:
+                OPTS.sr_clk_buffers = [1, 3.53, 12.5, 44]
+            else:
+                OPTS.sr_clk_buffers = [1, 6.6, 44]
 
         OPTS.precharge_buffers = [1, 3.9, 15, 60]
     else:

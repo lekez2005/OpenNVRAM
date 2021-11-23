@@ -14,14 +14,14 @@ class BitlineAluTest(TestBase):
 
         OPTS.run_optimizations = False
 
-        OPTS.configure_sense_amps(OPTS.MIRROR_SENSE_AMP)
-
-        num_cols = 32
         num_words = 32
+        words_per_row = 2
+        word_size = 16
+        num_cols = word_size * words_per_row
 
-        bank = BlBank(name="bank", word_size=num_cols, num_words=num_words, words_per_row=1)
+        bank = BlBank(name="bank1", word_size=num_cols, num_words=num_words, words_per_row=1)
 
-        a = BitlineALU(bank=bank, num_cols=num_cols, word_size=32, cells_per_group=1)
+        a = BitlineALU(bank=bank, num_cols=num_cols, word_size=word_size, cells_per_group=1)
         self.local_check(a)
 
 

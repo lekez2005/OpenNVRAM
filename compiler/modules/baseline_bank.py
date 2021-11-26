@@ -1284,53 +1284,63 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         mask_via_y = self.get_mask_flop_via_y()
 
         for word in range(self.word_size):
-            # align data flop in with br
-            data_in = self.data_in_flops_inst.get_pin("din[{}]".format(word))
-            y_offset = data_via_y
-            x_offset = data_in.lx()
-            offset = vector(x_offset, y_offset)
-            self.add_rect(METAL2, offset=offset, height=data_in.by() - y_offset)
-            cont = self.add_contact(m2m3.layer_stack, offset=offset)
+
             mux_out_pin = bl_inst.get_pin("br[{}]".format(word))
 
             bl_pin, column_index = self.get_closest_bitline_pin(mux_out_pin.lx(), "bl")
             br_pin, _ = self.get_closest_bitline_pin(mux_out_pin.lx(), "br")
+            bitline_pins = [bl_pin, br_pin]
+            self.route_data_flop_in(bitline_pins, word, data_via_y,
+                                    fill_width, fill_height)
+            self.route_mask_flop_in(bitline_pins, word, mask_via_y,
+                                    fill_width, fill_height)
 
             # prevent clash with inter-array vdd/gnd rails
             power_rail_width = m3m4.height
             if abs(bl_pin.cx() - br_pin.cx()) <= (2 * power_rail_width + self.m4_space):
                 self.occupied_m4_bitcell_indices.append(column_index)
 
-            left_bitline, right_bitline = sorted([bl_pin, br_pin], key=lambda x: x.lx())
+    def route_data_flop_in(self, bitline_pins, word, data_via_y, fill_width, fill_height):
+        left_bitline, right_bitline = sorted(bitline_pins, key=lambda x: x.lx())
+        # align data flop in with br
+        data_in = self.data_in_flops_inst.get_pin("din[{}]".format(word))
+        y_offset = data_via_y
+        x_offset = data_in.lx()
+        offset = vector(x_offset, y_offset)
+        self.add_rect(METAL2, offset=offset, height=data_in.by() - y_offset)
+        cont = self.add_contact(m2m3.layer_stack, offset=offset)
 
-            x_offset = right_bitline.lx()
-            self.join_pins_with_m3(cont, right_bitline, cont.cy(), fill_width, fill_height)
+        x_offset = right_bitline.lx()
+        self.join_pins_with_m3(cont, right_bitline, cont.cy(), fill_width, fill_height)
 
-            self.add_contact(m3m4.layer_stack, offset=vector(x_offset, y_offset +
-                                                             0.5 * m2m3.second_layer_height -
-                                                             0.5 * m3m4.height))
+        self.add_contact(m3m4.layer_stack, offset=vector(x_offset, y_offset +
+                                                         0.5 * m2m3.second_layer_height -
+                                                         0.5 * m3m4.height))
 
-            self.add_layout_pin("DATA[{}]".format(word), METAL4,
-                                offset=vector(x_offset, self.min_point),
-                                height=y_offset - self.min_point)
-            if not self.has_mask_in:
-                continue
-            # align mask flop in with bl
-            mask_in = self.mask_in_flops_inst.get_pin("din[{}]".format(word))
+        self.add_layout_pin("DATA[{}]".format(word), METAL4,
+                            offset=vector(x_offset, self.min_point),
+                            height=y_offset - self.min_point)
 
-            y_offset = mask_via_y
+    def route_mask_flop_in(self, bitline_pins, word, mask_via_y, fill_width, fill_height):
+        if not self.has_mask_in:
+            return
+        left_bitline, right_bitline = sorted(bitline_pins, key=lambda x: x.lx())
+        # align mask flop in with bl
+        mask_in = self.mask_in_flops_inst.get_pin("din[{}]".format(word))
 
-            self.add_rect(METAL2, offset=vector(mask_in.lx(), mask_via_y),
-                          height=mask_in.by() - mask_via_y)
-            via_offset = vector(mask_in.lx(), y_offset)
-            cont = self.add_contact(m2m3.layer_stack, offset=via_offset)
-            self.join_pins_with_m3(cont, left_bitline, cont.cy(), fill_width, fill_height)
+        y_offset = mask_via_y
 
-            via_offset = vector(left_bitline.lx(), y_offset)
-            self.add_contact(m3m4.layer_stack, offset=via_offset)
-            self.add_layout_pin("MASK[{}]".format(word), METAL4,
-                                offset=vector(via_offset.x, self.min_point),
-                                height=via_offset.y - self.min_point)
+        self.add_rect(METAL2, offset=vector(mask_in.lx(), mask_via_y),
+                      height=mask_in.by() - mask_via_y)
+        via_offset = vector(mask_in.lx(), y_offset)
+        cont = self.add_contact(m2m3.layer_stack, offset=via_offset)
+        self.join_pins_with_m3(cont, left_bitline, cont.cy(), fill_width, fill_height)
+
+        via_offset = vector(left_bitline.lx(), y_offset)
+        self.add_contact(m3m4.layer_stack, offset=via_offset)
+        self.add_layout_pin("MASK[{}]".format(word), METAL4,
+                            offset=vector(via_offset.x, self.min_point),
+                            height=via_offset.y - self.min_point)
 
     def route_tri_gate(self):
         """Route sense amp data output to tri-state in, tri-state in to DATA (in)"""
@@ -1825,7 +1835,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
 
     def get_m4_rail_x(self):
         """Gets position of middle m4 rail that goes across"""
-        return 0.5 * self.bitcell.width
+        return self.intra_m4_rail_mid_x
 
     def find_closest_unoccupied_index(self, index):
         """find closest unoccupied index greater than 'index'"""
@@ -1865,8 +1875,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                 self.connect_control_buffers_power_to_grid(pin)
 
     def get_power_grid_x_shift(self):
-        self.m4_power_rail_width = m3m4.height
-        return 0.5 * self.bitcell.width
+        return self.intra_m4_rail_mid_x
 
     def get_inter_array_power_grid_indices(self):
         """Using flop array, get spaces without instances. Mostly useful when words_per_row > 1"""
@@ -1933,7 +1942,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
             Otherwise, group empty spaces that are contiguous and choose the middle empty space
              closest to prediction by 'OPTS.bitcell_vdd_spacing'
         """
-        rail_width = self.m4_power_rail_width
+        rail_width = self.max_intra_m4_rail_width
 
         power_grid_indices, mid_x_offsets = self.get_inter_array_power_grid_indices()
         power_groups = {"vdd": [], "gnd": []}
@@ -2006,7 +2015,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
 
         power_groups = {k: list(v) for k, v in itertools.groupby(all_power_pins,
                                                                  key=lambda x: x.name)}
-        rail_width = self.m4_power_rail_width
+        rail_width = self.max_intra_m4_rail_width
 
         for pin_name, x_offsets in self.get_inter_array_power_grid_offsets().items():
             instance_power_pins = power_groups[pin_name]

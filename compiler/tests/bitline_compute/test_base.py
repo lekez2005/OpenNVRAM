@@ -22,7 +22,7 @@ class TestBase(testutils.OpenRamTest):
         else:
             OPTS.sense_amp_type = OPTS.MIRROR_SENSE_AMP
 
-        OPTS.configure_sense_amps(OPTS)
+        OPTS.configure_modules(None, OPTS)
 
     @staticmethod
     def run_tests(name):

@@ -1,7 +1,8 @@
 from typing import TYPE_CHECKING
 
 import debug
-from base.contact import m2m3, cross_m2m3, cross_m1m2, contact, cross_m3m4
+from base import utils, layout_clearances
+from base.contact import m2m3, cross_m2m3, cross_m1m2, contact, cross_m3m4, m3m4
 from base.design import METAL2, METAL3, METAL4, METAL1, design
 from base.vector import vector
 from globals import OPTS
@@ -84,6 +85,45 @@ class ControlSignalsMixin(BaselineBank):
     @staticmethod
     def get_default_left_rails():
         return ["wordline_en"]
+
+    def calculate_mid_array_m4_x_offset(self):
+        """Calculate ideal position of m4 rail. Should be as far away from adjacent m4's"""
+        # get vertical stack
+        vertical_stack = self.get_vertical_instance_stack()
+        if self.control_buffers_inst in vertical_stack:
+            vertical_stack.remove(self.control_buffers_inst)
+        vertical_stack = list(sorted(vertical_stack, key=lambda x: x.by()))
+
+        # find largest contiguous x space in vertical stack
+        rail_space = self.get_parallel_space(METAL4)
+        min_space = utils.floor(self.m4_width + 2 * rail_space)
+
+        m4_spaces = None
+        top_inst = vertical_stack[-1]
+        for index, inst in enumerate(vertical_stack):
+            new_m4_spaces = layout_clearances.find_clearances(inst.mod.child_mod, METAL4,
+                                                              layout_clearances.HORIZONTAL,
+                                                              existing=m4_spaces)
+            biggest_space = max(new_m4_spaces, key=lambda x: x[1] - x[0])
+            if biggest_space[1] - biggest_space[0] <= min_space:
+                top_inst = vertical_stack[index - 1]
+                break
+            m4_spaces = new_m4_spaces
+
+        biggest_space = max(m4_spaces, key=lambda x: x[1] - x[0])
+        biggest_space_span = biggest_space[1] - biggest_space[0]
+        # set rail width based on available space
+        func = utils.floor_2x_grid
+        self.max_intra_m4_rail_width = func(min(m3m4.height,
+                                                biggest_space_span - 2 * rail_space))
+        mid_x_offset = 0.5 * (biggest_space[0] + biggest_space[1])
+        self.intra_m4_rail_mid_x = utils.round_to_grid(mid_x_offset)
+
+        vdd_gnd = top_inst.get_pins("vdd") + top_inst.get_pins("gnd")
+        self.max_intra_m4_rail_top = max(vdd_gnd, key=lambda x: x.uy()).uy()
+        debug.info(1, "max_intra_m4_rail_width = %.3g", self.max_intra_m4_rail_width)
+        debug.info(1, "intra_m4_rail_mid_x = %.3g", self.intra_m4_rail_mid_x)
+        debug.info(1, "max_intra_m4_rail_top = %.3g", self.max_intra_m4_rail_top)
 
     def calculate_mid_array_rail_x_offsets(self, control_outputs):
         """Compute x offset of rails that go in between bitcell arrays"""
@@ -174,6 +214,7 @@ class ControlSignalsMixin(BaselineBank):
 
     def add_control_rails(self):
         """Add rails from control logic buffers to appropriate peripherals"""
+        self.calculate_mid_array_m4_x_offset()
 
         def get_top_destination_pin_y(rail_name_):
             if not destination_pins[rail_name_]:

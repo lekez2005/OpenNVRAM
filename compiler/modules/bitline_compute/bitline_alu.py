@@ -107,7 +107,7 @@ class BitlineALU(design):
 
         self.route_layout()
 
-    def add_pins(self):
+    def add_common_alu_pins(self):
         for col in range(self.num_cols):
             self.add_pin("data_in[{}]".format(col))
             self.add_pin("mask_in[{}]".format(col))
@@ -120,6 +120,8 @@ class BitlineALU(design):
         for col in range(self.num_cols):
             self.add_pin("mask_bar_out[{}]".format(col))
 
+    def add_pins(self):
+        self.add_common_alu_pins()
         for word in range(self.num_words):
             self.add_pin_list(["cin[{}]".format(word), "cout[{}]".format(word)])
 
@@ -131,6 +133,25 @@ class BitlineALU(design):
         else:
             self.add_pin_list(["sr_en", "sr_clk", "vdd", "gnd"])
         debug.info(2, "ALU pins: %s", self.pins)
+
+    def create_clk_buf(self, logic_name):
+        # TODO Move to optimizer
+        if OPTS.run_optimizations:
+            delay_strategy = delay_strategy_class()(self.bank)
+            sizes = delay_strategy.get_alu_clk_sizes()
+        else:
+            sizes = OPTS.sr_clk_buffers
+        self.clk_buf = LogicBuffer(buffer_stages=sizes, logic=logic_name,
+                                   height=OPTS.logic_buffers_height,
+                                   route_inputs=False,
+                                   route_outputs=False,
+                                   contact_nwell=True, contact_pwell=True)
+        self.add_mod(self.clk_buf)
+
+    def calculate_fill_widths(self):
+        self.m3_fill_width = self.bank.mid_vdd.width()
+        _, self.m3_fill_height = self.calculate_min_area_fill(self.m3_fill_width,
+                                                              layer=METAL3)
 
     def create_modules(self):
 
@@ -152,22 +173,8 @@ class BitlineALU(design):
             self.add_mod(self.col_tap)
 
         self.height = self.mcc_col.height
-
-        if OPTS.run_optimizations:
-            delay_strategy = delay_strategy_class()(self.bank)
-            sizes = delay_strategy.get_alu_clk_sizes()
-        else:
-            sizes = OPTS.sr_clk_buffers
-        self.clk_buf = LogicBuffer(buffer_stages=sizes, logic="pnand2",
-                                   height=OPTS.logic_buffers_height,
-                                   route_outputs=False,
-                                   contact_nwell=True, contact_pwell=True)
-
-        self.add_mod(self.clk_buf)
-
-        self.m3_fill_width = self.bank.mid_vdd.width()
-        _, self.m3_fill_height = self.calculate_min_area_fill(self.m3_fill_width,
-                                                              layer=METAL3)
+        self.create_clk_buf("pnand2")
+        self.calculate_fill_widths()
 
     def route_layout(self):
 
@@ -187,15 +194,22 @@ class BitlineALU(design):
         self.route_vdd_gnd()
         self.route_sr_clk()
 
-    def add_modules(self):
-        self.bank_x_shift = self.bank.bitcell_array_inst.lx()
+    def calculate_bank_offsets(self):
 
+        self.bank_x_shift = self.bank.bitcell_array_inst.lx()
         and_pin = self.bank.get_pin("and[0]")
-        self.bank_y_shift = self.mcc_col.height - and_pin.by()
+
+        pin_connection_space = (2 * self.get_line_end_space(METAL4) + self.m4_width +
+                                2 * self.get_parallel_space(METAL3) + 2 * m3m4.height)
+        self.bank_y_shift = self.mcc_col.height - and_pin.by() + pin_connection_space
 
         self.bitcell_offsets = self.bank.bitcell_array.bitcell_offsets
         x_offsets = [self.bank_x_shift + x for x in self.bitcell_offsets]
         tap_offsets = self.bank.bitcell_array.tap_offsets
+        return x_offsets, tap_offsets
+
+    def add_modules(self):
+        x_offsets, tap_offsets = self.calculate_bank_offsets()
 
         current_word = 0
         for col in range(self.num_cols):
@@ -258,7 +272,7 @@ class BitlineALU(design):
         self.add_clk_buf()
 
     def get_clk_buf_connections(self):
-        return ["sr_en", "sr_clk", "sr_clk_bar", "sr_clk_buf", "vdd", "gnd"]
+        return ["sr_clk", "sr_en", "sr_clk_bar", "sr_clk_buf", "vdd", "gnd"]
 
     def add_clk_buf(self):
         sr_clk = self.mcc_insts[0].get_pin("clk")
@@ -266,7 +280,7 @@ class BitlineALU(design):
         vdd_pins = self.mcc_insts[0].get_pins("vdd")
         closest_vdd = min(filter(lambda x: x.uy() < sr_clk.by(), vdd_pins), key=lambda x: sr_clk.by() - x.by())
 
-        clk_y = self.bank.cross_clk_rail.by() + self.mcc_col.height
+        clk_y = self.bank.cross_clk_rail.by() + self.bank_y_shift
 
         y_offset = min(closest_vdd.cy() + self.clk_buf.height,
                        clk_y - self.rail_height - self.wide_m1_space)
@@ -297,7 +311,8 @@ class BitlineALU(design):
 
         bank_pin_y = bank_clk_pin.by() + self.bank_y_shift
 
-        bend_y = top_clk_pin.cy() + self.line_end_space + 0.5 * m2m3.height + 0.5 * m1m2.height
+        bend_y = top_clk_pin.cy() + self.line_end_space + 0.5 * m2m3.height + \
+                 0.5 * m1m2.height
         self.add_rect("metal2", offset=vector(bank_clk_pin.lx(), bend_y),
                       height=bank_pin_y - bend_y)
 
@@ -312,12 +327,20 @@ class BitlineALU(design):
         _, m2_fill_width = self.calculate_min_area_fill(fill_height, layer=METAL2)
         _, m3_fill_width = self.calculate_min_area_fill(fill_height, layer=METAL3)
 
-        for pin in [top_clk_pin, bot_clk_pin]:
+        for i, pin in enumerate([top_clk_pin, bot_clk_pin]):
             offset = vector(rail_x + 0.5 * self.m4_width, pin.cy())
             self.add_cross_contact_center(cross_m1m2, offset, rotate=True)
+            if i == 0:
+                offset = vector(offset.x, pin.uy() - 0.5 * m2m3.height - 0.5 * self.m2_width)
+                self.add_rect(METAL2, vector(offset.x - 0.5 * m2_fill_width,
+                                             offset.y - 0.5 * cross_m2m3.height),
+                              width=m2_fill_width,
+                              height=cross_m2m3.height + 0.5 * cross_m1m2.height)
+            else:
+                self.add_rect_center(METAL2, offset, width=m2_fill_width, height=fill_height)
             self.add_cross_contact_center(cross_m2m3, offset)
             self.add_cross_contact_center(cross_m3m4, offset, rotate=True)
-            self.add_rect_center(METAL2, offset, width=m2_fill_width, height=fill_height)
+
             self.add_rect_center(METAL3, offset, width=m3_fill_width, height=fill_height)
         self.add_rect(METAL4, offset=vector(rail_x, bot_clk_pin.by()),
                       height=top_clk_pin.cy() - bot_clk_pin.cy())
@@ -358,7 +381,7 @@ class BitlineALU(design):
                     source_name, dest_name = pin
                 self.copy_layout_pin(self.mcc_insts[col], source_name, f"{dest_name}[{col}]")
 
-        self.copy_layout_pin(self.clk_buf_inst, "A", "sr_en")
+        self.copy_layout_pin(self.clk_buf_inst, "B", "sr_en")
 
     def route_msb_lsb(self):
         for i in range(self.num_words):
@@ -367,7 +390,8 @@ class BitlineALU(design):
             for pin_name in ["msb", "lsb"]:
                 first_pin = self.mcc_insts[col].get_pin(pin_name)
                 last_pin = self.mcc_insts[msb_index].get_pin(pin_name)
-                self.add_rect(first_pin.layer, offset=first_pin.ll(), width=last_pin.rx() - first_pin.lx(),
+                self.add_rect(first_pin.layer, offset=first_pin.ll(),
+                              width=last_pin.rx() - first_pin.lx(),
                               height=first_pin.height())
 
                 # connect
@@ -400,15 +424,18 @@ class BitlineALU(design):
 
             closest_gnd = min(filter(lambda x: x.by() < shift_in.by(), gnd_pins),
                               key=lambda x: shift_in.by() - x.by())
-            self.add_rect("metal3", offset=vector(shift_in.rx() - self.m3_width, closest_gnd.cy()),
+            self.add_rect("metal3", offset=vector(shift_in.rx() - self.m3_width,
+                                                  closest_gnd.cy()),
                           height=shift_in.by() - closest_gnd.cy())
 
             fill_width = utils.ceil(drc["minarea_metal3_drc"] / m2m3.height)
             x_offset = shift_in.rx() - 0.5 * (self.m3_width + fill_width)
             y_offset = closest_gnd.cy() - 0.5 * m2m3.height
-            self.add_rect("metal2", offset=vector(x_offset, y_offset), width=fill_width, height=m2m3.height)
-            self.add_contact_center(m2m3.layer_stack, offset=vector(shift_in.rx() - 0.5 * self.m2_width,
-                                                                    closest_gnd.cy()))
+            self.add_rect("metal2", offset=vector(x_offset, y_offset),
+                          width=fill_width, height=m2m3.height)
+            self.add_contact_center(m2m3.layer_stack,
+                                    offset=vector(shift_in.rx() - 0.5 * self.m2_width,
+                                                  closest_gnd.cy()))
             self.add_contact_center(m1m2.layer_stack, size=[2, 1],
                                     offset=vector(shift_in.rx() - 0.5 * self.m2_width, closest_gnd.cy()))
 
@@ -435,44 +462,62 @@ class BitlineALU(design):
 
         # clk pin
         clk_pin = self.mcc_insts[0].get_pin("clk")
-        out_pin = self.clk_buf_inst.get_pin("out")
-        self.add_rect("metal1", offset=vector(out_pin.lx(), clk_pin.by()), width=clk_pin.lx() - out_pin.lx(),
-                      height=clk_pin.height())
 
-        buffer_center_y = 0.5 * (self.clk_buf_inst.uy() + self.clk_buf_inst.by())
-        self.add_rect("metal1", offset=vector(out_pin.lx(), buffer_center_y), width=out_pin.width(),
-                      height=clk_pin.cy() - buffer_center_y)
+        pin_index = self.conns[self.insts.index(self.clk_buf_inst)].index("sr_clk_buf")
+        pin_name = self.clk_buf_inst.mod.pins[pin_index]
+
+        out_pin = self.clk_buf_inst.get_pin(pin_name)
+
+        if not get_range_overlap((clk_pin.by(), clk_pin.uy()),
+                                 (out_pin.by(), out_pin.uy())):
+            x_offset = self.bank.cross_clk_rail.rx() + self.bus_pitch
+            y_offset = out_pin.uy() - 0.5 * m1m2.height
+            self.add_rect(METAL2, vector(out_pin.lx(), y_offset),
+                          width=x_offset - out_pin.lx() + self.bus_width,
+                          height=m1m2.height + self.m2_width)
+            self.add_rect(METAL2, vector(x_offset, out_pin.uy()), width=self.bus_width,
+                          height=clk_pin.cy() - out_pin.uy() + 0.5 * m1m2.height)
+            self.add_contact_center(m1m2.layer_stack,
+                                    vector(x_offset + 0.5 * self.bus_width, clk_pin.cy()))
+            x_offset += 0.5 * self.bus_width
+            self.add_rect(METAL1, vector(x_offset, clk_pin.by()), height=clk_pin.height(),
+                          width=clk_pin.lx() - x_offset)
+        else:
+            self.add_rect(METAL1, offset=vector(out_pin.lx(), clk_pin.by()),
+                          width=clk_pin.lx() - out_pin.lx(), height=clk_pin.height())
 
         # clk in
-        clk_in = self.clk_buf_inst.get_pin("B")
+        clk_in = self.clk_buf_inst.get_pin("A")
         bank_clk = self.bank.cross_clk_rail
 
-        real_y_offset = bank_clk.by() + self.bank_y_shift
-        via_extension = 0.5 * m2m3.height
-        if bank_clk.lx() > clk_in.lx():
-            x_start = min(clk_in.cx() - via_extension, bank_clk.lx())
-            x_end = bank_clk.rx()
-        else:
-            x_start = bank_clk.lx()
-            x_end = max(clk_in.cx() + via_extension, bank_clk.rx())
-        self.add_layout_pin("sr_clk", METAL3, vector(x_start, real_y_offset),
-                            width=x_end - x_start, height=bank_clk.height)
-        self.add_rect(METAL2, clk_in.ul(), width=clk_in.width(),
-                      height=real_y_offset - clk_in.uy())
-        mid_y = real_y_offset + 0.5 * bank_clk.height
-        self.add_cross_contact_center(cross_m2m3, vector(clk_in.cx(), mid_y))
+        cross_rail_y_offset = bank_clk.by() + self.bank_y_shift
+        y_offset = self.clk_buf_inst.get_pin("gnd").uy() + 0.5 * self.m3_space
+
+        self.add_cross_contact_center(cross_m1m2, clk_in.center())
+        x_offset = self.clk_buf_inst.lx()
+        self.add_rect(METAL2, offset=vector(x_offset, clk_in.cy() - 0.5 * self.m2_width),
+                      width=clk_in.cx() - x_offset)
+        self.add_rect(METAL2, vector(x_offset, clk_in.cy()), height=y_offset - clk_in.cy())
+        self.add_rect(METAL2, vector(x_offset, y_offset),
+                      width=bank_clk.lx() - x_offset)
+        self.add_layout_pin("sr_clk", METAL2, vector(bank_clk.lx() -
+                                                     0.5 * self.bank.bus_width, y_offset),
+                            width=self.bank.bus_width,
+                            height=cross_rail_y_offset - y_offset)
 
     def route_vdd_gnd(self):
         # M2 rail
         layout_names = ["vdd", "gnd", "vdd", "gnd"]
         rail_names = ["mid_vdd", "mid_gnd", "right_vdd", "right_gnd"]
         m2_pins = [None] * 4
+        y_offset = min(0, self.clk_buf_inst.get_pin("gnd").by(),
+                       self.clk_buf_inst.get_pin("vdd").by())
         for i in range(4):
             rail = getattr(self.bank, rail_names[i])
 
             pin = self.add_layout_pin(layout_names[i], rail.layer,
-                                      offset=vector(rail.lx(), 0),
-                                      width=rail.width(), height=self.height)
+                                      offset=vector(rail.lx(), y_offset),
+                                      width=rail.width(), height=self.height - y_offset)
             self.add_rect(METAL4, pin.ll(), width=pin.width(), height=pin.height())
             m2_pins[i] = pin
         self.mid_vdd, self.mid_gnd, self.right_vdd, self.right_gnd = m2_pins
@@ -507,7 +552,9 @@ class BitlineALU(design):
                 if not get_range_overlap(closest_pin[1:3], (pin.by(), pin.uy())):
                     self.route_power_pin(pin, rail)
                 else:
-                    if closest_pin[0] == pin_name or pin_name == "gnd":
+                    if pin_name == "gnd" and not closest_pin[0] == pin_name:
+                        self.route_power_pin(pin, rail)
+                    elif closest_pin[0] == pin_name:
                         # same pin so direct route
                         offset = vector(rail.rx() - pin.height(), pin.by())
                         self.add_rect(METAL1, offset, height=pin.height(),

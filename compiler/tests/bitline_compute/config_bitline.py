@@ -22,7 +22,7 @@ sense_amp_mod = "dual_latched_sense_amp"
 sense_amp_tap = "dual_latched_sense_amp_tap"
 sense_amp_array = "dual_latched_sense_amp_array"
 
-alu_word_size = 16
+alu_word_size = 32
 alu_cells_per_group = 2
 
 alu_inverter_size = 2
@@ -39,9 +39,11 @@ buffer_repeater_sizes = [
 
 bank_class = "bl_bank.BlBank"
 control_buffers_class = "bl_latched_control_buffers.LatchedControlBuffers"
+sram_class = "bl_sram.BlSram"
 
 
 def configure_sense_amps(OPTS):
+
     if OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
         # need large clk_buf to buffer the clk going to the latches
         OPTS.clk_buffers = [1, 5, 20, 60, 65]  # clk_buf drives two sets of latches
@@ -60,10 +62,6 @@ def configure_sense_amps(OPTS):
             OPTS.wordline_en_buffers = [1, 2.8, 8, 25, 65 ]  # make wordline en faster
             OPTS.control_buffers_class = \
                 "bl_mirrored_control_buffers.BlMirroredControlBuffers"
-            if OPTS.serial:
-                OPTS.sr_clk_buffers = [1, 3.53, 12.5, 44]
-            else:
-                OPTS.sr_clk_buffers = [1, 6.6, 44]
 
         OPTS.precharge_buffers = [1, 3.9, 15, 60]
     else:
@@ -91,13 +89,15 @@ def configure_sense_amps(OPTS):
             OPTS.sense_precharge_buffers = [1, 3.1, 9.6, 30]
             OPTS.precharge_size = 1.5
 
-            if OPTS.serial:
-                OPTS.sr_clk_buffers = [1, 3.53, 12.5, 44]
-            else:
-                OPTS.sr_clk_buffers = [1, 6.6, 44]
             OPTS.control_buffers_class = \
                 "bl_latched_control_buffers.LatchedControlBuffers"
 
 
 def configure_modules(bank, OPTS):
     configure_sense_amps(OPTS)
+    if OPTS.serial:
+        OPTS.sr_clk_buffers = [1, 3.53, 12.5, 44]
+        OPTS.sram_class = "bs_sram.BsSram"
+    else:
+        OPTS.sr_clk_buffers = [1, 6.6, 44]
+        OPTS.sram_class = "bl_sram.BlSram"

@@ -30,9 +30,17 @@ class BlBank(BaselineBank):
         for row in range(self.num_rows):
             self.add_pin(f"dec_in_0[{row}]")
             self.add_pin(f"dec_in_1[{row}]")
+
         diff_pins = ["diff", "diffb"] * (not self.mirror_sense_amp)
-        self.add_pin_list(self.get_control_pins() + diff_pins +
+        control_pins = self.get_control_pins()
+        if self.mirror_sense_amp and not "clk_pin" in control_pins:
+            control_pins.append("clk_buf")
+        self.add_pin_list(control_pins + diff_pins +
                           ["dec_en_1", "vdd", "gnd"])
+
+    def get_control_rails_base_x(self):
+        # space for vref
+        return self.mid_vdd_offset - self.wide_m1_space - self.bus_pitch
 
     def get_control_pins(self):
         control_pins = super().get_control_pins()
@@ -142,8 +150,8 @@ class BlBank(BaselineBank):
         ref_pins = self.sense_amp_array_inst.get_pins("vref")
         top_pin = max(ref_pins, key=lambda x: x.uy()).cy()
         x_offset = self.mid_vdd.lx() - self.wide_m1_space - self.bus_width
-        vref_pin = self.add_layout_pin("vref", METAL2, vector(x_offset, self.min_point),
-                                       width=self.bus_width, height=top_pin - self.min_point)
+        vref_pin = self.add_layout_pin("vref", METAL2, vector(x_offset, self.data_bus_y),
+                                       width=self.bus_width, height=top_pin - self.data_bus_y)
         for pin in ref_pins:
             self.add_cross_contact_center(cross_m2m3, offset=vector(vref_pin.cx(), pin.cy()))
             self.add_rect(METAL3, offset=vector(x_offset, pin.by()), height=pin.height(),
@@ -194,26 +202,32 @@ class BlBank(BaselineBank):
     def get_mask_flop_via_y(self):
         return None
 
+    def route_data_flop_in(self, bitline_pins, word, data_via_y, fill_width, fill_height):
+        # use the left pin
+        left_bitline, right_bitline = sorted(bitline_pins, key=lambda x: x.lx())
+        bitline_pins = [left_bitline, left_bitline]
+        super().route_data_flop_in(bitline_pins, word, data_via_y, fill_width, fill_height)
+
     def route_write_driver_mask_in(self, word, mask_flop_out_via_y, mask_driver_in_via_y):
         via_y = mask_driver_in_via_y
         driver_pin = self.get_write_driver_mask_in(word)
         # align with sense amp bitline
-        bl_pin = self.sense_amp_array_inst.get_pin("bl[{}]".format(word))
-        bl_x_offset = bl_pin.lx()
+        br_pin = self.sense_amp_array_inst.get_pin("br[{}]".format(word))
+        br_x_offset = br_pin.lx()
         self.add_rect(METAL2, offset=vector(driver_pin.lx(), via_y),
                       width=driver_pin.width(), height=driver_pin.by() - via_y)
         via_offset = vector(driver_pin.cx() - 0.5 * m2m3.width, via_y)
         cont1 = self.add_contact(m2m3.layer_stack, via_offset)
 
         cont2 = self.add_contact(m3m4.layer_stack,
-                                 offset=vector(bl_x_offset, via_y +
+                                 offset=vector(br_x_offset, via_y +
                                                0.5 * m2m3.second_layer_height -
                                                0.5 * m3m4.height))
 
         self.join_pins_with_m3(cont1, cont2, cont1.cy(), fill_height=m3m4.first_layer_height)
 
-        self.add_layout_pin(f"mask_in_bar[{word}]", METAL4, vector(bl_x_offset, self.data_bus_y),
-                            height=via_y - self.data_bus_y, width=bl_pin.width())
+        self.add_layout_pin(f"mask_in_bar[{word}]", METAL4, vector(br_x_offset, self.data_bus_y),
+                            height=via_y - self.data_bus_y, width=br_pin.width())
 
     def route_flops(self):
         min_point = self.min_point
@@ -275,44 +289,11 @@ class BlBank(BaselineBank):
                 self.add_rect_center(METAL2, in_pin.center(), width=fill_width,
                                      height=fill_height)
 
-    def get_power_grid_x_shift(self):
-        return self.power_grid_x_shift
-
-    def get_intra_array_grid_top(self):
-        # get vertical stack
-        vertical_stack = self.get_vertical_instance_stack()
-        if self.control_buffers_inst in vertical_stack:
-            vertical_stack.remove(self.control_buffers_inst)
-        vertical_stack = list(sorted(vertical_stack, key=lambda x: x.by()))
-
-        # find largest contiguous x space in vertical stack
-        rail_space = self.get_parallel_space(METAL4)
-        min_space = utils.floor(self.m4_width + 2 * rail_space)
-
-        m4_spaces = None
-        top_inst = vertical_stack[-1]
-        for index, inst in enumerate(vertical_stack):
-            new_m4_spaces = layout_clearances.find_clearances(inst.mod.child_mod, METAL4,
-                                                              layout_clearances.HORIZONTAL,
-                                                              existing=m4_spaces)
-            biggest_space = max(new_m4_spaces, key=lambda x: x[1] - x[0])
-            if biggest_space[1] - biggest_space[0] <= min_space:
-                top_inst = vertical_stack[index - 1]
-                break
-            m4_spaces = new_m4_spaces
-
-        biggest_space = max(m4_spaces, key=lambda x: x[1] - x[0])
-        biggest_space_span = biggest_space[1] - biggest_space[0]
-        # set rail width based on available space
-        self.m4_power_rail_width = min(m3m4.height,
-                                       utils.floor(biggest_space_span - 2 * rail_space))
-        mid_x_offset = 0.5 * (biggest_space[0] + biggest_space[1])
-        self.power_grid_x_shift = utils.round_to_grid(mid_x_offset)
-
-        vdd_gnd = top_inst.get_pins("vdd") + top_inst.get_pins("gnd")
-        top_pin_y = max(vdd_gnd, key=lambda x: x.uy()).uy()
-
-        return top_pin_y
+    def route_intra_array_power_grid(self):
+        min_point = self.min_point
+        self.min_point = self.data_bus_y
+        super().route_intra_array_power_grid()
+        self.min_point = min_point
 
     def connect_m4_grid_instance_power(self, instance_pin, power_rail):
         if power_rail.lx() > instance_pin.lx() and power_rail.rx() < instance_pin.rx():

@@ -209,7 +209,7 @@ class ControlBuffersRepeatersMixin(BaselineBank):
                 self.occupied_m4_bitcell_indices.append(closest_index)
                 x_offset = (self.bitcell_array_inst.lx() +
                             self.bitcell_array.bitcell_offsets[closest_index] +
-                            0.5 * self.bitcell.width - 0.5 * bus_width)
+                            self.intra_m4_rail_mid_x - 0.5 * bus_width)
 
             self.add_rect(METAL3, offset=vector(source_pin.lx(), net_rail.by()),
                           height=self.bus_width, width=x_offset - source_pin.lx())

@@ -23,7 +23,7 @@ class SramTestBase(OpenRamTest):
         else:
             from modules.baseline_sram import BaselineSram
             from modules.mram.sotfet.sotfet_mram import SotfetMram
-            if OPTS.mram in ["sotfet", "sot"]:
+            if hasattr(OPTS, "mram") and OPTS.mram in ["sotfet", "sot"]:
                 sram_class = SotfetMram
             else:
                 sram_class = BaselineSram
@@ -68,6 +68,13 @@ class SramTestBase(OpenRamTest):
                        num_banks=num_banks, name="sram1", add_power_grid=True)
 
         self.local_check(a)
+
+    def test_one_bank(self):
+        sram_class = self.get_sram_class()
+        from globals import OPTS
+        OPTS.run_optimizations = False
+        OPTS.alu_word_size = 32
+        self.create_and_test_sram(sram_class, 128, 256, words_per_row=1, num_banks=1)
 
     def test_two_dependent_banks(self):
         from globals import OPTS

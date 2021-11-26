@@ -68,8 +68,8 @@ class BaselineSram(design):
         self.m2_pitch = self.m2_width + self.get_parallel_space(METAL2)
         self.m3_pitch = self.m3_width + self.get_parallel_space(METAL3)
         self.create_modules()
-        self.add_pins()
         self.add_modules()
+        self.add_pins()
 
         self.min_point = min(self.row_decoder_inst.by(), self.bank_insts[0].by())
 
@@ -669,7 +669,8 @@ class BaselineSram(design):
             center_rail_x = 0.5 * (rail.lx() + rail.rx())
             power_pins = self.row_decoder_inst.get_pins(pin_names[i])
             for power_pin in power_pins:
-                if power_pin.uy() < self.bank.wordline_driver_inst.by():
+                if power_pin.uy() < self.bank.wordline_driver_inst.by() + \
+                        self.bank_inst.by():
                     pin_right = power_pin.rx()
                     x_offset = rail.lx()
                 else:
@@ -940,7 +941,7 @@ class BaselineSram(design):
         bitcell_rows_per_driver = round(wordline_logic.height / bitcell_height)
 
         for row in range(0, self.num_rows, bitcell_rows_per_driver):
-            y_base = (self.bank.bitcell_array_inst.by() +
+            y_base = (self.bank.bitcell_array_inst.by() + self.bank_inst.by() +
                       self.row_decoder.bitcell_offsets[row])
             for layer, rect_bottom, rect_top, left_rect, right_rect in rects:
                 if ((left_rect.height >= mod_height or right_rect.height >= mod_height) and
@@ -1116,7 +1117,8 @@ class BaselineSram(design):
         pass
 
     def add_cross_contact_center(self, cont, offset, rotate=False,
-                                 rail_width=None):
+                                 rail_width=None, fill=True):
         cont_inst = super().add_cross_contact_center(cont, offset, rotate)
-        self.add_cross_contact_center_fill(cont, offset, rotate, rail_width)
+        if fill:
+            self.add_cross_contact_center_fill(cont, offset, rotate, rail_width)
         return cont_inst

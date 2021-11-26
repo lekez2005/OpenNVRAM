@@ -9,6 +9,7 @@ from test_base import TestBase
 class BitlineAluTest(TestBase):
     def test_bitline_alu(self):
         from globals import OPTS
+        from modules.bitline_compute.bit_serial_alu import BitSerialALU
         from modules.bitline_compute.bitline_alu import BitlineALU
         from modules.bitline_compute.bl_bank import BlBank
 
@@ -21,7 +22,11 @@ class BitlineAluTest(TestBase):
 
         bank = BlBank(name="bank1", word_size=num_cols, num_words=num_words, words_per_row=1)
 
-        a = BitlineALU(bank=bank, num_cols=num_cols, word_size=word_size, cells_per_group=1)
+        if OPTS.serial:
+            a = BitSerialALU(bank=bank, num_cols=num_cols)
+        else:
+            a = BitlineALU(bank=bank, num_cols=num_cols, word_size=word_size, cells_per_group=1)
+
         self.local_check(a)
 
 

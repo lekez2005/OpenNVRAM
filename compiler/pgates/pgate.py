@@ -119,9 +119,9 @@ class pgate(pgates_characterization_base, design.design):
     def get_total_vertical_space(self, nmos_width=None, pmos_width=None):
         """Estimate space below nfets, between nfets and pfets and above pfets"""
         if nmos_width is None:
-            nmos_width = utils.ceil(self.nmos_size * self.min_tx_width)
+            nmos_width = utils.round_to_grid(self.nmos_size * self.min_tx_width)
         if pmos_width is None:
-            pmos_width = utils.ceil(self.pmos_size * self.beta * self.min_tx_width)
+            pmos_width = utils.round_to_grid(self.pmos_size * self.min_tx_width)
 
         # top and bottom space based on power rails
         self.top_space, self.pmos_fill_width, self.pmos_fill_height = \
@@ -153,10 +153,10 @@ class pgate(pgates_characterization_base, design.design):
         # middle space
         # first calculate height of tracks (all poly contacts)
         line_space = max(self.get_line_end_space(METAL1), self.get_line_end_space(METAL2))
-        self.gate_rail_pitch = (0.5 * self.m2_width +
-                                line_space + 0.5 * self.m2_width)
 
         if self.same_line_inputs:
+            self.gate_rail_pitch = (0.5 * contact.m1m2.second_layer_height +
+                                    line_space + 0.5 * self.m2_width)
             max_fill_width = 2 * self.poly_pitch - 2 * self.m1_space - contact.poly.second_layer_width
             _, fill_height = self.calculate_min_area_fill(max_fill_width, layer=METAL1)
             if fill_height == 0:
@@ -169,6 +169,8 @@ class pgate(pgates_characterization_base, design.design):
             track_extent = max(fill_height, contact.poly.second_layer_height,
                                contact.m1m2.second_layer_height)
         else:
+            self.gate_rail_pitch = (0.5 * self.m2_width +
+                                    line_space + 0.5 * self.m2_width)
             track_extent = (self.num_tracks - 1) * self.gate_rail_pitch
             track_extent += max(contact.poly.second_layer_height, contact.m1m2.second_layer_height)
 
@@ -185,9 +187,11 @@ class pgate(pgates_characterization_base, design.design):
         self.track_bot_space = max(poly_contact_base,
                                    (0.5 * self.nmos_fill_height - 0.5 * nmos_width +
                                     self.line_end_space))
+        self.track_bot_space = utils.ceil(self.track_bot_space)
         self.track_top_space = max(poly_contact_base,
                                    (0.5 * self.pmos_fill_height - 0.5 * pmos_width +
                                     self.line_end_space))
+        self.track_top_space = utils.ceil(self.track_top_space)
         self.middle_space = max(self.track_bot_space + track_extent + self.track_top_space,
                                 2 * self.implant_to_channel)
 
@@ -220,8 +224,8 @@ class pgate(pgates_characterization_base, design.design):
 
         self.tx_height_available = tx_height_available = self.height - self.get_total_vertical_space()
 
-        min_n_width = self.nmos_scale * self.min_tx_width
-        min_p_width = self.pmos_scale * self.beta * self.min_tx_width
+        min_n_width = utils.round_to_grid(self.nmos_scale * self.min_tx_width)
+        min_p_width = utils.round_to_grid(self.pmos_scale * self.beta * self.min_tx_width)
         if min_n_width < self.min_tx_width or min_p_width < self.min_tx_width:
             return False
 
@@ -231,8 +235,8 @@ class pgate(pgates_characterization_base, design.design):
             return False
 
         # Determine the number of mults for each to fit width into available space
-        self.nmos_width = self.nmos_size * self.min_tx_width
-        self.pmos_width = self.pmos_size * self.min_tx_width
+        self.nmos_width = utils.round_to_grid(self.nmos_size * self.min_tx_width)
+        self.pmos_width = utils.round_to_grid(self.pmos_size * self.min_tx_width)
         # Divide the height according to size ratio
         nmos_height_available = self.nmos_width / (self.nmos_width + self.pmos_width) * tx_height_available
         pmos_height_available = self.pmos_width / (self.nmos_width + self.pmos_width) * tx_height_available
@@ -439,10 +443,13 @@ class pgate(pgates_characterization_base, design.design):
             if fill:
                 if mid_y < self.mid_y:
                     fill_width, fill_height = self.nmos_fill_width, self.nmos_fill_height
-                    fill_y = min(active_cont.by(), m1m2_cont.by())
+                    min_fill_y = max(self.bottom_space, self.n_active_rect.cy() - 0.5 * self.nmos_fill_height)
+                    fill_y = min(active_cont.by(), m1m2_cont.by(), min_fill_y)
                 else:
                     fill_width, fill_height = self.pmos_fill_width, self.pmos_fill_height
-                    fill_y = max(active_cont.uy(), m1m2_cont.uy()) - fill_height
+                    max_fill_y = min(self.height - self.top_space, self.p_active_rect.cy() +
+                                     0.5 * self.pmos_fill_height)
+                    fill_y = max(active_cont.uy(), m1m2_cont.uy(), max_fill_y) - fill_height
                 self.add_rect(METAL1, offset=vector(offset.x - 0.5 * fill_width, fill_y),
                               width=fill_width, height=fill_height)
 

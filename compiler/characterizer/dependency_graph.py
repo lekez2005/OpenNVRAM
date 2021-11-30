@@ -470,7 +470,12 @@ def get_net_hierarchy(net: str, parent_module: design):
     inst_hierarchy = []
 
     current_module = parent_module
-    for branch in net_split[:-1]:
+    for index, branch in enumerate(net_split[:-1]):
+        if current_module.is_library_cell:
+            # TODO handle nested library cell
+            remnant = ".".join(net_split[index:])
+            debug.error(f"Invalid nested net {remnant} in primitive"
+                        f" module {current_module.name}")
         child_inst = get_instance_module(branch, current_module)
         child_module = child_inst.mod
         hierarchy.append(child_module)

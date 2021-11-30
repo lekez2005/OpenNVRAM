@@ -36,6 +36,11 @@ def vector_to_int(vec):
     return int("".join(map(str, vec)), 2)
 
 
+def int_to_vec(int_, word_size):
+    str_format = "0{}b".format(word_size)
+    return list(map(int, [x for x in format(int_, str_format)]))
+
+
 def address_to_int(vec_str):
     return vector_to_int(vec_str.replace(",", "").replace(" ", ""))
 
@@ -68,7 +73,7 @@ def measure_delay_from_meas_str(meas_str, prefix, max_delay=None, event_time=Non
                                 index_pattern=""):
     """Get measured delay from measurement result file"""
     if event_time is not None:
-        time_suffix = "t{:.2g}".format(event_time * 1e9).replace('.', '_')
+        time_suffix = "t{:.3g}".format(event_time * 1e9).replace('.', '_')
     else:
         time_suffix = ""
 
@@ -160,7 +165,7 @@ class SimAnalyzer:
             value_str = search_str(self.stim_str, rf"Probe {name} = \[(.*)\]")
             values.append(list(map(int, value_str.split(","))))
         self.probe_cols, self.probe_bits = values
-        debug.info(1, "Probe cols = %s Probe bits = %s", self.probe_cols,
+        debug.info(1, "Probe cols = %s \nProbe bits = %s", self.probe_cols,
                    self.probe_bits)
 
     def load_periods(self):

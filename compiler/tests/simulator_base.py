@@ -46,6 +46,7 @@ class SimulatorBase(OpenRamTest):
             netlist_generator.write_power_stimulus()
         else:
             netlist_generator.write_delay_stimulus()
+        self.print_sim_information(netlist_generator)
         netlist_generator.stim.run_sim()
         self.print_sim_information(netlist_generator)
 
@@ -111,6 +112,19 @@ class SimulatorBase(OpenRamTest):
         return parser
 
     @classmethod
+    def change_parser_arg_attribute(cls, parser, destination_name, attr_name, new_val):
+        for action in parser._actions:
+            if action.dest == destination_name:
+                setattr(action, attr_name, new_val)
+                return
+        raise AssertionError(f"Invalid destination name {destination_name} for parser")
+
+    @classmethod
+    def validate_options(cls, options):
+        assert options.num_cols % options.word_size == 0, \
+            "Number of columns should be multiple of word size"
+
+    @classmethod
     def parse_options(cls):
 
         arg_parser = cls.create_arg_parser()
@@ -119,8 +133,7 @@ class SimulatorBase(OpenRamTest):
 
         sys.argv = [sys.argv[0]] + other_args + ["-t", options.tech_name]
 
-        assert options.num_cols % options.word_size == 0, \
-            "Number of columns should be multiple of word size"
+        cls.validate_options(cls.cmd_line_opts)
 
         cls.temp_folder = cls.get_sim_directory(cls.cmd_line_opts)
 

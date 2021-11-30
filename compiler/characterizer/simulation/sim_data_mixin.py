@@ -66,7 +66,7 @@ class SimDataMixin(SpiceCharacterizer):
         """Write 'existing_data' address->data map
         and generate random values for unspecified addresses"""
         probe = probe or self.probe
-        existing_data = existing_data or {}
+        existing_data = existing_data or getattr(self, "existing_data", {})
 
         self.seed()
 

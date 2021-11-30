@@ -184,12 +184,10 @@ class SramProbe(object):
             return self.decoder_probes[address]
 
     def get_wordline_label(self, bank_index, row, col):
-        if OPTS.use_pex:
-            wl_label = "Xsram.Xbank{bank}.wl[{row}]_Xbank{bank}" \
-                       "_Xbitcell_array_Xbit_r{row}_c{col}".format(bank=bank_index, row=row, col=col)
-        else:
-            wl_label = "Xsram.Xbank{}.wl[{}]".format(bank_index, row)
-        return wl_label
+        wl_label = "Xbank{}.wl[{}]".format(bank_index, row)
+        template = self.probe_net_at_inst(wl_label, self.sram.bank.bitcell_array_inst)
+        label = re.sub(r"_r([0-9]+)_c([0-9]+)", "_r{row}_c{col}", template)
+        return label.format(row=row, col=col)
 
     def get_word_driver_clk_probes(self, bank_index, pex_file=None):
         label_key = "dec_b{}_clk".format(bank_index)
@@ -440,6 +438,10 @@ class SramProbe(object):
         self.probe_bitcell_currents(address)
         self.wordline_driver_currents(address)
 
+    @staticmethod
+    def get_decoder_out_format():
+        return "Xsram.dec_out[{}]"
+
     def probe_address(self, address, pin_name="q"):
 
         address = self.address_to_vector(address)
@@ -447,11 +449,7 @@ class SramProbe(object):
 
         bank_index, bank_inst, row, col_index = self.decode_address(address)
 
-        decoder_label = "Xsram.dec_out[{}]".format(row)
-        self.decoder_probes[address_int] = decoder_label
-        self.probe_labels.add(decoder_label)
-
-        self.add_decoder_inputs(address_int)
+        self.add_decoder_inputs(address_int, row, bank_index)
 
         col = self.sram.num_cols - 1
         wl_label = self.get_wordline_label(bank_index, row, col)
@@ -491,6 +489,14 @@ class SramProbe(object):
         self.precharge_current_probes(bank, cols)
         self.control_buffers_current_probes(bank)
 
+    def set_clk_probe(self, bank):
+        probes = self.voltage_probes["control_buffers"][bank]
+        if "decoder_clk" in probes:
+            net = "decoder_clk"
+        else:
+            net = "clk_buf"
+        self.clk_probes[bank] = probes[net][-1]
+
     def probe_bank(self, bank):
         self.probe_bank_currents(bank)
 
@@ -499,8 +505,7 @@ class SramProbe(object):
         self.probe_precharge_nets(bank)
         self.probe_sense_amps(bank)
         self.control_buffers_voltage_probes(bank)
-
-        self.clk_probes[bank] = self.voltage_probes["control_buffers"][bank]["clk_buf"][-1]
+        self.set_clk_probe(bank)
         self.probe_decoder_col_mux(bank)
         self.probe_control_flops(bank)
 
@@ -528,8 +533,22 @@ class SramProbe(object):
                 else:
                     self.probe_labels.add("Xsram.sel[{}]".format(bank, i))
 
-    def add_decoder_inputs(self, address):
-        pass
+    def add_decoder_inputs(self, address_int, row, bank_index):
+        decoder_label = self.get_decoder_out_format().format(row)
+        self.decoder_probes[address_int] = decoder_label
+        self.probe_labels.add(decoder_label)
+
+    def probe_net_at_inst(self, net, destination_inst, parent_mod=None):
+        if not OPTS.use_pex:
+            return "Xsram.{}".format(net)
+        res = self.get_extracted_net(net, destination_inst=destination_inst,
+                                     parent_mod=parent_mod)
+        prefix, parent_net, suffix = res
+        if prefix:
+            prefix = f"N{self.net_separator}{prefix}_{parent_net}"
+        else:
+            prefix = f"N{self.net_separator}{parent_net}"
+        return f"{prefix}{self.net_separator}{suffix}"
 
     @staticmethod
     def get_full_bank_net(net, prefix, suffix, bank_inst, sram):
@@ -545,7 +564,7 @@ class SramProbe(object):
             prefix = "{}".format(parent_net)
         if OPTS.use_pex:
             suffix = "X{}{}{}".format(bank_inst.name, separator, suffix)
-            prefix = "N_{}".format(prefix) if OPTS.use_pex else prefix
+            prefix = "N_{}".format(prefix)
             return "{}{}{}".format(prefix, separator, suffix)
         else:
             return "Xsram.{}".format(prefix)
@@ -655,6 +674,9 @@ class SramProbe(object):
             parent_net = parent_mod.conns[conn_index][inst.mod.pins.index(internal_net)]
         else:
             parent_net = internal_net
+
+        debug.info(2, "net %s in module %s: prefix = %s, parent_net = %s, suffix=%s",
+                   net, parent_mod, prefix, parent_net, suffix)
 
         return prefix, parent_net, suffix
 

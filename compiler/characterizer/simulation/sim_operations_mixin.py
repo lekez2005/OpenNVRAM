@@ -268,7 +268,6 @@ class SimOperationsMixin(SpiceCharacterizer):
         return op
 
     def generate_leakage_energy(self):
-        return
         # clock gating
         leakage_cycles = 10000
         start_time = self.current_time
@@ -338,14 +337,18 @@ class SimOperationsMixin(SpiceCharacterizer):
     def get_time_suffix(self):
         return f"{self.current_time:.3g}".replace('.', '_')
 
+    def log_event(self, event_name, address_int=0, row=0, col_index=0,
+                  bank_index=0):
+        self.sf.write(f"* -- {event_name} : [{address_int}, {row},"
+                      f" {col_index}, {bank_index}, {self.current_time},"
+                      f" {self.period}, {self.duty_cycle}]\n")
+
     def setup_write_measurements(self, address_int):
         self.period = self.write_period
         self.duty_cycle = self.write_duty_cycle
         """new_val is MSB first"""
         bank_index, _, row, col_index = self.probe.decode_address(address_int)
-        self.sf.write("* -- Write : [{0}, {1}, {2}, {3}, {4}, {5}, {6}]\n".format(
-            address_int, row, col_index, bank_index, self.current_time, self.write_period,
-            self.write_duty_cycle))
+        self.log_event("Write", address_int, row, col_index, bank_index)
 
         time = self.current_time
         self.generate_power_measurement("WRITE")
@@ -372,7 +375,7 @@ class SimOperationsMixin(SpiceCharacterizer):
         return RISE
 
     def setup_decoder_delays(self):
-        time_suffix = "{:.2g}".format(self.current_time).replace('.', '_')
+        time_suffix = self.get_time_suffix()
         for address_int, in_nets in self.probe.decoder_inputs_probes.items():
             bank_index, _, row, col_index = self.probe.decode_address(address_int)
             clk_buf_probe = self.probe.clk_probes[bank_index]
@@ -390,7 +393,6 @@ class SimOperationsMixin(SpiceCharacterizer):
         for address_int, decoder_label in self.decoder_probes.items():
             bank_index, _, row, col_index = self.probe.decode_address(address_int)
             clk_buf_probe = self.probe.clk_probes[bank_index]
-            time_suffix = "{:.2g}".format(self.current_time).replace('.', '_')
             meas_name = "decoder_a{}_t{}".format(address_int, time_suffix)
             self.stim.gen_meas_delay(meas_name=meas_name,
                                      trig_name=clk_buf_probe,
@@ -441,9 +443,7 @@ class SimOperationsMixin(SpiceCharacterizer):
         bank_index, _, row, col_index = self.probe.decode_address(address_int)
         clk_buf_probe = self.probe.clk_probes[bank_index]
 
-        self.sf.write("* -- Read : [{0}, {1}, {2}, {3}, {4}, {5}, {6}]\n".format(
-            address_int, row, col_index, bank_index, self.current_time, self.read_period,
-            self.read_duty_cycle))
+        self.log_event("Read", address_int, row, col_index, bank_index)
 
         self.setup_precharge_measurement(bank_index, col_index)
         self.generate_power_measurement("READ")

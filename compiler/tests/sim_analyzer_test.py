@@ -139,9 +139,10 @@ class SimAnalyzerTest(SimulatorBase):
         """Use col with max delay if verbose save or use specified bit"""
         probe_bits = self.analyzer.probe_bits
         if self.cmd_line_opts.analysis_bit_index is None:
-            max_delay_bit_ = (self.word_size - 1) - np.argmax(delays_)
-            if max_delay_bit_ in probe_bits:
-                return max_delay_bit_
+            if delays_:
+                max_delay_bit_ = (self.word_size - 1) - np.argmax(delays_)
+                if max_delay_bit_ in probe_bits:
+                    return max_delay_bit_
             return probe_bits[-1]
         return probe_bits[self.cmd_line_opts.analysis_bit_index]
 
@@ -185,7 +186,11 @@ class SimAnalyzerTest(SimulatorBase):
         return max_read_event
 
     def eval_read_delays(self, max_read_event):
-        from characterizer.simulation.sim_analyzer import DATA_OUT_PATTERN
+        def get_dout_delay(bit):
+            probe = self.voltage_probes["dout"][str(bit)]
+            return self.analyzer.clk_bar_to_bus_delay(probe, start_time,
+                                                      end_time, num_bits=1)
+
         max_dout = 0
 
         max_read_event = self.get_analysis_events(self.all_read_events, max_read_event)
@@ -195,9 +200,7 @@ class SimAnalyzerTest(SimulatorBase):
         for index, read_event in enumerate(self.all_read_events):
             start_time = read_event[0]
             end_time = read_event[0] + read_event[2] + self.read_settling_time
-
-            d_delays = self.analyzer.clk_bar_to_bus_delay(DATA_OUT_PATTERN, start_time,
-                                                          end_time, num_bits=self.word_size)
+            d_delays = [get_dout_delay(bit) for bit in range(self.word_size)]
 
             if max(d_delays) > max_dout or index == 0:
                 max_delay_event = read_event

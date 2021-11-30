@@ -67,6 +67,7 @@ class SramProbe(object):
         self.current_probes = set()
 
         self.probe_labels = {"clk"}
+        self.saved_nodes = set()
 
     def probe_bit_cells(self, address, pin_name="q"):
         """Probe Q, QBAR of bitcell"""
@@ -760,11 +761,11 @@ class SramProbe(object):
     def extract_probes(self):
         if not OPTS.use_pex:
             # self.probe_labels.add("Xsram.Xbank0.*")
-            self.saved_nodes = set(self.probe_labels)
+            self.saved_nodes.update(self.probe_labels)
             return
         debug.info(1, "Extracting probes")
         net_mapping = {key: self.extract_from_pex(key) for key in self.probe_labels}
-        self.saved_nodes = set(net_mapping.values())
+        self.saved_nodes.update(set(net_mapping.values()))
 
         for key in self.voltage_probes:
             if key in self.external_probes:

@@ -7,9 +7,9 @@ import re
 
 import numpy as np
 
+from test_base import TestBase
 from bl_simulator import BlSimulator
 from sim_analyzer_test import SimAnalyzerTest, print_max_delay
-from test_base import TestBase
 
 
 class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
@@ -155,14 +155,8 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
         if self.serial:
             cin = get_msb_binary(self.voltage_probes["c_val"], blc_end)
         else:
-            # probes = self.voltage_probes["alu"]["cin"]
-            #
-            probes = {
-                "0": "Xsram.N_cin[0]_Xalu_Xmcc0_xi8_xi1_mm0_s",
-                "1": "Xsram.N_cin[1]_Xalu_Xmcc32_xi8_xi1_mm0_s"
-            }
+            probes = self.voltage_probes["cin"]
             cin = get_msb_binary(probes, blc_end)
-            print("TOOOOOODOOOOOOOOOOOOOOO Fix cin")
 
         compute_time = event[0]
         sum_end = blc_end + 200e-12  # check before end of cycle
@@ -173,7 +167,6 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
         actual_mask_bar = get_msb_binary(self.voltage_probes["bank_mask_bar"], sum_end)
 
         cout = get_msb_binary(self.voltage_probes["cout"], sum_end)
-        print("TODOOOOO cout")
 
         previous_data = self.analyzer.get_address_data(write_address, compute_time)
         actual_data = self.analyzer.get_address_data(write_address, write_end)

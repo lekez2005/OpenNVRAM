@@ -158,9 +158,9 @@ class BlProbe(SramProbe):
         self.probe_labels.update(self.nor_probes.values())
         for key in self.external_probes:
             if key in self.voltage_probes:
-                self.probe_labels.update(self.voltage_probes[key].values())
+                self.saved_nodes.update(self.voltage_probes[key].values())
 
-        for key in ["alu", "bank_mask_bar", "cin", "cout", "c_val"]:
+        for key in ["alu", "bank_mask_bar"]:
             if key not in self.voltage_probes:
                 continue
             for val in self.voltage_probes[key].values():

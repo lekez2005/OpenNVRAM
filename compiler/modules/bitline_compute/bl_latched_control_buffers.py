@@ -44,7 +44,7 @@ class LatchedControlBuffers(BlControlBuffersBase):
     def create_precharge_buffers(self):
         assert len(OPTS.precharge_buffers) % 2 == 0, "Number of precharge buffers should be even"
         self.precharge_buf = self.create_mod(LogicBuffer, buffer_stages=OPTS.precharge_buffers,
-                                             logic="pnand3")
+                                             logic="pnand2")
 
     def creates_sense_precharge_buf(self):
         assert len(OPTS.sense_precharge_buffers) % 2 == 0, \
@@ -55,11 +55,11 @@ class LatchedControlBuffers(BlControlBuffersBase):
     def create_schematic_connections(self):
         connections = [
             ("precharge_buf", self.precharge_buf,
-             ["read", "bank_sel", "clk", "precharge_en_bar", "precharge_en"]),
+             ["bank_sel", "clk", "precharge_en_bar", "precharge_en"]),
             ("precharge_bar_int", self.nand3,
              ["read", "bank_sel", "clk", "precharge_bar_int"]),
             ("sense_precharge_buf", self.sense_precharge_buf,
-             ["precharge_bar_int", "sense_precharge_bar", "sense_precharge_en"]),
+             ["precharge_bar_int", "sense_precharge_en", "sense_precharge_bar"]),
             ("clk_buf", self.clk_buf, ["bank_sel", "clk", "clk_bar", "clk_buf"]),
             ("clk_bar", self.inv, ["clk", "clk_bar_int"]),
             ("bank_sel_cbar", self.nand_x2, ["bank_sel", "clk_bar_int", "bank_sel_cbar"]),

@@ -10,6 +10,7 @@ If not, OpenRAM will continue as if nothing happened!
 
 import debug
 from globals import OPTS, get_tool
+import tech
 
 debug.info(2,"Initializing verify...")
 
@@ -19,9 +20,12 @@ if not OPTS.check_lvsdrc:
     OPTS.lvs_exe = None
     OPTS.pex_exe = None
 else:
-    OPTS.drc_exe = get_tool("DRC",["calibre","assura","magic"])
-    OPTS.lvs_exe = get_tool("LVS",["calibre","assura","netgen"])
-    OPTS.pex_exe = get_tool("PEX",["calibre","magic"])
+    OPTS.drc_exe = get_tool("DRC", ["calibre", "assura", "magic"],
+                            getattr(tech, "drc_name", None))
+    OPTS.lvs_exe = get_tool("LVS", ["calibre", "assura", "netgen"],
+                            getattr(tech, "lvs_name", None))
+    OPTS.pex_exe = get_tool("PEX", ["calibre", "magic"],
+                            getattr(tech, "drc_name", None))
     OPTS.grep_exe = get_tool("GREP", ["rg", "grep"])
 
 if OPTS.check_lvsdrc and OPTS.tech_name == "freepdk45":

@@ -135,22 +135,26 @@ def init_openram(config_file, is_unit_test=True, openram_temp=None):
     initialize_classes()
 
 
-def get_tool(tool_type, preferences):
+def get_tool(tool_type, preferences, default=None):
     """
     Find which tool we have from a list of preferences and return the
     one selected and its full path.
     """
-    debug.info(2,"Finding {} tool...".format(tool_type))
+    debug.info(2, "Finding {} tool...".format(tool_type))
+    default = default or preferences[0]
+    if default in preferences:
+        preferences.remove(default)
+    preferences.insert(0, default)
 
     for name in preferences:
         exe_name = find_exe(name)
         if exe_name != None:
-            debug.info(1, "Using {0}: {1}".format(tool_type,exe_name))
-            return(name,exe_name)
+            debug.info(1, "Using {0}: {1}".format(tool_type, exe_name))
+            return (name, exe_name)
         else:
-            debug.info(1, "Could not find {0}, trying next {1} tool.".format(name,tool_type))
+            debug.info(1, "Could not find {0}, trying next {1} tool.".format(name, tool_type))
     else:
-        return(None,"")
+        return (None, "")
 
 
 def setup_technology():

@@ -1,241 +1,363 @@
 """
-This is a DRC/LVS/PEX interface file for magic + netgen. 
-
-This assumes you have the SCMOS magic rules installed. Get these from:
-ftp://ftp.mosis.edu/pub/sondeen/magic/new/beta/current.tar.gz
-and install them in:
-cd /opt/local/lib/magic/sys
-tar zxvf current.tar.gz
-ln -s 2001a current
-
-1. magic can perform drc with the following:
-#!/bin/sh
-magic -dnull -noconsole << EOF
-tech load SCN3ME_SUBM.30
-#scalegrid 1 2
-gds rescale no
-gds polygon subcell true
-gds warning default
-gds read $1
-load $1
-writeall force
-drc count
-drc why
-quit -noprompt
-EOF
-
-2. magic can perform extraction with the following:
-#!/bin/sh
-rm -f $1.ext
-rm -f $1.spice
-magic -dnull -noconsole << EOF
-tech load SCN3ME_SUBM.30
-#scalegrid 1 2
-gds rescale no
-gds polygon subcell true
-gds warning default
-gds read $1
-extract
-ext2spice scale off
-ext2spice
-quit -noprompt
-EOF
-
-3. netgen can perform LVS with:
-#!/bin/sh
-netgen -noconsole <<EOF
-readnet spice $1.spice
-readnet spice $1.sp
-ignore class c
-equate class {$1.spice nfet} {$2.sp n}
-equate class {$1.spice pfet} {$2.sp p}
-permute default
-compare hierarchical $1.spice {$1.sp $1}
-run converge
-EOF
-
+This is a DRC/LVS/PEX interface file for magic + netgen.
 """
 
-
 import os
+import pathlib
 import re
+import shutil
+import subprocess
 
 import debug
 
+# for exporting from gds to mag
+magic_template = """
+drc off
+set VDD vdd
+set GND gnd
+set SUB gnd
+# gds polygon subcells yes
+gds warning default
+{gds_flatten}
+{gds_options}
+gds ordering true
+gds readonly true
+gds read "{gds_file}"
+puts "Finished reading gds {gds_file}"
+{load_command}
+cellname delete \\(UNNAMED\\)
+writeall force
+### additional commands
+{other_commands}
+### commands
+exit
+"""
 
-def write_magic_script(cell_name, gds_name, extract=False):
-    """ Write a magic script to perform DRC and optionally extraction. """
+# for running drc
+drc_template = """
+select top cell
+expand
+select top cell
+puts "Finish Expand and select"
+drc euclidean on
+drc check
+drc catchup
+drc count total
+drc count
+puts "Finished DRC"
+puts "###begin-descriptions"
+select top cell
+drc why
+"""
 
-    global OPTS
+# generating layout spice for netgen
+spice_gen_template = """
+load "{mag_file_}"
+select top cell
+{make_ports}
+{extract_unique}
+{extract_style}
+extract
+puts "Finished lvs layout extraction"
+ext2spice subcircuit top on
+ext2spice hierarchy on
+ext2spice scale off
+ext2spice format ngspice
+ext2spice cthresh infinite
+ext2spice rthresh infinite
+ext2spice renumber off
+ext2spice global off
+ext2spice {cell_name_}
+puts "Finished spice export"
+exit
+"""
 
-    run_file = OPTS.openram_temp + "run_drc.sh"
-    f = open(run_file, "w")
-    f.write("#!/bin/sh\n")
-    f.write("{} -dnull -noconsole << EOF\n".format(OPTS.drc_exe[1]))
-    f.write("tech load SCN3ME_SUBM.30\n")
-    #gf.write("scalegrid 1 8\n")
-    #f.write("gds rescale no\n")
-    f.write("gds polygon subcell true\n")
-    f.write("gds warning default\n")
-    f.write("gds read {}\n".format(gds_name))
-    f.write("load {}\n".format(cell_name))
-    f.write("writeall force\n")
-    f.write("drc check\n")
-    f.write("drc catchup\n")
-    f.write("drc count total\n")
-    f.write("drc count\n")
-    if extract:
-        f.write("extract all\n")
-        f.write("ext2spice hierarchy on\n")        
-        f.write("ext2spice scale off\n")
-        # Can choose hspice, ngspice, or spice3,
-        # but they all seem compatible enough.
-        #f.write("ext2spice format ngspice\n")
-        f.write("ext2spice\n")
-    f.write("quit -noprompt\n")
-    f.write("EOF\n")
-        
-    f.close()
-    os.system("chmod u+x {}".format(run_file))
+# netgen lvs script
+netgen_template = """
+#!/env sh
+{netgen_exe} -noconsole << EOF
+lvs {{{source_spice} {cell_name_} }} {{{layout_spice} {cell_name_}}} {setup_file} {report_file} -full -json
+quit
+EOF
+retcode=$?
+exit $retcode
+"""
 
-def write_netgen_script(cell_name, sp_name):
-    """ Write a netgen script to perform LVS. """
+# PEX extraction script
+pex_template = """
+load "{mag_file_}"
+select top cell
+expand
+{make_ports}
+extract all
+ext2sim labels on
+ext2sim
+extresist simplify off
+extresist all
+ext2spice lvs
+ext2spice hierarchy off
+ext2spice subcircuit on
+ext2spice format ngspice
+ext2spice renumber off
+ext2spice scale off
+ext2spice blackbox on
+ext2spice global off
+ext2spice cthresh 0
+ext2spice rthresh 0
+ext2spice extresist on
+ext2spice {cell_name_} -o {output_file}
+puts "Finished extraction export"
+exit
+"""
 
-    global OPTS
-    # This is a hack to prevent netgen from re-initializing the LVS
-    # commands. It will be unnecessary after Tim adds the nosetup option.
-    setup_file = OPTS.openram_temp + "setup.tcl"
-    f = open(setup_file, "w")
-    f.close()
 
-    run_file = OPTS.openram_temp + "run_lvs.sh"
-    f = open(run_file, "w")
-    f.write("#!/bin/sh\n")
-    f.write("{} -noconsole << EOF\n".format(OPTS.lvs_exe[1]))
-    f.write("readnet spice {0}.spice\n".format(cell_name))
-    f.write("readnet spice {0}\n".format(sp_name))
-    # Allow some flexibility in W size because magic will snap to a lambda grid
-    # This can also cause disconnects unfortunately!
-    # f.write("property {{{0}{1}.spice nfet}} tolerance {{w 0.1}}\n".format(OPTS.openram_temp,
-    #                                                                     cell_name))
-    # f.write("property {{{0}{1}.spice pfet}} tolerance {{w 0.1}}\n".format(OPTS.openram_temp,
-    #                                                                     cell_name))
-    f.write("lvs {0}.spice {{{1} {0}}} setup.tcl {0}.lvs.report\n".format(cell_name, sp_name))
-    f.write("quit\n")
-    f.write("EOF\n")
-    f.close()
-    os.system("chmod u+x {}".format(run_file))
+def get_run_script(op_name):
+    from globals import OPTS
+    work_dir = OPTS.openram_temp
+    return os.path.join(work_dir, f"setup_{op_name}.tcl")
 
-    setup_file = OPTS.openram_temp + "setup.tcl"
-    f = open(setup_file, "w")
-    f.write("ignore class c\n")
-    f.write("equate class {{nfet {0}.spice}} {{n {1}}}\n".format(cell_name, sp_name))
-    f.write("equate class {{pfet {0}.spice}} {{p {1}}}\n".format(cell_name, sp_name))
-    # This circuit has symmetries and needs to be flattened to resolve them or the banks won't pass
-    # Is there a more elegant way to add this when needed?
-    f.write("flatten class {{{0}.spice precharge_array}}\n".format(cell_name))
-    f.write("property {{nfet {0}.spice}} remove as ad ps pd\n".format(cell_name))
-    f.write("property {{pfet {0}.spice}} remove as ad ps pd\n".format(cell_name))
-    f.write("property {{n {0}}} remove as ad ps pd\n".format(sp_name))
-    f.write("property {{p {0}}} remove as ad ps pd\n".format(sp_name))
-    f.write("permute transistors\n")
-    f.write("permute pins n source drain\n")
-    f.write("permute pins p source drain\n")
-    f.close()
-    
-    
-def run_drc(cell_name, gds_name, extract=False):
+
+def generate_magic_script(gds, cell_name, flatten, op_name, template=None, **kwargs):
+    from globals import OPTS
+    template = template or magic_template
+    gds_file = os.path.abspath(gds)
+
+    work_dir = OPTS.openram_temp
+    pathlib.Path(work_dir).mkdir(parents=True, exist_ok=True)
+    magic_rc = os.environ.get("MAGIC_RC")
+
+    magic_rc_dest = os.path.join(work_dir, ".magicrc")
+    os.system(f"cp {magic_rc} {magic_rc_dest}")
+
+    kwargs["cell_name"] = cell_name
+    kwargs["gds_file"] = gds_file
+    kwargs["gds_flatten"] = "gds flatten true" * flatten
+    if cell_name:
+        load_command = f'load {cell_name} \nputs "Loaded cell {cell_name}"'
+    else:
+        load_command = ""
+    kwargs["load_command"] = load_command
+
+    kwargs.setdefault("other_commands", "")
+    kwargs.setdefault("gds_options", "")
+
+    setup_script = get_run_script(op_name)
+
+    with open(setup_script, "w") as f:
+        f.write(template.format(**kwargs))
+    return setup_script
+
+
+def get_refresh_command(cell_name):
+    if not cell_name or "MAGIC_WORK_DIR" not in os.environ:
+        return ""
+    full_mag_file = os.path.join(os.path.dirname(get_run_script("drc")), f"{cell_name}.mag")
+    ipc_file = os.path.join(os.environ.get("MAGIC_WORK_DIR"), "ipc_file.txt")
+    if os.path.exists(ipc_file):
+        with open(ipc_file, 'r') as f:
+            ipc = f.read().strip()
+        cmd = f"package require comm\n"
+        cmd += f"::comm::comm send {ipc} load \"{full_mag_file}\" -force\n"
+        if full_mag_file.endswith(".mag"):
+            reference_name = full_mag_file[:-4]
+        else:
+            reference_name = full_mag_file
+        cmd += f"::comm::comm send {ipc} cellname dereference {reference_name}"
+        return cmd
+    return ""
+
+
+def run_subprocess(script_file_name):
+    tmp_dir = os.path.dirname(script_file_name)
+    command = f"magic -dnull -noconsole {script_file_name}"
+    return subprocess.call(command.split(), cwd=tmp_dir)
+
+
+def export_gds_to_magic(gds_file, cell_name=None, flatten=False):
+    refresh_command = get_refresh_command(cell_name)
+    kwargs = {
+        "other_commands": refresh_command
+    }
+    script = generate_magic_script(gds_file, cell_name, flatten, "export", **kwargs)
+    return_code = run_subprocess(script)
+    return return_code, script
+
+
+def run_script(script_file_name, cell_name, op_name, command_template=None):
+    from globals import OPTS
+    err_file = os.path.join(OPTS.openram_temp, f"{cell_name}.{op_name}.err")
+    out_file = os.path.join(OPTS.openram_temp, f"{cell_name}.{op_name}.out")
+    from base import utils
+    if not command_template:
+        command_template = "magic -dnull -noconsole {script_file_name}"
+    command = command_template.format(script_file_name=script_file_name)
+    debug.info(2, command)
+    return_code = utils.run_command(command, stdout_file=out_file, stderror_file=err_file,
+                                    verbose_level=2, cwd=OPTS.openram_temp)
+    return return_code, out_file, err_file
+
+
+def check_process_errors(err_file, op_name, benign_errors=None):
+    if benign_errors is None:
+        benign_errors = []
+    benign_errors = [re.compile(x, re.IGNORECASE) for x in benign_errors]
+    with open(err_file, "r") as f:
+        errors = f.read()
+        if errors:
+            for line in errors.split("\n"):
+                if not line:
+                    continue
+                benign = False
+                for regex in benign_errors:
+                    if regex.search(line):
+                        benign = True
+                        break
+                if not benign:
+                    debug.error(f"{op_name} Errors: {errors}")
+
+
+def run_drc(cell_name, gds_name, exception_group=""):
     """Run DRC check on a cell which is implemented in gds_name."""
+    debug.info(1, f"Running DRC for cell {cell_name}")
+    refresh_command = get_refresh_command(cell_name)
+    kwargs = {"other_commands": drc_template + refresh_command}
+    script = generate_magic_script(gds_name, cell_name, True, "drc", **kwargs)
+    return_code, out_file, err_file = run_script(script, cell_name, "drc")
 
-    write_magic_script(cell_name, gds_name, extract)
-    
-    # run drc
-    cwd = os.getcwd()
-    os.chdir(OPTS.openram_temp)
-    errfile = os.path.join(OPTS.openram_temp, "{0}.drc.err".format(cell_name))
-    outfile = os.path.join(OPTS.openram_temp, "{0}.drc.summary".format(cell_name))
+    check_process_errors(err_file, "DRC")
 
-    cmd = "{0} 2> {1} 1> {2}".format(os.path.join(OPTS.openram_temp, "run_drc.sh"), errfile, outfile)
-    debug.info(2, cmd)
-    os.system(cmd)
-    os.chdir(cwd)
+    with open(out_file, "r") as f:
+        results = f.readlines()
 
-    # Check the result for these lines in the summary:
-    # Total DRC errors found: 0
-    # The count is shown in this format:
-    # Cell replica_cell_6t has 3 error tiles.
-    # Cell tri_gate_array has 8 error tiles.
-    # etc.
-    try:
-        f = open(outfile, "r")
-    except:
-        debug.error("Unable to retrieve DRC results file. Is magic set up?",1)
-    results = f.readlines()
-    f.close()
     # those lines should be the last 3
-    for line in results:
+    errors = 0
+    for line in reversed(results):
         if "Total DRC errors found:" in line:
             errors = int(re.split(": ", line)[1])
             break
 
-    # always display this summary
     if errors > 0:
+        # print error descriptions
+        split_output = "".join(results).split("###begin-descriptions")
+        if len(split_output) == 2 and split_output[1].strip():
+            print(split_output[1])
         for line in results:
             if "error tiles" in line:
-                debug.info(1,line.rstrip("\n"))
+                debug.info(1, line.rstrip("\n"))
         debug.error("DRC Errors {0}\t{1}".format(cell_name, errors))
     else:
-        debug.info(1, "DRC Errors {0}\t{1}".format(cell_name, errors))
+        debug.info(1, "No DRC Error")
 
     return errors
+
+
+def get_lvs_kwargs(cell_name, mag_file, source_spice, final_verification):
+    from globals import OPTS
+    if source_spice:
+        make_ports = f"readspice \"{source_spice}\""
+    else:
+        make_ports = "port makeall"
+    extract_unique = "extract unique all" * final_verification
+    extract_style = getattr(OPTS, "lvs_extract_style", "")
+    kwargs = {
+        "make_ports": make_ports,
+        "extract_unique": extract_unique,
+        "extract_style": extract_style,
+        "cell_name_": cell_name,
+        "mag_file_": mag_file
+    }
+    return kwargs
+
+
+def generate_lvs_spice(mag_file, source_spice, final_verification=False):
+    debug.info(1, f"Generating layout spice")
+    cell_name = os.path.basename(mag_file)[:-4]
+    kwargs = get_lvs_kwargs(cell_name, mag_file, source_spice, final_verification)
+    extract_script = generate_magic_script(mag_file, cell_name, flatten=False,
+                                           op_name="spice_gen",
+                                           template=spice_gen_template, **kwargs)
+    return_code, out_file, err_file = run_script(extract_script, cell_name, "spice_gen")
+    check_process_errors(err_file, "gen_spice")
+    debug.info(1, f"Generated layout spice")
+    return return_code, out_file, err_file
+
+
+def run_netgen(cell_name, layout_spice, source_spice):
+    """ Write a netgen script to perform LVS. """
+    debug.info(1, f"Running netgen for cell {cell_name}")
+    from globals import OPTS
+    work_dir = os.path.dirname(layout_spice)
+
+    netgen_rc = os.environ.get("NETGEN_RC", "")
+    if not os.path.exists(netgen_rc):
+        netgen_rc = "nosetup"
+
+    setup_script = os.path.join(work_dir, f"setup_lvs.sh")
+    report_file = os.path.join(work_dir, f"{cell_name}.lvs.report")
+
+    kwargs = {
+        "netgen_exe": OPTS.lvs_exe[1],
+        "setup_file": netgen_rc,
+        "source_spice": source_spice,
+        "layout_spice": layout_spice,
+        "cell_name_": cell_name,
+        "report_file": report_file
+    }
+
+    with open(setup_script, "w") as f:
+        f.write(netgen_template.format(**kwargs))
+    os.system("chmod +x {}".format(setup_script))
+
+    return_code, out_file, err_file = run_script(None, cell_name, "lvs",
+                                                 command_template=setup_script)
+
+    check_process_errors(err_file, "LVS")
+    return return_code, out_file, report_file
 
 
 def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
     """Run LVS check on a given top-level name which is
     implemented in gds_name and sp_name. Final verification will
     ensure that there are no remaining virtual conections. """
+    from globals import OPTS
 
-    run_drc(cell_name, gds_name, extract=True)
-    write_netgen_script(cell_name, sp_name)
-    
-    # run LVS
-    cwd = os.getcwd()
-    os.chdir(OPTS.openram_temp)
-    errfile = os.path.join(OPTS.openram_temp, "{0}.lvs.err".format(cell_name))
-    outfile = os.path.join(OPTS.openram_temp, "{0}.lvs.out".format(cell_name))
-    resultsfile = os.path.join(OPTS.openram_temp, "{0}.lvs.report".format(cell_name))
+    mag_file = os.path.join(OPTS.openram_temp, f"{cell_name}.mag")
+    if not os.path.exists(mag_file) or os.path.getmtime(mag_file) < os.path.getmtime(gds_name):
+        export_gds_to_magic(gds_name, cell_name)
 
-    cmd = "{0} lvs 2> {1} 1> {2}".format(os.path.join(OPTS.openram_temp, "run_lvs.sh"),
-                                                   errfile,
-                                                   outfile)
-    debug.info(2, cmd)
-    os.system(cmd)
-    os.chdir(cwd)
+    generate_lvs_spice(mag_file, sp_name, final_verification)
 
-    # check the result for these lines in the summary:
-    f = open(resultsfile, "r")
-    results = f.readlines()
-    f.close()
+    gen_layout_spice = os.path.join(OPTS.openram_temp, f"{cell_name}.spice")
+    # to prevent overwrites during pex
+    layout_spice = os.path.join(OPTS.openram_temp, f"{cell_name}.lvs.spice")
+    shutil.copy2(gen_layout_spice, layout_spice)
 
+    if os.path.getmtime(layout_spice) < os.path.getmtime(gds_name):
+        debug.error("Modification time of layout spice should be > than gds."
+                    " Error generating spice?")
+
+    return_code, out_file, report_file = run_netgen(cell_name, layout_spice, sp_name)
+    with open(report_file, "r") as f:
+        results = f.read()
 
     # Netlists do not match.
     test = re.compile("Netlists do not match.")
     incorrect = list(filter(test.search, results))
-    # There were property errors.
-    test = re.compile("Property errors were found.")
-    propertyerrors = list(filter(test.search, results))
+    total_errors = len(incorrect)
+    # Get property errors
+    split = results.split("There were property errors.")
+    if len(split) > 1:
+        property_errors = split[1].split("Subcircuit pins:")[0].strip()
+        num_prop_errors = property_errors.count("vs.")
+        debug.info(1, f"{num_prop_errors} Property errors\n%s", property_errors)
+        total_errors += num_prop_errors
+
     # Require pins to match?
     # Cell pin lists for pnand2_1.spice and pnand2_1 altered to match.
     # test = re.compile(".*altered to match.")
     # pinerrors = list(filter(test.search, results))
     # if len(pinerrors)>0:
     #     debug.warning("Pins altered to match in {}.".format(cell_name))
-    
-    total_errors = len(propertyerrors) + len(incorrect)
-    # If we want to ignore property errors
-    #total_errors = len(incorrect)
-    #if len(propertyerrors)>0:
-    #    debug.warning("Property errors found, but not checking them.")
 
     # Netlists match uniquely.
     test = re.compile("Netlists match uniquely.")
@@ -244,83 +366,46 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
     if correct == 0:
         total_errors += 1
 
-    if total_errors>0:
+    if total_errors > 0:
         # Just print out the whole file, it is short.
-        for e in results:
-            debug.info(1,e.strip("\n"))
-        debug.error("LVS mismatch (results in {})".format(resultsfile)) 
+        debug.info(1, results)
+        # debug.error("LVS mismatch (results in {})".format(report_file))
 
     return total_errors
 
 
-def run_pex(name, gds_name, sp_name, output=None):
+def run_pex(cell_name, gds_name, sp_name, output=None,
+            run_drc_lvs=True, correct_port_order=True):
     """Run pex on a given top-level name which is
        implemented in gds_name and sp_name. """
+    from globals import OPTS
+    work_dir = OPTS.openram_temp
 
-    debug.warning("PEX using magic not implemented.")
-    return 1
+    if output is None:
+        output = os.path.join(work_dir, f"{cell_name}.pex.spice")
 
-    from tech import drc
-    if output == None:
-        output = name + ".pex.netlist"
+    lvs_report = os.path.join(work_dir, f"{cell_name}.lvs.report")
 
-    # check if lvs report has been done
-    # if not run drc and lvs
-    if not os.path.isfile(name + ".lvs.report"):
-        run_drc(name, gds_name)
-        run_lvs(name, gds_name, sp_name)
+    mag_file = os.path.join(OPTS.openram_temp, f"{cell_name}.mag")
 
-    pex_rules = drc["xrc_rules"]
-    pex_runset = {
-        'pexRulesFile': pex_rules,
-        'pexRunDir': OPTS.openram_temp,
-        'pexLayoutPaths': gds_name,
-        'pexLayoutPrimary': name,
-        #'pexSourcePath' : OPTS.openram_temp+"extracted.sp",
-        'pexSourcePath': sp_name,
-        'pexSourcePrimary': name,
-        'pexReportFile': name + ".lvs.report",
-        'pexPexNetlistFile': output,
-        'pexPexReportFile': name + ".pex.report",
-        'pexMaskDBFile': name + ".maskdb",
-        'cmnFDIDEFLayoutPath': name + ".def",
-    }
+    if run_drc_lvs or not os.path.exists(mag_file) or not os.path.exists(lvs_report):
+        debug.info(1, "Forcing DRC + LVS runs before PEX")
+        run_drc(cell_name, gds_name)
+        run_lvs(cell_name, gds_name, sp_name)
 
-    # write the runset file
-    f = open(OPTS.openram_temp + "pex_runset", "w")
-    for k in sorted(pex_runset.iterkeys()):
-        f.write("*{0}: {1}\n".format(k, pex_runset[k]))
-    f.close()
-
-    # run pex
-    cwd = os.getcwd()
-    os.chdir(OPTS.openram_temp)
-    errfile = os.path.join(OPTS.openram_temp, "{0}.pex.err".format(name))
-    outfile = os.path.join("{0}.pex.out".format(name))
-
-    cmd = "{0} -gui -pex {1} -batch 2> {2} 1> {3}".format(OPTS.pex_exe,
-                                                                    os.path.join(OPTS.openram_temp, "pex_runset"),
-                                                                    errfile,
-                                                                    outfile)
-    debug.info(2, cmd)
-    os.system(cmd)
-    os.chdir(cwd)
-
-    # also check the output file
-    f = open(outfile, "r")
-    results = f.readlines()
-    f.close()
-
-    # Errors begin with "ERROR:"
-    test = re.compile("ERROR:")
-    stdouterrors = list(filter(test.search, results))
-    for e in stdouterrors:
-        debug.error(e.strip("\n"))
-
-    out_errors = len(stdouterrors)
-
-    assert(os.path.isfile(output))
-    #correct_port(name, output, sp_name)
-
-    return out_errors
-
+    debug.info(1, "Run PEX for {}".format(cell_name))
+    kwargs = get_lvs_kwargs(cell_name, mag_file, sp_name, final_verification=True)
+    kwargs["output_file"] = output
+    extract_script = generate_magic_script(mag_file, cell_name, flatten=False,
+                                           op_name="pex",
+                                           template=pex_template, **kwargs)
+    return_code, out_file, err_file = run_script(extract_script, cell_name, "pex")
+    benign_errors = ["smaller than extract section allows"]
+    check_process_errors(err_file, "pex", benign_errors=benign_errors)
+    debug.info(1, f"Generated pex spice {output}")
+    from verify.calibre import correct_port
+    # TODO confirm large number of pins
+    subckt_end_regex = re.compile(r"^[XRCM]+", re.MULTILINE)
+    correct_port(cell_name, output, sp_name, subckt_end_regex=subckt_end_regex)
+    # no need to correct_port_order since it's read from source file
+    return 0

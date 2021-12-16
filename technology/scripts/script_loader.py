@@ -13,7 +13,7 @@ def load_module(module_path, module_name):
 
 
 def latest_scratch():
-    scratch = os.path.join(os.environ["SCRATCH"], "openram")
+    scratch = os.path.join(os.environ.get("SCRATCH", "/tmp"), "openram")
     find_results = subprocess.Popen(["find", scratch, "-name", "*.gds",
                                      "-printf", '"%T+ %p\n"'], stdout=subprocess.PIPE)
     sort_results = subprocess.check_output(["sort"], stdin=find_results.stdout).decode()

@@ -399,7 +399,9 @@ def run_pex(cell_name, gds_name, sp_name, output=None, run_drc_lvs=True, correct
     return out_errors
 
 
-def correct_port(name, output_file_name, ref_file_name):
+def correct_port(name, output_file_name, ref_file_name, subckt_end_regex=None):
+    if subckt_end_regex is None:
+        subckt_end_regex = re.compile(r"\* \n")
     pex_file = open(output_file_name, "r")
     contents = pex_file.read()
     # locate the start of circuit definition line
@@ -408,7 +410,7 @@ def correct_port(name, output_file_name, ref_file_name):
     pex_file.seek(match_index_start)
     rest_text = pex_file.read()
     # locate the end of circuit definition line
-    match = re.search(r"\* \n", rest_text)
+    match = re.search(subckt_end_regex, rest_text)
     match_index_end = match.start()
     # store the unchanged part of pex file in memory
     pex_file.seek(0)

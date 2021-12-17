@@ -6,7 +6,6 @@ from importlib import reload
 import numpy as np
 
 import debug
-import verify
 from base import utils
 from base.utils import write_json
 from characterizer.net_probes.sram_probe import SramProbe
@@ -29,6 +28,7 @@ class SimDataMixin(SpiceCharacterizer):
     def run_drc_lvs_pex(self):
         """Run DRC, LVS, and PEX"""
         OPTS.check_lvsdrc = True
+        import verify
         reload(verify)
 
         self.sram.sp_write(OPTS.spice_file)

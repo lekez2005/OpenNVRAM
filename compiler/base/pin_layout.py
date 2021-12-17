@@ -8,6 +8,7 @@ try:
 except ImportError:
     layer_pin_map = {}
 from tech import purpose as techpurpose
+import tech
 
 class pin_layout:
     """
@@ -192,7 +193,7 @@ class pin_layout:
         """Writes the pin shape and label to GDS"""
         debug.info(4, "writing pin (" + str(self.layer) + "):" 
                    + str(self.width()) + "x" + str(self.height()) + " @ " + str(self.ll()))
-        purposeNumber = techpurpose.get(self.layer, 0)
+        purposeNumber = techpurpose.get(self.layer, techpurpose.get("drawing", 0))
         newLayout.addBox(layerNumber=layer[self.layer],
                          purposeNumber=purposeNumber,
                          offsetInMicrons=self.ll(),
@@ -203,9 +204,12 @@ class pin_layout:
             pin_layer = layer_pin_map[layer[self.layer]]
         else:
             pin_layer = layer[self.layer]
+
+        all_purpose = getattr(tech, "layer_pin_purpose", {})
+        purpose_number = all_purpose.get(self.layer, all_purpose.get("default", 0))
         newLayout.addText(text=self.name,
                           layerNumber=pin_layer,
-                          purposeNumber=0,
+                          purposeNumber=purpose_number,
                           offsetInMicrons=self.ll(),
                           magnification=GDS["zoom"],
                           rotate=None)

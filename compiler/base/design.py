@@ -3,7 +3,6 @@ import os
 from collections import Iterable
 
 import debug
-import verify
 from base import hierarchy_layout
 from base import hierarchy_spice
 from base import utils
@@ -511,6 +510,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
     def DRC_LVS(self, final_verification=False):
         """Checks both DRC and LVS for a module"""
+        import verify
         if OPTS.check_lvsdrc:
             tempspice = OPTS.openram_temp + "/temp.sp"
             tempgds = OPTS.openram_temp + "/temp.gds"
@@ -525,6 +525,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
     def DRC(self):
         """Checks DRC for a module"""
+        import verify
         if OPTS.check_lvsdrc:
             tempgds = OPTS.openram_temp + "/temp.gds"
             self.gds_write(tempgds)
@@ -534,6 +535,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
     def LVS(self, final_verification=False):
         """Checks LVS for a module"""
+        import verify
         if OPTS.check_lvsdrc:
             tempspice = OPTS.openram_temp + "/temp.sp"
             tempgds = OPTS.openram_temp + "/temp.gds"

@@ -673,4 +673,4 @@ class layout(lef.lef):
 def get_purpose(layer):
     if layer in techpurpose:
         return techpurpose[layer]
-    return 0
+    return techpurpose.get("drawing", 0)

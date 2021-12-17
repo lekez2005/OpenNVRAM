@@ -27,7 +27,7 @@ def calculate_tx_metal_fill(tx_width, design_mod: design, contact_if_none=False)
     design_mod acts as gateway to design class parameters
     """
     num_contacts = design_mod.calculate_num_contacts(tx_width)
-    test_contact = contact.contact(contact.well.layer_stack,
+    test_contact = contact.contact(contact.active.layer_stack,
                                    dimensions=[1, num_contacts])
     if test_contact.second_layer_height > design_mod.metal1_minwidth_fill:
         if contact_if_none:

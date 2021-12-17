@@ -20,6 +20,7 @@ PO_DUMMY = "po_dummy"
 NWELL = "nwell"
 PWELL = "pwell"
 ACTIVE = "active"
+TAP_ACTIVE = "tap_active"
 CONTACT = "contact"
 NIMP = "nimplant"
 PIMP = "pimplant"
@@ -278,8 +279,9 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         """
         Calculates the possible number of source/drain contacts in a finger.
         """
+        from base.contact import active
         from base.well_active_contacts import calculate_num_contacts as calc_func
-        return calc_func(self, tx_width, return_sample)
+        return calc_func(self, tx_width, return_sample, layer_stack=active.layer_stack)
 
     @staticmethod
     def get_min_area(layer, prefix=None):

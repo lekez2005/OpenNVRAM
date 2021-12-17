@@ -348,6 +348,17 @@ def standardize_tech_config():
             "drawing": 0
         }
 
+    # duplicate active drc as tap_active
+    existing_drc = list(drc.keys())
+    for key in existing_drc:
+        if "active" in key and "tap_active" not in key:
+            new_key = key.replace("active", "tap_active")
+            if new_key not in existing_drc:
+                drc[new_key] = drc[key]
+
+    if "tap_active" not in tech.layer:
+        tech.layer["tap_active"] = tech.layer["active"]
+
     if not hasattr(tech, "drc_exceptions"):
         tech.drc_exceptions = {}
 

@@ -220,7 +220,7 @@ class wordline_pgate_horizontal(pgate_horizontal):
 
         pin_names = ["gnd", "vdd"]
         actives = [self.nmos_active, self.pmos_active]
-        via_shift = 0.5 * (m2m3.height - contact.well.height)
+        via_shift = 0.5 * (m2m3.height - contact.active.height)
         for i in range(2):
             pin_name = pin_names[i]
 

@@ -5,17 +5,22 @@ from base.design import design, ACTIVE
 from tech import drc
 
 
-def calculate_num_contacts(design_obj: design, tx_width, return_sample=False):
+def calculate_num_contacts(design_obj: design, tx_width, return_sample=False,
+                           layer_stack=None):
     """
     Calculates the possible number of source/drain contacts in a finger.
     """
     from base import contact
     num_contacts = int(math.ceil(tx_width / (design_obj.contact_width + design_obj.contact_spacing)))
+    layer_stack = layer_stack or contact.well.layer_stack
+
+    def create_array():
+        return contact.contact(layer_stack=layer_stack,
+                               dimensions=[1, num_contacts],
+                               implant_type=None,
+                               well_type=None)
     while num_contacts > 1:
-        contact_array = contact.contact(layer_stack=("active", "contact", "metal1"),
-                                        dimensions=[1, num_contacts],
-                                        implant_type=None,
-                                        well_type=None)
+        contact_array = create_array()
         if (contact_array.first_layer_height < tx_width and
                 contact_array.second_layer_height < tx_width):
             if return_sample:
@@ -23,7 +28,7 @@ def calculate_num_contacts(design_obj: design, tx_width, return_sample=False):
             break
         num_contacts -= 1
     if num_contacts == 1 and return_sample:
-        return contact.well
+        return create_array()
     return num_contacts
 
 

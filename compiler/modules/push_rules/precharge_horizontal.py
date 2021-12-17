@@ -4,10 +4,8 @@ from base.contact import m1m2, m2m3
 from base.design import METAL1, PO_DUMMY, ACTIVE, POLY, PIMP, NIMP, NWELL, CONTACT, METAL2, METAL3
 from base.hierarchy_layout import GDS_ROT_270
 from base.vector import vector
-from base.well_active_contacts import get_max_contact
-from base.well_implant_fills import calculate_tx_metal_fill
+from base.well_active_contacts import get_max_contact, calculate_num_contacts
 from modules.precharge import precharge
-from modules.push_rules.push_bitcell_array import push_bitcell_array
 from tech import drc, layer as tech_layers
 
 
@@ -167,7 +165,9 @@ class precharge_horizontal(precharge):
                       width=self.m1_width)
 
     def add_nwell_contacts(self):
-        num_contacts = self.calculate_num_contacts(self.width - self.contact_spacing)
+        num_contacts = calculate_num_contacts(self, self.width - self.contact_spacing,
+                                              layer_stack=contact.well.layer_stack,
+                                              return_sample=False)
         active_rect = self.add_rect(ACTIVE, offset=vector(0, self.contact_active_y),
                                     width=self.width,
                                     height=self.contact_active_top - self.contact_active_y)

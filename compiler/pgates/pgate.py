@@ -4,8 +4,8 @@ import debug
 from base import contact
 from base import design
 from base import utils
-from base.contact import m1m2
-from base.design import METAL1, PO_DUMMY, PIMP, NIMP, NWELL, METAL2, POLY, PWELL
+from base.contact import m1m2, active as active_contact
+from base.design import METAL1, PO_DUMMY, PIMP, NIMP, NWELL, METAL2, POLY, PWELL, TAP_ACTIVE
 from base.utils import round_to_grid
 from base.vector import vector
 from base.well_active_contacts import calculate_contact_width
@@ -571,7 +571,7 @@ class pgate(pgates_characterization_base, design.design):
                 self.add_rect_center(implants[i], offset=vector(self.mid_x, y_offset),
                                      width=self.contact_implant_width,
                                      height=self.well_contact_implant_height)
-                self.add_rect_center("active", offset=vector(self.mid_x, y_offset),
+                self.add_rect_center(TAP_ACTIVE, offset=vector(self.mid_x, y_offset),
                                      width=self.well_contact_active_width,
                                      height=self.well_contact_active_height)
                 self.add_contact_center(self.body_contact.layer_stack, rotate=90,

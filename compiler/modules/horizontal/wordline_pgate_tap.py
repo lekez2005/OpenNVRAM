@@ -5,6 +5,7 @@ from base.design import design, NIMP, PIMP, ACTIVE, METAL1, NWELL, PWELL, METAL2
 from base.hierarchy_layout import GDS_ROT_270
 from base.unique_meta import Unique
 from base.vector import vector
+from base.well_active_contacts import calculate_num_contacts
 from globals import OPTS
 from modules.horizontal.wordline_pgate_horizontal import wordline_pgate_horizontal
 from tech import drc
@@ -70,7 +71,9 @@ class wordline_pgate_tap(design, metaclass=Unique):
         self.width = implant_width
         mid_x = 0.5 * self.width
 
-        num_contacts = self.calculate_num_contacts(max(active_width, active_height))
+        num_contacts = calculate_num_contacts(self, tx_width=max(active_width, active_height),
+                                              layer_stack=contact.well.layer_stack,
+                                              return_sample=False)
         # add contacts
         if active_width > active_height:
             rotate = 90

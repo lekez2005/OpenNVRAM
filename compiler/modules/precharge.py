@@ -159,7 +159,7 @@ class precharge(precharge_characterization, design.design):
 
         self.ptx_active_width = self.active_width  # for actual active
         if self.width - self.active_width < active_space:
-            self.active_width = self.width + 2 * 0.5 * contact.well.first_layer_width
+            self.active_width = self.width + 2 * 0.5 * contact.active.first_layer_width
 
         self.active_bot_y = self.bottom_space
         self.active_mid_y = self.active_bot_y + 0.5 * self.ptx_width
@@ -337,7 +337,7 @@ class precharge(precharge_characterization, design.design):
 
         self.active_contact = None
 
-        extension = 0.5 * contact.well.first_layer_width
+        extension = 0.5 * contact.active.first_layer_width
         mid_to_contact = 0.5 * self.poly_pitch
 
         x_offsets = [self.active_rect.lx() + extension,

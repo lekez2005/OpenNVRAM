@@ -404,7 +404,7 @@ class pgate_horizontal(pgates_characterization_base, design):
             for j in all_indices:
                 y_offset = active_rect.by() + self.active_enclosure_contact + j * self.poly_pitch
                 x_offset = active_rect.lx() + 0.5 * active_rect.width
-                self.add_contact_center(contact.well.layer_stack,
+                self.add_contact_center(contact.active.layer_stack,
                                         offset=vector(x_offset,
                                                       y_offset + 0.5 * self.contact_width),
                                         size=(1, num_contacts), rotate=90)
@@ -493,7 +493,7 @@ class pgate_horizontal(pgates_characterization_base, design):
 
         for i in range(2):
             # connect to rail
-            dummy_contact = contact.contact(contact.well.layer_stack, dimensions=[1, 1])
+            dummy_contact = contact.contact(contact.active.layer_stack, dimensions=[1, 1])
 
             pin = self.get_pin(destination_pins[i])
             is_nmos = i == 0

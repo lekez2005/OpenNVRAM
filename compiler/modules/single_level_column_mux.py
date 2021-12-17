@@ -57,7 +57,7 @@ class single_level_column_mux(design.design):
     def determine_tx_mults(self):
         # Need M2 bitlines on both sides of transistors
         m2_space = self.get_parallel_space(METAL2)
-        m1_m2_extension = 0.5 * (contact.m1m2.second_layer_width - contact.well.second_layer_width)
+        m1_m2_extension = 0.5 * (contact.m1m2.second_layer_width - contact.active.second_layer_width)
         total_side_space = 2 * (0.5 * m2_space + self.m2_width + m2_space + m1_m2_extension)
         available_active_width = self.bitcell.width - total_side_space
         tx_mults = 1

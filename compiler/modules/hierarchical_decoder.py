@@ -455,7 +455,7 @@ class hierarchical_decoder(design.design):
     def add_body_contacts(self):
         """Add contacts to the left of the nand gates"""
 
-        active_height = contact.active.first_layer_width
+        active_height = contact.well.first_layer_width
         min_active_area = drc.get("minarea_cont_active_thin", self.get_min_area(ACTIVE))
         active_width = utils.ceil(min_active_area / active_height) or self.active_width
         implant_enclosure = self.implant_enclose_active

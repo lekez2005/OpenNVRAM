@@ -1,7 +1,8 @@
 import debug
 from base import design, utils
-from base.contact import contact, m1m2, poly as poly_contact
+from base.contact import contact, m1m2, poly as poly_contact, well as well_contact
 from base.vector import vector
+from base.well_active_contacts import calculate_num_contacts
 from globals import OPTS
 from modules import body_tap as mod_body_tap
 from pgates.ptx_spice import ptx_spice
@@ -358,7 +359,9 @@ class SfBitlineBufferTap(design.design):
         self.add_rect_center("nimplant", offset=vector(0.5 * self.width, vdd_pin.cy()), width=implant_width,
                              height=implant_height)
 
-        num_contacts = self.calculate_num_contacts(active_height)
+        num_contacts = calculate_num_contacts(self, active_height,
+                                              layer_stack=well_contact.layer_stack,
+                                              return_sample=False)
         self.add_contact_center(contact.active_layers, offset=vector(0.5 * self.width, vdd_pin.cy()),
                                 size=[1, num_contacts])
         # psub contact

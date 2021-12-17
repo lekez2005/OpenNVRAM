@@ -1,6 +1,6 @@
 import debug
 from base import unique_meta, contact
-from base.design import design, METAL1, PIMP, NIMP, PWELL, NWELL, ACTIVE
+from base.design import design, METAL1, PIMP, NIMP, PWELL, NWELL, TAP_ACTIVE, ACTIVE
 from base.vector import vector
 from base.well_active_contacts import calculate_num_contacts
 from pgates.pgate import pgate
@@ -24,8 +24,8 @@ class pgate_tap(design, metaclass=unique_meta.Unique):
         self.setup_layout_constants()
         self.add_implants_and_actives()
         self.add_contacts()
-        self.add_power_pins()
         self.add_boundary()
+        self.add_power_pins()
         self.add_wells()
         add_tech_layers(self)
 
@@ -74,10 +74,10 @@ class pgate_tap(design, metaclass=unique_meta.Unique):
 
             # add active
             active_height = active_top - active_bottom
-            _, active_width = self.calculate_min_area_fill(active_height, layer=ACTIVE)
-            active_width = max(self.active_width, active_width,
+            _, active_width = self.calculate_min_area_fill(active_height, layer=TAP_ACTIVE)
+            active_width = max(self.active_width, active_width, contact.well.first_layer_width,
                                self.implant_width - 2 * active_enclosure)
-            active_rect = self.add_rect(ACTIVE, offset=vector(active_x, active_bottom),
+            active_rect = self.add_rect(TAP_ACTIVE, offset=vector(active_x, active_bottom),
                                         width=active_width, height=active_height)
 
             # add implant
@@ -90,9 +90,11 @@ class pgate_tap(design, metaclass=unique_meta.Unique):
 
     def add_contacts(self):
         """Add M1->Active contacts"""
-        for active_rect in self.get_layer_shapes(ACTIVE):
+        for active_rect in self.get_layer_shapes(TAP_ACTIVE):
             # add contact
-            sample_contact = calculate_num_contacts(self, active_rect.height - self.contact_spacing,
+            contact_height = active_rect.height - self.contact_spacing
+            sample_contact = calculate_num_contacts(self, contact_height,
+                                                    layer_stack=contact.well.layer_stack,
                                                     return_sample=True)
             self.add_contact_center(sample_contact.layer_stack, offset=vector(active_rect.cx(),
                                                                               active_rect.cy()),
@@ -105,7 +107,7 @@ class pgate_tap(design, metaclass=unique_meta.Unique):
 
     def add_wells(self):
         """Add NWELL and PWELL"""
-        active_rects = list(sorted(self.get_layer_shapes(ACTIVE), key=lambda x: x.by()))
+        active_rects = list(sorted(self.get_layer_shapes(TAP_ACTIVE), key=lambda x: x.by()))
         implant_rects = self.get_layer_shapes(PIMP) + self.get_layer_shapes(NIMP)
         debug.check(len(implant_rects) == 2, "Well dimensions calculation assumes only one nimp/pimp")
 
@@ -145,15 +147,16 @@ class pgate_tap(design, metaclass=unique_meta.Unique):
 
     def add_boundary(self):
         """Calculate width and add boundary layer"""
-        active_rect = max(self.get_layer_shapes(ACTIVE), key=lambda x: x.rx())
+        active_rect = max(self.get_layer_shapes(TAP_ACTIVE), key=lambda x: x.rx())
         implant_rect = max(self.get_layer_shapes(NIMP) + self.get_layer_shapes(PIMP),
                            key=lambda x: x.rx())
 
-        pgate_active = min(self.get_layer_shapes(ACTIVE), key=lambda x: x.lx())
+        pgate_active = min(self.get_layer_shapes(TAP_ACTIVE), key=lambda x: x.lx())
         pgate_implant = max(self.pgate_mod.get_layer_shapes(NIMP),
                             key=lambda x: x.width * x.height)
 
-        active_space = self.get_space_by_width_and_length(ACTIVE, max_width=active_rect.height)
+        active_space = self.get_space_by_width_and_length(TAP_ACTIVE,
+                                                          max_width=active_rect.height)
         active_space = max(drc.get("active_to_body_active", active_space), active_space)
 
         self.width = max(active_rect.rx() + active_space - pgate_active.lx(),

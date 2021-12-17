@@ -1,11 +1,10 @@
 import debug
 from base import contact, utils
 from base import unique_meta
-from base.design import METAL1
+from base.design import METAL1, POLY
 from base.vector import vector
 from tech import parameter, spice, add_tech_layers
 from . import pgate
-from .ptx_spice import ptx_spice
 
 
 class pinv(pgate.pgate, metaclass=unique_meta.Unique):
@@ -25,7 +24,7 @@ class pinv(pgate.pgate, metaclass=unique_meta.Unique):
     num_tracks = 1
 
     def __init__(self, size=1, beta=None, height=None,
-                 contact_pwell=True, contact_nwell=True, align_bitcell=False, same_line_inputs=False):
+                 contact_pwell=True, contact_nwell=True, align_bitcell=False, same_line_inputs=True):
         # We need to keep unique names because outputting to GDSII
         # will use the last record with a given name. I.e., you will
         # over-write a design in GDS if one has and the other doesn't
@@ -42,7 +41,7 @@ class pinv(pgate.pgate, metaclass=unique_meta.Unique):
 
         # for run-time, we won't check every transitor DRC/LVS independently
         # but this may be uncommented for debug purposes
-        #self.DRC_LVS()
+        # self.DRC_LVS()
 
     def add_pins(self):
         """ Adds pins for spice netlist """
@@ -107,6 +106,15 @@ class pinv(pgate.pgate, metaclass=unique_meta.Unique):
             pin_right = max_poly + 0.5 * contact_width
             offset = vector(0.5 * (pin_left + pin_right), self.mid_y)
             self.add_layout_pin_center_rect("A", METAL1, offset, width=pin_right - pin_left)
+            # join space between poly
+            poly_width = self.ptx_poly_width
+            poly_cont_width = contact.poly.first_layer_width
+            if poly_cont_width > poly_width:  # horizontal poly allowed
+                actual_poly_space = self.ptx_poly_space - (poly_cont_width - poly_width)
+                if actual_poly_space < self.poly_space:
+                    self.add_rect(POLY,
+                                  vector(min_poly, self.mid_y - 0.5 * contact.poly.first_layer_height),
+                                  width=max_poly - min_poly, height=contact.poly.first_layer_height)
 
     def get_ptx_connections(self):
         return [
@@ -114,20 +122,19 @@ class pinv(pgate.pgate, metaclass=unique_meta.Unique):
             (self.nmos, ["Z", "A", "gnd", "gnd"])
         ]
 
-
     def input_load(self):
-        return ((self.nmos_size+self.pmos_size)/parameter["min_tx_size"])*spice["min_tx_gate_c"]
+        return ((self.nmos_size + self.pmos_size) / parameter["min_tx_size"]) * spice["min_tx_gate_c"]
 
     def analytical_delay(self, slew, load=0.0):
-        r = spice["min_tx_r"]/(self.nmos_size/parameter["min_tx_size"])
-        c_para = spice["min_tx_drain_c"]*(self.nmos_size/parameter["min_tx_size"])#ff
-        return self.cal_delay_with_rc(r = r, c =  c_para+load, slew = slew)
+        r = spice["min_tx_r"] / (self.nmos_size / parameter["min_tx_size"])
+        c_para = spice["min_tx_drain_c"] * (self.nmos_size / parameter["min_tx_size"])  # ff
+        return self.cal_delay_with_rc(r=r, c=c_para + load, slew=slew)
 
     def analytical_power(self, proc, vdd, temp, load):
         """Returns dynamic and leakage power. Results in nW"""
         c_eff = self.calculate_effective_capacitance(load)
         freq = spice["default_event_rate"]
-        power_dyn = c_eff*vdd*vdd*freq
+        power_dyn = c_eff * vdd * vdd * freq
         power_leak = spice["inv_leakage"]
 
         total_power = self.return_power(power_dyn, power_leak)
@@ -136,6 +143,6 @@ class pinv(pgate.pgate, metaclass=unique_meta.Unique):
     def calculate_effective_capacitance(self, load):
         """Computes effective capacitance. Results in fF"""
         c_load = load
-        c_para = spice["min_tx_drain_c"]*(self.nmos_size/parameter["min_tx_size"])#ff
+        c_para = spice["min_tx_drain_c"] * (self.nmos_size / parameter["min_tx_size"])  # ff
         transistion_prob = spice["inv_transisition_prob"]
-        return transistion_prob*(c_load + c_para)
+        return transistion_prob * (c_load + c_para)

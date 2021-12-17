@@ -1,4 +1,5 @@
 import math
+from types import SimpleNamespace
 
 import debug
 from base import contact
@@ -90,6 +91,11 @@ class pgate(pgates_characterization_base, design.design):
             height_suffix = ""
         return height, height_suffix
 
+    def setup_drc_constants(self):
+        super().setup_drc_constants()
+        pitch_res = self.calculate_poly_pitch()
+        self.ptx_poly_space, self.ptx_poly_width, self.ptx_poly_pitch = pitch_res
+
     def shrink_if_needed(self):
         # TODO tune this based on bitcell height. Reduce factors if bitcell too short
         _nmos_scale = self.nmos_scale
@@ -130,7 +136,6 @@ class pgate(pgates_characterization_base, design.design):
             self.get_vertical_space(nmos_width)
 
         # top and bottom space based on poly
-        self.active_to_poly_contact = drc["poly_contact_to_active"]
         poly_poly_allowance = self.poly_extend_active + 0.5 * (self.poly_vert_space or self.poly_space)
         self.top_space = max(self.top_space, poly_poly_allowance)
         self.bottom_space = max(self.bottom_space, poly_poly_allowance)
@@ -144,11 +149,15 @@ class pgate(pgates_characterization_base, design.design):
         poly_to_active = max(drc.get("poly_dummy_to_vert_active", self.poly_to_active), self.poly_to_active)
         active_contact_space = self.poly_extend_active + poly_to_active + 0.5 * self.well_contact_active_height
         implant_active_space = self.implant_enclose_ptx_active + 0.5 * self.well_contact_implant_height
+        # estimate based on space from fet active to tap active
+        active_active_space = self.get_space("active") + 0.5 * self.well_contact_active_height
 
         if self.contact_nwell:
-            self.top_space = max(self.top_space, active_contact_space, implant_active_space)
+            self.top_space = max(self.top_space, active_contact_space, implant_active_space,
+                                 active_active_space)
         if self.contact_pwell:
-            self.bottom_space = max(self.bottom_space, active_contact_space, implant_active_space)
+            self.bottom_space = max(self.bottom_space, active_contact_space, implant_active_space,
+                                    active_active_space)
 
         # middle space
         # first calculate height of tracks (all poly contacts)
@@ -157,7 +166,7 @@ class pgate(pgates_characterization_base, design.design):
         if self.same_line_inputs:
             self.gate_rail_pitch = (0.5 * contact.m1m2.second_layer_height +
                                     line_space + 0.5 * self.m2_width)
-            max_fill_width = 2 * self.poly_pitch - 2 * self.m1_space - contact.poly.second_layer_width
+            max_fill_width = 2 * self.ptx_poly_pitch - 2 * self.m1_space - contact.poly.second_layer_width
             _, fill_height = self.calculate_min_area_fill(max_fill_width, layer=METAL1)
             if fill_height == 0:
                 fill_width = max(contact.poly.second_layer_width, contact.m1m2.first_layer_width)
@@ -182,13 +191,18 @@ class pgate(pgates_characterization_base, design.design):
         self.mid_track_extent = track_extent
 
         # mid space assuming overlap with active
-        poly_contact_base = (self.active_to_poly_contact + 0.5 * self.contact_width -
+        active_to_poly_contact = drc.get("poly_contact_to_n_active", drc["poly_contact_to_active"])
+        poly_contact_base = (active_to_poly_contact + 0.5 * self.contact_width -
                              0.5 * contact.poly.second_layer_height)
         self.track_bot_space = max(poly_contact_base,
                                    (0.5 * self.nmos_fill_height - 0.5 * nmos_width +
                                     self.line_end_space))
         self.track_bot_space = utils.ceil(self.track_bot_space)
-        self.track_top_space = max(poly_contact_base,
+
+        active_to_poly_contact = drc.get("poly_contact_to_p_active", drc["poly_contact_to_active"])
+        p_poly_contact_base = (active_to_poly_contact + 0.5 * self.contact_width -
+                               0.5 * contact.poly.second_layer_height)
+        self.track_top_space = max(p_poly_contact_base,
                                    (0.5 * self.pmos_fill_height - 0.5 * pmos_width +
                                     self.line_end_space))
         self.track_top_space = utils.ceil(self.track_top_space)
@@ -265,8 +279,8 @@ class pgate(pgates_characterization_base, design.design):
 
     def get_output_x(self):
         active_right = self.active_mid_x + 0.5 * self.active_width
-        right_most_contact_mid = (active_right - self.end_to_poly + 0.5 * self.poly_pitch -
-                                  0.5 * self.poly_width)
+        right_most_contact_mid = (active_right - self.end_to_poly + 0.5 * self.ptx_poly_pitch -
+                                  0.5 * self.ptx_poly_width)
 
         fill_width = max(self.nmos_fill_width, self.pmos_fill_width)
         fill_right = right_most_contact_mid + 0.5 * fill_width
@@ -276,8 +290,7 @@ class pgate(pgates_characterization_base, design.design):
 
     def setup_layout_constants(self):
 
-        self.contact_pitch = 2 * self.contact_to_gate + self.contact_width + self.poly_width
-        self.contact_space = self.contact_pitch - self.contact_width
+        self.contact_pitch = self.ptx_poly_pitch
 
         self.get_total_vertical_space(self.nmos_width, self.pmos_width)
 
@@ -294,16 +307,19 @@ class pgate(pgates_characterization_base, design.design):
         self.active_mid_y_pmos = self.height - actual_top_space - 0.5 * self.pmos_width
         self.active_mid_y_nmos = actual_bottom_space + 0.5 * self.nmos_width
 
-        self.mid_y = (self.active_mid_y_nmos + 0.5 * self.nmos_width + self.track_bot_space +
-                      + 0.5 * self.mid_track_extent)
+        nmos_active_top = self.active_mid_y_nmos + 0.5 * self.nmos_width
+        self.mid_y = nmos_active_top + self.track_bot_space + 0.5 * self.mid_track_extent
         self.mid_y = utils.round_to_grid(self.mid_y)
+
+        nwell_active_space = drc.get("nwell_to_active_space", 0)
+        self.nwell_y = max(self.mid_y, nmos_active_top + nwell_active_space)
 
         self.active_enclose_contact = max(drc["active_enclosure_contact"],
                                           (self.active_width - self.contact_width) / 2)
-        self.poly_pitch = self.poly_width + self.poly_space
+
         self.end_to_poly = self.active_enclose_contact + self.contact_width + self.contact_to_gate
 
-        self.active_width = 2 * self.end_to_poly + self.tx_mults * self.poly_pitch - self.poly_space
+        self.active_width = 2 * self.end_to_poly + self.tx_mults * self.ptx_poly_pitch - self.ptx_poly_space
 
         # recalculate middle space
         self.middle_space = non_active_height - (actual_top_space + actual_bottom_space)
@@ -311,20 +327,20 @@ class pgate(pgates_characterization_base, design.design):
         if PO_DUMMY in tech_layers:
             self.num_dummy_poly = 2 * self.num_poly_dummies
             self.total_poly = self.tx_mults + self.num_dummy_poly
-            poly_extent = self.total_poly * self.poly_pitch - self.poly_space
-            self.width = poly_extent - self.poly_width
+            poly_extent = self.total_poly * self.ptx_poly_pitch - self.ptx_poly_space
+            self.width = poly_extent - self.ptx_poly_width
             self.active_mid_x = 0.5 * self.width
             self.poly_x_start = 0.0
         else:
             self.num_dummy_poly = 0
             self.total_poly = self.tx_mults + self.num_dummy_poly
-            self.active_mid_x = self.active_width / 2
+            self.active_mid_x = self.active_width / 2 + self.implant_enclose_ptx_active
 
             output_x = self.get_output_x()
             self.width = output_x + self.m1_width + self.get_parallel_space(METAL1)
 
             self.poly_x_start = (self.active_mid_x - 0.5 * self.active_width +
-                                 self.end_to_poly + 0.5 * self.poly_width)
+                                 self.end_to_poly + 0.5 * self.ptx_poly_width)
 
         self.implant_width = max(self.width, self.active_width + 2 * self.implant_enclose_ptx_active)
         self.mid_x = self.width / 2
@@ -334,10 +350,10 @@ class pgate(pgates_characterization_base, design.design):
 
         self.calculate_body_contacts()
 
-        self.nimplant_height = self.mid_y - 0.5 * self.well_contact_implant_height
-        self.pimplant_height = self.height - 0.5 * self.well_contact_implant_height - self.mid_y
+        self.nimplant_height = self.nwell_y - 0.5 * self.well_contact_implant_height
+        self.pimplant_height = self.height - 0.5 * self.well_contact_implant_height - self.nwell_y
 
-        self.nwell_height = (self.height - self.mid_y + 0.5 * self.well_contact_active_height +
+        self.nwell_height = (self.height - self.nwell_y + 0.5 * self.well_contact_active_height +
                              self.well_enclose_active)
         self.nwell_width = max(self.implant_width, self.active_width + 2 * self.well_enclose_ptx_active,
                                self.nwell_width)
@@ -347,7 +363,17 @@ class pgate(pgates_characterization_base, design.design):
 
         self.pmos_contacts = self.calculate_num_contacts(self.pmos_width)
         self.nmos_contacts = self.calculate_num_contacts(self.nmos_width)
-        self.active_contact_layers = contact.well.layer_stack
+        self.active_contact_layers = active_contact.layer_stack
+
+    def calculate_poly_pitch(self):
+        poly_cont = contact.poly
+        if self.num_tracks > 1:
+            poly_width = max(self.poly_width, poly_cont.first_layer_width)
+        else:
+            poly_width = self.poly_width
+        pitch = poly_width + self.poly_space
+        pitch = max(pitch, self.contact_width + 2 * self.contact_to_gate + self.poly_width)
+        return pitch - self.poly_width, self.poly_width, pitch
 
     def calculate_body_contacts(self):
 
@@ -378,12 +404,12 @@ class pgate(pgates_characterization_base, design.design):
         self.poly_rects = []
 
         for i in range(len(poly_layers)):
-            mid_offset = vector(self.poly_x_start + i * self.poly_pitch,
+            mid_offset = vector(self.poly_x_start + i * self.ptx_poly_pitch,
                                 poly_y_offset + 0.5 * self.poly_height)
             poly_offsets.append(mid_offset)
-            offset = mid_offset - vector(0.5 * self.poly_width,
+            offset = mid_offset - vector(0.5 * self.ptx_poly_width,
                                          0.5 * self.poly_height)
-            rect = self.add_rect(poly_layers[i], offset=offset, width=self.poly_width,
+            rect = self.add_rect(poly_layers[i], offset=offset, width=self.ptx_poly_width,
                                  height=self.poly_height)
             if poly_layers[i] == POLY:
                 self.poly_rects.append(rect)
@@ -403,12 +429,12 @@ class pgate(pgates_characterization_base, design.design):
         self.p_active_rect, self.n_active_rect = active_rects
 
     def calculate_source_drain_pos(self):
-        contact_x_start = (self.active_mid_x - 0.5 * self.active_width +
-                           self.active_enclose_contact + 0.5 * self.contact_width)
+        poly_mid_to_cont_mid = 0.5 * self.ptx_poly_width + self.contact_to_gate + 0.5 * contact.active.contact_width
+        contact_x_start = self.poly_offsets[0].x - poly_mid_to_cont_mid
         self.source_positions = [contact_x_start]
         self.drain_positions = []
         for i in range(self.tx_mults):
-            x_offset = contact_x_start + (i + 1) * self.contact_pitch
+            x_offset = self.poly_offsets[i].x + poly_mid_to_cont_mid
             if i % 2 == 0:
                 self.drain_positions.append(x_offset)
             else:
@@ -519,7 +545,7 @@ class pgate(pgates_characterization_base, design.design):
             if self.implant_enclose_poly:
                 nimplant_y = min(nimplant_y, poly_y_offset - self.implant_enclose_poly)
             nimplant_y = min(0, nimplant_y)
-        self.nimplant_height = self.mid_y - nimplant_y
+        self.nimplant_height = self.nwell_y - nimplant_y
 
         # pimplant
         pimplant_top = max(self.p_active_rect.uy() + self.implant_to_channel,
@@ -529,23 +555,23 @@ class pgate(pgates_characterization_base, design.design):
                 pimplant_top = max(pimplant_top, poly_y_offset + self.poly_height +
                                    self.implant_enclose_poly)
             pimplant_top = max(pimplant_top, self.height)
-        self.pimplant_height = pimplant_top - self.mid_y
+        self.pimplant_height = pimplant_top - self.nwell_y
 
         implant_x = 0.5 * (self.width - self.implant_width)
         self.add_rect(NIMP, offset=vector(implant_x, nimplant_y),
                       width=self.implant_width, height=self.nimplant_height)
-        self.add_rect(PIMP, offset=vector(implant_x, self.mid_y), width=self.implant_width,
+        self.add_rect(PIMP, offset=vector(implant_x, self.nwell_y), width=self.implant_width,
                       height=self.pimplant_height)
         # nwell
         nwell_x = self.mid_x - 0.5 * self.nwell_width
-        self.add_rect(NWELL, offset=vector(nwell_x, self.mid_y), width=self.nwell_width,
+        self.add_rect(NWELL, offset=vector(nwell_x, self.nwell_y), width=self.nwell_width,
                       height=self.nwell_height)
         # pwell
         if info["has_pwell"]:
             well_y = - (0.5 * self.rail_height + self.well_enclose_active)
             self.add_rect(layer="pwell", offset=vector(nwell_x, well_y),
                           width=self.nwell_width,
-                          height=self.mid_y - well_y)
+                          height=self.nwell_y - well_y)
 
     def add_body_contacts(self):
 

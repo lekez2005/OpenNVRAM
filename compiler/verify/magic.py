@@ -39,11 +39,11 @@ select top cell
 expand
 select top cell
 puts "Finish Expand and select"
+drc style drc(full)
 drc euclidean on
 drc check
 drc catchup
 drc count total
-drc count
 puts "Finished DRC"
 puts "###begin-descriptions"
 select top cell
@@ -148,21 +148,24 @@ def generate_magic_script(gds, cell_name, flatten, op_name, template=None, **kwa
     return setup_script
 
 
+def get_force_reload_commands(cell_name):
+    full_mag_file = os.path.join(os.path.dirname(get_run_script("drc")), f"{cell_name}.mag")
+    reference_name = full_mag_file[:-4]
+    commands = [f"load \"{full_mag_file}\" -force",
+                f"cellname dereference {reference_name}"]
+    return commands
+
+
 def get_refresh_command(cell_name):
     if not cell_name or "MAGIC_WORK_DIR" not in os.environ:
         return ""
-    full_mag_file = os.path.join(os.path.dirname(get_run_script("drc")), f"{cell_name}.mag")
     ipc_file = os.path.join(os.environ.get("MAGIC_WORK_DIR"), "ipc_file.txt")
     if os.path.exists(ipc_file):
         with open(ipc_file, 'r') as f:
             ipc = f.read().strip()
         cmd = f"package require comm\n"
-        cmd += f"::comm::comm send {ipc} load \"{full_mag_file}\" -force\n"
-        if full_mag_file.endswith(".mag"):
-            reference_name = full_mag_file[:-4]
-        else:
-            reference_name = full_mag_file
-        cmd += f"::comm::comm send {ipc} cellname dereference {reference_name}"
+        for command in get_force_reload_commands(cell_name):
+            cmd += f"::comm::comm send {ipc} {command}\n"
         return cmd
     return ""
 
@@ -218,6 +221,7 @@ def check_process_errors(err_file, op_name, benign_errors=None):
 
 def run_drc(cell_name, gds_name, exception_group=""):
     """Run DRC check on a cell which is implemented in gds_name."""
+    from tech import drc_exceptions
     debug.info(1, f"Running DRC for cell {cell_name}")
     refresh_command = get_refresh_command(cell_name)
     kwargs = {"other_commands": drc_template + refresh_command}
@@ -233,22 +237,36 @@ def run_drc(cell_name, gds_name, exception_group=""):
     errors = 0
     for line in reversed(results):
         if "Total DRC errors found:" in line:
-            errors = int(re.split(": ", line)[1])
-            break
+            errors += int(re.split(": ", line)[1])
 
+    valid_drc_errors = []
     if errors > 0:
         # print error descriptions
         split_output = "".join(results).split("###begin-descriptions")
+
         if len(split_output) == 2 and split_output[1].strip():
-            print(split_output[1])
+            all_descriptions = split_output[1].strip().split("\n")
+            for description in all_descriptions:
+                ignore_error = False
+                if exception_group in drc_exceptions:
+                    for exception in drc_exceptions[exception_group]:
+                        if description == exception:
+                            ignore_error = True
+                            break
+                if ignore_error:
+                    debug.warning("Ignoring DRC error: %s", description)
+                else:
+                    valid_drc_errors.append(description)
         for line in results:
             if "error tiles" in line:
                 debug.info(1, line.rstrip("\n"))
+    if len(valid_drc_errors) > 0:
+        debug.info(1, "\n".join(valid_drc_errors))
         debug.error("DRC Errors {0}\t{1}".format(cell_name, errors))
     else:
         debug.info(1, "No DRC Error")
 
-    return errors
+    return len(valid_drc_errors)
 
 
 def get_lvs_kwargs(cell_name, mag_file, source_spice, final_verification):
@@ -277,7 +295,7 @@ def generate_lvs_spice(mag_file, source_spice, final_verification=False):
                                            op_name="spice_gen",
                                            template=spice_gen_template, **kwargs)
     return_code, out_file, err_file = run_script(extract_script, cell_name, "spice_gen")
-    check_process_errors(err_file, "gen_spice")
+    check_process_errors(err_file, "gen_spice", benign_errors=["Couldn't find label"])
     debug.info(1, f"Generated layout spice")
     return return_code, out_file, err_file
 
@@ -340,10 +358,12 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
     with open(report_file, "r") as f:
         results = f.read()
 
+    total_errors = 0
     # Netlists do not match.
-    test = re.compile("Netlists do not match.")
-    incorrect = list(filter(test.search, results))
-    total_errors = len(incorrect)
+    if "Netlists do not match." in results:
+        # turns out netlists can still match uniquely ¯\_(ツ)_/¯
+        debug.warning("Netlists do not match")
+
     # Get property errors
     split = results.split("There were property errors.")
     if len(split) > 1:
@@ -370,6 +390,8 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
         # Just print out the whole file, it is short.
         debug.info(1, results)
         # debug.error("LVS mismatch (results in {})".format(report_file))
+    else:
+        debug.info(1, "No LVS Error")
 
     return total_errors
 

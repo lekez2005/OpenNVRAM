@@ -4,28 +4,32 @@ import os
 import pathlib
 from importlib import reload
 
+import numpy as np
+
 from char_test_base import CharTestBase
-from characterization_utils import parse_options, search_meas
+from characterization_utils import parse_options
 
 ACTION_SINGLE = "single"
 ACTION_HEIGHT_SWEEP = "height_sweep"
+ACTION_BETA_SWEEP = "beta_sweep"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-B", "--beta", default=None, type=float)
+parser.add_argument("--min_beta", default=None, type=float)
+parser.add_argument("--max_beta", default=None, type=float)
 parser.add_argument("-p", "--plot", action="store_true")
-parser.add_argument("--height", default=1.0, type=float)
+parser.add_argument("--height", default=None, type=float)
 
 parser.add_argument("-a", "--action", default=ACTION_SINGLE,
-                    choices=[ACTION_SINGLE, ACTION_HEIGHT_SWEEP])
+                    choices=[ACTION_SINGLE, ACTION_HEIGHT_SWEEP, ACTION_BETA_SWEEP])
 parser.add_argument("--run_drc_lvs", action="store_true")
 
 options = parse_options(parser)
 
 
-class FlopFO4Characterizer(CharTestBase):
+class FO4DelayCharacterizer(CharTestBase):
 
     def test_height_sweep(self):
-        from globals import OPTS
 
         if (not options.action == ACTION_HEIGHT_SWEEP) or options.plot:
             return
@@ -43,22 +47,45 @@ class FlopFO4Characterizer(CharTestBase):
                                                            float(rise_time) * 1e12,
                                                            float(fall_time) * 1e12))
 
+        self.save_data(results, f"height_sweep_beta_{self.options.beta}")
+
+    def save_data(self, results, prefix):
         results_dir = self.get_char_data_file(os.path.join("FO4"))
         if not os.path.exists(results_dir):
             pathlib.Path(results_dir).mkdir(parents=True, exist_ok=True)
 
-        prefix = os.path.basename(os.path.dirname(OPTS.openram_temp))
         results_file_name = os.path.join(results_dir, prefix + ".txt")
         with open(results_file_name, "w") as results_file:
             for module_height, fall_time, rise_time in results:
                 results_file.write("{:.4g}, {}, {} \n".
                                    format(module_height, rise_time, fall_time))
 
+    def test_beta_sweep(self):
+        if not options.action == ACTION_BETA_SWEEP or options.plot:
+            return
+        from globals import OPTS
+        from tech import parameter
+        min_beta = options.min_beta or 1.0
+        max_beta = options.max_beta or parameter["beta"]
+        all_beta = np.linspace(min_beta, max_beta, 10)
+        results = []
+        height = options.height or OPTS.logic_buffers_height
+        for beta in all_beta:
+            options.beta = beta
+            rise_time, fall_time = self.run_sim(height)
+            results.append((beta, fall_time, rise_time))
+            print("beta = {:<12.3g}\t{:<12.3g}\t{:<12.3g}".format(beta,
+                                                                  float(rise_time) * 1e12,
+                                                                  float(fall_time) * 1e12))
+            self.save_data(results, f"beta_sweep_h_{height:.3g}")
+
     def test_single_sim(self):
+        from globals import OPTS
         import debug
         if (not options.action == ACTION_SINGLE) or options.plot:
             return
-        rise_time, fall_time = self.run_sim(options.height)
+        height = options.height or OPTS.logic_buffers_height
+        rise_time, fall_time = self.run_sim(height)
         debug.info(0, "Rise time = {:.3g}ps".format(rise_time * 1e12))
         debug.info(0, "Fall time = {:.3g}ps".format(fall_time * 1e12))
 
@@ -89,11 +116,12 @@ class FlopFO4Characterizer(CharTestBase):
         drivers = [None] * len(driver_sizes)
         for i in range(len(driver_sizes)):
             driver_size = driver_sizes[i]
-            driver = BufferStage(buffer_stages=[driver_size], height=module_height)
+            driver = BufferStage(buffer_stages=[driver_size], height=module_height,
+                                 route_outputs=False)
             drivers[i] = driver
 
             pex_file = self.prefix("{}.pex.sp".format(driver.name))
-            if not os.path.exists(pex_file):
+            if not os.path.exists(pex_file) or self.options.force_pex:
                 self.run_pex_extraction(driver, driver.name, run_drc=False)
             pex_files[i] = pex_file
 
@@ -124,27 +152,19 @@ class FlopFO4Characterizer(CharTestBase):
             # Add stimulus
             vdd_value = self.corner[1]
             sim_params = {
-                "PERIOD": "200p",
+                "PERIOD": self.options.period,
                 "vdd_value": vdd_value,
                 "half_vdd": 0.5 * vdd_value,
             }
             stim_file.write(stimulus_template.format(**sim_params))
-
-            if OPTS.spice_name == "spectre":
-                stim_file.write("\nsimulator lang=spectre\n")
-                stim_file.write("simulatorOptions options temp={0} preservenode=all dc_pivot_check=yes"
-                                " \n".format(self.corner[2]))
-
-                stim_file.write("saveOptions options save=lvlpub nestlvl=1 pwr=total \n")
-                stim_file.write("simulator lang=spice \n")
-
             stim.write_supply()
+            stim.write_control(end_time=1.45 * self.options.period * 1e9)
 
         stim.run_sim()
 
-        meas_file = os.path.join(OPTS.openram_temp, "stim.measure")
-        fall_time = float(search_meas("fall_time", meas_file))
-        rise_time = float(search_meas("rise_time", meas_file))
+        from characterizer.charutils import parse_output
+        fall_time = parse_output(None, key="fall_time", sim_dir=OPTS.openram_temp)
+        rise_time = parse_output(None, key="rise_time", sim_dir=OPTS.openram_temp)
         return rise_time, fall_time
 
     def test_plot(self):
@@ -192,11 +212,13 @@ class FlopFO4Characterizer(CharTestBase):
         plt.show()
 
 
+
+
 stimulus_template = """
 Vin vin gnd pulse ({vdd_value} 0 -2ps 2ps 2ps '0.5*{PERIOD}' '{PERIOD}')
 .measure rise_time TRIG v(fo4_in) VAL='{half_vdd}' FALL=1 TARG v(fo4_out) VAL='{half_vdd}' RISE=1
 .measure fall_time TRIG v(fo4_in) VAL='{half_vdd}' RISE=1 TARG v(fo4_out) VAL='{half_vdd}' FALL=1
-.tran 1ps '1.45*{PERIOD}'
+.probe v(*)
 """
 
-FlopFO4Characterizer.run_tests(__name__)
+FO4DelayCharacterizer.run_tests(__name__)

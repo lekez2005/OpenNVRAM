@@ -205,11 +205,13 @@ drc_exceptions["latchup"] = ["N-diff distance to P-tap must be < 15.0um (LU.2)",
 # Spice Simulation Parameters
 spice = {}
 spice["minwidth_tx"] = drc["minwidth_tx"]
+spice["channel"] = drc["minlength_channel"]
 spice["device_prefix"] = "X"
 spice["nmos"] = "sky130_fd_pr__nfet_01v8"
 spice["pmos"] = "sky130_fd_pr__pfet_01v8"
 spice["vdd_name"] = "vdd"
 spice["gnd_name"] = "gnd"
+spice["gmin"] = 1e-13
 
 
 def create_corner(model_dir_, corner):

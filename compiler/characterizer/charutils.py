@@ -36,13 +36,12 @@ def get_sim_file():
         return "timing.lis"
 
 
-def parse_output(filename, key, find_max=True):
+def parse_output(filename, key, find_max=True, sim_dir=None):
     """Parses a hspice output.lis file for a key value"""
-    if OPTS.spice_name == "spectre":
-        re_pattern = r'"{0}"\s*"measReal"\s*((?:\d+.?\d*[e]?[-+]?[0-9]*)|(?:nan)\S*)\s+.*'.format(key)
-    else:
-        re_pattern = r"{0}\s*=\s*(-?\d+.?\d*[e]?[-+]?[0-9]*\S*)\s+.*".format(key)
+    re_pattern = r"{0}\s*=\s*(-?\d+.?\d*[e]?[-+]?[0-9]*\S*)\s+.*".format(key)
     full_filename = get_measurement_file()
+    if sim_dir:
+        full_filename = os.path.join(sim_dir, full_filename)
     try:
         f = open(full_filename, "rt")
     except IOError:

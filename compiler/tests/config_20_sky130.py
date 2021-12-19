@@ -10,3 +10,13 @@ logic_buffers_height = 3.9
 
 spice_name = "hspice"
 lvs_extract_style = "extract style ngspice(si)"
+
+# characterization parameters
+default_char_period = 4e-9
+enhance_pgate_pins = True
+
+
+def configure_char_timing(options, class_name):
+    if class_name == "FO4DelayCharacterizer":
+        return 800e-12
+    return default_char_period

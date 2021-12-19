@@ -89,7 +89,7 @@ class CharTestBase(testutils.OpenRamTest):
 
         parser.add_argument("--min_c", default=0.1e-15, type=float)
         parser.add_argument("--max_c", default=20e-15, type=float)
-        parser.add_argument("--period", default=1e-9, type=float)
+        parser.add_argument("--period", default=None, type=float)
 
         parser.add_argument("--run_drc_lvs", action="store_true")
         parser.add_argument("--force_pex", action="store_true")
@@ -134,6 +134,14 @@ class CharTestBase(testutils.OpenRamTest):
         OPTS.analytical_delay = False
         OPTS.spice_name = self.options.spice_name
         OPTS.spectre_command_options = " +aps +mt=16 "
+        if not self.options.period:
+            if hasattr(OPTS, "configure_char_timing"):
+                period = OPTS.configure_char_timing(self.options, self.__class__.__name__)
+            elif hasattr(OPTS, "default_char_period"):
+                period = OPTS.default_char_period
+            else:
+                period = 1e-9
+            self.options.period = period
 
         import characterizer
         reload(characterizer)
@@ -164,6 +172,13 @@ class CharTestBase(testutils.OpenRamTest):
         else:
             parameter["beta"] = options.beta
 
+        from base.design import design
+        from pgates.pinv import pinv
+        from modules.buffer_stage import BufferStage
+        design.name_map.clear()
+        pinv._cache.clear()
+        BufferStage._cache.clear()
+
     @staticmethod
     def set_temp_folder(dir_name):
         import debug
@@ -180,6 +195,7 @@ class CharTestBase(testutils.OpenRamTest):
         import verify
 
         spice_file = self.prefix("{}.sp".format(name_prefix))
+        lvs_spice_file = spice_file
         gds_file = self.prefix("{}.gds".format(name_prefix))
         pex_file = self.prefix("{}.pex.sp".format(name_prefix))
 
@@ -188,13 +204,21 @@ class CharTestBase(testutils.OpenRamTest):
         if run_pex or run_lvs or run_drc:
             module.sp_write(spice_file)
             module.gds_write(gds_file)
+            if not set(module.pins) == set(module.pin_map.keys()):
+                original_pins = module.pins
+                lvs_pins = [pin for pin in original_pins if pin in module.pin_map]
+                module.pins = lvs_pins
+                lvs_spice_file = self.prefix("{}_lvs.sp".format(name_prefix))
+                module.sp_write(lvs_spice_file)
+                module.pins = original_pins
         if run_drc:
             verify.run_drc(module.name, gds_file)
         if run_lvs:
-            verify.run_lvs(module.name, gds_file, spice_file, final_verification=False)
+            verify.run_lvs(module.name, gds_file, lvs_spice_file, final_verification=False)
         if run_pex:
-            errors = verify.run_pex(module.name, gds_file, spice_file, pex_file,
-                                    run_drc_lvs=self.run_drc_lvs)
+            errors = verify.run_pex(module.name, gds_file, lvs_spice_file, pex_file,
+                                    run_drc_lvs=self.run_drc_lvs,
+                                    port_spice_file=spice_file)
             if errors:
                 raise AssertionError("PEX failed for {}".format(name_prefix))
         return pex_file

@@ -1,7 +1,11 @@
 import debug
 from base import contact
-from base.design import design, POLY, ACTIVE
+from base.contact import m1m2
+from base.design import design, POLY, ACTIVE, METAL2
 from base.vector import vector
+from base.well_active_contacts import calculate_num_contacts
+from globals import OPTS
+from pgates.pgate import pgate
 from tech import drc
 
 
@@ -37,6 +41,22 @@ def seal_poly_vias(obj: design):
         obj.add_rect("npc", vector(x_offset, y_offset), width=width, height=height)
 
 
+def enhance_pgate(obj: design):
+    if not OPTS.enhance_pgate_pins or not isinstance(obj, pgate):
+        return
+    pin_names = ["vdd", "gnd"]
+
+    contact_space = m1m2.contact_pitch - m1m2.contact_width
+    for pin_name in pin_names:
+        pin = obj.get_pin(pin_name)
+        num_vias = calculate_num_contacts(obj, pin.width(), layer_stack=m1m2.layer_stack,
+                                          contact_spacing=contact_space)
+        obj.add_contact_center(m1m2.layer_stack, offset=pin.center(), rotate=90,
+                               size=[1, num_vias])
+        obj.add_rect_center(METAL2, offset=pin.center(), width=pin.width(),
+                            height=max(pin.height(), obj.m2_width))
+
+
 def flatten_vias(obj: design):
     """Flatten vias by moving via shapes from via instance to top level
        Also combine multiple rects into encompassing rect
@@ -62,8 +82,9 @@ def flatten_vias(obj: design):
 
 
 def enhance_module(obj: design):
-    debug.info(1, f"Enhancing module {obj.name}")
+    debug.info(2, f"Enhancing module {obj.name}")
     # add stdc and seal poly before flattening vias
     add_stdc(obj)
     seal_poly_vias(obj)
+    enhance_pgate(obj)
     flatten_vias(obj)

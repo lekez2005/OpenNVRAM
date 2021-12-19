@@ -6,12 +6,13 @@ from tech import drc
 
 
 def calculate_num_contacts(design_obj: design, tx_width, return_sample=False,
-                           layer_stack=None):
+                           layer_stack=None, contact_spacing=None):
     """
     Calculates the possible number of source/drain contacts in a finger.
     """
     from base import contact
-    num_contacts = int(math.ceil(tx_width / (design_obj.contact_width + design_obj.contact_spacing)))
+    contact_spacing = contact_spacing or design_obj.contact_spacing
+    num_contacts = int(math.ceil(tx_width / (design_obj.contact_width + contact_spacing)))
     layer_stack = layer_stack or contact.well.layer_stack
 
     def create_array():

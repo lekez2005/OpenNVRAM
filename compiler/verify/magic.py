@@ -86,26 +86,21 @@ exit $retcode
 # PEX extraction script
 pex_template = """
 load "{mag_file_}"
+flatten "{cell_name_}_flat"
+load "{cell_name_}_flat"
 select top cell
-expand
-{make_ports}
 extract all
 ext2sim labels on
 ext2sim
 extresist simplify off
-extresist all
+extresist
 ext2spice lvs
-ext2spice hierarchy off
-ext2spice subcircuit on
 ext2spice format ngspice
-ext2spice renumber off
 ext2spice scale off
-ext2spice blackbox on
-ext2spice global off
 ext2spice cthresh 0
 ext2spice rthresh 0
 ext2spice extresist on
-ext2spice {cell_name_} -o {output_file}
+ext2spice "{cell_name_}_flat" -o {output_file}
 puts "Finished extraction export"
 exit
 """
@@ -152,7 +147,10 @@ def get_force_reload_commands(cell_name):
     full_mag_file = os.path.join(os.path.dirname(get_run_script("drc")), f"{cell_name}.mag")
     reference_name = full_mag_file[:-4]
     commands = [f"load \"{full_mag_file}\" -force",
-                f"cellname dereference {reference_name}"]
+                f'cellname dereference "{reference_name}"',
+                "select top cell",
+                "expand",
+                f'cellname writeable "{reference_name}" false']
     return commands
 
 
@@ -341,7 +339,9 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
 
     mag_file = os.path.join(OPTS.openram_temp, f"{cell_name}.mag")
     if not os.path.exists(mag_file) or os.path.getmtime(mag_file) < os.path.getmtime(gds_name):
-        export_gds_to_magic(gds_name, cell_name)
+        run_script(generate_magic_script(gds_name, cell_name, True,
+                                         "export", **{"other_commands": ""}),
+                   cell_name=cell_name, op_name="export")
 
     generate_lvs_spice(mag_file, sp_name, final_verification)
 
@@ -397,11 +397,13 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
 
 
 def run_pex(cell_name, gds_name, sp_name, output=None,
-            run_drc_lvs=True, correct_port_order=True):
+            run_drc_lvs=True, correct_port_order=True, port_spice_file=None):
     """Run pex on a given top-level name which is
        implemented in gds_name and sp_name. """
     from globals import OPTS
     work_dir = OPTS.openram_temp
+
+    port_spice_file = port_spice_file or sp_name
 
     if output is None:
         output = os.path.join(work_dir, f"{cell_name}.pex.spice")
@@ -422,12 +424,28 @@ def run_pex(cell_name, gds_name, sp_name, output=None,
                                            op_name="pex",
                                            template=pex_template, **kwargs)
     return_code, out_file, err_file = run_script(extract_script, cell_name, "pex")
-    benign_errors = ["smaller than extract section allows"]
+    benign_errors = ["smaller than extract section allows", "Couldn't find label"]
     check_process_errors(err_file, "pex", benign_errors=benign_errors)
     debug.info(1, f"Generated pex spice {output}")
     from verify.calibre import correct_port
     # TODO confirm large number of pins
     subckt_end_regex = re.compile(r"^[XRCM]+", re.MULTILINE)
-    correct_port(cell_name, output, sp_name, subckt_end_regex=subckt_end_regex)
-    # no need to correct_port_order since it's read from source file
+    correct_port(cell_name, output, port_spice_file, subckt_end_regex=subckt_end_regex)
+    remove_transistors_unit_suffix(output)
     return 0
+
+
+def remove_transistors_unit_suffix(extracted_pex):
+    """Remove unit suffix from transistor parameters suffix"""
+    from base.spice_parser import SUFFIXES
+    with open(extracted_pex, 'r') as f:
+        lines = f.readlines()
+
+    regex = re.compile(rf"((\S+)=([0-9e+\-.]+)([{''.join(SUFFIXES.keys())}]+))")
+    with open(extracted_pex, "w") as f:
+        for line in lines:
+            if line.startswith("X"):
+                for match in regex.findall(line):
+                    numeric_val = float(match[2]) * SUFFIXES[match[3]]
+                    line = line.replace(match[0], f"{match[1]}={numeric_val}")
+            f.write(line)

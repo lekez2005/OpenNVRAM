@@ -23,8 +23,9 @@ class pgate(pgates_characterization_base, design.design):
     This is a module that implements some shared functions for parameterized gates.
     """
 
-    c = __import__(OPTS.bitcell)
-    bitcell = getattr(c, OPTS.bitcell)()
+    # c = __import__(OPTS.bitcell)
+    # bitcell = getattr(c, OPTS.bitcell)()
+    bitcell = SimpleNamespace(height=3)
     num_tracks = 1
 
     @classmethod
@@ -195,7 +196,7 @@ class pgate(pgates_characterization_base, design.design):
         poly_contact_base = (active_to_poly_contact + 0.5 * self.contact_width -
                              0.5 * contact.poly.second_layer_height)
         self.track_bot_space = max(poly_contact_base,
-                                   (0.5 * self.nmos_fill_height - 0.5 * nmos_width +
+                                   (max(0, 0.5 * self.nmos_fill_height - 0.5 * nmos_width) +
                                     self.line_end_space))
         self.track_bot_space = utils.ceil(self.track_bot_space)
 
@@ -203,7 +204,7 @@ class pgate(pgates_characterization_base, design.design):
         p_poly_contact_base = (active_to_poly_contact + 0.5 * self.contact_width -
                                0.5 * contact.poly.second_layer_height)
         self.track_top_space = max(p_poly_contact_base,
-                                   (0.5 * self.pmos_fill_height - 0.5 * pmos_width +
+                                   (max(0, 0.5 * self.pmos_fill_height - 0.5 * pmos_width) +
                                     self.line_end_space))
         self.track_top_space = utils.ceil(self.track_top_space)
         self.middle_space = max(self.track_bot_space + track_extent + self.track_top_space,
@@ -299,7 +300,7 @@ class pgate(pgates_characterization_base, design.design):
         extra_space = non_active_height - (self.top_space + self.bottom_space + self.middle_space)
 
         # redistribute spaces
-        additional_space = utils.floor(0.33 * extra_space)
+        additional_space = max(utils.floor(0.33 * extra_space), 0)
         actual_bottom_space = self.bottom_space + additional_space
         actual_top_space = self.top_space + additional_space
         self.track_bot_space = self.track_bot_space + utils.floor(0.5 * additional_space)

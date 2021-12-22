@@ -371,6 +371,7 @@ spice["rise_time"] = 0.005           # rise time in [Nano-seconds]
 spice["fall_time"] = 0.005           # fall time in [Nano-seconds]
 spice["temperatures"] = [0, 25, 100] # Temperature corners (celcius)
 spice["nom_temperature"] = 25        # Nominal temperature (celcius)
+spice["tx_instance_prefix"] = "m"
 
 
 #sram signal names

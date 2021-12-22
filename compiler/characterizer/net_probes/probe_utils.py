@@ -1,6 +1,7 @@
 import itertools
 import re
 
+import tech
 from base.spice_parser import tx_extract_parameter
 from characterizer.dependency_graph import get_all_drivers_for_pin, get_net_hierarchy, get_all_net_connections
 from globals import OPTS
@@ -176,7 +177,7 @@ def get_extracted_prefix(child_net, inst_hierarchy):
 
 def format_bank_probes(probes, bank):
     if OPTS.use_pex:
-        prefix = OPTS.pex_tx_prefix
+        prefix = tech.spice["tx_instance_prefix"]
     else:
         prefix = ""
     prefix = prefix + "Xbank{0}.".format(bank)

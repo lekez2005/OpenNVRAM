@@ -2,7 +2,7 @@ import re
 
 import debug
 from base import design, utils
-from base.contact import contact, m1m2, poly as poly_contact
+from base.contact import contact, m1m2, poly as poly_contact, active as active_contact
 from base.design import METAL1, METAL2, POLY
 from base.hierarchy_spice import INOUT, INPUT
 from base.vector import vector
@@ -24,7 +24,8 @@ class ptx(design.design):
     """
 
     def __init__(self, width=drc["minwidth_tx"], mults=1, tx_type="nmos",
-                 connect_active=False, connect_poly=False, num_contacts=None, dummy_pos=None):
+                 connect_active=False, connect_poly=False, num_contacts=None, dummy_pos=None,
+                 independent_poly=False):
         # We need to keep unique names because outputting to GDSII
         # will use the last record with a given name. I.e., you will
         # over-write a design in GDS if one has and the other doesn't
@@ -35,6 +36,10 @@ class ptx(design.design):
             name += "_a"
         if connect_poly:
             name += "_p"
+        if not connect_poly and independent_poly and mults > 1:
+            # poly pitch will be calculated based on
+            # min space between independent poly contacts
+            name += "_pi"
         if num_contacts:
             name += "_c{}".format(num_contacts)
         if dummy_pos is not None:
@@ -56,6 +61,7 @@ class ptx(design.design):
         self.connect_poly = connect_poly
         self.num_contacts = num_contacts
         self.dummy_pos = dummy_pos
+        self.independent_poly = independent_poly
 
         self.create_spice()
         self.create_layout()
@@ -75,6 +81,20 @@ class ptx(design.design):
     def setup_drc_constants(self):
         design.design.setup_drc_constants(self)
 
+    @staticmethod
+    def calculate_poly_pitch(obj: design.design, num_independent_contacts):
+        poly_space = obj.poly_space
+        if num_independent_contacts == 1:
+            poly_width = obj.poly_width
+        elif num_independent_contacts == 2:
+            # contacts will be to left and right edges each
+            poly_width = obj.poly_width
+        else:
+            poly_width = poly_contact.first_layer_width
+        pitch = poly_width + poly_space
+        pitch = max(pitch, obj.contact_width + 2 * obj.contact_to_gate + obj.poly_width)
+        return pitch - obj.poly_width, obj.poly_width, pitch
+
     def create_layout(self):
         """Calls all functions related to the generation of the layout"""
         self.setup_layout_constants()
@@ -91,8 +111,8 @@ class ptx(design.design):
         # Just make a guess since these will actually be decided in the layout later.
         area_sd = 2.5 * drc["minwidth_poly"] * self.tx_width
         perimeter_sd = 2 * drc["minwidth_poly"] + 2 * self.tx_width
-        device_prefix = spice.get("device_prefix", "M")
-        self.spice_device = f"{device_prefix}{{0}} {{1}} {spice[self.tx_type]} m=1 " \
+        tx_instance_prefix = spice.get("tx_instance_prefix", "M")
+        self.spice_device = f"{tx_instance_prefix}{{0}} {{1}} {spice[self.tx_type]} m=1 " \
                             f"nf={int(self.mults)} w={self.tx_width * self.mults}u " \
                             f"l={self.tx_length}u pd={perimeter_sd}u" \
                             f" ps={perimeter_sd}u as={area_sd}p ad={area_sd}p"
@@ -124,13 +144,12 @@ class ptx(design.design):
         # This is not actually instantiated but used for calculations
         self.active_contact = contact(layer_stack=("active", "contact", "metal1"),
                                       dimensions=(1, self.num_contacts))
-
-        # The contacted poly pitch (or uncontacted in an odd technology)
-        self.poly_pitch = max(2 * self.contact_to_gate + self.contact_width + self.poly_width,
-                              self.poly_space)
-
-        # The contacted poly pitch (or uncontacted in an odd technology)
-        self.contact_pitch = 2 * self.contact_to_gate + self.contact_width + self.poly_width
+        if self.independent_poly and self.mults > 1:
+            num_independent_contacts = self.mults
+        else:
+            num_independent_contacts = 1
+        pitch_res = self.calculate_poly_pitch(self, num_independent_contacts)
+        self.ptx_poly_space, _, self.poly_pitch = pitch_res
 
         # The enclosure of an active contact. Not sure about second term.
         active_enclose_contact = max(drc["active_enclosure_contact"],
@@ -227,20 +246,16 @@ class ptx(design.design):
         self.implant_width = self.active_width + 2 * self.implant_enclose_ptx_active
 
         if info["has_{}well".format(self.well_type)]:
-            self.width = self.poly_pitch * (self.mults + 3) + self.poly_width
             self.height = self.implant_height
             self.cell_well_width = max(self.active_width + 2 * self.well_enclose_ptx_active,
                                        self.well_width)
+            self.width = self.cell_well_width
             self.cell_well_height = max(self.tx_width + 2 * self.well_enclose_ptx_active,
                                         self.well_width)
         else:
             # If no well, use the boundary of the active and poly
             self.height = self.poly_height
             self.width = self.active_width
-
-        # This is the center of the first active contact offset (centered vertically)
-        self.contact_offset = self.active_offset + vector(active_enclose_contact + 0.5 * self.contact_width,
-                                                          0.5 * self.active_height)
 
         # Min area results are just flagged for now.
         debug.check(self.active_width * self.active_height >= drc["minarea_active"], "Minimum active area violated.")
@@ -380,7 +395,7 @@ class ptx(design.design):
         poly_offset = vector(self.active_offset.x + 0.5 * self.poly_width + self.end_to_poly, self.poly_offset_y)
 
         # poly_positions are the bottom center of the poly gates
-        poly_positions = []
+        self.poly_positions = poly_positions = []
 
         # It is important that these are from left to right, so that the pins are in the right
         # order for the accessors
@@ -450,18 +465,24 @@ class ptx(design.design):
         """
         Create a list of the centers of drain and source contact positions.
         """
+        mid_y = self.active_rect.cy()
+        poly_mid_to_cont_mid = (0.5 * self.poly_width + self.contact_to_gate
+                                + 0.5 * active_contact.contact_width)
         # The first one will always be a source
-        source_positions = [self.contact_offset]
-        drain_positions = []
+        # This is the center of the first active contact offset (centered vertically)
+        poly_x_start = self.poly_positions[0].x
+
+        contact_positions = [vector(poly_x_start - poly_mid_to_cont_mid, mid_y)]
         # It is important that these are from left to right, so that the pins are in the right
         # order for the accessors.
-        for i in range(self.mults):
-            if i % 2:
-                # It's a source... so offset from previous drain.
-                source_positions.append(drain_positions[-1] + vector(self.contact_pitch, 0))
-            else:
-                # It's a drain... so offset from previous source.
-                drain_positions.append(source_positions[-1] + vector(self.contact_pitch, 0))
+        for i in range(self.mults - 1):
+            contact_positions.append(vector(self.poly_positions[i].x +
+                                            0.5*self.poly_pitch, mid_y))
+
+        contact_positions.append(vector(self.poly_positions[-1].x + poly_mid_to_cont_mid,
+                                        mid_y))
+        source_positions = contact_positions[::2]
+        drain_positions = contact_positions[1::2]
 
         return [source_positions, drain_positions]
 

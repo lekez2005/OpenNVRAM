@@ -19,6 +19,10 @@ class PtxTest(OpenRamTest):
         debug.info(2, "Checking three fingers NMOS")
         self.run_tx(tx_type="nmos", mults=3)
 
+    def test_ptx_3finger_indep_nmos(self):
+        debug.info(2, "Checking three fingers independent poly NMOS")
+        self.run_tx(tx_type="nmos", mults=3, independent_poly=True)
+
     def test_ptx_3finger_pmos(self):
         debug.info(2, "Checking three fingers PMOS")
         self.run_tx(tx_type="pmos", mults=3)
@@ -43,14 +47,14 @@ class PtxTest(OpenRamTest):
         debug.info(2, "Checking min size NMOS with 1 finger")
         self.run_tx(tx_type="nmos", width=5, mults=4, connect_poly=True, connect_active=True)
 
-    def run_tx(self, tx_type="nmos", mults=1, width=1, connect_active=False, connect_poly=False):
+    def run_tx(self, tx_type="nmos", mults=1, width=1, connect_active=False, connect_poly=False, **kwargs):
         from pgates import ptx
         import tech
         fet = ptx.ptx(width=width*tech.drc["minwidth_tx"],
                       mults=mults,
                       tx_type=tx_type,
                       connect_active=connect_active,
-                      connect_poly=connect_poly)
+                      connect_poly=connect_poly, **kwargs)
         self.local_drc_check(fet)
 
 

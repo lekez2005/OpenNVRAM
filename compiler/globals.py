@@ -332,6 +332,9 @@ def standardize_tech_config():
     if OPTS.temperatures == "":
         OPTS.temperatures = tech.spice["temperatures"]
 
+    # m for regular bsim model, X for subckt model definitions
+    tech.spice.setdefault("tx_instance_prefix", "m")
+
     def no_op(_):
         pass
 

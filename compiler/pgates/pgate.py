@@ -367,14 +367,9 @@ class pgate(pgates_characterization_base, design.design):
         self.active_contact_layers = active_contact.layer_stack
 
     def calculate_poly_pitch(self):
-        poly_cont = contact.poly
-        if self.num_tracks > 1:
-            poly_width = max(self.poly_width, poly_cont.first_layer_width)
-        else:
-            poly_width = self.poly_width
-        pitch = poly_width + self.poly_space
-        pitch = max(pitch, self.contact_width + 2 * self.contact_to_gate + self.poly_width)
-        return pitch - self.poly_width, self.poly_width, pitch
+        num_independent_contacts = 3 if self.num_tracks > 1 else 1
+        # TODO fix two input case
+        return ptx_spice.calculate_num_contacts(self, num_independent_contacts)
 
     def calculate_body_contacts(self):
 

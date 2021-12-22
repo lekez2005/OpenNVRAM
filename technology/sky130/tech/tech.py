@@ -200,13 +200,14 @@ drc_exceptions = {}
 drc_exceptions["latchup"] = ["N-diff distance to P-tap must be < 15.0um (LU.2)",
                              "P-diff distance to N-tap must be < 15.0um (LU.3)",
                              "All nwells must contain metal-connected N+ taps (nwell.4)"]
+drc_exceptions["ptx"] = drc_exceptions["latchup"]
 
 #########################
 # Spice Simulation Parameters
 spice = {}
 spice["minwidth_tx"] = drc["minwidth_tx"]
 spice["channel"] = drc["minlength_channel"]
-spice["device_prefix"] = "X"
+spice["tx_instance_prefix"] = "X"
 spice["nmos"] = "sky130_fd_pr__nfet_01v8"
 spice["pmos"] = "sky130_fd_pr__pfet_01v8"
 spice["vdd_name"] = "vdd"

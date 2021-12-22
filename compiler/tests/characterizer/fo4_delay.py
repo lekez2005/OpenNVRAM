@@ -218,7 +218,6 @@ stimulus_template = """
 Vin vin gnd pulse ({vdd_value} 0 -2ps 2ps 2ps '0.5*{PERIOD}' '{PERIOD}')
 .measure rise_time TRIG v(fo4_in) VAL='{half_vdd}' FALL=1 TARG v(fo4_out) VAL='{half_vdd}' RISE=1
 .measure fall_time TRIG v(fo4_in) VAL='{half_vdd}' RISE=1 TARG v(fo4_out) VAL='{half_vdd}' FALL=1
-.probe v(*)
 """
 
 FO4DelayCharacterizer.run_tests(__name__)

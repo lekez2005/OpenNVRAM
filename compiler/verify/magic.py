@@ -160,7 +160,13 @@ def get_refresh_command(cell_name):
     ipc_file = os.path.join(os.environ.get("MAGIC_WORK_DIR"), "ipc_file.txt")
     if os.path.exists(ipc_file):
         with open(ipc_file, 'r') as f:
-            ipc = f.read().strip()
+            ipc, pid = f.read().strip().split()
+            # https://stackoverflow.com/a/20186516
+            try:
+                os.kill(int(pid), 0)
+            except ProcessLookupError:  # errno.ESRCH
+                return ""  # No such process
+
         cmd = f"package require comm\n"
         for command in get_force_reload_commands(cell_name):
             cmd += f"::comm::comm send {ipc} {command}\n"

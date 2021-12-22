@@ -269,6 +269,7 @@ m1m2 = contact(layer_stack=("metal1", "via1", "metal2"))
 m2m3 = contact(layer_stack=("metal2", "via2", "metal3"))
 m3m4 = contact(layer_stack=("metal3", "via3", "metal4"))
 
+cross_poly = cross_contact(layer_stack=poly.layer_stack)
 cross_m1m2 = cross_contact(layer_stack=m1m2.layer_stack)
 cross_m2m3 = cross_contact(layer_stack=m2m3.layer_stack)
 cross_m3m4 = cross_contact(layer_stack=m3m4.layer_stack)

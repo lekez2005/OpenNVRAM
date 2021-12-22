@@ -1,3 +1,4 @@
+import copy
 import re
 
 import debug
@@ -25,6 +26,7 @@ class ptx(design.design):
 
     def __init__(self, width=drc["minwidth_tx"], mults=1, tx_type="nmos",
                  connect_active=False, connect_poly=False, num_contacts=None, dummy_pos=None,
+                 active_cont_pos=None,
                  independent_poly=False):
         # We need to keep unique names because outputting to GDSII
         # will use the last record with a given name. I.e., you will
@@ -40,6 +42,8 @@ class ptx(design.design):
             # poly pitch will be calculated based on
             # min space between independent poly contacts
             name += "_pi"
+        if active_cont_pos:
+            name += f"_ac_{''.join(map(str, active_cont_pos))}"
         if num_contacts:
             name += "_c{}".format(num_contacts)
         if dummy_pos is not None:
@@ -62,6 +66,7 @@ class ptx(design.design):
         self.num_contacts = num_contacts
         self.dummy_pos = dummy_pos
         self.independent_poly = independent_poly
+        self.active_cont_pos = active_cont_pos
 
         self.create_spice()
         self.create_layout()
@@ -481,17 +486,20 @@ class ptx(design.design):
 
         contact_positions.append(vector(self.poly_positions[-1].x + poly_mid_to_cont_mid,
                                         mid_y))
-        source_positions = contact_positions[::2]
-        drain_positions = contact_positions[1::2]
-
-        return [source_positions, drain_positions]
+        return contact_positions
 
     def add_active_contacts(self):
         """
         Add the active contacts to the transistor.
         """
 
-        [source_positions, drain_positions] = self.get_contact_positions()
+        contact_positions = self.get_contact_positions()
+        self.contact_positions = contact_positions
+        if self.active_cont_pos:
+            contact_positions = [contact_positions[x] for x in self.active_cont_pos]
+
+        source_positions = contact_positions[::2]
+        drain_positions = contact_positions[1::2]
 
         for pos in source_positions:
             contact = self.add_contact_center(layers=("active", "contact", "metal1"),
@@ -519,6 +527,33 @@ class ptx(design.design):
 
         if self.connect_active:
             self.connect_fingered_active(drain_positions, source_positions)
+
+    @staticmethod
+    def flatten_tx_inst(parent_mod: design.design, tx_inst):
+        """Move all rects from transistor instance to parent_mod"""
+        from base.geometry import rectangle
+        inst_index = parent_mod.insts.index(tx_inst)
+
+        rects = [obj for obj in tx_inst.mod.objs if isinstance(obj, rectangle)]
+
+        angle, mirr = tx_inst.get_angle_mirror()
+
+        for rect in rects:
+            rect = copy.copy(rect)
+            first, second = rect.transform_coords([rect.ll(), rect.ur()], tx_inst.offset,
+                                           mirr=mirr, angle=angle)
+            ll = vector(min(first[0], second[0]), min(first[1], second[1]))
+            ur = vector(max(first[0], second[0]), max(first[1], second[1]))
+
+            new_rect = rectangle(layerNumber=rect.layerNumber, offset=ll,
+                                 width=ur.x-ll.x, height=ur.y-ll.y,
+                                 layerPurpose=rect.layerPurpose)
+            parent_mod.objs.append(new_rect)
+
+            # parent_mod.add_rect()
+        del parent_mod.insts[inst_index]
+        del parent_mod.conns[inst_index]
+
 
     def is_delay_primitive(self):
         """Whether to descend into this module to evaluate sub-modules for delay"""

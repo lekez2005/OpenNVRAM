@@ -366,9 +366,14 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
 
     total_errors = 0
     # Netlists do not match.
+    mismatch = False
     if "Netlists do not match." in results:
         # turns out netlists can still match uniquely ¯\_(ツ)_/¯
         debug.warning("Netlists do not match")
+        mismatch = True
+
+    if "has no elements and/or nodes.  Not checked" in results:
+        debug.warning("No transistor present in layout so no check")
 
     # Get property errors
     split = results.split("There were property errors.")
@@ -386,10 +391,10 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
     #     debug.warning("Pins altered to match in {}.".format(cell_name))
 
     # Netlists match uniquely.
-    test = re.compile("Netlists match uniquely.")
-    correct = list(filter(test.search, results))
-    # Fail if they don't match. Something went wrong!
-    if correct == 0:
+    if "Netlists match uniquely." in results:
+        mismatch = False
+
+    if mismatch:
         total_errors += 1
 
     if total_errors > 0:

@@ -64,7 +64,10 @@ def flatten_vias(obj: design):
     debug.info(2, f"Flattening vias in module {obj.name}")
     all_via_inst = get_vias(obj)
     for _, via_inst in all_via_inst:
-        for layer in via_inst.mod.layer_stack:
+        layers = list(via_inst.mod.layer_stack)
+        if via_inst.mod.implant_type:
+            layers.append(f"{via_inst.mod.implant_type}implant")
+        for layer in layers:
             layer_rects = via_inst.get_layer_shapes(layer, recursive=False)
 
             x_sort = list(sorted(layer_rects, key=lambda x: x.lx()))

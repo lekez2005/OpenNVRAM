@@ -116,12 +116,20 @@ class ptx(design.design):
         # Just make a guess since these will actually be decided in the layout later.
         area_sd = 2.5 * drc["minwidth_poly"] * self.tx_width
         perimeter_sd = 2 * drc["minwidth_poly"] + 2 * self.tx_width
+        tx_length = self.tx_length
+        width = self.tx_width * self.mults
+
+        if not spice["scale_tx_parameters"]:
+            width *= 1e6
+            tx_length *= 1e6
+            perimeter_sd *= 1e6
+            area_sd *= 1e12
+
         tx_instance_prefix = spice.get("tx_instance_prefix", "M")
         self.spice_device = f"{tx_instance_prefix}{{0}} {{1}} {spice[self.tx_type]} m=1 " \
-                            f"nf={int(self.mults)} w={self.tx_width * self.mults}u " \
-                            f"l={self.tx_length}u pd={perimeter_sd}u" \
+                            f"nf={int(self.mults)} w={width}u " \
+                            f"l={tx_length}u pd={perimeter_sd}u" \
                             f" ps={perimeter_sd}u as={area_sd}p ad={area_sd}p"
-        # breakpoint()
         self.spice.append("\n* ptx " + self.spice_device)
         # self.spice.append(".ENDS {0}".format(self.name))
 
@@ -553,7 +561,6 @@ class ptx(design.design):
             # parent_mod.add_rect()
         del parent_mod.insts[inst_index]
         del parent_mod.conns[inst_index]
-
 
     def is_delay_primitive(self):
         """Whether to descend into this module to evaluate sub-modules for delay"""

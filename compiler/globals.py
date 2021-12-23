@@ -334,6 +334,7 @@ def standardize_tech_config():
 
     # m for regular bsim model, X for subckt model definitions
     tech.spice.setdefault("tx_instance_prefix", "m")
+    tech.spice.setdefault("scale_tx_parameters", True)
 
     def no_op(_):
         pass

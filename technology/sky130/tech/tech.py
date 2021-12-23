@@ -208,6 +208,7 @@ spice = {}
 spice["minwidth_tx"] = drc["minwidth_tx"]
 spice["channel"] = drc["minlength_channel"]
 spice["tx_instance_prefix"] = "X"
+spice["scale_tx_parameters"] = False
 spice["nmos"] = "sky130_fd_pr__nfet_01v8"
 spice["pmos"] = "sky130_fd_pr__pfet_01v8"
 spice["vdd_name"] = "vdd"

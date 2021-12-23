@@ -78,8 +78,11 @@ class WriteDriverPgate(BitcellAlignedPgate):
         vdd_rail_top = active_pmos_top + self.bottom_space
         self.vdd_y = vdd_rail_top - self.rail_height
 
+    def get_buffer_pmos_y(self):
+        return self.vdd_y + self.bottom_space - self.buffer_pmos.active_rect.by()
+
     def place_buffer_insts(self):
-        y_offset = self.vdd_y + self.bottom_space - self.buffer_pmos.active_rect.by()
+        y_offset = self.get_buffer_pmos_y()
         self.buffer_pmos_inst = self.add_tx(self.buffer_pmos, y_offset)
         pmos_active_top = y_offset + self.buffer_pmos.active_rect.uy()
         self.buffer_p_cont_y = (pmos_active_top +
@@ -102,6 +105,21 @@ class WriteDriverPgate(BitcellAlignedPgate):
         self.buffer_mid_y = 0.5 * (self.buffer_pmos_inst.get_pins("G")[0].uy() +
                                    self.buffer_nmos_inst.get_pins("G")[0].by())
 
+    def add_ptx_spice(self, name, spice_mod, connections):
+        self.add_inst(name, spice_mod, vector(0, 0))
+        self.connect_inst(connections)
+
+    def get_buffer_tx_connections(self):
+        buffer_nmos = [("bl", "bl_bar", "bl_n_mid"),
+                       ("bl_n_mid", "en", "gnd"),
+                       ("br", "br_bar", "br_n_mid"),
+                       ("br_n_mid", "en", "gnd")]
+        buffer_pmos = [("bl", "bl_bar", "bl_p_mid"),
+                       ("bl_p_mid", "en_bar", "vdd"),
+                       ("br", "br_bar", "br_p_mid"),
+                       ("br_p_mid", "en_bar", "vdd")]
+        return buffer_nmos, buffer_pmos
+
     def add_ptx_connections(self):
         logic_nmos = [("gnd", "data", "bl_bar"),
                       ("gnd", "mask_bar", "bl_bar"),
@@ -111,14 +129,7 @@ class WriteDriverPgate(BitcellAlignedPgate):
                       ("bl_log_mid", "mask_bar", "vdd"),
                       ("br_bar", "data_bar", "br_log_mid"),
                       ("br_log_mid", "mask_bar", "vdd")]
-        buffer_nmos = [("bl", "bl_bar", "bl_n_mid"),
-                       ("bl_n_mid", "en", "gnd"),
-                       ("br", "br_bar", "br_n_mid"),
-                       ("br_n_mid", "en", "gnd")]
-        buffer_pmos = [("bl", "bl_bar", "bl_p_mid"),
-                       ("bl_p_mid", "en_bar", "vdd"),
-                       ("br", "br_bar", "br_p_mid"),
-                       ("br_p_mid", "en_bar", "vdd")]
+        buffer_nmos, buffer_pmos = self.get_buffer_tx_connections()
 
         combinations = [(logic_nmos, self.logic_nmos_spice, "gnd"),
                         (logic_pmos, self.logic_pmos_spice, "vdd"),
@@ -128,15 +139,14 @@ class WriteDriverPgate(BitcellAlignedPgate):
         for connections, spice_mod, body in combinations:
             for conn in connections:
                 name = f"M{inst_index}"
-                self.add_inst(name, spice_mod, vector(0, 0))
-                self.connect_inst(list(conn) + [body])
+                self.add_ptx_spice(name, spice_mod, list(conn) + [body])
                 inst_index += 1
 
     def route_logic_insts(self):
-        self.route_logic_inst_inputs()
-        self.route_logic_inst_outputs()
+        self.route_logic_inputs()
+        self.route_logic_outputs()
 
-    def route_logic_inst_inputs(self):
+    def route_logic_inputs(self):
         nmos_poly = self.get_sorted_pins(self.logic_nmos_inst, "G")
         pmos_poly = self.get_sorted_pins(self.logic_pmos_inst, "G")
         nmos_pins = self.get_sorted_pins(self.logic_nmos_inst, "D")
@@ -176,12 +186,17 @@ class WriteDriverPgate(BitcellAlignedPgate):
             self.add_rect(POLY, nmos_poly[i].ul(), width=nmos_poly[i].width(),
                           height=pmos_poly[i].by() - nmos_poly[i].uy())
 
-    def route_logic_inst_outputs(self):
+    def get_bl_bar_bar_offsets(self, nmos_pins):
+        return [pin.cx() - 0.5 * self.m2_width for pin in nmos_pins]
+
+    def route_logic_outputs(self):
         nmos_pins = self.get_sorted_pins(self.logic_nmos_inst, "D")
         pmos_pins = self.get_sorted_pins(self.logic_pmos_inst, "S")
 
         num_contacts = calculate_num_contacts(self, pmos_pins[0].height(),
                                               layer_stack=m1m2.layer_stack)
+
+        bl_br_bar_offsets = self.get_bl_bar_bar_offsets(nmos_pins)
 
         self.bitline_bar_offsets = []
         for i in range(2):
@@ -202,6 +217,7 @@ class WriteDriverPgate(BitcellAlignedPgate):
                           height=pmos_pin.height())
 
             y_offset = pmos_pin.uy() - self.m2_width
+            x_offset = bl_br_bar_offsets[i]
             self.add_rect(METAL2, vector(x_offset_, y_offset),
                           width=x_offset - x_offset_)
             self.add_rect(METAL2, vector(x_offset, y_offset),
@@ -209,12 +225,16 @@ class WriteDriverPgate(BitcellAlignedPgate):
             self.bitline_bar_offsets.append(x_offset)
 
     def route_buffer_insts(self):
-        self.route_buffer_insts_inputs()
-        self.route_buffer_inst_outputs()
+        self.route_buffer_inputs()
+        self.route_buffer_outputs()
 
-    def route_buffer_insts_inputs(self):
+    def get_buffer_poly(self):
         nmos_poly = self.get_sorted_pins(self.buffer_nmos_inst, "G")
         pmos_poly = self.get_sorted_pins(self.buffer_pmos_inst, "G")
+        return nmos_poly, pmos_poly
+
+    def route_buffer_inputs(self):
+        nmos_poly, pmos_poly = self.get_buffer_poly()
 
         fill_width = m1m2.second_layer_width
         _, fill_height = self.calculate_min_area_fill(fill_width, layer=METAL2)
@@ -281,14 +301,20 @@ class WriteDriverPgate(BitcellAlignedPgate):
             self.add_rect(METAL1, vector(cont_x, mid_y - 0.5 * self.m1_width),
                           width=m1m2_x - cont_x)
 
-    def route_buffer_inst_outputs(self):
+    def get_buffer_output_pin(self, tx_inst, pin_index):
+        return self.get_sorted_pins(tx_inst, "S")[pin_index]
+
+    def get_bitline_rail_offset(self, tx_pins):
+        return tx_pins[0].cx() - 0.5 * m1m2.second_layer_width, m1m2.second_layer_width
+
+    def route_buffer_outputs(self):
         pin_names = ["bl", "br"]
         for i in range(2):
             bitcell_pin = self.bitcell.get_pin(pin_names[i])
             tx_pins = []
             conts = []
             for tx_inst in [self.buffer_pmos_inst, self.buffer_nmos_inst]:
-                tx_pin = self.get_sorted_pins(tx_inst, "S")[i]
+                tx_pin = self.get_buffer_output_pin(tx_inst, i)
                 tx_pins.append(tx_pin)
                 num_contacts = calculate_num_contacts(self, tx_pin.height(),
                                                       layer_stack=m1m2.layer_stack)
@@ -298,19 +324,22 @@ class WriteDriverPgate(BitcellAlignedPgate):
 
             y_bottom = conts[0].by()
             y_top = conts[1].uy() - self.m2_width
-            self.add_rect(METAL2, vector(tx_pins[0].cx() - 0.5 * m1m2.second_layer_width,
-                                         y_bottom), width=m1m2.second_layer_width,
+            rail_offset, rail_width = self.get_bitline_rail_offset(tx_pins)
+            self.add_rect(METAL2, vector(rail_offset, y_bottom), width=rail_width,
                           height=y_top - y_bottom + self.m2_width)
             self.add_rect(METAL2, vector(tx_pins[1].cx(), y_top),
                           width=bitcell_pin.cx() - tx_pins[1].cx())
             self.add_layout_pin(pin_names[i], METAL2, vector(bitcell_pin.lx(), y_top),
                                 width=bitcell_pin.width(), height=self.height - y_top)
 
+    def get_power_pin_combinations(self):
+        return [("gnd", self.logic_nmos_inst, "S"),
+                ("vdd", self.logic_pmos_inst, "D"),
+                ("vdd", self.buffer_pmos_inst, "D"),
+                ("gnd", self.buffer_nmos_inst, "D")]
+
     def route_tx_power(self):
-        pin_combinations = [("gnd", self.logic_nmos_inst, "S"),
-                            ("vdd", self.logic_pmos_inst, "D"),
-                            ("vdd", self.buffer_pmos_inst, "D"),
-                            ("gnd", self.buffer_nmos_inst, "D")]
+        pin_combinations = self.get_power_pin_combinations()
         for i, (power_pin_name, tx_inst, pin_name) in enumerate(pin_combinations):
             for pin in tx_inst.get_pins(pin_name):
                 self.route_pin_to_power(power_pin_name, pin)
@@ -324,8 +353,11 @@ class WriteDriverPgate(BitcellAlignedPgate):
                     self.add_rect_center(METAL2, pin.center(), width=fill_width,
                                          height=fill_height)
 
+    def get_m1_pin_power_pins(self):
+        return ["gnd", "vdd", "gnd"]
+
     def add_power_and_taps(self):
-        pin_names = ["gnd", "vdd", "gnd"]
+        pin_names = self.get_m1_pin_power_pins()
         y_offsets = [0, self.vdd_y, self.height - self.rail_height]
         ptx_insts = [self.logic_nmos_inst, self.logic_pmos_inst, self.buffer_nmos_inst]
 

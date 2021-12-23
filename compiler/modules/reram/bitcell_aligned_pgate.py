@@ -80,16 +80,16 @@ class BitcellAlignedPgate(design, ABC):
         layer = POLY if horz_poly else METAL1
         height = (poly_contact.first_layer_height
                   if horz_poly else poly_contact.second_layer_height)
-        self.add_rect(layer, vector(x_offset, mid_y - 0.5 * height),
-                      height=height, width=nmos_poly[2].cx() - x_offset)
+        self.add_rect(layer, vector(nmos_poly[1].cx(), mid_y - 0.5 * height),
+                      height=height, width=nmos_poly[2].cx() - nmos_poly[1].cx())
 
         return x_offsets[0]
 
     def add_power_tap(self, y_offset, pin_name, tx_inst, add_m3=True):
-        if pin_name == "vdd":
-            well_type = "nwell"
-        else:
+        if pin_name == "gnd":
             well_type = "pwell"
+        else:
+            well_type = "nwell"
         implant_type = well_type[0]
 
         max_width = self.width - self.get_space(ACTIVE)

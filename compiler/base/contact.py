@@ -57,6 +57,8 @@ class contact(design.design, metaclass=unique_meta.Unique):
         self.area_fill = area_fill
         self.pins = [] # used for matching parm lengths
         self.create_layout()
+        self.h_1, self.w_1 = self.first_layer_height, self.first_layer_width
+        self.h_2, self.w_2 = self.second_layer_height, self.second_layer_width
 
     def create_layout(self):
         self.setup_layers()

@@ -21,6 +21,8 @@ netgen_dir = os.path.join(PDK_DIR, "netgen")
 os.environ["NETGEN_RC"] = os.path.join(netgen_dir, "setup.tcl")
 
 sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
+                                                "modules")))
 
 export_library_name = "generated"
 work_dir = os.environ.get("WORK_DIR_SKY130", None)

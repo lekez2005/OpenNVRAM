@@ -91,9 +91,6 @@ class ptx(design.design):
         poly_space = obj.poly_space
         if num_independent_contacts == 1:
             poly_width = obj.poly_width
-        elif num_independent_contacts == 2:
-            # contacts will be to left and right edges each
-            poly_width = obj.poly_width
         else:
             poly_width = poly_contact.first_layer_width
         pitch = poly_width + poly_space

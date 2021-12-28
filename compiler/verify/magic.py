@@ -37,6 +37,7 @@ exit
 drc_template = """
 select top cell
 expand
+{flatten_command}
 select top cell
 puts "Finish Expand and select"
 drc style drc(full)
@@ -223,12 +224,23 @@ def check_process_errors(err_file, op_name, benign_errors=None):
                     debug.error(f"{op_name} Errors: {errors}")
 
 
-def run_drc(cell_name, gds_name, exception_group=""):
+def run_drc(cell_name, gds_name, exception_group="", flatten=True):
     """Run DRC check on a cell which is implemented in gds_name."""
     from tech import drc_exceptions
     debug.info(1, f"Running DRC for cell {cell_name}")
-    refresh_command = get_refresh_command(cell_name)
-    kwargs = {"other_commands": drc_template + refresh_command}
+
+    if flatten:
+        drc_cell_name = f"{cell_name}_flat"
+        flatten_command = f'flatten "{drc_cell_name}"\nload "{drc_cell_name}"\n' \
+                          f'writeall force "{drc_cell_name}"\n'
+    else:
+        drc_cell_name = cell_name
+        flatten_command = "expand"
+    drc_cell_name = os.path.join(os.path.dirname(gds_name), drc_cell_name)
+    refresh_command = get_refresh_command(drc_cell_name)
+
+    drc_command = drc_template.format(flatten_command=flatten_command)
+    kwargs = {"other_commands": drc_command + refresh_command}
     script = generate_magic_script(gds_name, cell_name, True, "drc", **kwargs)
     return_code, out_file, err_file = run_script(script, cell_name, "drc")
 

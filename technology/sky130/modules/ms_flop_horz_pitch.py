@@ -4,7 +4,6 @@ Should really be done in magic but...
 import tech
 from base.contact import m1m2, cross_m1m2, poly as poly_contact
 from base.design import design, POLY, METAL1, METAL2, ACTIVE
-from base.geometry import MIRROR_X_AXIS
 from base.utils import round_to_grid as round_
 from base.vector import vector
 from modules.reram.bitcell_aligned_pgate import BitcellAlignedPgate
@@ -19,18 +18,16 @@ class MsFlopHorzPitch(BitcellAlignedPgate):
         self.create_layout()
 
     def create_layout(self):
-        self.height = 3.2
+
+        self.set_tx_sizes()
         self.add_clk_buffer()
         self.add_leader_tgate()
         self.add_leader_buffer()
         self.add_follower_tgate()
         self.add_follower_buffer()
-        self.width = self.get_pin("dout").rx()
         self.add_power()
-
         self.add_boundary()
-        tx_insts = [x for x in self.insts if isinstance(x.mod, ptx)]
-        self.flatten_tx(*tx_insts)
+        self.flatten_tx()
         tech.add_tech_layers(self)
 
     def create_ptx(self, width, is_pmos=False, **kwargs):
@@ -47,7 +44,7 @@ class MsFlopHorzPitch(BitcellAlignedPgate):
         self.connect_inst([], check=False)
         return inst
 
-    def join_poly(self, nmos_inst, pmos_inst, indices=None):
+    def join_poly(self, nmos_inst, pmos_inst, indices=None, mid_y=None):
         all_nmos_poly = self.get_sorted_pins(nmos_inst, "G")
         all_pmos_poly = self.get_sorted_pins(pmos_inst, "G")
         if indices is None:
@@ -57,46 +54,51 @@ class MsFlopHorzPitch(BitcellAlignedPgate):
         for nmos_index, pmos_index in indices:
             nmos_poly = all_nmos_poly[nmos_index]
             pmos_poly = all_pmos_poly[pmos_index]
+            bottom_poly, top_poly = sorted([nmos_poly, pmos_poly], key=lambda x: x.by())
             width = nmos_poly.width()
-            if round_(nmos_poly.lx()) == round_(pmos_poly.lx()):
-                self.add_rect(POLY, nmos_poly.ul(), width=width,
-                              height=pmos_poly.by() - nmos_poly.uy())
+            if round_(bottom_poly.lx()) == round_(top_poly.lx()):
+                self.add_rect(POLY, bottom_poly.ul(), width=width,
+                              height=top_poly.by() - bottom_poly.uy())
             else:
-                mid_y = 0.5 * (nmos_poly.uy() + pmos_poly.by()) - 0.5 * width
-                self.add_rect(POLY, nmos_poly.ul(), width=width,
-                              height=mid_y + width - nmos_poly.uy())
-                self.add_rect(POLY, vector(nmos_poly.lx(), mid_y), height=width,
-                              width=pmos_poly.cx() - nmos_poly.lx())
-                self.add_rect(POLY, vector(pmos_poly.lx(), mid_y), width=width,
-                              height=pmos_poly.by() - mid_y)
+                if mid_y is None:
+                    mid_y = 0.5 * (bottom_poly.uy() + top_poly.by()) - 0.5 * width
+                self.add_rect(POLY, bottom_poly.ul(), width=width,
+                              height=mid_y + width - bottom_poly.uy())
+                self.add_rect(POLY, vector(bottom_poly.lx(), mid_y), height=width,
+                              width=top_poly.cx() - bottom_poly.lx())
+                self.add_rect(POLY, vector(top_poly.lx(), mid_y), width=width,
+                              height=top_poly.by() - mid_y)
 
-    def add_clk_buffer(self):
+    def set_tx_sizes(self):
+        self.height = 3.2
+        self.nmos_clk_size = 0.36
+        self.pmos_clk_size = 0.9
+
+        self.nmos_tgate_size = 0.36
+        self.pmos_tgate_size = 0.6
+
+        self.nmos_latch_size = 0.61
+        self.pmos_latch_size = self.nmos_latch_size * 2
+
+    def get_clk_buf_offsets(self, nmos, pmos):
         mid_y = 1.4
         space = 0.24
 
         contact_y = 1.39
         tx_x_offset = 0.2
-
-        # add transistors
-        nmos = self.create_ptx(0.36, False, mults=2)
         nmos_y = mid_y - space - nmos.active_rect.uy()
+        pmos_y = mid_y + space + (pmos.height - pmos.active_rect.uy())
 
-        self.clk_buf_nmos_inst = self.add_ptx_inst(nmos, vector(tx_x_offset, nmos_y))
+        return nmos_y, pmos_y, tx_x_offset, contact_y
 
-        pmos = self.create_ptx(0.9, True, mults=2)
-        y_offset = mid_y + space + (pmos.height - pmos.active_rect.uy()) + pmos.height
-        self.clk_buf_pmos_inst = self.add_ptx_inst(pmos, vector(tx_x_offset, y_offset),
-                                                   mirror=MIRROR_X_AXIS)
-
-        self.join_poly(self.clk_buf_nmos_inst, self.clk_buf_pmos_inst)
-
-        # clk pin
+    def add_clk_pin(self, contact_y):
         nmos_poly = self.get_sorted_pins(self.clk_buf_nmos_inst, "G")
         x_offset = nmos_poly[0].rx() - poly_contact.first_layer_width
         self.add_contact(poly_contact.layer_stack, vector(x_offset, contact_y))
         pin_y = contact_y + 0.5 * poly_contact.second_layer_height - 0.5 * self.m1_width
         self.add_layout_pin("clk", METAL1, vector(0, pin_y), width=nmos_poly[0].lx())
 
+    def route_clk_buf(self, contact_y):
         # clk_bar
         pmos_source = self.clk_buf_pmos_inst.get_pins("S")[0]
         y_top = pmos_source.by() + m1m2.second_layer_height - m1m2.first_layer_height
@@ -110,6 +112,7 @@ class MsFlopHorzPitch(BitcellAlignedPgate):
                       height=y_top - y_offset + 0.5 * m1m2.second_layer_height)
 
         # clk_bar to clk_buf_in
+        nmos_poly = self.get_sorted_pins(self.clk_buf_nmos_inst, "G")
         via_x = (nmos_poly[0].rx() + self.poly_vert_space +
                  0.5 * poly_contact.first_layer_width)
         offset = vector(via_x, contact_y + 0.5 * poly_contact.height)
@@ -118,13 +121,28 @@ class MsFlopHorzPitch(BitcellAlignedPgate):
         self.clk_bar_0 = self.add_rect(METAL2,
                                        vector(x_offset, offset.y - 0.5 * self.m2_width),
                                        width=via_x - x_offset)
-
         # clk_buf
         x_offset = via_x + 0.5 * poly_contact.second_layer_width + self.m1_space
         pmos_source = self.clk_buf_pmos_inst.get_pins("S")[1]
         nmos_source = self.clk_buf_nmos_inst.get_pins("S")[1]
         self.clk_buf_m1 = self.add_rect(METAL1, vector(x_offset, nmos_source.by()),
                                         height=pmos_source.uy() - nmos_source.by())
+
+    def add_clk_buffer(self):
+        # add transistors
+        nmos = self.create_ptx(self.nmos_clk_size, False, mults=2)
+        pmos = self.create_ptx(self.pmos_clk_size, True, mults=2)
+
+        nmos_y, pmos_y, tx_x_offset, contact_y = self.get_clk_buf_offsets(nmos, pmos)
+        self.clk_buf_nmos_inst = self.add_ptx_inst(nmos, vector(tx_x_offset, nmos_y))
+
+        self.clk_buf_pmos_inst = self.add_ptx_inst(pmos, vector(tx_x_offset, pmos_y))
+
+        self.join_poly(self.clk_buf_nmos_inst, self.clk_buf_pmos_inst)
+
+        # clk pin
+        self.add_clk_pin(contact_y)
+        self.route_clk_buf(contact_y)
 
     def add_poly_contact(self, tx_inst, *, y_offset: float, poly_index: int,
                          rotate=90, x_offset=None):
@@ -145,8 +163,8 @@ class MsFlopHorzPitch(BitcellAlignedPgate):
         return x_offset
 
     def add_leader_tgate(self):
-        tgate_nmos = self.create_ptx(0.36, False, mults=2)
-        tgate_pmos = self.create_ptx(0.6, True, mults=2)
+        tgate_nmos = self.create_ptx(self.nmos_tgate_size, False, mults=2)
+        tgate_pmos = self.create_ptx(self.pmos_tgate_size, True, mults=2)
         x_offset = (self.clk_buf_pmos_inst.lx() +
                     self.clk_buf_pmos_inst.mod.active_rect.rx() + self.get_space(ACTIVE))
         x_offset -= tgate_nmos.active_rect.lx()
@@ -303,9 +321,8 @@ class MsFlopHorzPitch(BitcellAlignedPgate):
         return via_x
 
     def add_leader_buffer(self):
-        width = 0.61
-        buffer_nmos = self.create_ptx(width, False, mults=2)
-        buffer_pmos = self.create_ptx(width * 2, True, mults=2)
+        buffer_nmos = self.create_ptx(self.nmos_latch_size, False, mults=2)
+        buffer_pmos = self.create_ptx(self.pmos_latch_size, True, mults=2)
 
         # TODO active overlap not working?
         x_offset = (self.l_tgate_nmos.lx() + self.l_tgate_nmos.mod.active_rect.rx() +
@@ -469,9 +486,12 @@ class MsFlopHorzPitch(BitcellAlignedPgate):
                             vector(nmos_pin.cx(), dout_y - 0.5 * self.m2_width),
                             width=right_edge - nmos_pin.cx())
 
+        self.width = self.get_pin("dout").rx()
+
     def route_tx_to_power(self, tx_inst):
         pin_name = "vdd" if tx_inst.mod.tx_type.startswith("p") else "gnd"
-        power_pin = self.get_pin(pin_name)
+        power_pins = self.get_pins(pin_name)
+        power_pin = min(power_pins, key=lambda x: abs(x.cy() - tx_inst.cy()))
         tx_pin = tx_inst.get_pin("D")
         width = 0.2
         y_offset = tx_pin.by() if pin_name == "vdd" else tx_pin.uy()

@@ -32,6 +32,7 @@ class BitcellAlignedArray(design, ABC):
         if word_size is not None:
             words_per_row = int(columns / word_size)
 
+        self.mirror = self.__class__.mirror or OPTS.mirror_bitcell_y_axis
         self.word_size = int(columns / words_per_row)
         self.words_per_row = words_per_row
         self.num_columns = columns

@@ -3,7 +3,7 @@ from abc import ABC
 import tech
 from base import utils
 from base.contact import well as well_contact, poly as poly_contact, cross_poly, m1m2, m2m3, cross_m1m2, cross_m2m3
-from base.design import design, ACTIVE, METAL1, POLY, METAL3, METAL2
+from base.design import design, ACTIVE, METAL1, POLY, METAL3, METAL2, PWELL, NWELL
 from base.layout_clearances import find_clearances, HORIZONTAL
 from base.vector import vector
 from base.well_active_contacts import calculate_num_contacts
@@ -46,6 +46,9 @@ class BitcellAlignedPgate(design, ABC):
         return tx_spice
 
     def flatten_tx(self, *args):
+        if not args:
+            args = [x for x in self.insts if isinstance(x.mod, ptx) and
+                    not isinstance(x.mod, ptx_spice)]
         for tx_inst in args:
             ptx.flatten_tx_inst(self, tx_inst)
 
@@ -85,11 +88,36 @@ class BitcellAlignedPgate(design, ABC):
 
         return x_offsets[0]
 
+    def extend_tx_well(self, tx_inst, well_type, pin, cont=None):
+        if tech.info[f"has_{well_type}"]:
+            if cont is not None:
+                well_width = cont.mod.first_layer_height + 2 * self.well_enclose_active
+                well_width = max(self.width, well_width)
+            else:
+                well_width = self.width
+
+            ptx_rects = tx_inst.get_layer_shapes(well_type)
+            ptx_rect = max(ptx_rects, key=lambda x: x.width * x.height)
+            well_width = max(well_width, ptx_rect.width)
+
+            x_offset = 0.5 * (self.width - well_width)
+
+            if pin.cy() < tx_inst.cy():
+                well_top = ptx_rect.uy()
+                well_bottom = (pin.cy() - 0.5 * well_contact.first_layer_width -
+                               self.well_enclose_active)
+            else:
+                well_top = (pin.cy() + 0.5 * well_contact.first_layer_width +
+                            self.well_enclose_active)
+                well_bottom = ptx_rect.by()
+            self.add_rect(well_type, vector(x_offset, well_bottom), width=well_width,
+                          height=well_top - well_bottom)
+
     def add_power_tap(self, y_offset, pin_name, tx_inst, add_m3=True):
         if pin_name == "gnd":
-            well_type = "pwell"
+            well_type = PWELL
         else:
-            well_type = "nwell"
+            well_type = NWELL
         implant_type = well_type[0]
 
         max_width = self.width - self.get_space(ACTIVE)
@@ -108,23 +136,7 @@ class BitcellAlignedPgate(design, ABC):
                                        well_type=well_type)
 
         # add well
-        if tech.info[f"has_{well_type}"]:
-            well_width = cont.mod.first_layer_height + 2 * self.well_enclose_active
-            well_width = max(self.width, well_width)
-            x_offset = 0.5 * (self.width - well_width)
-            ptx_rects = tx_inst.get_layer_shapes(well_type)
-            ptx_rect = max(ptx_rects, key=lambda x: x.width * x.height)
-
-            if pin.cy() < tx_inst.cy():
-                well_top = ptx_rect.uy()
-                well_bottom = (pin.cy() - 0.5 * well_contact.first_layer_width -
-                               self.well_enclose_active)
-            else:
-                well_top = (pin.cy() + 0.5 * well_contact.first_layer_width +
-                            self.well_enclose_active)
-                well_bottom = ptx_rect.by()
-            self.add_rect(well_type, vector(x_offset, well_bottom), width=well_width,
-                          height=well_top - well_bottom)
+        self.extend_tx_well(tx_inst, well_type, pin, cont)
 
         if not add_m3:
             return pin, cont, well_type
@@ -136,15 +148,21 @@ class BitcellAlignedPgate(design, ABC):
 
         min_space = (max(m1m2.second_layer_width, m2m3.first_layer_width) +
                      2 * self.get_parallel_space(METAL2))
+        half_space = utils.round_to_grid(0.5 * min_space)
 
         for space in open_spaces:
             space = [utils.round_to_grid(x) for x in space]
+            extent = utils.round_to_grid(space[1] - space[0])
             if space[0] == 0.0:
                 mid_contact = 0
-            elif space[1] == self.width:
+                if extent <= half_space:
+                    continue
+            elif space[1] == utils.round_to_grid(self.width):
                 mid_contact = self.width
+                if extent <= half_space:
+                    continue
             else:
-                if space[1] - space[0] <= min_space:
+                if extent <= min_space:
                     continue
                 mid_contact = utils.round_to_grid(0.5 * (space[0] + space[1]))
             offset = vector(mid_contact, pin.cy())

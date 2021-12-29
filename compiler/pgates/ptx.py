@@ -42,7 +42,7 @@ class ptx(design.design):
             # poly pitch will be calculated based on
             # min space between independent poly contacts
             name += "_pi"
-        if active_cont_pos:
+        if active_cont_pos is not None:
             name += f"_ac_{''.join(map(str, active_cont_pos))}"
         if num_contacts:
             name += "_c{}".format(num_contacts)
@@ -500,7 +500,7 @@ class ptx(design.design):
 
         contact_positions = self.get_contact_positions()
         self.contact_positions = contact_positions
-        if self.active_cont_pos:
+        if self.active_cont_pos is not None:
             contact_positions = [contact_positions[x] for x in self.active_cont_pos]
 
         source_positions = contact_positions[::2]

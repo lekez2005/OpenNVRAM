@@ -5,6 +5,7 @@ from config_reram_base import *
 
 ms_flop = "ms_flop_clk_buf.MsFlopClkBuf"
 ms_flop_horz_pitch = "ms_flop_horz_pitch.MsFlopHorzPitch"
+sense_amp = "reram_sense_amp.ReRamSenseAmp"
 
 symmetric_bitcell = False
 mirror_bitcell_y_axis = True

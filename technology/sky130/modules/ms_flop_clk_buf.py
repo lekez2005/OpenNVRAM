@@ -134,12 +134,6 @@ class MsFlopClkBuf(MsFlopHorzPitch):
         self.add_power_tap(0, "gnd", self.clk_buf_nmos_inst)
         self.add_power_tap(self.clk_buf_vdd_y, "vdd", self.clk_buf_pmos_inst)
 
-    def calculate_poly_via_offsets(self, tx_inst):
-        poly_rects = self.get_sorted_pins(tx_inst, "G")
-        left_via_x = poly_rects[0].rx() - 0.5 * poly_contact.w_1
-        right_via_x = poly_rects[1].lx() + 0.5 * poly_contact.w_1
-        return left_via_x, right_via_x
-
     def route_tgate_poly_contacts(self, nmos_inst, pmos_inst,
                                   n_contact_y, p_contact_y):
         mid_y = p_contact_y + 0.5 * poly_contact.w_1 + self.poly_vert_space

@@ -4,10 +4,8 @@ Should really be done in magic but...
 import tech
 from base.contact import m1m2, cross_m1m2, poly as poly_contact
 from base.design import design, POLY, METAL1, METAL2, ACTIVE
-from base.utils import round_to_grid as round_
 from base.vector import vector
 from modules.reram.bitcell_aligned_pgate import BitcellAlignedPgate
-from pgates.ptx import ptx
 
 
 class MsFlopHorzPitch(BitcellAlignedPgate):
@@ -31,43 +29,12 @@ class MsFlopHorzPitch(BitcellAlignedPgate):
         tech.add_tech_layers(self)
 
     def create_ptx(self, width, is_pmos=False, **kwargs):
-        if is_pmos:
-            tx_type = "pmos"
-        else:
-            tx_type = "nmos"
-        tx = ptx(width=width, tx_type=tx_type, **kwargs)
-        self.add_mod(tx)
-        return tx
+        return self.create_ptx_by_width(width, is_pmos, **kwargs)
 
     def add_ptx_inst(self, tx, offset, **kwargs):
         inst = self.add_inst(tx.name, tx, offset, **kwargs)
         self.connect_inst([], check=False)
         return inst
-
-    def join_poly(self, nmos_inst, pmos_inst, indices=None, mid_y=None):
-        all_nmos_poly = self.get_sorted_pins(nmos_inst, "G")
-        all_pmos_poly = self.get_sorted_pins(pmos_inst, "G")
-        if indices is None:
-            num_poly = len(all_nmos_poly)
-            indices = [(i, i) for i in range(num_poly)]
-
-        for nmos_index, pmos_index in indices:
-            nmos_poly = all_nmos_poly[nmos_index]
-            pmos_poly = all_pmos_poly[pmos_index]
-            bottom_poly, top_poly = sorted([nmos_poly, pmos_poly], key=lambda x: x.by())
-            width = nmos_poly.width()
-            if round_(bottom_poly.lx()) == round_(top_poly.lx()):
-                self.add_rect(POLY, bottom_poly.ul(), width=width,
-                              height=top_poly.by() - bottom_poly.uy())
-            else:
-                if mid_y is None:
-                    mid_y = 0.5 * (bottom_poly.uy() + top_poly.by()) - 0.5 * width
-                self.add_rect(POLY, bottom_poly.ul(), width=width,
-                              height=mid_y + width - bottom_poly.uy())
-                self.add_rect(POLY, vector(bottom_poly.lx(), mid_y), height=width,
-                              width=top_poly.cx() - bottom_poly.lx())
-                self.add_rect(POLY, vector(top_poly.lx(), mid_y), width=width,
-                              height=top_poly.by() - mid_y)
 
     def set_tx_sizes(self):
         self.height = 3.2
@@ -487,16 +454,6 @@ class MsFlopHorzPitch(BitcellAlignedPgate):
                             width=right_edge - nmos_pin.cx())
 
         self.width = self.get_pin("dout").rx()
-
-    def route_tx_to_power(self, tx_inst):
-        pin_name = "vdd" if tx_inst.mod.tx_type.startswith("p") else "gnd"
-        power_pins = self.get_pins(pin_name)
-        power_pin = min(power_pins, key=lambda x: abs(x.cy() - tx_inst.cy()))
-        tx_pin = tx_inst.get_pin("D")
-        width = 0.2
-        y_offset = tx_pin.by() if pin_name == "vdd" else tx_pin.uy()
-        self.add_rect(METAL1, vector(tx_pin.cx() - 0.5 * width, y_offset),
-                      width=width, height=power_pin.cy() - y_offset)
 
     def add_power(self):
         self.add_power_tap(0, "gnd", self.l_tgate_nmos, add_m3=False)

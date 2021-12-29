@@ -16,7 +16,7 @@ class reram_bitcell(design, metaclass=Unique):
         self.height = 2.7
         self.add_pin_list(["BL", "BR", "WL", "gnd"])
 
-        x_offsets = [0.25 * self.width, 0.75 * self.width,
+        x_offsets = [0.17 * self.width, 0.85 * self.width,
                      0.1 * self.width, 0.9 * self.width]
         for i, pin_name in enumerate(self.pins):
             self.add_layout_pin(pin_name, METAL1, offset=vector(x_offsets[i], 0))

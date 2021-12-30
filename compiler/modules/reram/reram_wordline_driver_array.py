@@ -26,7 +26,7 @@ class reram_wordline_driver_array(stacked_wordline_driver_array):
             # calculate m1m2 via locations
             vias = []
             for open_space in open_spaces:
-                available_space = open_space[1] - open_space[0] - self.m2_space
+                available_space = open_space[1] - open_space[0] - 2 * self.m2_space
                 mid_x = 0.5 * (open_space[0] + open_space[1])
                 for via in [m1m2, m2m3]:
                     sample_contact = calculate_num_contacts(self, available_space,

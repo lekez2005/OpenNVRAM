@@ -179,8 +179,14 @@ class pgate(pgates_characterization_base, design.design):
             track_extent = max(fill_height, contact.poly.second_layer_height,
                                contact.m1m2.second_layer_height)
         else:
-            self.gate_rail_pitch = (0.5 * self.m2_width +
-                                    line_space + 0.5 * self.m2_width)
+            # TODO: sky_tapeout: fix gate pin pitch
+            if getattr(OPTS, "begin_adjacent_pgate_hack", False):
+                width = m1m2.w_2
+            else:
+                width = self.m2_width
+
+            self.gate_rail_pitch = (0.5 * width +
+                                    line_space + 0.5 * width)
             track_extent = (self.num_tracks - 1) * self.gate_rail_pitch
             track_extent += max(contact.poly.second_layer_height, contact.m1m2.second_layer_height)
 
@@ -335,13 +341,24 @@ class pgate(pgates_characterization_base, design.design):
         else:
             self.num_dummy_poly = 0
             self.total_poly = self.tx_mults + self.num_dummy_poly
-            self.active_mid_x = self.active_width / 2 + self.implant_enclose_ptx_active
+
+            # TODO: sky_tapeout: nwell extending into adjacent cells is problematic
+            if getattr(OPTS, "begin_adjacent_pgate_hack", False):
+                implant_enclose_ptx_active = 0.34
+            else:
+                implant_enclose_ptx_active = self.implant_enclose_ptx_active
+            self.active_mid_x = self.active_width / 2 + implant_enclose_ptx_active
 
             output_x = self.get_output_x()
             self.width = output_x + self.m1_width + self.get_parallel_space(METAL1)
 
             self.poly_x_start = (self.active_mid_x - 0.5 * self.active_width +
                                  self.end_to_poly + 0.5 * self.ptx_poly_width)
+
+        # nwell
+        # TODO: sky_tapeout: nwell extending into adjacent cells is problematic
+        well_space = 1.27
+        self.width = max(self.width, well_space)
 
         self.implant_width = max(self.width, self.active_width + 2 * self.implant_enclose_ptx_active)
         self.mid_x = self.width / 2
@@ -566,8 +583,14 @@ class pgate(pgates_characterization_base, design.design):
         self.add_rect(PIMP, offset=vector(implant_x, self.nwell_y), width=self.implant_width,
                       height=self.pimplant_height)
         # nwell
-        nwell_x = self.mid_x - 0.5 * self.nwell_width
-        self.add_rect(NWELL, offset=vector(nwell_x, self.nwell_y), width=self.nwell_width,
+        # TODO: sky_tapeout: nwell extending into adjacent cells is problematic
+        if getattr(OPTS, "begin_adjacent_pgate_hack", False):
+            nwell_x = 0
+            width = self.width
+        else:
+            nwell_x = self.mid_x - 0.5 * self.nwell_width
+            width = self.nwell_width
+        self.add_rect(NWELL, offset=vector(nwell_x, self.nwell_y), width=width,
                       height=self.nwell_height)
         # pwell
         if info["has_pwell"]:

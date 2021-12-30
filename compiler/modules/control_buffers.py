@@ -6,7 +6,7 @@ from typing import List, Tuple, Union
 import debug
 from base import utils
 from base.contact import m2m3, m1m2, cross_m2m3, cross_m1m2
-from base.design import design, METAL3, METAL2, METAL1, DRAWING, ACTIVE, NIMP, PWELL
+from base.design import design, METAL3, METAL2, METAL1, DRAWING, ACTIVE, NIMP, PWELL, TAP_ACTIVE, PIMP, NWELL
 from base.geometry import NO_MIRROR, MIRROR_XY
 from base.utils import round_to_grid as round_gd
 from base.vector import vector
@@ -425,7 +425,12 @@ class ControlBuffers(design, ABC):
                 x_offset = pin.rx() - m1m2.height
         elif pin_index == 1:  # B pin
             a_pin = inst_mod.get_pin("A")
-            x_space = self.get_parallel_space(METAL2) + self.m2_width
+            # TODO: sky_tapeout: more accurately adjust rail offset
+            if getattr(OPTS, "begin_adjacent_pgate_hack", False):
+                width = 0.2
+            else:
+                width = self.m2_width
+            x_space = self.get_parallel_space(METAL2) + width
             x_offset = a_pin.rx() - m1m2.height - x_space
         elif pin_index == 2:  # C pin
             b_pin = inst_mod.get_pin("B")
@@ -985,8 +990,29 @@ class ControlBuffers(design, ABC):
     def fill_layers(self):
         """Fill spaces between adjacent modules"""
         layers, purposes = get_default_fill_layers()
-        layers.append(ACTIVE)
-        purposes.append(DRAWING)
+
+        layers.append(TAP_ACTIVE)
+        # TODO: sky_tapeout: fix purpose
+        purposes.append(None)
+        # debug.pycharm_debug()
+
+        # TODO: sky_tapeout: fix implants: magic doesn't seem to like abbuted implants
+        # if the implants are at different hierarchical levels
+        for layer in [NIMP, PIMP]:
+            func = max if layer == NIMP else min
+            rect = func(self.top_insts[0].get_layer_shapes(layer, recursive=True),
+                        key=lambda x: x.cy())
+            x_offset = self.top_insts[0].lx()
+            self.add_rect(layer, vector(x_offset, rect.by()),
+                          height=rect.height,
+                          width=self.top_insts[-1].rx() - x_offset)
+            if layer == NIMP:
+                ext = self.well_enclose_active
+                top = rect.uy() + self.well_enclose_active
+                bot = top - 0.84
+                self.add_rect(NWELL, vector(x_offset - ext, bot),
+                              height=top-bot,
+                              width=self.top_insts[-1].rx() - x_offset + 2 * ext)
 
         instances = [self.top_insts[:-1], self.top_insts[1:]]
         if len(self.bottom_insts) > 1:
@@ -994,6 +1020,7 @@ class ControlBuffers(design, ABC):
             instances[0].extend(bottom_insts[:-1])
             instances[1].extend(bottom_insts[1:])
         for left_inst, right_inst in zip(instances[0], instances[1]):
+
             fills = create_wells_and_implants_fills(left_inst, right_inst, layers, purposes)
             if fills:
                 for layer, rect_bottom, rect_top, left_rect, right_rect in fills:

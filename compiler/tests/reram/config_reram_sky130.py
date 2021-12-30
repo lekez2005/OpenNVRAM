@@ -24,6 +24,12 @@ ms_flop = "ms_flop_clk_buf.MsFlopClkBuf"
 ms_flop_horz_pitch = "ms_flop_horz_pitch.MsFlopHorzPitch"
 predecoder_flop = "ms_flop_horz_pitch.MsFlopHorzPitch"
 sense_amp = "reram_sense_amp.ReRamSenseAmp"
+
+br_reset_buffers = [1, 3.42, 11.7, 40]
+bl_reset_buffers = [3.1, 9.65, 30]
+
+logic_buffers_height = 4
+
 # TODO:
 # Buffer size optimizations
 # column mux

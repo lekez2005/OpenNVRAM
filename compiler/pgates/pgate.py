@@ -510,6 +510,12 @@ class pgate(pgates_characterization_base, design.design):
     def add_poly_contacts(self, pin_names, y_shifts):
 
         poly_cont_shifts = [0.0] * 3
+        cont_shift = 0.5 * (contact.poly.w_1 - self.ptx_poly_width)
+        if self.num_tracks == 2:
+            poly_cont_shifts = [-cont_shift, cont_shift]
+        elif self.num_tracks == 3:
+            poly_cont_shifts = [-cont_shift, 0, cont_shift]
+
         if self.same_line_inputs:  # all contacts are centralized and x shifted for min drc fill
             y_shifts = [0.0] * len(y_shifts)
             x_shift = 0.5 * contact.poly.second_layer_width - 0.5 * self.gate_fill_width
@@ -517,11 +523,6 @@ class pgate(pgates_characterization_base, design.design):
                 x_shifts = [0.0]
             else:
                 x_shifts = [x * x_shift for x in [1, 0, -1]]
-                cont_shift = 0.5 * (contact.poly.w_1 - self.ptx_poly_width)
-                if self.num_tracks == 2:
-                    poly_cont_shifts = [-cont_shift, cont_shift]
-                elif self.num_tracks == 3:
-                    poly_cont_shifts = [-cont_shift, 0, cont_shift]
         else:
             x_shifts = [0.0] * 3
 

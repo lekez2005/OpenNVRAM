@@ -42,7 +42,7 @@ def seal_poly_vias(obj: design):
 
 
 def enhance_pgate(obj: design):
-    if not OPTS.enhance_pgate_pins or not isinstance(obj, pgate):
+    if not OPTS.enhance_pgate_pins or not isinstance(obj, pgate) or True:
         return
     pin_names = ["vdd", "gnd"]
 

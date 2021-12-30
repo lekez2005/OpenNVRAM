@@ -307,7 +307,7 @@ def get_lvs_kwargs(cell_name, mag_file, source_spice, final_verification, flatte
         "cell_name_": cell_name,
         "mag_file_": mag_file,
         "flatten_command": flatten_command,
-        "flat_suffix": "_flat"
+        "flat_suffix": "_flat"*flatten
     }
     return kwargs
 

@@ -5,6 +5,7 @@ from base import utils
 from base.contact import well as well_contact, poly as poly_contact, cross_poly, m1m2, m2m3, cross_m1m2, cross_m2m3
 from base.design import design, ACTIVE, METAL1, POLY, METAL3, METAL2, PWELL, NWELL
 from base.layout_clearances import find_clearances, HORIZONTAL
+from base.unique_meta import Unique
 from base.utils import round_to_grid as round_
 from base.vector import vector
 from base.well_active_contacts import calculate_num_contacts
@@ -13,7 +14,7 @@ from pgates.ptx import ptx
 from pgates.ptx_spice import ptx_spice
 
 
-class BitcellAlignedPgate(design, ABC):
+class BitcellAlignedPgate(design, metaclass=Unique):
     mod_name = None
 
     def create_layout(self):

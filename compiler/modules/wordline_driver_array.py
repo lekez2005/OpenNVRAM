@@ -74,7 +74,7 @@ class wordline_driver_array(BitcellVerticalAligned):
                      rotate=90)
 
     def get_height(self):
-        return self.logic_buffer.height * self.rows
+        return self.bitcell_offsets[-1] + self.bitcell.height
 
     def add_en_pin(self):
         en_pin_x = self.m1_space

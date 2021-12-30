@@ -8,7 +8,6 @@ from base.contact import m2m3, cross_m2m3
 from base.design import ACTIVE, PIMP, METAL2, METAL3, METAL1
 from base.vector import vector
 from globals import OPTS
-from modules.bitcell_array import bitcell_array
 from modules.hierarchical_predecode2x4 import hierarchical_predecode2x4 as pre2x4
 from modules.hierarchical_predecode3x8 import hierarchical_predecode3x8 as pre3x8
 from pgates.pinv import pinv
@@ -365,13 +364,13 @@ class hierarchical_decoder(design.design):
                                                 mirror=mirror))
 
     def get_row_y_offset(self, row):
+        y_off = self.predecoder_height + self.bitcell_offsets[row]
         if row % 2 == 1:
-            inv_row_height = self.inv.height * row
             mirror = "R0"
         else:
-            inv_row_height = self.inv.height * (row + 1)
+            y_off += self.inv.height
             mirror = "MX"
-        y_off = self.predecoder_height + inv_row_height
+
         return y_off, mirror
 
     def add_decoder_inv_array(self):
@@ -489,7 +488,7 @@ class hierarchical_decoder(design.design):
 
         for row in range(self.rows):
             gnd_pin = self.nand_inst[row].get_pin("gnd")
-            self.add_contact_center(contact.contact.active_layers,
+            self.add_contact_center(contact.well.layer_stack,
                                     offset=vector(implant_x, gnd_pin.cy()), size=[num_contacts, 1])
             self.add_rect_center("pimplant", offset=vector(implant_x, gnd_pin.cy()),
                                  width=implant_width, height=implant_height)
@@ -498,7 +497,7 @@ class hierarchical_decoder(design.design):
                                      width=pwell_width, height=pwell_height)
 
             vdd_pin = self.nand_inst[row].get_pin("vdd")
-            self.add_contact_center(contact.contact.active_layers,
+            self.add_contact_center(contact.well.layer_stack,
                                     offset=vector(implant_x, vdd_pin.cy()), size=[num_contacts, 1])
             self.add_rect_center("nimplant", offset=vector(implant_x, vdd_pin.cy()),
                                  width=implant_width, height=implant_height)
@@ -611,7 +610,8 @@ class hierarchical_decoder(design.design):
                 rail_width = via_x - rail_x - 0.5 * self.m3_width
             self.add_rect(METAL3, offset=vector(rail_x, rail_y), width=rail_width)
 
-            self.add_rect(METAL3, offset=vector(via_x - 0.5 * self.m3_width, pin.cy()),
+            self.add_rect(METAL3, offset=vector(via_x - 0.5 * m2m3.w_2, pin.cy()),
+                          width=m2m3.w_2,
                           height=rail_y - pin.cy())
             via_offset = vector(via_x, pin.cy())
             self.add_via_center(layers=contact.m1m2.layer_stack, offset=via_offset)

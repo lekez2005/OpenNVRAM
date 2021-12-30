@@ -413,7 +413,11 @@ class hierarchical_predecode(design.design):
             rail_x = self.rails["flop_in[{}]".format(row)]
             self.add_contact_center(contact.m2m3.layer_stack, offset=vector(rail_x, din_pin.cy()))
             self.add_rect("metal3", offset=vector(rail_x, din_pin.by()), width=din_pin.lx() - rail_x)
-            self.add_contact(contact.m2m3.layer_stack, offset=din_pin.ll() + vector(m2m3.height, 0),
+            if row % 2 == 0:
+                via_y = din_pin.uy() - m2m3.w_2
+            else:
+                via_y = din_pin.by()
+            self.add_contact(contact.m2m3.layer_stack, offset=vector(din_pin.lx() + m2m3.height, via_y),
                              rotate=90)
 
             # connect clk
@@ -530,27 +534,40 @@ class hierarchical_predecode(design.design):
 
             # this will connect pins A,B or A,B,C
             max_rail = max(self.rails.values())
-            layers = ("metal1", "via1", "metal2")
             via_space = self.get_line_end_space(METAL2)
             via_x = max_rail + 0.5 * self.m2_width + via_space + 0.5*contact.m1m2.first_layer_height
+            via_x = max(via_x, max_rail + 0.5 * m1m2.w_2 + via_space + 0.5 * m1m2.h_2)
             for rail_pin, gate_pin_name in zip(index_lst,gate_lst):
                 gate_pin = self.nand_inst[k].get_pin(gate_pin_name)
                 pin_pos = gate_pin.lc()
                 rail_pos = vector(self.rails[rail_pin], pin_pos.y)
-                self.add_cross_contact_center(cross_m1m2, offset=rail_pos, rotate=True)
+
                 if gate_pin_name == "A":
+                    self.add_cross_contact_center(cross_m1m2, offset=rail_pos, rotate=True)
                     self.add_rect(METAL1, offset=vector(rail_pos.x, rail_pos.y - 0.5 * self.m1_width),
                                   width=gate_pin.lx() - rail_pos.x)
                 else:
-                    self.add_path("metal1", [rail_pos, vector(via_x, rail_pos.y)])
-                    via_offset = vector(via_x, rail_pos.y)
-                    self.add_via_center(layers=layers, offset=via_offset, rotate=90)
-                    self.add_path("metal2", [via_offset, pin_pos])
+                    # TODO fix hack
+                    shift = 0.5 * (m1m2.w_1 - self.m1_width) + 0.04
+                    if gate_pin_name == "C":
+                        shift += shift + 0.03
+                    if k % 2 == 0:
+                        via_y = rail_pos.y - shift
+                    else:
+                        via_y = rail_pos.y + shift
+                    self.add_cross_contact_center(cross_m1m2, offset=vector(rail_pos.x, via_y),
+                                                  rotate=True)
+                    via_offset = vector(via_x, via_y)
+                    self.add_path("metal1", [vector(rail_pos.x, via_y), vector(via_x, via_y)])
+                    self.add_via_center(layers=m1m2.layer_stack, offset=via_offset, rotate=90)
+                    m2_end = gate_pin.cx() + 0.5*m1m2.w_2
+                    self.add_path("metal2", [via_offset, vector(m2_end, via_y)])
                     if k % 2 == 0:
                         y_offset = rail_pos.y - 0.5 * self.m2_width + 0.5 * m1m2.second_layer_height
                     else:
                         y_offset = rail_pos.y + 0.5 * self.m2_width - 0.5 * m1m2.second_layer_height
-                    self.add_via_center(layers=layers, offset=vector(gate_pin.cx(), y_offset), rotate=0)
+                    self.add_via_center(layers=m1m2.layer_stack,
+                                        offset=vector(gate_pin.cx(), y_offset), rotate=0)
 
     def route_vdd_gnd(self):
         """ Add a pin for each row of vdd/gnd which are must-connects next level up. """
@@ -570,6 +587,9 @@ class hierarchical_predecode(design.design):
             if self.vertical_flops:
                 vdd_x_start = vdd_pin.lx()
                 gnd_x_start = vdd_pin.lx()
+
+            if num == self.number_of_outputs - 1 and not self.route_top_rail:
+                vdd_x_start = vdd_pin.lx()
             self.add_layout_pin(text="vdd",
                                 height=self.rail_height,
                                 layer="metal1",

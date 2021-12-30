@@ -23,7 +23,7 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
     def setup_layout_constants(self):
         super().setup_layout_constants()
 
-        self.row_decoder_height = 0.5 * self.inv.height * self.rows
+        self.row_decoder_height = self.bitcell_offsets[-1] + self.bitcell_height
         self.height = self.predecoder_height + self.row_decoder_height
 
         # map row to predec groups
@@ -69,6 +69,16 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
 
         self.create_predecoders()
 
+    def get_row_y_offset(self, row):
+        row_index = row - (row % 2)
+        y_offset = self.predecoder_height + self.bitcell_offsets[row_index]
+        if (row % 4) < 2:
+            y_offset += self.inv.height
+            mirror = "MX"
+        else:
+            mirror = "R0"
+        return y_offset, mirror
+
     def add_row_arrays(self, mod, x_offsets, name_template):
         mirrors = ["XY", "MX", "MY", "R0"]
         instances = []
@@ -80,17 +90,16 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
             x_offset = left_x if self.row_to_side[row] == "left" else right_x
             y_index = int(row / 2)
             if y_index % 2 == 0:
-                y_offset = self.predecoder_height + mod.height * (y_index + 1)
                 if self.row_to_side[row] == "left":
                     mirror_index = 0
                 else:
                     mirror_index = 1
             else:
-                y_offset = self.predecoder_height + mod.height * y_index
                 if self.row_to_side[row] == "left":
                     mirror_index = 2
                 else:
                     mirror_index = 3
+            y_offset, _ = self.get_row_y_offset(row)
 
             instance = self.add_inst(name=name, mod=mod,
                                      offset=vector(x_offset, y_offset),
@@ -121,6 +130,7 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
 
     def route_decoder(self):
         for row in range(self.rows):
+            # TODO confirm direct link for other techs
             # route nand output to output inv input
             if self.row_to_side[row] == "left":
                 zr_pos = self.nand_inst[row].get_pin("Z").lc()
@@ -129,9 +139,8 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
                 zr_pos = self.nand_inst[row].get_pin("Z").rc()
                 al_pos = self.inv_inst[row].get_pin("A").lc()
             # ensure the bend is in the middle
-            mid1_pos = vector(0.5 * (zr_pos.x + al_pos.x), zr_pos.y)
-            mid2_pos = vector(0.5 * (zr_pos.x + al_pos.x), al_pos.y)
-            self.add_path("metal1", [zr_pos, mid1_pos, mid2_pos, al_pos])
+            mid_pos = vector(zr_pos.x, al_pos.y)
+            self.add_path("metal1", [zr_pos, mid_pos, al_pos])
 
             z_pin = self.inv_inst[row].get_pin("Z")
             self.add_layout_pin(text="decode[{0}]".format(row),
@@ -165,13 +174,13 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
 
         for row in range(0, self.rows, 2):
             gnd_pin = self.nand_inst[row].get_pin("gnd")
-            self.add_contact_center(contact.contact.active_layers,
+            self.add_contact_center(contact.well.layer_stack,
                                     offset=vector(mid_x, gnd_pin.cy()), size=[num_contacts, 1])
             self.add_rect_center(PIMP, offset=vector(mid_x, gnd_pin.cy()),
                                  width=implant_width, height=implant_height)
 
             vdd_pin = self.nand_inst[row].get_pin("vdd")
-            self.add_contact_center(contact.contact.active_layers,
+            self.add_contact_center(contact.well.layer_stack,
                                     offset=vector(mid_x, vdd_pin.cy()), size=[num_contacts, 1])
             self.add_rect_center(NIMP, offset=vector(mid_x, vdd_pin.cy()),
                                  width=implant_width, height=implant_height)

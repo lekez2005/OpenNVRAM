@@ -15,14 +15,17 @@ use_y_body_taps = True
 bitcell_array = "reram_bitcell_array.ReRamBitcellArray"
 
 wordline_driver = "reram_wordline_driver_array"
+row_decoder = "reram_row_decoder.reram_row_decoder"
 
 precharge = "bitline_discharge.BitlineDischarge"
 precharge_size = 6
 
 ms_flop = "ms_flop_clk_buf.MsFlopClkBuf"
 ms_flop_horz_pitch = "ms_flop_horz_pitch.MsFlopHorzPitch"
+predecoder_flop = "ms_flop_horz_pitch.MsFlopHorzPitch"
 sense_amp = "reram_sense_amp.ReRamSenseAmp"
 # TODO:
 # Buffer size optimizations
 # column mux
 # stacked wordline driver
+# > 32 rows

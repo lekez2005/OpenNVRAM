@@ -410,7 +410,7 @@ class bitcell_array(design.design):
                 tap_indices = [int(num_elements / 2)]
             elif tap_indices[-1] == num_elements - 1:
                 # avoid putting at top of array to make it predictable
-                tap_indices[-1] = [num_elements - 2 * cell_grouping]
+                tap_indices[-1] = num_elements - 2 * cell_grouping
 
         tap_indices = list(sorted(set(tap_indices)))
         # group assuming no dummies

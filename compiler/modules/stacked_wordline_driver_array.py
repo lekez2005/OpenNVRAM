@@ -1,4 +1,4 @@
-from base.contact import m1m2, m2m3
+from base.contact import m1m2, m2m3, cross_m2m3
 from base.design import METAL1, METAL2, METAL3, design, ACTIVE
 from base.vector import vector
 from base.well_implant_fills import create_wells_and_implants_fills
@@ -10,9 +10,10 @@ from modules.wordline_driver_array import wordline_driver_array
 class stacked_wordline_driver_array(wordline_driver_array):
     """Wordline Driver array with two adjacent rows stacked horizontally
         so the total height per module is 2x the bitcell height"""
+
     def __init__(self, name, rows, buffer_stages=None):
         design.__init__(self, name)
-        self.rows = rows
+        self.rows = self.num_rows = rows
         self.buffer_stages = buffer_stages
 
         self.buffer_insts = []
@@ -107,16 +108,20 @@ class stacked_wordline_driver_array(wordline_driver_array):
 
             self.buffer_insts.append(buffer_inst)
 
+    def get_en_rail_y(self, en_rail):
+        return en_rail.by() - self.m3_width
+
     def join_en_pin_rail(self):
         # join en rail and en_pin
         en_rail, en_pin = self.en_rail, self.en_pin
-        y_offset = en_rail.by() - self.m3_width
+        y_offset = self.get_en_rail_y(en_rail)
+        for rect in [en_rail, en_pin]:
+            self.add_rect(METAL2, vector(rect.lx(), y_offset), width=rect.rx() - rect.lx(),
+                          height=rect.by() - y_offset)
+            offset = vector(rect.cx(), y_offset + 0.5 * self.m3_width)
+            self.add_cross_contact_center(cross_m2m3, offset)
         self.add_rect(METAL3, offset=vector(en_rail.lx(), y_offset),
                       width=en_pin.lx() - en_rail.lx())
-        self.add_contact(m2m3.layer_stack, offset=vector(en_rail.lx() + m2m3.height, y_offset),
-                         rotate=90)
-        self.add_contact(m2m3.layer_stack, offset=vector(en_pin.rx(), y_offset),
-                         rotate=90)
 
     def fill_horizontal_module_space(self):
         fill_rects = create_wells_and_implants_fills(
@@ -138,7 +143,9 @@ class stacked_wordline_driver_array(wordline_driver_array):
                     pass
                 else:
                     continue
-                y_shift = int(row / 2) * self.logic_buffer.height
+                y_shift, _ = self.get_row_y_offset(row)
+                if row % 4 == 0:
+                    y_shift -= self.logic_buffer.height
                 self.add_rect(fill_rect[0], offset=vector(buffer_inst.rx(),
                                                           y_shift + fill_rect[1]),
                               height=fill_rect[2] - fill_rect[1],
@@ -146,7 +153,7 @@ class stacked_wordline_driver_array(wordline_driver_array):
 
     def create_power_pins(self):
         all_pins = []
-        for i in range(0, self.rows, 4):
+        for i in range(0, self.rows, 2):
             all_pins.append(self.buffer_insts[i].get_pin("vdd"))
             all_pins.append(self.buffer_insts[i].get_pin("gnd"))
         all_pins.append(self.buffer_insts[-2].get_pin("vdd"))

@@ -57,6 +57,8 @@ class reram_bitcell(design, metaclass=Unique):
         self.add_reram()
         self.route_wl()
         self.route_bitlines()
+        debug.info(1, f"Bitcell width = {self.width:.5g}")
+        debug.info(1, f"Bitcell height = {self.height:.5g}")
         self.add_boundary()
         tech.add_tech_layers(self)
 

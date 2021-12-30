@@ -509,6 +509,7 @@ class pgate(pgates_characterization_base, design.design):
 
     def add_poly_contacts(self, pin_names, y_shifts):
 
+        poly_cont_shifts = [0.0] * 3
         if self.same_line_inputs:  # all contacts are centralized and x shifted for min drc fill
             y_shifts = [0.0] * len(y_shifts)
             x_shift = 0.5 * contact.poly.second_layer_width - 0.5 * self.gate_fill_width
@@ -516,6 +517,11 @@ class pgate(pgates_characterization_base, design.design):
                 x_shifts = [0.0]
             else:
                 x_shifts = [x * x_shift for x in [1, 0, -1]]
+                cont_shift = 0.5 * (contact.poly.w_1 - self.ptx_poly_width)
+                if self.num_tracks == 2:
+                    poly_cont_shifts = [-cont_shift, cont_shift]
+                elif self.num_tracks == 3:
+                    poly_cont_shifts = [-cont_shift, 0, cont_shift]
         else:
             x_shifts = [0.0] * 3
 
@@ -525,7 +531,7 @@ class pgate(pgates_characterization_base, design.design):
             self.add_rect_center(METAL1, offset=offset, width=self.gate_fill_width,
                                  height=self.gate_fill_height)
 
-            offset = vector(x_offset, self.mid_y + y_shifts[i])
+            offset = vector(x_offset + poly_cont_shifts[i], self.mid_y + y_shifts[i])
             self.add_contact_center(layers=contact.poly.layer_stack, offset=offset)
             self.add_layout_pin_center_rect(pin_names[i], METAL1, offset)
 

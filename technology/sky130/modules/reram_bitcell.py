@@ -30,25 +30,7 @@ class body_tap(design, metaclass=Unique):
 
     def create_layout(self):
         y_space = 0.5 * self.m1_width
-        max_width = self.width - self.get_space(ACTIVE)
-        num_contacts = calculate_num_contacts(self, max_width,
-                                              layer_stack=well_contact.layer_stack,
-                                              return_sample=False)
-        pin_width = self.width + max(m1m2.first_layer_height, m2m3.second_layer_height)
-        for layer in [METAL1, METAL3]:
-            self.add_layout_pin("gnd", layer, vector(0, y_space),
-                                width=pin_width, height=self.rail_height)
-
-        mid_offset = (0.5 * self.width, 0.5 * self.rail_height + y_space)
-        self.add_contact_center(well_contact.layer_stack, mid_offset, rotate=90,
-                                size=[1, num_contacts],
-                                implant_type="p", well_type=PWELL)
-
-        num_contacts = calculate_num_contacts(self, self.width - self.m2_space,
-                                              layer_stack=m1m2.layer_stack,
-                                              return_sample=False)
-        self.add_contact_center(m1m2.layer_stack, mid_offset, rotate=90,
-                                size=[1, num_contacts])
+        reram_bitcell.add_power_pin(self, y_space, "gnd", "p")
         self.height = self.rail_height + 2 * y_space
 
         self.add_boundary()
@@ -215,3 +197,25 @@ class reram_bitcell(design, metaclass=Unique):
         self.add_cross_contact_center(cross_m2m3, vector(drain_pin.cx(), via_y))
         self.add_cross_contact_center(cross_m3m4, vector(br_pin.cx(), via_y),
                                       rotate=True)
+
+    @staticmethod
+    def add_power_pin(self, y_offset, pin_name, implant_type):
+        max_width = self.width - self.get_space(ACTIVE)
+        num_contacts = calculate_num_contacts(self, max_width,
+                                              layer_stack=well_contact.layer_stack,
+                                              return_sample=False)
+        pin_width = self.width + max(m1m2.first_layer_height, m2m3.second_layer_height)
+        for layer in [METAL1, METAL3]:
+            self.add_layout_pin(pin_name, layer, vector(0, y_offset),
+                                width=pin_width, height=self.rail_height)
+
+        mid_offset = (0.5 * self.width, 0.5 * self.rail_height + y_offset)
+        self.add_contact_center(well_contact.layer_stack, mid_offset, rotate=90,
+                                size=[1, num_contacts],
+                                implant_type=implant_type, well_type=PWELL)
+
+        num_contacts = calculate_num_contacts(self, self.width - self.m2_space,
+                                              layer_stack=m1m2.layer_stack,
+                                              return_sample=False)
+        self.add_contact_center(m1m2.layer_stack, mid_offset, rotate=90,
+                                size=[1, num_contacts])

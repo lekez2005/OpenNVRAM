@@ -2,9 +2,10 @@
 bitcell = "reram_bitcell"
 bitcell_mod = "reram_bitcell"
 body_tap = "reram_bitcell.body_tap"
-use_x_body_taps = False
 
 python_path = ["modules/reram"]
+
+precharge_array = "bitline_discharge_array.BitlineDischargeArray"
 
 write_driver_pmos_vdd = "vdd_br"
 

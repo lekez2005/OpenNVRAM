@@ -28,8 +28,11 @@ class precharge_array(design.design):
         self.DRC_LVS()
 
     def create_modules(self):
-        self.pc_cell = precharge(name="precharge", size=self.size)
-        self.add_mod(self.pc_cell)
+        if hasattr(OPTS, "precharge"):
+            self.pc_cell = self.create_mod_from_str(OPTS.precharge, size=self.size)
+        else:
+            self.pc_cell = precharge(name="precharge", size=self.size)
+            self.add_mod(self.pc_cell)
 
         if OPTS.use_x_body_taps:
             self.body_tap = precharge_tap(self.pc_cell)
@@ -65,6 +68,9 @@ class precharge_array(design.design):
         mirror = NO_MIRROR
         return offset, mirror
 
+    def get_connections(self, col):
+        return f"bl[{col}] br[{col}] en vdd".split()
+
     def add_insts(self):
         """Creates a precharge array by horizontally tiling the precharge cell"""
         self.load_bitcell_offsets()
@@ -77,8 +83,7 @@ class precharge_array(design.design):
             self.child_insts.append(inst)
             self.copy_layout_pin(inst, "bl", "bl[{0}]".format(i))
             self.copy_layout_pin(inst, "br", "br[{0}]".format(i))
-            self.connect_inst(["bl[{0}]".format(i), "br[{0}]".format(i),
-                               "en", "vdd"])
+            self.connect_inst(self.get_connections(i))
         if getattr(self, "body_tap", None):
             for x_offset in self.tap_offsets:
                 self.add_inst(self.body_tap.name, self.body_tap, offset=vector(x_offset, 0))

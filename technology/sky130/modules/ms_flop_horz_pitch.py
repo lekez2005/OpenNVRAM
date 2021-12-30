@@ -9,10 +9,14 @@ from modules.reram.bitcell_aligned_pgate import BitcellAlignedPgate
 
 
 class MsFlopHorzPitch(BitcellAlignedPgate):
+
+    @classmethod
+    def get_name(cls):
+        return "ms_flop_horz_pitch"
+
     def __init__(self):
         # spice file is loaded if name matches file in sp_lib
-        name = "ms_flop_horz_pitch"
-        design.__init__(self, name)
+        design.__init__(self, self.get_name())
         self.create_layout()
 
     def create_layout(self):
@@ -51,9 +55,9 @@ class MsFlopHorzPitch(BitcellAlignedPgate):
         mid_y = 1.4
         space = 0.24
 
-        contact_y = 1.39
+        contact_y = 1.24
         tx_x_offset = 0.2
-        nmos_y = mid_y - space - nmos.active_rect.uy()
+        nmos_y = mid_y - space - nmos.active_rect.uy() - 0.15
         pmos_y = mid_y + space + (pmos.height - pmos.active_rect.uy())
 
         return nmos_y, pmos_y, tx_x_offset, contact_y
@@ -137,8 +141,8 @@ class MsFlopHorzPitch(BitcellAlignedPgate):
         x_offset -= tgate_nmos.active_rect.lx()
         x_offset = max(x_offset, self.clk_buf_m1.rx() + 0.3)
 
-        nmos_y = 0.4
-        pmos_y = 2.25
+        nmos_y = 0.25
+        pmos_y = 2.1
 
         # y_offset = self.clk_bar.uy() + self.m2_space + 0.05 - tgate_nmos.active_rect.by()
 
@@ -456,8 +460,9 @@ class MsFlopHorzPitch(BitcellAlignedPgate):
         self.width = self.get_pin("dout").rx()
 
     def add_power(self):
-        self.add_power_tap(0, "gnd", self.l_tgate_nmos, add_m3=False)
-        self.add_power_tap(self.height, "vdd", self.l_buffer_pmos, add_m3=False)
+        self.add_power_tap(-0.5*self.rail_height, "gnd", self.l_tgate_nmos, add_m3=False)
+        self.add_power_tap(self.height-0.5*self.rail_height, "vdd",
+                           self.l_buffer_pmos, add_m3=False)
 
         for inst in [self.clk_buf_nmos_inst, self.clk_buf_pmos_inst,
                      self.l_buffer_nmos, self.l_buffer_pmos,

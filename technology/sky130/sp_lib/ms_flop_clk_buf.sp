@@ -1,4 +1,4 @@
-.subckt ms_flop_clk_buf clk dout_bar dout vdd gnd din
+.subckt ms_flop_clk_buf din dout dout_bar clk vdd gnd
 *.ipin clk
 *.opin dout_bar
 *.opin dout

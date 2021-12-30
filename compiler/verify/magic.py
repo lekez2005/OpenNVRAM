@@ -58,6 +58,7 @@ select top cell
 {make_ports}
 {extract_unique}
 {extract_style}
+{flatten_command}
 extract
 puts "Finished lvs layout extraction"
 ext2spice subcircuit top on
@@ -68,7 +69,7 @@ ext2spice cthresh infinite
 ext2spice rthresh infinite
 ext2spice renumber off
 ext2spice global off
-ext2spice {cell_name_}
+ext2spice {cell_name_}{flat_suffix} -o {cell_name_}.spice
 puts "Finished spice export"
 exit
 """
@@ -77,7 +78,7 @@ exit
 netgen_template = """
 #!/env sh
 {netgen_exe} -noconsole << EOF
-lvs {{{source_spice} {cell_name_} }} {{{layout_spice} {cell_name_}}} {setup_file} {report_file} -full -json
+lvs {{{source_spice} {cell_name_} }} {{{layout_spice} {lvs_cell_name}}} {setup_file} {report_file} -full -json
 quit
 EOF
 retcode=$?
@@ -285,7 +286,7 @@ def run_drc(cell_name, gds_name, exception_group="", flatten=True):
     return len(valid_drc_errors)
 
 
-def get_lvs_kwargs(cell_name, mag_file, source_spice, final_verification):
+def get_lvs_kwargs(cell_name, mag_file, source_spice, final_verification, flatten):
     from globals import OPTS
     if source_spice:
         make_ports = f"readspice \"{source_spice}\""
@@ -293,20 +294,29 @@ def get_lvs_kwargs(cell_name, mag_file, source_spice, final_verification):
         make_ports = "port makeall"
     extract_unique = "extract unique all" * final_verification
     extract_style = getattr(OPTS, "lvs_extract_style", "")
+
+    if flatten:
+        flatten_command = f"flatten {cell_name}_flat\nload {cell_name}_flat"
+    else:
+        flatten_command = ""
+
     kwargs = {
         "make_ports": make_ports,
         "extract_unique": extract_unique,
         "extract_style": extract_style,
         "cell_name_": cell_name,
-        "mag_file_": mag_file
+        "mag_file_": mag_file,
+        "flatten_command": flatten_command,
+        "flat_suffix": "_flat"
     }
     return kwargs
 
 
-def generate_lvs_spice(mag_file, source_spice, final_verification=False):
+def generate_lvs_spice(mag_file, source_spice, final_verification=False, flatten=False):
     debug.info(1, f"Generating layout spice")
     cell_name = os.path.basename(mag_file)[:-4]
-    kwargs = get_lvs_kwargs(cell_name, mag_file, source_spice, final_verification)
+    kwargs = get_lvs_kwargs(cell_name, mag_file, source_spice, final_verification,
+                            flatten=flatten)
     extract_script = generate_magic_script(mag_file, cell_name, flatten=False,
                                            op_name="spice_gen",
                                            template=spice_gen_template, **kwargs)
@@ -316,7 +326,7 @@ def generate_lvs_spice(mag_file, source_spice, final_verification=False):
     return return_code, out_file, err_file
 
 
-def run_netgen(cell_name, layout_spice, source_spice):
+def run_netgen(cell_name, lvs_cell_name, layout_spice, source_spice):
     """ Write a netgen script to perform LVS. """
     debug.info(1, f"Running netgen for cell {cell_name}")
     from globals import OPTS
@@ -335,6 +345,7 @@ def run_netgen(cell_name, layout_spice, source_spice):
         "source_spice": source_spice,
         "layout_spice": layout_spice,
         "cell_name_": cell_name,
+        "lvs_cell_name": lvs_cell_name,
         "report_file": report_file
     }
 
@@ -360,8 +371,9 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
         run_script(generate_magic_script(gds_name, cell_name, True,
                                          "export", **{"other_commands": ""}),
                    cell_name=cell_name, op_name="export")
+    flatten = True
 
-    generate_lvs_spice(mag_file, sp_name, final_verification)
+    generate_lvs_spice(mag_file, sp_name, final_verification, flatten)
 
     gen_layout_spice = os.path.join(OPTS.openram_temp, f"{cell_name}.spice")
     # to prevent overwrites during pex
@@ -372,7 +384,9 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
         debug.error("Modification time of layout spice should be > than gds."
                     " Error generating spice?")
 
-    return_code, out_file, report_file = run_netgen(cell_name, layout_spice, sp_name)
+    lvs_cell_name = cell_name + "_flat" * flatten
+
+    return_code, out_file, report_file = run_netgen(cell_name, lvs_cell_name, layout_spice, sp_name)
     with open(report_file, "r") as f:
         results = f.read()
 

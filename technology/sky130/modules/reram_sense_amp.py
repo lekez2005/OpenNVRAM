@@ -294,10 +294,7 @@ class ReRamSenseAmp(BitcellAlignedPgate):
         self.fill_m2_via(vector(0, mid_y))
 
     def fill_m2_via(self, offset):
-        fill_height = m1m2.second_layer_height
-        _, fill_width = self.calculate_min_area_fill(fill_height, layer=METAL2)
-        self.add_rect_center(METAL2, offset, width=fill_width,
-                             height=fill_height)
+        self.bitcell.fill_m2_via(self, offset)
 
     def add_sampleb(self):
         pmos = self.create_ptx_by_width(0.9, True, mults=2,

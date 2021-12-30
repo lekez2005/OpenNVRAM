@@ -53,7 +53,8 @@ layer = {
     "metal6": 72,
     "boundary": 235,
     "npc": 95,
-    "stdc": 81
+    "stdc": 81,
+    "reram_ox": 201
 }
 
 purpose = {
@@ -76,6 +77,7 @@ layer_pin_map_ = {}
 layer_pin_purpose = {"default": 5}
 
 layer_pin_map = {layer[key]: value for key, value in layer_pin_map_.items()}
+layer_pin_map["text_layers"] = []
 
 #########################
 # Parameter
@@ -201,6 +203,7 @@ drc_exceptions["latchup"] = ["N-diff distance to P-tap must be < 15.0um (LU.2)",
                              "P-diff distance to N-tap must be < 15.0um (LU.3)",
                              "All nwells must contain metal-connected N+ taps (nwell.4)"]
 drc_exceptions["ptx"] = drc_exceptions["latchup"]
+drc_exceptions["reram_bitcell"] = drc_exceptions["latchup"]
 
 #########################
 # Spice Simulation Parameters

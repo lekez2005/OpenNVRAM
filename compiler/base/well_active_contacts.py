@@ -28,6 +28,9 @@ def calculate_num_contacts(design_obj: design, tx_width, return_sample=False,
                 return contact_array
             break
         num_contacts -= 1
+
+    if return_sample and num_contacts == 0:
+        num_contacts = 1
     if num_contacts == 1 and return_sample:
         return create_array()
     return num_contacts

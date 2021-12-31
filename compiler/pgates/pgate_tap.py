@@ -49,12 +49,19 @@ class pgate_tap(design, metaclass=unique_meta.Unique):
         pgate_layers = [NIMP, PIMP]
         tap_layers = [PIMP, NIMP]
 
+        pgate_active = pgate_mod.get_layer_shapes(ACTIVE)
+        min_pgate_active = min(pgate_active, key=lambda x: x.lx()).lx()
+        max_pgate_active = max(pgate_active, key=lambda x: x.rx()).rx()
+        active_margin = min(min_pgate_active, self.pgate_mod.width - max_pgate_active)
+        self.min_active_x = self.get_space(ACTIVE) - active_margin
+
         for i in range(2):
             # calculate based on active width
             pgate_implant = max(pgate_mod.get_layer_shapes(pgate_layers[i]),
                                 key=lambda x: x.width * x.height)
             implant_x = max(0, pgate_implant.rx() - pgate_mod.width)
-            active_x = max(implant_x + active_enclosure,
+            active_x = max(self.min_active_x,
+                           implant_x + active_enclosure,
                            self.min_m1_x + 0.5 * contact.well.second_layer_width -
                            0.5 * contact.well.first_layer_width)
             if self.has_dummy:
@@ -160,7 +167,8 @@ class pgate_tap(design, metaclass=unique_meta.Unique):
         active_space = max(drc.get("active_to_body_active", active_space), active_space)
 
         self.width = max(active_rect.rx() + active_space - pgate_active.lx(),
-                         implant_rect.rx() - min(0, - pgate_implant.lx()))
+                         implant_rect.rx() - min(0, - pgate_implant.lx()),
+                         active_rect.rx() + self.min_active_x)
         if self.has_dummy:
             self.width = max(self.width, active_rect.rx() + self.dummy_to_active +
                              0.5 * self.pgate_mod.poly_width)

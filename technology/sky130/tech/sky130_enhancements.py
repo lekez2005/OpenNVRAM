@@ -1,7 +1,7 @@
 import debug
 from base import contact
-from base.contact import m1m2
-from base.design import design, POLY, ACTIVE, METAL2
+from base.design import design, POLY, ACTIVE
+from base.flatten_layout import flatten_rects
 from base.vector import vector
 from base.well_active_contacts import calculate_num_contacts
 from globals import OPTS
@@ -33,6 +33,12 @@ def seal_poly_vias(obj: design):
 
     npc_enclose_poly = drc.get("npc_enclose_poly")
 
+    poly_via_insts = list(sorted(poly_via_insts, key=lambda x: (x.lx(), x.by())))
+
+    # group vias that are close together
+
+    contact_span = 0.5  # max x/y space between contacts for them to be grouped together
+    via_groups = []
     for via_inst in poly_via_insts:
         x_offset = via_inst.lx() - npc_enclose_poly - x_extension
         width = via_inst.rx() + npc_enclose_poly + x_extension - x_offset
@@ -78,10 +84,8 @@ def flatten_vias(obj: design):
             obj.add_rect(layer, ll, width=ur.x - ll.x, height=ur.y - ll.y)
 
     all_via_index = [x[0] for x in all_via_inst]
-    obj.insts = [inst for inst_index, inst in enumerate(obj.insts)
-                 if inst_index not in all_via_index]
-    obj.conns = [conn for conn_index, conn in enumerate(obj.conns)
-                 if conn_index not in all_via_index]
+    insts = [x[1] for x in all_via_inst]
+    flatten_rects(obj, insts, all_via_index)
 
 
 def enhance_module(obj: design):

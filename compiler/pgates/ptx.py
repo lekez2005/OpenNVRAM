@@ -536,28 +536,9 @@ class ptx(design.design):
     @staticmethod
     def flatten_tx_inst(parent_mod: design.design, tx_inst):
         """Move all rects from transistor instance to parent_mod"""
-        from base.geometry import rectangle
+        from base.flatten_layout import flatten_rects
         inst_index = parent_mod.insts.index(tx_inst)
-
-        rects = [obj for obj in tx_inst.mod.objs if isinstance(obj, rectangle)]
-
-        angle, mirr = tx_inst.get_angle_mirror()
-
-        for rect in rects:
-            rect = copy.copy(rect)
-            first, second = rect.transform_coords([rect.ll(), rect.ur()], tx_inst.offset,
-                                           mirr=mirr, angle=angle)
-            ll = vector(min(first[0], second[0]), min(first[1], second[1]))
-            ur = vector(max(first[0], second[0]), max(first[1], second[1]))
-
-            new_rect = rectangle(layerNumber=rect.layerNumber, offset=ll,
-                                 width=ur.x-ll.x, height=ur.y-ll.y,
-                                 layerPurpose=rect.layerPurpose)
-            parent_mod.objs.append(new_rect)
-
-            # parent_mod.add_rect()
-        del parent_mod.insts[inst_index]
-        del parent_mod.conns[inst_index]
+        flatten_rects(parent_mod, [tx_inst], [inst_index])
 
     def is_delay_primitive(self):
         """Whether to descend into this module to evaluate sub-modules for delay"""

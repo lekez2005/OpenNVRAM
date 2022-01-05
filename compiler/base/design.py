@@ -313,41 +313,48 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
             return tech_purpose["drawing"] if layer not in tech_purpose else tech_purpose[layer]
         return tech_purpose[purpose]
 
-    def get_layer_shapes(self, layer, purpose=None, recursive=False):
+    def get_layer_shapes(self, layer, purpose=None, recursive=False, insts=None):
 
         if self.gds.from_file:
             return self.get_gds_layer_rects(layer, purpose, recursive=recursive)
 
         def filter_match(x):
-            return ((x.__class__.__name__ == "pin_layout" and x.layer == layer) or
-                    (x.__class__.__name__ == "rectangle" and x.layerNumber == tech_layers[layer] and
-                    (x.layerPurpose == self.get_purpose_number(layer, purpose))))
+            class_name = x.__class__.__name__
+            if class_name in ["pin_layout", "rectangle"] and layer is None:
+                return True
+            elif class_name == "pin_layout":
+                return x.layer == layer
+            elif class_name == "rectangle":
+                return (x.layerNumber == tech_layers[layer] and
+                        x.layerPurpose == self.get_purpose_number(layer, purpose))
+            return False
 
         all_pins = [x for sublist in self.pin_map.values() for x in sublist]
         shapes = list(filter(filter_match, self.objs + all_pins))
         if recursive:
-            for inst in self.insts:
+            if insts is None:
+                insts = self.insts
+            for inst in insts:
                 shapes.extend(inst.get_layer_shapes(layer, purpose, recursive))
         return shapes
 
     def get_gds_layer_shapes(self, cell, layer, purpose=None, recursive=False):
-        purpose_number = self.get_purpose_number(layer, purpose)
-        if recursive:
-            return cell.gds.getShapesInLayerRecursive(tech_layers[layer], purpose_number)
+        if layer is None:
+            layer_number = purpose_number = None
         else:
-            return cell.gds.getShapesInLayer(tech_layers[layer], purpose_number)
+            layer_number = tech_layers[layer]
+            purpose_number = self.get_purpose_number(layer, purpose)
+        if recursive:
+            return cell.gds.getShapesInLayerRecursive(layer_number, purpose_number)
+        else:
+            return cell.gds.getShapesInLayer(layer_number, purpose_number)
 
     def get_gds_layer_rects(self, layer, purpose=None, recursive=False):
         def rect(shape):
             return rectangle(0, shape[0], width=shape[1][0] - shape[0][0],
                              height=shape[1][1] - shape[0][1])
-
-        purpose_number = self.get_purpose_number(layer, purpose)
-        if recursive:
-            boundaries = self.gds.getShapesInLayerRecursive(tech_layers[layer], purpose_number)
-        else:
-            boundaries = self.gds.getShapesInLayer(tech_layers[layer], purpose_number)
-        return [rect(x) for x in boundaries]
+        shapes = self.get_gds_layer_shapes(self, layer, purpose, recursive)
+        return [rect(shape) for shape in shapes]
 
     def get_poly_fills(self, cell):
         poly_dummies = self.get_gds_layer_shapes(cell, PO_DUMMY, PO_DUMMY, recursive=True)

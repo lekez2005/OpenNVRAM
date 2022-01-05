@@ -638,7 +638,8 @@ class VlsiLayout(metaclass=UniqueMeta):
             return [x*self.units[0] for x in pos]
         boundaries = []
         for boundary in self.structures[self.rootStructureName].boundaries:
-            if boundary.drawingLayer==layer and boundary.dataType==purpose:
+            if ((boundary.drawingLayer == layer and boundary.dataType == purpose) or
+                    layer is None):
                 left_bottom = boundary.coordinates[0]
                 right_top = boundary.coordinates[2]
                 boundaries.append((scale_units(left_bottom), scale_units(right_top)))

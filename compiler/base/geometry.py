@@ -240,6 +240,10 @@ class instance(geometry):
             ll, ur = self.transform_coords([rect.ll(), rect.ur()], self.offset, mirr, angle)
             rect.boundary = [ll, ur]
             rect.normalize()
+            rect.offset = rect.ll()
+            rect.width = rect.rx() - rect.lx()
+            rect.height = rect.uy() - rect.by()
+            rect.size = vector(rect.width, rect.height)
             results.append(rect)
         return results
         

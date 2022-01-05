@@ -426,7 +426,7 @@ def evaluate_vertical_module_spacing(top_modules: List[design_inst],
                                                           heights=heights)
                         # TODO look up table POLY DRC rules
                         if layer in [POLY, PO_DUMMY]:
-                            if top_rect.width > top_rect.height:
+                            if top_rect.rx() - top_rect.lx() > top_rect.uy() - top_rect.by():
                                 target_space = bottom_module.poly_space
                             else:
                                 target_space = bottom_module.poly_vert_space

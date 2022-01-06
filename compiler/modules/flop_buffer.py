@@ -1,8 +1,9 @@
 from importlib import reload
 
 import debug
+import tech
 from base.contact import m1m2
-from base.design import design, ACTIVE, PIMP
+from base.design import design, ACTIVE, PIMP, NWELL
 from base.unique_meta import Unique
 from base.vector import vector
 from base.well_implant_fills import get_default_fill_layers
@@ -45,6 +46,7 @@ class FlopBuffer(design, metaclass=Unique):
         self.width = self.buffer_inst.rx()
         self.fill_layers()
         self.add_layout_pins()
+        tech.add_tech_layers(self)
 
     def add_pins(self):
         self.add_pin_list(["din", "clk", "dout", "vdd", "gnd"])
@@ -89,20 +91,29 @@ class FlopBuffer(design, metaclass=Unique):
             center_poly = 0.5 * (right_most.lx() + right_most.rx())
             x_space = center_poly - self.flop.width
         else:
-            x_space = 0
+            nwell_left = min(self.buffer.get_layer_shapes(NWELL, recursive=True),
+                             key=lambda x: x.lx())
+            active_right = max(self.flop.get_layer_shapes(ACTIVE, recursive=True),
+                               key=lambda x: x.rx())
+            allowance = (self.flop.width - active_right.rx()) + nwell_left.lx()
+            nwell_active_space = tech.drc.get("nwell_to_active_space", 0)
+            x_space = max(0, nwell_active_space - allowance)
 
-        self.buffer_inst = self.add_inst("buffer", mod=self.buffer, offset=self.flop_inst.lr() + vector(x_space, 0))
+        self.buffer_inst = self.add_inst("buffer", mod=self.buffer,
+                                         offset=self.flop_inst.lr() + vector(x_space, 0))
 
         flop_out = self.connect_buffer()
-        path_start = vector(flop_out.rx(), flop_out.uy() - 0.5 * self.m2_width)
 
         buffer_in = self.buffer_inst.get_pin("in")
-        mid_x = 0.5 * (buffer_in.lx() + flop_out.rx())
-        self.add_path("metal2", [path_start, vector(mid_x, path_start[1]), buffer_in.lc()])
+        via_x = buffer_in.lx() + m1m2.second_layer_height
+        via_y = buffer_in.cy() - 0.5 * m1m2.second_layer_width
+        self.add_contact(m1m2.layer_stack, offset=vector(via_x, via_y), rotate=90)
 
-        self.add_contact(m1m2.layer_stack, offset=vector(buffer_in.lx() + m1m2.second_layer_height,
-                                                         buffer_in.cy() - 0.5 * m1m2.second_layer_width),
-                         rotate=90)
+        path_start = vector(flop_out.rx(), flop_out.uy() - 0.5 * self.m2_width)
+        via_m2_x = via_x - 0.5 * m1m2.height - 0.5 * m1m2.h_2
+        mid_x = min(0.5 * (buffer_in.lx() + flop_out.rx()),
+                    via_m2_x - self.m2_space - 0.5 * self.m2_width)
+        self.add_path("metal2", [path_start, vector(mid_x, path_start[1]), buffer_in.lc()])
 
     def fill_layers(self):
         layers, purposes = get_default_fill_layers()
@@ -112,6 +123,8 @@ class FlopBuffer(design, metaclass=Unique):
                 continue
             buffer_shapes = self.buffer_inst.get_layer_shapes(layer, purposes[i], recursive=True)
             flop_shapes = self.flop_inst.get_layer_shapes(layer, purposes[i], recursive=True)
+            if not flop_shapes or not buffer_shapes:
+                continue
 
             # there could be multiple implants, one for the tx and one for the tap
             if "implant" in layer:

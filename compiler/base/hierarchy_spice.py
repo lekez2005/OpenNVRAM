@@ -209,11 +209,6 @@ class spice(verilog.verilog):
             if self.pins == []:
                 return
 
-
-            # write out the first spice line (the subcircuit)
-            sp.write("\n.SUBCKT {0} {1}\n".format(self.name,
-                                                  " ".join(self.pins)))
-
             # every instance must have a set of connections, even if it is empty.
             if  len(self.insts)!=len(self.conns):
                 debug.error("{0} : Not all instance pins ({1}) are connected ({2}).".format(self.name,
@@ -223,33 +218,34 @@ class spice(verilog.verilog):
                 debug.error("-----")
                 debug.error("Connections: \n"+str(self.conns),1)
 
-
-
+            # write out the first spice line (the subcircuit)
+            pins_str = " ".join(self.pins)
+            spice = [f"\n.SUBCKT {self.name} {pins_str}"]
             for i in range(len(self.insts)):
                 # we don't need to output connections of empty instances.
                 # these are wires and paths
                 if self.conns[i] == []:
                     continue
+                conn_str = " ".join(self.conns[i])
+                inst_name = self.insts[i].name
                 if hasattr(self.insts[i].mod,"spice_device"):
-                    sp.write(self.insts[i].mod.spice_device.format(self.insts[i].name,
-                                                                   " ".join(self.conns[i])))
-                    sp.write("\n")
-
+                    device_spice = self.insts[i].mod.spice_device
+                    spice.append(device_spice.format(inst_name, conn_str))
                 else:
-                    sp.write("X{0} {1} {2}\n".format(self.insts[i].name,
-                                                     " ".join(self.conns[i]),
-                                                     self.insts[i].mod.name))
+                    mod_name = self.insts[i].mod.name
+                    spice.append(f"X{inst_name} {conn_str} {mod_name}")
 
-            sp.write(".ENDS {0}\n".format(self.name))
+            spice.append(f".ENDS {self.name}")
 
         else:
             # write the subcircuit itself
             # Including the file path makes the unit test fail for other users.
-            #if os.path.isfile(self.sp_file):
+            # if os.path.isfile(self.sp_file):
             #    sp.write("\n* {0}\n".format(self.sp_file))
-            sp.write("\n".join(self.spice))
+            spice = self.spice
+        sp.write("\n".join(spice))
 
-            sp.write("\n")
+        sp.write("\n")
 
     def sp_write(self, spname):
         """Writes the spice to files"""

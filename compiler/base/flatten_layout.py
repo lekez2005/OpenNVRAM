@@ -1,24 +1,43 @@
+import io
 from typing import List
 
 from base.design import design
 from base.geometry import geometry, rectangle
 from base.pin_layout import pin_layout
 
-
-class EmptyMod(design):
-    pass
-
-
-empty_mod = EmptyMod("dummy")
+InstList = List[geometry]
+IntList = List[int]
 
 
-def flatten_rects(self: design, insts: List[geometry] = None,
-                  inst_indices: List[int] = None):
-    """Move rects in insts to top-level 'self' """
+def export_spice(cell: design):
+    sp = io.StringIO('')
+    cell.sp_write_file(sp, [])
+    flatten_subckts(cell)
+    sp.seek(0)
+    cell.spice = sp.read().split('\n')
+
+
+def set_default_insts(self, insts: InstList, inst_indices: IntList):
     if insts is None:
-        inst_indices, insts = enumerate(self.insts)
+        inst_indices, insts = list(range(len(self.insts))), self.insts
     if inst_indices is None:
         inst_indices = list(range(len(insts)))
+    return insts, inst_indices
+
+
+def flatten_rects(self: design, insts: InstList = None,
+                  inst_indices: IntList = None):
+    """Move rects in insts to top-level 'self' """
+
+    insts, inst_indices = set_default_insts(self, insts, inst_indices)
+
+    # first export spice if any of the insts has spice connections
+    should_export = False
+    for conn_index in inst_indices:
+        if self.conns[conn_index]:
+            should_export = True
+    if should_export:
+        export_spice(self)
 
     flat_rects = self.get_layer_shapes(layer=None, recursive=True, insts=insts)
     other_obj = [x for x in self.objs if not isinstance(x, rectangle)]
@@ -34,15 +53,14 @@ def flatten_rects(self: design, insts: List[geometry] = None,
 
     self.objs = other_obj + flat_rects
 
-    empty_conn_indices = []
-    # remove inst if no spice connection
-    for inst_index, inst in zip(inst_indices, insts):
-        if self.conns[inst_index]:
-            inst.mod = empty_mod
-        else:
-            empty_conn_indices.append(inst_index)
-
     self.insts = [inst for inst_index, inst in enumerate(self.insts)
-                  if inst_index not in empty_conn_indices]
+                  if inst_index not in inst_indices]
     self.conns = [conn for conn_index, conn in enumerate(self.conns)
-                  if conn_index not in empty_conn_indices]
+                  if conn_index not in inst_indices]
+
+
+def flatten_subckts(self: design, insts: InstList = None,
+                    inst_indices: IntList = None):
+    insts, inst_indices = set_default_insts(self, insts, inst_indices)
+    for inst in insts:
+        flatten_rects(inst.mod)

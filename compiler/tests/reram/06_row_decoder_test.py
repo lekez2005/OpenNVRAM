@@ -13,7 +13,7 @@ class RowDecoderTest(ReRamTestBase):
         self.local_check(a)
 
     def test_row_decoder(self):
-        cell = self.create_class_from_opts("row_decoder", rows=32)
+        cell = self.create_class_from_opts("decoder", rows=32)
         self.local_check(cell)
 
 

@@ -4,7 +4,7 @@ import debug
 from base import contact
 from base import design
 from base import utils
-from base.contact import m2m3, cross_m2m3
+from base.contact import m1m2, m2m3, cross_m2m3
 from base.design import ACTIVE, PIMP, METAL2, METAL3, METAL1
 from base.vector import vector
 from globals import OPTS
@@ -589,7 +589,7 @@ class hierarchical_decoder(design.design):
 
             m1_fill_width = self.nand_inst[0].mod.gate_fill_width
             m1_fill_height = self.nand_inst[0].mod.gate_fill_height
-            m2_fill_height = m1_fill_height
+            m2_fill_height = max(m1_fill_height, m1m2.h_2, m2m3.h_1)
             min_area = self.get_min_area(METAL2) or 0.0
             m2_fill_width = utils.ceil(min_area / m2_fill_height)
 
@@ -617,7 +617,7 @@ class hierarchical_decoder(design.design):
             self.add_via_center(layers=contact.m1m2.layer_stack, offset=via_offset)
             self.add_via_center(layers=contact.m2m3.layer_stack, offset=via_offset)
 
-            fill_offset = vector(fill_x, pin.cy() - 0.5 * m1_fill_height)
+            fill_offset = vector(fill_x, pin.cy() - 0.5 * m2_fill_height)
 
             self.add_rect(METAL2, offset=fill_offset, width=m2_fill_width, height=m2_fill_height)
 

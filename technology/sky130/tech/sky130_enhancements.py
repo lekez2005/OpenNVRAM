@@ -89,7 +89,10 @@ def flatten_vias(obj: design):
 
 
 def enhance_module(obj: design):
+    if getattr(obj, "sky_130_enhanced", False):
+        return
     debug.info(2, f"Enhancing module {obj.name}")
+    obj.sky_130_enhanced = True
     # add stdc and seal poly before flattening vias
     add_stdc(obj)
     seal_poly_vias(obj)

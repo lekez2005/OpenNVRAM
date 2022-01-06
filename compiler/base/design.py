@@ -3,7 +3,7 @@ import os
 from collections import Iterable
 
 import debug
-from base import hierarchy_layout
+from base.hierarchy_layout import layout as hierarchy_layout, get_purpose
 from base import hierarchy_spice
 from base import utils
 from base.geometry import rectangle
@@ -30,7 +30,7 @@ METAL4 = "metal4"
 METAL5 = "metal5"
 
 
-class design(hierarchy_spice.spice, hierarchy_layout.layout):
+class design(hierarchy_spice.spice, hierarchy_layout):
     """
     Design Class for all modules to inherit the base features.
     Class consisting of a set of modules and instances of these modules
@@ -46,7 +46,7 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
         name = name.split("/")[-1]
 
         self.name = name
-        hierarchy_layout.layout.__init__(self, name)
+        hierarchy_layout.__init__(self, name)
         hierarchy_spice.spice.__init__(self, name)
 
         self.setup_drc_constants()
@@ -307,30 +307,28 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
         return width, height
 
-    @staticmethod
-    def get_purpose_number(layer, purpose):
-        if purpose is None:
-            return tech_purpose["drawing"] if layer not in tech_purpose else tech_purpose[layer]
-        return tech_purpose[purpose]
-
     def get_layer_shapes(self, layer, purpose=None, recursive=False, insts=None):
 
         if self.gds.from_file:
             return self.get_gds_layer_rects(layer, purpose, recursive=recursive)
 
         def filter_match(x):
-            class_name = x.__class__.__name__
-            if class_name in ["pin_layout", "rectangle"] and layer is None:
-                return True
-            elif class_name == "pin_layout":
-                return x.layer == layer
-            elif class_name == "rectangle":
+            if isinstance(x, rectangle):
+                if layer is None:
+                    return True
                 return (x.layerNumber == tech_layers[layer] and
-                        x.layerPurpose == self.get_purpose_number(layer, purpose))
+                        x.layerPurpose == get_purpose(layer))
             return False
 
-        all_pins = [x for sublist in self.pin_map.values() for x in sublist]
-        shapes = list(filter(filter_match, self.objs + all_pins))
+        pin_rects = []
+        for pins in self.pin_map.values():
+            for pin in pins:
+                layer_purpose = get_purpose(pin.layer)
+                pin_rects.append(rectangle(layerNumber=tech_layers[pin.layer],
+                                           layerPurpose=layer_purpose,
+                                           offset=pin.ll(), width=pin.rx() - pin.lx(),
+                                           height=pin.uy() - pin.by()))
+        shapes = list(filter(filter_match, self.objs + pin_rects))
         if recursive:
             if insts is None:
                 insts = self.insts
@@ -338,12 +336,13 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
                 shapes.extend(inst.get_layer_shapes(layer, purpose, recursive))
         return shapes
 
-    def get_gds_layer_shapes(self, cell, layer, purpose=None, recursive=False):
+    @staticmethod
+    def get_gds_layer_shapes(cell, layer, purpose=None, recursive=False):
         if layer is None:
             layer_number = purpose_number = None
         else:
             layer_number = tech_layers[layer]
-            purpose_number = self.get_purpose_number(layer, purpose)
+            purpose_number = get_purpose(layer)
         if recursive:
             return cell.gds.getShapesInLayerRecursive(layer_number, purpose_number)
         else:
@@ -351,8 +350,9 @@ class design(hierarchy_spice.spice, hierarchy_layout.layout):
 
     def get_gds_layer_rects(self, layer, purpose=None, recursive=False):
         def rect(shape):
-            return rectangle(0, shape[0], width=shape[1][0] - shape[0][0],
-                             height=shape[1][1] - shape[0][1])
+            return rectangle(shape.layerNumber, shape[0], width=shape[1][0] - shape[0][0],
+                             height=shape[1][1] - shape[0][1],
+                             layerPurpose=shape.layerPurpose)
         shapes = self.get_gds_layer_shapes(self, layer, purpose, recursive)
         return [rect(shape) for shape in shapes]
 

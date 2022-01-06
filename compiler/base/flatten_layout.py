@@ -40,7 +40,7 @@ def flatten_rects(self: design, insts: List[geometry] = None,
         if self.conns[inst_index]:
             inst.mod = empty_mod
         else:
-            empty_conn_indices.append(inst_indices)
+            empty_conn_indices.append(inst_index)
 
     self.insts = [inst for inst_index, inst in enumerate(self.insts)
                   if inst_index not in empty_conn_indices]

@@ -53,6 +53,7 @@ drc why
 
 # generating layout spice for netgen
 spice_gen_template = """
+drc off
 load "{mag_file_}"
 select top cell
 {make_ports}
@@ -225,10 +226,13 @@ def check_process_errors(err_file, op_name, benign_errors=None):
                     debug.error(f"{op_name} Errors: {errors}")
 
 
-def run_drc(cell_name, gds_name, exception_group="", flatten=True):
+def run_drc(cell_name, gds_name, exception_group="", flatten=None):
     """Run DRC check on a cell which is implemented in gds_name."""
+    from globals import OPTS
     from tech import drc_exceptions
     debug.info(1, f"Running DRC for cell {cell_name}")
+
+    flatten = getattr(OPTS, "flat_drc", True)
 
     if flatten:
         drc_cell_name = f"{cell_name}_flat"
@@ -366,12 +370,13 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
     ensure that there are no remaining virtual conections. """
     from globals import OPTS
 
+    flatten = getattr(OPTS, "flat_lvs", True)
+
     mag_file = os.path.join(OPTS.openram_temp, f"{cell_name}.mag")
     if not os.path.exists(mag_file) or os.path.getmtime(mag_file) < os.path.getmtime(gds_name):
         run_script(generate_magic_script(gds_name, cell_name, True,
                                          "export", **{"other_commands": ""}),
                    cell_name=cell_name, op_name="export")
-    flatten = True
 
     generate_lvs_spice(mag_file, sp_name, final_verification, flatten)
 
@@ -391,12 +396,6 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
         results = f.read()
 
     total_errors = 0
-    # Netlists do not match.
-    mismatch = False
-    if "Netlists do not match." in results:
-        # turns out netlists can still match uniquely ¯\_(ツ)_/¯
-        debug.warning("Netlists do not match")
-        mismatch = True
 
     if "has no elements and/or nodes.  Not checked" in results:
         debug.warning("No transistor present in layout so no check")
@@ -409,16 +408,16 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
         debug.info(1, f"{num_prop_errors} Property errors\n%s", property_errors)
         total_errors += num_prop_errors
 
-    # Require pins to match?
-    # Cell pin lists for pnand2_1.spice and pnand2_1 altered to match.
-    # test = re.compile(".*altered to match.")
-    # pinerrors = list(filter(test.search, results))
-    # if len(pinerrors)>0:
-    #     debug.warning("Pins altered to match in {}.".format(cell_name))
-
     # Netlists match uniquely.
-    if "Netlists match uniquely." in results:
-        mismatch = False
+    # For hierarchical lvs, only consider the most recent message between match uniquely and do not match
+    # so reverse the string to determine
+    mismatch = False
+    for line in reversed(results.split("\n")):
+        if "Netlists match uniquely." in line:
+            break
+        elif "Netlists do not match." in line:
+            mismatch = True
+            break
 
     if mismatch:
         total_errors += 1

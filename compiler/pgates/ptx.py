@@ -97,6 +97,21 @@ class ptx(design.design):
         pitch = max(pitch, obj.contact_width + 2 * obj.contact_to_gate + obj.poly_width)
         return pitch - obj.poly_width, obj.poly_width, pitch
 
+    @staticmethod
+    def calculate_active_to_poly_cont_mid(tx_type, tx_width=None):
+        """Distance from edge of active to middle of poly contact"""
+        # calculate based on contact
+        active_to_poly_contact = drc.get(f"poly_contact_to_{tx_type[0]}_active",
+                                         drc["poly_contact_to_active"])
+        cont_space = active_to_poly_contact + 0.5 * poly_contact.contact_width
+        if tx_width is not None:
+            # calculate based on m1 space
+            line_end_space = ptx.get_line_end_space(METAL1)
+            m1_space = (line_end_space + max(0, 0.5 * (m1m2.first_layer_height - tx_width)) +
+                        0.5 * poly_contact.second_layer_height)
+            return max(cont_space, m1_space)
+        return cont_space
+
     def create_layout(self):
         """Calls all functions related to the generation of the layout"""
         self.setup_layout_constants()
@@ -174,10 +189,7 @@ class ptx(design.design):
         # Active height is just the transistor width
         self.active_height = self.tx_width
 
-        if "poly_contact_layer" in info:
-            self.poly_contact_layer = info["poly_contact_layer"]
-        else:
-            self.poly_contact_layer = None
+        self.poly_contact_layer = info.get("self.poly_contact_layer", METAL1)
 
         # The active offset is due to the well extension
         self.active_offset = vector([self.well_enclose_ptx_active] * 2)
@@ -188,10 +200,10 @@ class ptx(design.design):
         self.additional_poly = 0.0
         self.poly_height = self.tx_width + 2 * self.poly_extend_active
         if self.poly_contact_layer == "metal1":
-            self.active_to_contact_center = (self.line_end_space +
-                                             max(0, 0.5 * (m1m2.first_layer_height - self.tx_width)) +
-                                             poly_contact.second_layer_height * 0.5)
-            poly_height = (self.poly_extend_active + self.tx_width + self.active_to_contact_center +
+            res = self.calculate_active_to_poly_cont_mid(self.tx_type, self.tx_width)
+            self.active_to_contact_center = res
+            poly_height = (self.poly_extend_active + self.tx_width +
+                           self.active_to_contact_center +
                            0.5 * poly_contact.first_layer_height)
             self.additional_poly = poly_height - self.poly_height
             self.poly_height = poly_height

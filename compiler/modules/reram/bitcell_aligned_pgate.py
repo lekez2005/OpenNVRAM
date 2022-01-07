@@ -231,6 +231,4 @@ class BitcellAlignedPgate(design, metaclass=Unique):
     @staticmethod
     def calculate_active_to_poly_cont_mid(tx_type):
         """Distance from edge of active to middle of poly contact"""
-        active_to_poly_contact = tech.drc.get(f"poly_contact_to_{tx_type[0]}_active",
-                                              tech.drc["poly_contact_to_active"])
-        return active_to_poly_contact + 0.5 * poly_contact.contact_width
+        return ptx.calculate_active_to_poly_cont_mid(tx_type)

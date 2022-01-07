@@ -10,6 +10,7 @@ class BufferStage(design.design, metaclass=Unique):
     Buffers the in pin
     The last output is labeled out and the penultimate output is labelled out_bar regardless of number of buffer stages
     """
+
     def __init__(self, buffer_stages, height=None, route_outputs=True, contact_pwell=True, contact_nwell=True,
                  align_bitcell=False):
         if buffer_stages is None or len(buffer_stages) < 1:
@@ -67,6 +68,7 @@ class BufferStage(design.design, metaclass=Unique):
         self.add_buffers()
         self.route_in_pin()
         self.route_out_pins()
+        self.fill_wells()
         self.add_power_pins()
         self.width = self.x_offset
         self.height = self.module_insts[-1].height
@@ -85,6 +87,10 @@ class BufferStage(design.design, metaclass=Unique):
             inv = self.create_buffer_inv(size)
             self.add_mod(inv)
             self.buffer_invs.append(inv)
+
+            if i > 0:
+                self.x_offset += inv.calculate_min_space(self.module_insts[-1].mod, inv)
+
             index = len(self.module_insts)
             inv_inst = self.add_inst("inv{}".format(index), inv, offset=vector(self.x_offset, 0))
             self.module_insts.append(inv_inst)
@@ -126,6 +132,10 @@ class BufferStage(design.design, metaclass=Unique):
             else:
                 self.copy_layout_pin(instance, "Z", pin_names[i])
 
+    def fill_wells(self):
+        for left_inst, right_inst in zip(self.module_insts[:-1], self.module_insts[1:]):
+            pinv.fill_adjacent_wells(self, left_inst, right_inst)
+
     def add_power_pins(self):
         pin_names = ["vdd", "gnd"]
         instance = self.module_insts[-1]
@@ -143,6 +153,3 @@ class BufferStage(design.design, metaclass=Unique):
             return "out_inv" if (self.total_instances % 2) == 0 else "out"
         else:
             return "out_{}".format(no_modules)
-
-
-

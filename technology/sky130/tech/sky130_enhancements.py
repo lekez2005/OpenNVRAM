@@ -3,9 +3,6 @@ from base import contact
 from base.design import design, POLY, ACTIVE
 from base.flatten_layout import flatten_rects
 from base.vector import vector
-from base.well_active_contacts import calculate_num_contacts
-from globals import OPTS
-from pgates.pgate import pgate
 from tech import drc
 
 
@@ -40,27 +37,35 @@ def seal_poly_vias(obj: design):
     contact_span = 0.5  # max x/y space between contacts for them to be grouped together
     via_groups = []
     for via_inst in poly_via_insts:
-        x_offset = via_inst.lx() - npc_enclose_poly - x_extension
-        width = via_inst.rx() + npc_enclose_poly + x_extension - x_offset
-        y_offset = via_inst.by() - npc_enclose_poly - y_extension
-        height = via_inst.uy() + npc_enclose_poly + y_extension - y_offset
+        found = False
+        for via_group in via_groups:
+            (left_x, right_x, bot, top, existing_insts) = via_group
+            span_left = left_x - contact_span
+            span_right = right_x + contact_span
+            span_top = top + contact_span
+            span_bot = bot - contact_span
+
+            if span_left <= via_inst.cx() <= span_right:
+                if span_bot <= via_inst.cy() <= span_top:
+                    existing_insts.append(via_inst)
+                    via_group[0] = min(left_x, via_inst.lx())
+                    via_group[1] = max(right_x, via_inst.rx())
+                    via_group[2] = min(bot, via_inst.by())
+                    via_group[3] = max(top, via_inst.uy())
+                    found = True
+                    break
+
+        if not found:
+            via_groups.append([via_inst.lx(), via_inst.rx(),
+                               via_inst.by(), via_inst.uy(),
+                               [via_inst]])
+
+    for left, right, bot, top, _ in via_groups:
+        x_offset = left - npc_enclose_poly - x_extension
+        width = right + npc_enclose_poly + x_extension - x_offset
+        y_offset = bot - npc_enclose_poly - y_extension
+        height = top + npc_enclose_poly + y_extension - y_offset
         obj.add_rect("npc", vector(x_offset, y_offset), width=width, height=height)
-
-
-def enhance_pgate(obj: design):
-    if not OPTS.enhance_pgate_pins or not isinstance(obj, pgate) or True:
-        return
-    pin_names = ["vdd", "gnd"]
-
-    contact_space = m1m2.contact_pitch - m1m2.contact_width
-    for pin_name in pin_names:
-        pin = obj.get_pin(pin_name)
-        num_vias = calculate_num_contacts(obj, pin.width(), layer_stack=m1m2.layer_stack,
-                                          contact_spacing=contact_space)
-        obj.add_contact_center(m1m2.layer_stack, offset=pin.center(), rotate=90,
-                               size=[1, num_vias])
-        obj.add_rect_center(METAL2, offset=pin.center(), width=pin.width(),
-                            height=max(pin.height(), obj.m2_width))
 
 
 def flatten_vias(obj: design):
@@ -69,20 +74,6 @@ def flatten_vias(obj: design):
     """
     debug.info(2, f"Flattening vias in module {obj.name}")
     all_via_inst = get_vias(obj)
-    for _, via_inst in all_via_inst:
-        layers = list(via_inst.mod.layer_stack)
-        if via_inst.mod.implant_type:
-            layers.append(f"{via_inst.mod.implant_type}implant")
-        for layer in layers:
-            layer_rects = via_inst.get_layer_shapes(layer, recursive=False)
-
-            x_sort = list(sorted(layer_rects, key=lambda x: x.lx()))
-            y_sort = list(sorted(layer_rects, key=lambda x: x.by()))
-
-            ll = vector(x_sort[0].lx(), y_sort[0].by())
-            ur = vector(x_sort[-1].rx(), y_sort[-1].uy())
-            obj.add_rect(layer, ll, width=ur.x - ll.x, height=ur.y - ll.y)
-
     all_via_index = [x[0] for x in all_via_inst]
     insts = [x[1] for x in all_via_inst]
     flatten_rects(obj, insts, all_via_index)
@@ -96,5 +87,4 @@ def enhance_module(obj: design):
     # add stdc and seal poly before flattening vias
     add_stdc(obj)
     seal_poly_vias(obj)
-    enhance_pgate(obj)
     flatten_vias(obj)

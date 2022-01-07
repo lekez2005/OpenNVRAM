@@ -1,16 +1,15 @@
 import math
-from types import SimpleNamespace
 
 import debug
 from base import contact
 from base import design
 from base import utils
 from base.contact import m1m2, active as active_contact
-from base.design import METAL1, PO_DUMMY, PIMP, NIMP, NWELL, METAL2, POLY, PWELL, TAP_ACTIVE
+from base.design import METAL1, PO_DUMMY, PIMP, NIMP, NWELL, METAL2, POLY, PWELL, TAP_ACTIVE, ACTIVE
 from base.utils import round_to_grid
 from base.vector import vector
 from base.well_active_contacts import calculate_contact_width
-from base.well_implant_fills import calculate_tx_metal_fill
+from base.well_implant_fills import calculate_tx_metal_fill, create_wells_and_implants_fills
 from globals import OPTS
 from pgates.pgates_characterization_base import pgates_characterization_base
 from pgates.ptx_spice import ptx_spice
@@ -23,9 +22,8 @@ class pgate(pgates_characterization_base, design.design):
     This is a module that implements some shared functions for parameterized gates.
     """
 
-    # c = __import__(OPTS.bitcell)
-    # bitcell = getattr(c, OPTS.bitcell)()
-    bitcell = SimpleNamespace(height=3)
+    c = __import__(OPTS.bitcell)
+    bitcell = getattr(c, OPTS.bitcell)()
     num_tracks = 1
 
     @classmethod
@@ -179,14 +177,10 @@ class pgate(pgates_characterization_base, design.design):
             track_extent = max(fill_height, contact.poly.second_layer_height,
                                contact.m1m2.second_layer_height)
         else:
-            # TODO: sky_tapeout: fix gate pin pitch
-            if getattr(OPTS, "begin_adjacent_pgate_hack", False):
-                width = m1m2.w_2
-            else:
-                width = self.m2_width
+            single_rail_height = max(self.m2_width, m1m2.w_2)
 
-            self.gate_rail_pitch = (0.5 * width +
-                                    line_space + 0.5 * width)
+            self.gate_rail_pitch = (0.5 * single_rail_height +
+                                    line_space + 0.5 * single_rail_height)
             track_extent = (self.num_tracks - 1) * self.gate_rail_pitch
             track_extent += max(contact.poly.second_layer_height, contact.m1m2.second_layer_height)
 
@@ -341,24 +335,13 @@ class pgate(pgates_characterization_base, design.design):
         else:
             self.num_dummy_poly = 0
             self.total_poly = self.tx_mults + self.num_dummy_poly
-
-            # TODO: sky_tapeout: nwell extending into adjacent cells is problematic
-            if getattr(OPTS, "begin_adjacent_pgate_hack", False):
-                implant_enclose_ptx_active = 0.34
-            else:
-                implant_enclose_ptx_active = self.implant_enclose_ptx_active
-            self.active_mid_x = self.active_width / 2 + implant_enclose_ptx_active
+            self.active_mid_x = self.active_width / 2 + self.implant_enclose_ptx_active
 
             output_x = self.get_output_x()
             self.width = output_x + self.m1_width + self.get_parallel_space(METAL1)
 
             self.poly_x_start = (self.active_mid_x - 0.5 * self.active_width +
                                  self.end_to_poly + 0.5 * self.ptx_poly_width)
-
-        # nwell
-        # TODO: sky_tapeout: nwell extending into adjacent cells is problematic
-        well_space = 1.27
-        self.width = max(self.width, well_space)
 
         self.implant_width = max(self.width, self.active_width + 2 * self.implant_enclose_ptx_active)
         self.mid_x = self.width / 2
@@ -385,7 +368,6 @@ class pgate(pgates_characterization_base, design.design):
 
     def calculate_poly_pitch(self):
         num_independent_contacts = 2 if self.num_tracks > 2 else 1
-        # TODO fix two input case
         return ptx_spice.calculate_poly_pitch(self, num_independent_contacts)
 
     def calculate_body_contacts(self):
@@ -527,7 +509,7 @@ class pgate(pgates_characterization_base, design.design):
     def add_poly_contacts(self, pin_names, y_shifts):
 
         poly_cont_shifts = [0.0] * 3
-        cont_shift = 0.5 * (contact.poly.w_1 - self.ptx_poly_width)
+        cont_shift = 0.5 * (contact.poly.w_1 - self.ptx_poly_width)  # zero when equal
         if self.num_tracks == 2:
             poly_cont_shifts = [-cont_shift, cont_shift]
         elif self.num_tracks == 3:
@@ -583,14 +565,8 @@ class pgate(pgates_characterization_base, design.design):
         self.add_rect(PIMP, offset=vector(implant_x, self.nwell_y), width=self.implant_width,
                       height=self.pimplant_height)
         # nwell
-        # TODO: sky_tapeout: nwell extending into adjacent cells is problematic
-        if getattr(OPTS, "begin_adjacent_pgate_hack", False):
-            nwell_x = 0
-            width = self.width
-        else:
-            nwell_x = self.mid_x - 0.5 * self.nwell_width
-            width = self.nwell_width
-        self.add_rect(NWELL, offset=vector(nwell_x, self.nwell_y), width=width,
+        nwell_x = self.mid_x - 0.5 * self.nwell_width
+        self.add_rect(NWELL, offset=vector(nwell_x, self.nwell_y), width=self.nwell_width,
                       height=self.nwell_height)
         # pwell
         if info["has_pwell"]:
@@ -692,3 +668,92 @@ class pgate(pgates_characterization_base, design.design):
     def create_pgate_tap(self):
         from pgates.pgate_tap import pgate_tap
         return pgate_tap(self)
+
+    @staticmethod
+    def calculate_min_space(left_module: design.design, right_module: design.design):
+        # calculate based on min nwell to nmos active space
+        # find right nmos rects
+        right_active = right_module.get_layer_shapes(ACTIVE, recursive=True)
+        right_mod_nwell = right_module.get_layer_shapes(NWELL, recursive=True)
+        right_mod_poly = right_module.get_layer_shapes(POLY, recursive=True)
+
+        def is_overlap(reference, rects):
+            return any(reference.overlaps(x) for x in rects)
+
+        mos_active = [x for x in right_active if is_overlap(x, right_mod_poly)]
+        mos_active = [x for x in mos_active if x.width > left_module.poly_pitch]
+        nmos_active_rects = [x for x in mos_active if not is_overlap(x, right_mod_nwell)]
+        nmos_active = min(nmos_active_rects, key=lambda x: x.lx())
+
+        left_nwell_rects = left_module.get_layer_shapes(NWELL, recursive=True)
+        left_nwell_rects = [x for x in left_nwell_rects if x.rx() >= left_module.width]
+        # find closest to the middle
+        left_nwell = min(left_nwell_rects,
+                         key=lambda x: abs(x.cy() - 0.5 * left_module.height))
+
+        # debug.pycharm_debug()
+        x_slack = (left_module.width - left_nwell.rx()) + nmos_active.lx()
+
+        y_diff = max(0, left_nwell.by() - nmos_active.uy())
+        min_space = drc.get("nwell_to_active_space", 0)
+        if min_space > y_diff:
+            x_diff = (min_space ** 2 - y_diff ** 2) ** 0.5
+            min_space = max(0, utils.ceil(x_diff - x_slack))
+        else:
+            min_space = 0
+
+        # calculate based on min nwell space
+        # only select non-overlapping well
+        right_module_nwell_rects = right_module.get_layer_shapes(NWELL, recursive=True)
+        adjacent_nwell_rects = [x for x in right_module_nwell_rects if x.lx() >= 0]
+        closest_nwell_rects = [x for x in right_module_nwell_rects if x.lx() <= 0]
+
+        if not adjacent_nwell_rects or not closest_nwell_rects:
+            return min_space
+
+        closest_nwell_rect = max(closest_nwell_rects, key=lambda x: x.height)
+
+        # only care if the bottom is > than left module's
+        adjacent_nwell_rects = [x for x in adjacent_nwell_rects
+                                if x.by() < closest_nwell_rect.by()]
+        if len(adjacent_nwell_rects) > 0:
+            right_nwell = min(adjacent_nwell_rects, key=lambda x: x.lx())
+
+            min_nwell_space = left_module.get_space(NWELL, "same_net")
+            x_slack = (left_module.width - left_nwell.rx()) + right_nwell.lx()
+            min_space = max(min_space, min_nwell_space - x_slack)
+
+        return min_space
+
+    @staticmethod
+    def fill_adjacent_wells(self: design.design, left_inst, right_inst):
+        layers = [NWELL, TAP_ACTIVE, NIMP, PIMP]
+        if self.has_pwell:
+            layers.append(PWELL)
+        fill_rects = create_wells_and_implants_fills(left_inst, right_inst,
+                                                     layers=layers)
+        nwell_rects = left_inst.get_layer_shapes(NWELL, recursive=True)
+
+        def is_nwell(rect):
+            return any(rect.overlaps(x) for x in nwell_rects)
+
+        for layer, rect_bottom, rect_top, left_rect, right_rect in fill_rects:
+            if round_to_grid(right_rect.lx()) <= round_to_grid(left_rect.rx()):
+                continue
+            width = right_rect.lx() - left_rect.rx()
+            height = rect_top - rect_bottom
+            self.add_rect(layer, vector(left_rect.rx(), rect_bottom),
+                          height=height, width=width)
+            # add corresponding implant around taps
+            # should ordinarily not be needed
+            # but magic doesn't like implant/active pairs on different hierarchy levels
+            if layer == TAP_ACTIVE:
+                if is_nwell(left_rect):
+                    implant_type = NIMP
+                else:
+                    implant_type = PIMP
+                implant_width = width + 2 * self.implant_enclose_active
+                implant_height = height + 2 * self.implant_enclose_active
+                mid_x = 0.5 * (left_rect.rx() + right_rect.lx())
+                self.add_rect_center(implant_type, vector(mid_x, left_rect.cy()),
+                                     width=implant_width, height=implant_height)

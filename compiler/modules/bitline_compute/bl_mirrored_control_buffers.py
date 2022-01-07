@@ -2,6 +2,7 @@ from globals import OPTS
 from modules.bitline_compute.bl_control_buffers_base import BlControlBuffersBase
 from modules.buffer_stage import BufferStage
 from modules.logic_buffer import LogicBuffer
+from pgates.pnand2 import pnand2
 
 
 class BlMirroredControlBuffers(BlControlBuffersBase):
@@ -23,6 +24,7 @@ class BlMirroredControlBuffers(BlControlBuffersBase):
 
     def create_modules(self):
         self.create_common_modules()
+        self.nand_x2 = self.create_mod(pnand2, size=2)
         self.create_decoder_clk()
         self.create_clk_buf()
         self.create_wordline_en()

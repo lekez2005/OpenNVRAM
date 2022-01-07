@@ -6,7 +6,7 @@ from typing import List, Tuple, Union
 import debug
 from base import utils
 from base.contact import m2m3, m1m2, cross_m2m3, cross_m1m2
-from base.design import design, METAL3, METAL2, METAL1, DRAWING, ACTIVE, NIMP, PWELL, TAP_ACTIVE, PIMP, NWELL
+from base.design import design, METAL3, METAL2, METAL1, NIMP, PWELL, TAP_ACTIVE
 from base.geometry import NO_MIRROR, MIRROR_XY
 from base.utils import round_to_grid as round_gd
 from base.vector import vector
@@ -197,7 +197,6 @@ class ControlBuffers(design, ABC):
 
     def create_common_modules(self):
         self.nand = self.create_mod(pnand2)
-        self.nand_x2 = self.create_mod(pnand2, size=2)
         self.nand3 = self.create_mod(pnand3, size=1)
         self.nor = self.create_mod(pnor2)
         self.inv = self.create_mod(pinv)
@@ -279,7 +278,7 @@ class ControlBuffers(design, ABC):
                                                          self.module_offsets.values()),
                                                   key=lambda x: x.x_offset, reverse=True))
 
-    def get_module_spacing(self, inst_name):
+    def get_module_spacing(self, inst_name, prev_inst_name):
         sample_mod_offset = ModOffset(inst_name, 0, NO_MIRROR)
 
         module_connection = self.connections_dict[inst_name]
@@ -290,19 +289,29 @@ class ControlBuffers(design, ABC):
             pin_index = 0
 
         a_pin_offset = self.evaluate_pin_x_offset(sample_mod_offset, pin_index=pin_index)
-        z_pin_allowance = self.inv.width - (self.inv.get_pin("Z").cx() + 0.5 * self.m2_width)
+        m2_width = max(self.m2_width, m1m2.w_2, m2m3.w_1)
+        z_pin_allowance = self.inv.width - (self.inv.get_pin("Z").cx() + 0.5 * m2_width)
         space = -a_pin_offset + self.get_parallel_space(METAL2) - z_pin_allowance
+
+        if prev_inst_name is not None:
+            current_mod = module_connection.mod
+            prev_mod = self.connections_dict[prev_inst_name].mod
+            min_space = pinv.calculate_min_space(prev_mod, current_mod)
+            space = max(space, min_space)
+
         return utils.ceil(max(space, 0))
 
     def derive_single_row_offsets(self):
         """Get x offsets and mirrors for single row"""
         self.module_offsets = {}
         x_offset = 0
+        prev_inst_name = None
         for schem_conn in self.schematic_connections:
             inst_name, mod = schem_conn.inst_name, schem_conn.mod
-            x_offset += self.get_module_spacing(inst_name)
+            x_offset += self.get_module_spacing(inst_name, prev_inst_name)
             self.module_offsets[inst_name] = ModOffset(inst_name, x_offset, NO_MIRROR)
             x_offset += mod.width
+            prev_inst_name = inst_name
         self.width = x_offset
 
     def derive_double_row_offsets(self):
@@ -311,28 +320,34 @@ class ControlBuffers(design, ABC):
         self.group_split_index = self.calculate_split_index()
         self.module_offsets = {}
         x_offset = 0
+        prev_inst_name = None
         for module_group in self.module_groups[:self.group_split_index]:
             for inst_name in module_group:
-                x_offset += self.get_module_spacing(inst_name)
+                x_offset += self.get_module_spacing(inst_name, prev_inst_name)
                 mod = self.connections_dict[inst_name].mod
                 self.module_offsets[inst_name] = ModOffset(inst_name, x_offset, NO_MIRROR)
                 x_offset += mod.width
+                prev_inst_name = inst_name
 
         # calculate bottom width
         bottom_width = 0
+        prev_inst_name = None
         for module_group in self.module_groups[self.group_split_index:]:
             for inst_name in module_group:
                 mod = self.connections_dict[inst_name].mod
-                bottom_width += self.get_module_spacing(inst_name) + mod.width
+                bottom_width += self.get_module_spacing(inst_name, prev_inst_name) + mod.width
+                prev_inst_name = inst_name
         self.width = max(x_offset, bottom_width)
         x_offset = self.width
 
+        prev_inst_name = None
         for module_group in self.module_groups[self.group_split_index:]:
             for inst_name in module_group:
                 mod = self.connections_dict[inst_name].mod
-                x_offset -= self.get_module_spacing(inst_name)
+                x_offset -= self.get_module_spacing(inst_name, prev_inst_name)
                 self.module_offsets[inst_name] = ModOffset(inst_name, x_offset, MIRROR_XY)
                 x_offset -= mod.width
+                prev_inst_name = inst_name
         return self.module_offsets
 
     def get_module_connections(self, connection: Union[SchemConnection, str]):
@@ -420,17 +435,12 @@ class ControlBuffers(design, ABC):
             x_offset = pin.cx() - 0.5 * self.m2_width
         elif pin_index == 0:
             if isinstance(inst_mod, pinv) or pin_name == "in":
-                x_offset = pin.lx() - m1m2.height
+                x_offset = pin.lx() + self.m2_width - m1m2.height
             else:
                 x_offset = pin.rx() - m1m2.height
         elif pin_index == 1:  # B pin
             a_pin = inst_mod.get_pin("A")
-            # TODO: sky_tapeout: more accurately adjust rail offset
-            if getattr(OPTS, "begin_adjacent_pgate_hack", False):
-                width = 0.2
-            else:
-                width = self.m2_width
-            x_space = self.get_parallel_space(METAL2) + width
+            x_space = self.get_parallel_space(METAL2) + max(self.m2_width, m1m2.w_2)
             x_offset = a_pin.rx() - m1m2.height - x_space
         elif pin_index == 2:  # C pin
             b_pin = inst_mod.get_pin("B")
@@ -452,7 +462,7 @@ class ControlBuffers(design, ABC):
         all_m2 = list(map(lambda x: x.x_offset, all_m2_blockages))
 
         parallel_space = self.get_parallel_space(METAL2)  # space for parallel lines
-        m2_pitch = parallel_space + self.m2_width
+        m2_pitch = parallel_space + max(self.m2_width, m1m2.w_2)
 
         y_space = self.get_line_end_space(METAL2)
 
@@ -916,9 +926,9 @@ class ControlBuffers(design, ABC):
         self.join_rail_to_y_offset(x_offset, pin.cy(), rail, add_rail_via)
 
         if pin.cy() > rail.cy():
-            via_x = x_offset + m1m2.height
+            via_x = x_offset + 0.5 * m1m2.h_2 + 0.5 * m1m2.height
         else:
-            via_x = x_offset + self.m2_width
+            via_x = x_offset + self.m2_width + 0.5 * (m1m2.height - m1m2.h_2)
         self.add_contact(m1m2.layer_stack, offset=vector(via_x,
                                                          pin.cy() - 0.5 * m1m2.width),
                          rotate=90)
@@ -990,29 +1000,8 @@ class ControlBuffers(design, ABC):
     def fill_layers(self):
         """Fill spaces between adjacent modules"""
         layers, purposes = get_default_fill_layers()
-
         layers.append(TAP_ACTIVE)
-        # TODO: sky_tapeout: fix purpose
         purposes.append(None)
-        # debug.pycharm_debug()
-
-        # TODO: sky_tapeout: fix implants: magic doesn't seem to like abbuted implants
-        # if the implants are at different hierarchical levels
-        for layer in [NIMP, PIMP]:
-            func = max if layer == NIMP else min
-            rect = func(self.top_insts[0].get_layer_shapes(layer, recursive=True),
-                        key=lambda x: x.cy())
-            x_offset = self.top_insts[0].lx()
-            self.add_rect(layer, vector(x_offset, rect.by()),
-                          height=rect.height,
-                          width=self.top_insts[-1].rx() - x_offset)
-            if layer == NIMP:
-                ext = self.well_enclose_active
-                top = rect.uy() + self.well_enclose_active
-                bot = top - 0.84
-                self.add_rect(NWELL, vector(x_offset - ext, bot),
-                              height=top-bot,
-                              width=self.top_insts[-1].rx() - x_offset + 2 * ext)
 
         instances = [self.top_insts[:-1], self.top_insts[1:]]
         if len(self.bottom_insts) > 1:
@@ -1030,7 +1019,6 @@ class ControlBuffers(design, ABC):
                             rect_top = max(left_rect.uy(), right_rect.uy())
                         else:
                             rect_bottom = min(left_rect.by(), right_rect.by())
-                    x_offset = min(left_rect.rx(), left_inst.rx())
-                    self.add_rect(layer, vector(x_offset, rect_bottom),
-                                  width=right_rect.lx() - x_offset,
+                    self.add_rect(layer, vector(left_rect.rx(), rect_bottom),
+                                  width=right_rect.lx() - left_rect.rx(),
                                   height=rect_top - rect_bottom)

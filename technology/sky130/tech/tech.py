@@ -98,6 +98,7 @@ drc["rail_height"] = 0.3
 
 drc["pwell_to_nwell"] = 0.22
 drc["nwell_to_nwell"] = 0.0
+drc["same_net_line_space_nwell"] = 1.27
 drc["pwell_to_pwell"] = 0.0
 drc["minwidth_well"] = 0.84
 # poly

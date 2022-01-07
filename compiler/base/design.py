@@ -349,10 +349,11 @@ class design(hierarchy_spice.spice, hierarchy_layout):
             return cell.gds.getShapesInLayer(layer_number, purpose_number)
 
     def get_gds_layer_rects(self, layer, purpose=None, recursive=False):
+
         def rect(shape):
-            return rectangle(shape.layerNumber, shape[0], width=shape[1][0] - shape[0][0],
+            return rectangle(tech_layers[layer], shape[0], width=shape[1][0] - shape[0][0],
                              height=shape[1][1] - shape[0][1],
-                             layerPurpose=shape.layerPurpose)
+                             layerPurpose=get_purpose(layer))
         shapes = self.get_gds_layer_shapes(self, layer, purpose, recursive)
         return [rect(shape) for shape in shapes]
 

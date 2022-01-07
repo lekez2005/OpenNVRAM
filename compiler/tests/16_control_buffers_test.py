@@ -13,9 +13,10 @@ class ControlBuffersTest(OpenRamTest):
     def make_buffers(bank):
         from globals import OPTS
         if hasattr(OPTS, "control_buffers_class"):
-            return ControlBuffersTest.create_class_from_opts("control_buffers_class", bank)
+            return ControlBuffersTest.create_class_from_opts("control_buffers_class",
+                                                             bank=bank)
         from modules.baseline_latched_control_buffers import LatchedControlBuffers
-        return LatchedControlBuffers(bank)
+        return LatchedControlBuffers(bank=bank)
 
     def test_decoder_clk(self):
         """Test explicit decoder clock creation"""

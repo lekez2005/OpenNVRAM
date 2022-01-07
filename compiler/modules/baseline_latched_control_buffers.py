@@ -1,6 +1,7 @@
 from globals import OPTS
 from modules.control_buffers import ControlBuffers
 from modules.logic_buffer import LogicBuffer
+from pgates.pnand2 import pnand2
 
 
 class LatchedControlBuffers(ControlBuffers):
@@ -30,6 +31,7 @@ class LatchedControlBuffers(ControlBuffers):
 
     def create_modules(self):
         self.create_common_modules()
+        self.create_2x_nand()
         self.create_decoder_clk()
         self.create_bank_sel()
         self.create_clk_buf()
@@ -39,6 +41,9 @@ class LatchedControlBuffers(ControlBuffers):
         self.create_sense_amp_buf()
         self.create_sample_bar()
         self.create_tri_en_buf()
+
+    def create_2x_nand(self):
+        self.nand_x2 = self.create_mod(pnand2, size=2)
 
     def create_schematic_connections(self):
         connections = [

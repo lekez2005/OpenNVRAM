@@ -1,6 +1,6 @@
 import debug
-from base import contact
 from base import design
+from base.contact import m1m2, cross_m1m2
 from base.unique_meta import Unique
 from base.vector import vector
 from modules.buffer_stage import BufferStage
@@ -20,7 +20,8 @@ class LogicBuffer(design.design, metaclass=Unique):
 
     PNAND_3 = "pnand3"
 
-    def __init__(self, buffer_stages, logic="pnand2", height=None, route_inputs=True, route_outputs=True, contact_pwell=True,
+    def __init__(self, buffer_stages, logic="pnand2", height=None, route_inputs=True, route_outputs=True,
+                 contact_pwell=True,
                  contact_nwell=True, align_bitcell=False):
         if buffer_stages is None or len(buffer_stages) < 1:
             debug.error("There should be at least one buffer stage", 1)
@@ -43,7 +44,8 @@ class LogicBuffer(design.design, metaclass=Unique):
         self.DRC_LVS()
 
     @classmethod
-    def get_name(cls, buffer_stages, logic="pnand2", height=None, route_inputs=True, route_outputs=True, contact_pwell=True,
+    def get_name(cls, buffer_stages, logic="pnand2", height=None, route_inputs=True, route_outputs=True,
+                 contact_pwell=True,
                  contact_nwell=True, align_bitcell=False):
         name = "logic_buffer_{}_{}".format(logic, "_".join(['{:.3g}'.format(x) for x in buffer_stages]))
         if not route_inputs:
@@ -75,6 +77,7 @@ class LogicBuffer(design.design, metaclass=Unique):
         self.route_input_pins()
         self.route_out_pins()
         self.route_power_pins()
+        self.logic_mod.fill_adjacent_wells(self, self.logic_inst, self.buffer_inst)
 
         self.width = self.buffer_inst.rx()
         self.height = self.buffer_inst.height
@@ -118,29 +121,27 @@ class LogicBuffer(design.design, metaclass=Unique):
         connections[-3] = intermediate_net
         self.connect_inst(connections)
 
+        min_space = self.logic_mod.calculate_min_space(self.logic_mod, self.buffer_mod)
+        x_offset = self.logic_inst.rx() + min_space
         self.buffer_inst = self.add_inst("buffer", mod=self.buffer_mod,
-                                         offset=self.logic_inst.lr())
+                                         offset=vector(x_offset, 0))
 
         self.connect_inst(buffer_conns + ["vdd", "gnd"])
 
     def route_input_pins(self):
         # connect input pins
         if self.route_inputs:
-            pins = sorted([self.logic_inst.get_pin("A"), self.logic_inst.get_pin("B")], key=lambda x: x.cy(),
-                          reverse=True)
-            rail_x = 0.5 * self.m2_width
+            pins = sorted([self.logic_inst.get_pin("A"), self.logic_inst.get_pin("B")],
+                          key=lambda x: x.cx())
+            rail_x = pins[0].cx() - 0.5 * m1m2.h_2 - self.m2_width
             for i in range(len(pins)):
                 pin = pins[i]
-                self.add_rect("metal2", offset=vector(rail_x, pin.cy() - 0.5 * self.m2_width), width=pin.cx() - rail_x)
-                if i == 1 and self.logic == "pnor2":
-                    self.add_contact(contact.m1m2.layer_stack, offset=pin.lr(), rotate=90)
-                elif i == 1:
-                    self.add_contact(layers=contact.contact.m1m2_layers, offset=pin.lr(), rotate=90)
-                else:
-                    y_offset = pin.uy() - contact.m1m2.second_layer_height
-                    self.add_contact(layers=contact.contact.m1m2_layers, offset=vector(pin.lx(), y_offset))
-                self.add_layout_pin(pin.name, "metal2", offset=vector(rail_x, 0), height=pin.cy())
-                rail_x += self.parallel_line_space + self.m2_width
+                self.add_rect("metal2", offset=vector(rail_x, pin.cy() - 0.5 * self.m2_width),
+                              width=pin.cx() - rail_x)
+                self.add_cross_contact_center(cross_m1m2, pin.center())
+                self.add_layout_pin(pin.name, "metal2", offset=vector(rail_x, 0),
+                                    height=pin.cy())
+                rail_x -= self.bus_space + self.m2_width
         else:
             for pin_name in self.logic_mod.pins[:-3]:
                 self.copy_layout_pin(self.logic_inst, pin_name)
@@ -151,7 +152,7 @@ class LogicBuffer(design.design, metaclass=Unique):
         self.join_logic_out_to_buffer_in(logic_out, buffer_in)
 
     def join_logic_out_to_buffer_in(self, logic_out, buffer_in):
-        self.add_rect("metal1", offset=vector(logic_out.cx(), buffer_in.cy() - 0.5*self.m1_width),
+        self.add_rect("metal1", offset=vector(logic_out.cx(), buffer_in.cy() - 0.5 * self.m1_width),
                       width=buffer_in.lx() - logic_out.cx())
 
     def route_out_pins(self):

@@ -171,9 +171,12 @@ class contact(design.design, metaclass=unique_meta.Unique):
                       height=self.second_layer_height)
 
     def create_implant_well_enclosures(self):
-        implant_position = self.first_layer_position - [drc["implant_enclosure_active"]]*2
-        implant_width =  self.first_layer_width  + 2*drc["implant_enclosure_active"]
-        implant_height = self.first_layer_height + 2*drc["implant_enclosure_active"]
+        implant_width = max(self.first_layer_width + 2 * drc["implant_enclosure_active"],
+                            self.implant_width)
+        implant_height = max(self.first_layer_height + 2 * drc["implant_enclosure_active"],
+                             self.implant_width)
+        implant_position = vector(0.5 * self.width - 0.5 * implant_width,
+                                  0.5 * self.height - 0.5 * implant_height)
         self.add_rect(layer="{}implant".format(self.implant_type),
                       offset=implant_position,
                       width=implant_width,

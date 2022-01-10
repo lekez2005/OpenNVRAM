@@ -315,10 +315,7 @@ class pgate(pgates_characterization_base, design.design):
         nwell_active_space = drc.get("nwell_to_active_space", 0)
         self.nwell_y = max(self.mid_y, nmos_active_top + nwell_active_space)
 
-        self.active_enclose_contact = max(drc["active_enclosure_contact"],
-                                          (self.active_width - self.contact_width) / 2)
-
-        self.end_to_poly = self.active_enclose_contact + self.contact_width + self.contact_to_gate
+        self.end_to_poly = ptx_spice.calculate_end_to_poly()
 
         self.active_width = 2 * self.end_to_poly + self.tx_mults * self.ptx_poly_pitch - self.ptx_poly_space
 

@@ -1,12 +1,12 @@
-import copy
 import re
 
 import debug
 from base import design, utils
 from base.contact import contact, m1m2, poly as poly_contact, active as active_contact
-from base.design import METAL1, METAL2, POLY
+from base.design import METAL1, METAL2, POLY, ACTIVE, CONTACT
 from base.hierarchy_spice import INOUT, INPUT
 from base.vector import vector
+from base.well_active_contacts import calculate_num_contacts
 from base.well_implant_fills import calculate_tx_metal_fill
 from characterizer.characterization_data import load_data
 from globals import OPTS
@@ -27,7 +27,8 @@ class ptx(design.design):
     def __init__(self, width=drc["minwidth_tx"], mults=1, tx_type="nmos",
                  connect_active=False, connect_poly=False, num_contacts=None, dummy_pos=None,
                  active_cont_pos=None,
-                 independent_poly=False):
+                 independent_poly=False,
+                 contact_poly=True):
         # We need to keep unique names because outputting to GDSII
         # will use the last record with a given name. I.e., you will
         # over-write a design in GDS if one has and the other doesn't
@@ -38,6 +39,8 @@ class ptx(design.design):
             name += "_a"
         if connect_poly:
             name += "_p"
+        if not contact_poly:
+            name += "_nopc"
         if not connect_poly and independent_poly and mults > 1:
             # poly pitch will be calculated based on
             # min space between independent poly contacts
@@ -63,6 +66,7 @@ class ptx(design.design):
         self.tx_length = drc["minwidth_poly"]
         self.connect_active = connect_active
         self.connect_poly = connect_poly
+        self.contact_poly = contact_poly
         self.num_contacts = num_contacts
         self.dummy_pos = dummy_pos
         self.independent_poly = independent_poly
@@ -98,7 +102,7 @@ class ptx(design.design):
         return pitch - obj.poly_width, obj.poly_width, pitch
 
     @staticmethod
-    def calculate_active_to_poly_cont_mid(tx_type, tx_width=None):
+    def calculate_active_to_poly_cont_mid(tx_type, tx_width=None, use_m1m2=False):
         """Distance from edge of active to middle of poly contact"""
         # calculate based on contact
         active_to_poly_contact = drc.get(f"poly_contact_to_{tx_type[0]}_active",
@@ -106,9 +110,19 @@ class ptx(design.design):
         cont_space = active_to_poly_contact + 0.5 * poly_contact.contact_width
         if tx_width is not None:
             # calculate based on m1 space
+            active_cont = calculate_num_contacts(None, tx_width, return_sample=True,
+                                                 layer_stack=active_contact)
+            n_metal_height = active_cont.h_2
             line_end_space = ptx.get_line_end_space(METAL1)
-            m1_space = (line_end_space + max(0, 0.5 * (m1m2.first_layer_height - tx_width)) +
-                        0.5 * poly_contact.second_layer_height)
+
+            if use_m1m2:
+                m1m2_cont = calculate_num_contacts(None, tx_width, return_sample=True,
+                                                   layer_stack=m1m2)
+                n_metal_height = max(n_metal_height, m1m2_cont.h_1)
+                line_end_space = max(line_end_space, ptx.get_line_end_space(METAL2))
+            metal_extension = 0.5 * n_metal_height - 0.5 * tx_width
+
+            m1_space = metal_extension + line_end_space + 0.5 * poly_contact.h_2
             return max(cont_space, m1_space)
         return cont_space
 
@@ -148,6 +162,16 @@ class ptx(design.design):
     def get_input_pins(self):
         return ["G"]
 
+    @staticmethod
+    def calculate_end_to_poly():
+        # The enclosure of an active contact. Not sure about second term.
+        active_width = design.design.get_min_layer_width(ACTIVE)
+        contact_width = design.design.get_min_layer_width(CONTACT)
+        active_enclose_contact = max(drc["active_enclosure_contact"],
+                                     (active_width - contact_width) / 2)
+        # This is the distance from the edge of poly to the contacted end of active
+        return active_enclose_contact + contact_width + drc.get("contact_to_gate")
+
     def setup_layout_constants(self):
         """
         Pre-compute some handy layout parameters.
@@ -176,11 +200,7 @@ class ptx(design.design):
         pitch_res = self.calculate_poly_pitch(self, num_independent_contacts)
         self.ptx_poly_space, _, self.poly_pitch = pitch_res
 
-        # The enclosure of an active contact. Not sure about second term.
-        active_enclose_contact = max(drc["active_enclosure_contact"],
-                                     (self.active_width - self.contact_width) / 2)
-        # This is the distance from the edge of poly to the contacted end of active
-        self.end_to_poly = active_enclose_contact + self.contact_width + self.contact_to_gate
+        self.end_to_poly = self.calculate_end_to_poly()
 
         # Active width is determined by enclosure on both ends and contacted pitch,
         # at least one poly and n-1 poly pitches
@@ -188,8 +208,6 @@ class ptx(design.design):
 
         # Active height is just the transistor width
         self.active_height = self.tx_width
-
-        self.poly_contact_layer = info.get("self.poly_contact_layer", METAL1)
 
         # The active offset is due to the well extension
         self.active_offset = vector([self.well_enclose_ptx_active] * 2)
@@ -199,7 +217,7 @@ class ptx(design.design):
         # additional poly from adding poly_to_m1 via
         self.additional_poly = 0.0
         self.poly_height = self.tx_width + 2 * self.poly_extend_active
-        if self.poly_contact_layer == "metal1":
+        if self.contact_poly:
             res = self.calculate_active_to_poly_cont_mid(self.tx_type, self.tx_width)
             self.active_to_contact_center = res
             poly_height = (self.poly_extend_active + self.tx_width +
@@ -300,7 +318,7 @@ class ptx(design.design):
         # The width of the poly is from the left-most to right-most poly gate
         poly_width = poly_positions[-1].x - poly_positions[0].x + self.poly_width
 
-        if self.poly_contact_layer == "metal1":
+        if self.contact_poly:
             self.add_layout_pin(text="G",
                                 layer="metal1",
                                 offset=vector(poly_positions[0].x, self.poly_contact_center) - [
@@ -347,7 +365,7 @@ class ptx(design.design):
             source_dir = -1
         source_offset = pin_offset.scale(source_dir, source_dir)
         self.remove_layout_pin("D")  # remove the individual connections
-        if self.poly_contact_layer == "metal1":
+        if self.contact_poly:
             metal1_area_fill = None
 
             fill = calculate_tx_metal_fill(self.tx_width, self)
@@ -427,7 +445,7 @@ class ptx(design.design):
                                  offset=poly_offset,
                                  height=self.poly_height,
                                  width=self.poly_width)
-            if self.poly_contact_layer == METAL1:
+            if self.contact_poly:
                 contact_pos = vector(poly_offset.x, self.poly_contact_center)
                 self.add_contact_center(layers=contact.poly_layers, offset=contact_pos,
                                         size=(1, 1))
@@ -499,7 +517,7 @@ class ptx(design.design):
         # order for the accessors.
         for i in range(self.mults - 1):
             contact_positions.append(vector(self.poly_positions[i].x +
-                                            0.5*self.poly_pitch, mid_y))
+                                            0.5 * self.poly_pitch, mid_y))
 
         contact_positions.append(vector(self.poly_positions[-1].x + poly_mid_to_cont_mid,
                                         mid_y))

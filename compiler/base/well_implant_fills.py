@@ -6,7 +6,7 @@ from base import contact
 from base import utils
 from base.contact import m2m3, m3m4
 from base.design import design, NWELL, NIMP, PIMP, METAL1, PO_DUMMY, POLY, DRAWING, \
-    METAL2, PWELL, METAL3, METAL4, ACTIVE
+    METAL2, PWELL, METAL3, METAL4, ACTIVE, TAP_ACTIVE
 from base.geometry import instance
 from base.hierarchy_layout import GDS_ROT_270, GDS_ROT_90
 from base.rotation_wrapper import RotationWrapper
@@ -433,6 +433,26 @@ def evaluate_vertical_module_spacing(top_modules: List[design_inst],
                         evaluated_space = -top_clearance + -bottom_clearance + target_space
                         if evaluated_space > min_space:
                             min_space = evaluated_space
+    # nwell to tap active
+    tap_to_nwell = tech.drc.get("nwell_to_tap_active_space",
+                                tech.drc.get("nwell_to_active_space", 0))
+
+    def get_tap_nwell(mod, layer):
+        return get_ptaps(mod) if layer == TAP_ACTIVE else mod.get_layer_shapes(layer, recursive=True)
+
+    for top_module in top_modules:
+        for bottom_module in bottom_modules:
+            for top_layer, bottom_layer in [(NWELL, TAP_ACTIVE), (TAP_ACTIVE, NWELL)]:
+                top_rects = get_tap_nwell(top_module, top_layer)
+                bottom_rects = get_tap_nwell(bottom_module, bottom_layer)
+                if not top_rects or not bottom_rects:
+                    continue
+                bottom_rect = max(bottom_rects, key=lambda x: x.uy())
+                top_rect = min(top_rects, key=lambda x: x.by())
+                evaluated_space = (bottom_rect.uy() - bottom_module.height +
+                                   tap_to_nwell - top_rect.by())
+                min_space = max(min_space, evaluated_space)
+
     min_space = utils.round_to_grid(min_space)
     # evaluate well spacing to prevent nwell pwell overlap
     if tech.info["has_pwell"]:
@@ -454,6 +474,18 @@ def evaluate_vertical_module_spacing(top_modules: List[design_inst],
                 min_space = bottom_rect_y - (top_rect.by() + bottom_module.height)
 
     return min_space
+
+
+def get_ptaps(obj: design):
+    tap_actives = obj.get_layer_shapes(TAP_ACTIVE, recursive=True)
+    nwells = obj.get_layer_shapes(NWELL, recursive=True)
+    ptaps = []
+    for tap_active in tap_actives:
+        for nwell in nwells:
+            if nwell.overlaps(tap_active):
+                break
+        ptaps.append(tap_active)
+    return ptaps
 
 
 def get_layer_space(obj: design, layer_1, layer_2):
@@ -485,7 +517,7 @@ def join_vertical_adjacent_module_wells(bank: design, bottom_inst, top_inst):
 
     for top_layer, bottom_layer in layers:
         layer_space = get_layer_space(bank, top_layer, bottom_layer)
-        top_rects = top_child_inst. get_layer_shapes(top_layer, recursive=True)
+        top_rects = top_child_inst.get_layer_shapes(top_layer, recursive=True)
         bottom_rects = bottom_child_inst.get_layer_shapes(bottom_layer, recursive=True)
         if not top_rects or not bottom_rects:
             continue

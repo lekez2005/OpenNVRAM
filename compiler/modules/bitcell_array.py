@@ -261,10 +261,10 @@ class bitcell_array(design.design):
 
     def add_dummy_polys(self):
 
-        dummy_polys = self.get_dummy_poly(self.cell, from_gds=True)
+        dummy_polys = self.get_dummy_poly(self.cell)
         if not dummy_polys:
             return
-        leftmost, rightmost = self.get_dummy_poly(self.cell, from_gds=True)
+        leftmost, rightmost = dummy_polys
         poly_pitch = self.poly_width + self.poly_space
         x_offsets = []
         if self.add_left_dummy:

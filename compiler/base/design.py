@@ -358,84 +358,87 @@ class design(hierarchy_spice.spice, hierarchy_layout):
         return [rect(shape) for shape in shapes]
 
     def get_poly_fills(self, cell):
-        poly_dummies = self.get_gds_layer_shapes(cell, PO_DUMMY, PO_DUMMY, recursive=True)
-        poly_rects = self.get_gds_layer_shapes(cell, "poly", recursive=True)
+        def to_boundary(fill_dict):
+            for key in fill_dict:
+                boundaries = []
+                for rect in fill_dict[key]:
+                    rect.normalize()
+                    boundaries.append([[rect.lx(), rect.by()], [rect.rx(), rect.uy()]])
+                fill_dict[key] = boundaries
+            return fill_dict
+
+        poly_dummies = cell.get_layer_shapes(PO_DUMMY, recursive=True)
+        poly_rects = cell.get_layer_shapes(POLY, recursive=True)
 
         # only polys with active layer interaction need to be filled
         polys = []
-        actives = self.get_gds_layer_shapes(cell, "active", recursive=True)
+        actives = cell.get_layer_shapes(ACTIVE, recursive=True)
         for poly_rect in poly_rects:
             for active in actives:
-                if (poly_rect[0][0] > active[0][0] and poly_rect[1][0] < active[1][0]  # contained in x_direction
-                        and poly_rect[0][1] < active[0][1] and poly_rect[1][1] > active[1][1]):
+                if active.overlaps(poly_rect):
                     polys.append(poly_rect)
         if len(polys) == 0 and len(poly_dummies) == 2:
             result = {}
-            left = copy.deepcopy(min(poly_dummies, key=lambda rect: rect[0][0]))
-            left[0][0] -= self.poly_pitch
-            left[1][0] -= self.poly_pitch
+            left = copy.deepcopy(min(poly_dummies, key=lambda rect: rect.lx()))
+            left.boundary[0].x -= self.poly_pitch
+            left.boundary[1].x -= self.poly_pitch
             result["left"] = [left]
-            right = copy.deepcopy(max(poly_dummies, key=lambda rect: rect[0][0]))
-            right[0][0] += self.poly_pitch
-            right[1][0] += self.poly_pitch
+            right = copy.deepcopy(max(poly_dummies, key=lambda rect: rect.rx()))
+            left.boundary[0].x += self.poly_pitch
+            left.boundary[1].x += self.poly_pitch
             result["right"] = [right]
-            return result
+            return to_boundary(result)
 
         fills = []
         for poly_rect in polys:
-            x_offset = poly_rect[0][0]
+            x_offset = poly_rect.lx()
             potential_fills = [-2, 2]  # need -2 and +2 poly pitches from current x offset filled
-            mid_point = 0.5 * (poly_rect[0][1] + poly_rect[1][1])  # y midpoint
+            mid_point = poly_rect.cy()  # y midpoint
             for candidate in polys + poly_dummies:
-                if not candidate[0][1] < mid_point < candidate[1][1]:  # not on the same row
+                if not candidate.by() < mid_point < candidate.uy():  # not on the same row
                     continue
                 integer_space = int(
-                    round((candidate[0][0] - x_offset) / self.poly_pitch))  # space away from current poly
+                    round((candidate.lx() - x_offset) / self.poly_pitch))  # space away from current poly
                 if integer_space in potential_fills:
                     potential_fills.remove(integer_space)
             for potential_fill in potential_fills:  # fill unfilled spaces
                 fill_copy = copy.deepcopy(poly_rect)
                 x_space = potential_fill * self.poly_pitch
-                fill_copy[0][0] += x_space
-                fill_copy[1][0] += x_space
+                fill_copy.boundary[0].x += x_space
+                fill_copy.boundary[1].x += x_space
                 fills.append(fill_copy)
         # make the fills unique by x_offset by combining fills with the same x offset
-        fills = list(sorted(fills, key=lambda x: x[0][0]))
+        fills = list(sorted(fills, key=lambda x: x.lx()))
         merged_fills = {"left": [], "right": []}
 
         def add_to_merged(fill):
-            # discard ceils that appear within cell
-            if fill[0][0] > 0 and fill[1][0] < cell.width:
+            # discard fills that appear within cell
+            if fill.lx() > 0 and fill.rx() < cell.width:
                 return
-            if fill[0][0] < 0.5 * cell.width:
+            if fill.lx() < 0.5 * cell.width:
                 merged_fills["left"].append(fill)
             else:
                 merged_fills["right"].append(fill)
 
         if len(fills) > 0:
             current_fill = copy.deepcopy(fills[0])
-            x_offset = utils.ceil(current_fill[0][0])
+            x_offset = utils.ceil(current_fill.lx())
             for fill in fills:
-                if utils.ceil(fill[0][0]) == x_offset:
-                    current_fill[0][1] = min(fill[0][1], current_fill[0][1])
-                    current_fill[1][1] = max(fill[1][1], current_fill[1][1])
+                if utils.ceil(fill.lx()) == x_offset:
+                    current_fill.boundary[0].y = min(fill.by(), current_fill.by())
+                    current_fill.boundary[1].y = max(fill.uy(), current_fill.uy())
                 else:
                     add_to_merged(current_fill)
                     current_fill = fill
-                    x_offset = utils.ceil(current_fill[0][0])
+                    x_offset = utils.ceil(current_fill.lx())
             add_to_merged(current_fill)
-        return merged_fills
+        return to_boundary(merged_fills)
 
-    def get_dummy_poly(self, cell, from_gds=True):
+    def get_dummy_poly(self, cell):
         if PO_DUMMY in tech_layers:
-            if from_gds:
-                rects = cell.gds.getShapesInLayer(tech_layers[PO_DUMMY], tech_purpose[PO_DUMMY])
-            else:
-                shapes = self.get_layer_shapes(PO_DUMMY, PO_DUMMY)
-                rects = list(map(lambda x: x.boundary, shapes))
-
-            leftmost = min(map(lambda x: x[0], map(lambda x: x[0], rects)))
-            rightmost = max(map(lambda x: x[0], map(lambda x: x[1], rects)))
+            shapes = cell.get_layer_shapes(PO_DUMMY, recursive=True)
+            leftmost = min(map(lambda x: x.lx(), shapes))
+            rightmost = max(map(lambda x: x.rx(), shapes))
             return leftmost, rightmost
         return []
 

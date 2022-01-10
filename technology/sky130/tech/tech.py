@@ -120,15 +120,17 @@ drc["active_to_active"] = 0.27
 drc["well_enclosure_active"] = 0.18
 drc["well_extend_active"] = 0.18
 drc["minarea_active"] = 0
+drc["minarea_tap_active"] = 0.07011
 drc["nwell_to_active_space"] = 0.34
+drc["nwell_to_tap_active_space"] = 0.13
 # implant
 drc["implant_to_channel"] = 0.135
-drc["implant_enclosure_active"] = 0.125
+drc["implant_enclosure_active"] = 0.0
 drc["ptx_implant_enclosure_active"] = 0.0
 drc["implant_enclosure_contact"] = 0
 drc["implant_to_contact"] = 0.07
 drc["implant_to_implant"] = 0.38
-drc["minwidth_implant"] = 0.38
+drc["minwidth_implant"] = 0.17
 # contact
 drc["minwidth_contact"] = 0.17
 drc["contact_to_contact"] = 0.17

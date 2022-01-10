@@ -28,7 +28,7 @@ class single_level_column_mux(design.design):
     """
 
     def __init__(self, tx_size):
-        name = "single_level_column_mux_{}".format(tx_size)
+        name = "single_level_column_mux_{}".format(tx_size).replace(".", "__")
         design.design.__init__(self, name)
         debug.info(2, "create single column mux cell: {0}".format(name))
 

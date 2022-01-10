@@ -151,6 +151,7 @@ drc["minarea_poly"] = 0.0
 
 # ACTIVE.2 Minimum spacing of active
 drc["active_to_body_active"] = 0.08
+drc["active_to_body_active"] = 0.105 # account for poly extension to the active
 # ACTIVE.1 Minimum width of active
 drc["minwidth_active"] = 0.09
 # Not a rule
@@ -161,6 +162,7 @@ drc["well_enclosure_active"] = 0.055
 drc["well_extend_active"] = 0.055
 # Not a rule
 drc["minarea_active"] = 0
+drc["nwell_to_active_space"] = 0.07
 
 # IMPLANT.1 Minimum spacing of nimplant/ pimplant to channel
 drc["implant_to_channel"] = 0.07

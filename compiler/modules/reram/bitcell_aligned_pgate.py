@@ -1,7 +1,7 @@
 from abc import ABC
 
 import tech
-from base import utils
+from base import utils, well_active_contacts
 from base.contact import well as well_contact, poly as poly_contact, cross_poly, m1m2, m2m3, cross_m1m2, cross_m2m3
 from base.design import design, ACTIVE, METAL1, POLY, METAL3, METAL2, PWELL, NWELL
 from base.layout_clearances import find_clearances, HORIZONTAL
@@ -126,51 +126,15 @@ class BitcellAlignedPgate(design, metaclass=Unique):
                               height=top_poly.by() - mid_y)
 
     def extend_tx_well(self, tx_inst, well_type, pin, cont=None):
-        if tech.info[f"has_{well_type}"]:
-            if cont is not None:
-                well_width = cont.mod.first_layer_height + 2 * self.well_enclose_active
-                well_width = max(self.width, well_width)
-            else:
-                well_width = self.width
-
-            ptx_rects = tx_inst.get_layer_shapes(well_type)
-            ptx_rect = max(ptx_rects, key=lambda x: x.width * x.height)
-            well_width = max(well_width, ptx_rect.width)
-
-            x_offset = 0.5 * (self.width - well_width)
-
-            if pin.cy() < tx_inst.cy():
-                well_top = ptx_rect.uy()
-                well_bottom = (pin.cy() - 0.5 * well_contact.first_layer_width -
-                               self.well_enclose_active)
-            else:
-                well_top = (pin.cy() + 0.5 * well_contact.first_layer_width +
-                            self.well_enclose_active)
-                well_bottom = ptx_rect.by()
-            self.add_rect(well_type, vector(x_offset, well_bottom), width=well_width,
-                          height=well_top - well_bottom)
+        well_active_contacts.extend_tx_well(self, tx_inst, pin)
 
     def add_power_tap(self, y_offset, pin_name, tx_inst, add_m3=True):
-        if pin_name == "gnd":
-            well_type = PWELL
-        else:
-            well_type = NWELL
-        implant_type = well_type[0]
-
-        max_width = self.width - self.get_space(ACTIVE)
-        num_contacts = calculate_num_contacts(self, max_width,
-                                              layer_stack=well_contact.layer_stack,
-                                              return_sample=False)
         pin_width = self.width
         if add_m3:
             pin_width += max(m1m2.first_layer_height, m2m3.second_layer_height)
-        x_offset = 0.5 * (self.width - pin_width)
-        pin = self.add_layout_pin(pin_name, METAL1, offset=vector(x_offset, y_offset),
-                                  height=self.rail_height, width=pin_width)
-        cont = self.add_contact_center(well_contact.layer_stack, pin.center(), rotate=90,
-                                       size=[1, num_contacts],
-                                       implant_type=implant_type,
-                                       well_type=well_type)
+
+        pin, cont, well_type = well_active_contacts.add_power_tap(self, y_offset,
+                                                                  pin_name, pin_width)
 
         # add well
         self.extend_tx_well(tx_inst, well_type, pin, cont)

@@ -105,6 +105,7 @@ class options(optparse.Values):
     sense_amp_tap = "sense_amp_tap"
     sense_amp_array = "sense_amp_array"
     precharge_array = "precharge_array"
+    column_mux = "single_level_column_mux"
     column_mux_array = "single_level_column_mux_array"
     write_driver = "write_driver"
     write_driver_mod = "write_driver"

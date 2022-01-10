@@ -1,6 +1,7 @@
 import debug
 from base import contact, utils
 from base import design
+from base.analog_cell_mixin import AnalogMixin
 from base.contact import m1m2, poly as poly_contact
 from base.design import METAL2, ACTIVE, METAL1, POLY, NIMP, PWELL, PIMP, TAP_ACTIVE
 from base.geometry import MIRROR_X_AXIS
@@ -21,13 +22,14 @@ def get_inputs_for_pin(self, name):
     return super(design.design, self).get_inputs_for_pin(name)
 
 
-class single_level_column_mux(design.design):
+class single_level_column_mux(AnalogMixin, design.design):
     """
     This module implements the columnmux bitline cell used in the design.
     Creates a single columnmux cell.
     """
 
-    def __init__(self, tx_size):
+    def __init__(self):
+        tx_size = OPTS.column_mux_size
         name = "single_level_column_mux_{}".format(tx_size).replace(".", "__")
         design.design.__init__(self, name)
         debug.info(2, "create single column mux cell: {0}".format(name))
@@ -55,6 +57,7 @@ class single_level_column_mux(design.design):
         self.add_well_implants()
         self.add_boundary()
         tech.add_tech_layers(self)
+        self.augment_power_pins()
 
     def determine_tx_mults(self):
         # Need M2 bitlines on both sides of transistors

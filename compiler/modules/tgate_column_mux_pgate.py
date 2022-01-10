@@ -1,23 +1,23 @@
 import debug
 import tech
 from base import utils
-from base.contact import well as well_contact, m1m2, m2m3, poly as poly_contact, cross_poly, cross_m1m2
+from base.analog_cell_mixin import AnalogMixin
+from base.contact import well as well_contact, m1m2, poly as poly_contact, cross_poly, cross_m1m2
 from base.design import design, ACTIVE, NIMP, PIMP, POLY, METAL1, METAL2, TAP_ACTIVE, NWELL, PWELL, PO_DUMMY
 from base.unique_meta import Unique
 from base.vector import vector
-from base.well_active_contacts import add_power_tap, extend_tx_well, calculate_num_contacts
+from base.well_active_contacts import extend_tx_well, calculate_num_contacts
 from globals import OPTS
 from pgates.ptx import ptx
-from pgates.ptx_spice import ptx_spice
 
 
-class tgate_column_mux_pgate(design, metaclass=Unique):
+class tgate_column_mux_pgate(AnalogMixin, design, metaclass=Unique):
 
     @classmethod
     def get_sizes(cls):
         inverter_size = getattr(OPTS, "tgate_inverter_size", 1)
-        tgate_size = getattr(OPTS, "tgate_size")
-        tgate_pmos_size = getattr(OPTS, "tgate_pmos_size",
+        tgate_size = getattr(OPTS, "column_mux_size")
+        tgate_pmos_size = getattr(OPTS, "column_mux_pmos_size",
                                   tgate_size * tech.parameter["beta"])
         return inverter_size, tgate_size, tgate_pmos_size
 
@@ -46,21 +46,15 @@ class tgate_column_mux_pgate(design, metaclass=Unique):
         self.add_tgates_taps()
 
         self.add_netlist()
+        self.add_boundary()
 
         tech.add_tech_layers(self)
+        self.augment_power_pins()
 
     def add_netlist(self):
         self.add_pin_list(["bl", "br", "bl_out", "br_out", "sel", "vdd", "gnd"])
 
-        def connect_spice(name, tx_inst, connections, num_fingers=None):
-            tx = tx_inst.mod
-            num_fingers = num_fingers or tx.mults
-            tx_spice = ptx_spice(width=tx.tx_width, mults=num_fingers,
-                                 tx_type=tx.tx_type, tx_length=tx.tx_length)
-            self.add_mod(tx_spice)
-            self.add_inst(name, tx_spice, vector(0, 0))
-            self.connect_inst(connections)
-
+        connect_spice = self.connect_ptx_spice
         # inverters
         connect_spice("inv_nmos", self.inverter_nmos, ["sel_bar", "sel", "gnd", "gnd"], 1)
         connect_spice("inv_pmos", self.inverter_pmos, ["sel_bar", "sel", "vdd", "vdd"], 1)
@@ -76,44 +70,14 @@ class tgate_column_mux_pgate(design, metaclass=Unique):
         connect_spice("bl_pmos", pmos_insts[0], ["bl", "sel_bar", "bl_out", "vdd"])
         connect_spice("br_pmos", pmos_insts[1], ["br", "sel_bar", "br_out", "vdd"])
 
-    def calculate_rail_to_active(self, tx, x_axis_mirror=False):
-        # power rails to tx actives
-        well_contact_mid_y = 0.5 * self.rail_height
-        well_contact_active_top = well_contact_mid_y + 0.5 * well_contact.first_layer_width
-
-        active_space = self.tx_active_to_tap_active
-
-        rail_to_active = well_contact_active_top + active_space
-
-        # based on implants
-        implant_top = max(well_contact_active_top + self.implant_enclose_active,
-                          well_contact_mid_y + 0.5 * self.implant_width)
-
-        tx_implant = max(tx.get_layer_shapes(NIMP) + tx.get_layer_shapes(PIMP),
-                         key=lambda x: x.width * x.height)
-
-        if x_axis_mirror:
-            active_to_implant = tx_implant.uy() - tx.active_rect.uy()
-        else:
-            active_to_implant = tx.active_rect.by() - tx_implant.by()
-        implant_based_space = active_to_implant + implant_top
-        # based on poly
-        poly_based_space = well_contact_active_top + tx.poly_extend_active + self.poly_to_active
-
-        return max(rail_to_active, implant_based_space, poly_based_space)
-
     def setup_layout_constants(self):
         self.bitcell = self.create_mod_from_str(OPTS.bitcell)
         self.width = self.bitcell.width
         self.mid_x = utils.round_to_grid(0.5 * self.width)
 
-        self.tx_active_to_tap_active = tech.drc.get("active_to_body_active",
-                                                    self.get_space(ACTIVE))
-
         self.end_to_poly = ptx.calculate_end_to_poly()
         sample_ptx = ptx(mults=3, dummy_pos=[1, 2])
         poly_gates = list(sorted(sample_ptx.get_pins("G"), key=lambda x: x.lx()))
-        poly_pitch = poly_gates[1].cx() - poly_gates[0].cx()
 
         poly_to_poly = poly_gates[2].cx() - poly_gates[0].cx() - sample_ptx.poly_width
         # takes dummy poly into account
@@ -128,10 +92,6 @@ class tgate_column_mux_pgate(design, metaclass=Unique):
 
         debug.info(2, "number of inverter fingers is %d", self.inverter_fingers)
 
-        def calculate_num_fingers(width):
-            return 1 + round((width - 2 * self.end_to_poly - sample_ptx.poly_width) /
-                             poly_pitch)
-
         # fingers for tgate
         # calculate mid space
         left_source = self.get_sorted_pins(sample_ptx, "S")[0]
@@ -139,7 +99,7 @@ class tgate_column_mux_pgate(design, metaclass=Unique):
                                     0.5 * m1m2.w_2 - left_source.cx())
 
         available_width = self.mid_x - 0.5 * (self.ptx_active_space + self.tgate_mid_space)
-        self.num_tgate_fingers = calculate_num_fingers(available_width)
+        self.num_tgate_fingers = self.calculate_num_fingers(available_width, sample_ptx)
 
     def create_ptx(self, tx_width, tx_mults, is_pmos=False, *args, **kwargs):
         kwargs.setdefault("dummy_pos", [1, 2])
@@ -148,16 +108,6 @@ class tgate_column_mux_pgate(design, metaclass=Unique):
                  contact_poly=False, *args, **kwargs)
         self.add_mod(tx)
         return tx
-
-    @staticmethod
-    def get_sorted_pins(tx_inst, pin_name):
-        return list(sorted(tx_inst.get_pins(pin_name), key=lambda x: x.lx()))
-
-    def add_power_tap(self, pin_name, y_offset):
-        pin_width = self.width
-        if getattr(tech, "has_local_interconnect"):
-            pin_width += max(m1m2.first_layer_height, m2m3.second_layer_height)
-        return add_power_tap(self, y_offset, pin_name, pin_width)
 
     def add_sel_inverter(self):
         """Add sel inverter and buffer nmos/pmos"""
@@ -441,6 +391,14 @@ class tgate_column_mux_pgate(design, metaclass=Unique):
         for inst in nmos_insts + pmos_insts:
             ptx.flatten_tx_inst(self, inst)
 
+        # calculate gnd y offset
+        nmos_inst = self.tgate_nmos_insts[0]
+        # put tap above
+        active_top = max(nmos_inst.get_layer_shapes(ACTIVE), key=lambda x: x.uy()).uy()
+        rail_top = active_top + self.calculate_rail_to_active(nmos_inst.mod)
+        self.height = rail_top
+        self.top_gnd_y = rail_top - self.rail_height
+
     def route_tgate_inputs(self):
         # sel bar
         pmos_poly_pins = (self.get_sorted_pins(self.tgate_pmos_insts[0], "G") +
@@ -559,14 +517,10 @@ class tgate_column_mux_pgate(design, metaclass=Unique):
                           width=bitcell_pin.cx() - target_pin.cx())
             self.add_layout_pin(pin_names[i], METAL2, vector(bitcell_pin.lx(), y_offset),
                                 width=bitcell_pin.width(),
-                                height=self.m2_width)
+                                height=self.height - y_offset)
 
     def add_tgates_taps(self):
-        nmos_inst = self.tgate_nmos_insts[0]
-        # put tap above
-        active_top = max(nmos_inst.get_layer_shapes(ACTIVE), key=lambda x: x.uy()).uy()
-        rail_top = active_top + self.calculate_rail_to_active(nmos_inst.mod)
-        self.add_power_tap("gnd", rail_top - self.rail_height)
+        self.add_power_tap("gnd", self.top_gnd_y)
 
         gnd_pin = max(self.get_pins("gnd"), key=lambda x: x.uy())
         for inst in self.tgate_nmos_insts:
@@ -592,6 +546,15 @@ class tgate_column_mux_pgate(design, metaclass=Unique):
             tgate_pwell = get_largest_rect_at_inst(self.tgate_nmos_insts[0], PWELL)
             self.add_rect(NWELL, tgate_nwell.ul(), width=tgate_nwell.width,
                           height=tgate_pwell.by() - tgate_nwell.uy())
+
+        # extend inverter implants to width
+        # debug.pycharm_debug()
+        for layer in [NIMP, PIMP]:
+            for inst in [self.inverter_nmos, self.inverter_pmos]:
+                rect = get_largest_rect_at_inst(inst, layer)
+                if rect and self.implant_enclose_active:
+                    self.add_rect(layer, vector(0, rect.by()), width=self.width,
+                                  height=rect.height)
 
         # join tgate implants
         for layer, insts in zip([NIMP, PIMP], [self.tgate_nmos_insts, self.tgate_pmos_insts]):

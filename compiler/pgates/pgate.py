@@ -688,7 +688,6 @@ class pgate(pgates_characterization_base, design.design):
         left_nwell = min(left_nwell_rects,
                          key=lambda x: abs(x.cy() - 0.5 * left_module.height))
 
-        # debug.pycharm_debug()
         x_slack = (left_module.width - left_nwell.rx()) + nmos_active.lx()
 
         y_diff = max(0, left_nwell.by() - nmos_active.uy())

@@ -22,7 +22,6 @@ class single_level_column_mux_array(design.design):
         self.columns = columns
         self.word_size = word_size
         self.words_per_row = int(self.columns / self.word_size)
-        self.add_pins()
         self.create_layout()
         self.DRC_LVS()
 
@@ -35,7 +34,12 @@ class single_level_column_mux_array(design.design):
         for i in range(self.word_size):
             self.add_pin("bl_out[{}]".format(i))
             self.add_pin("br_out[{}]".format(i))
-        self.add_pin("gnd")
+
+        self.power_nets = []
+        for pin_name in ["vdd", "gnd"]:
+            if pin_name in self.mux.pins:
+                self.power_nets.append(pin_name)
+                self.add_pin(pin_name)
 
     def get_inputs_for_pin(self, name):
         reg_pattern = re.compile(r"(\S+)\[([0-9]+)\]")
@@ -60,6 +64,7 @@ class single_level_column_mux_array(design.design):
 
     def create_layout(self):
         self.create_modules()
+        self.add_pins()
         self.setup_layout_constants()
         self.create_array()
         self.add_routing()
@@ -68,10 +73,11 @@ class single_level_column_mux_array(design.design):
         self.height = highest.y
         self.width = self.child_insts[-1].rx()
         self.add_layout_pins()
+        self.add_dummy_poly(self.child_mod, self.child_insts, words_per_row=1)
         self.add_boundary()
 
     def create_modules(self):
-        self.mux = single_level_column_mux(tx_size=OPTS.column_mux_size)
+        self.mux = self.create_mod_from_str(OPTS.column_mux)
         self.child_mod = self.mux
         self.add_mod(self.mux)
 
@@ -110,7 +116,8 @@ class single_level_column_mux_array(design.design):
             self.child_insts.append(self.add_inst(name=name, mod=self.mux, offset=offset))
 
             self.connect_inst(bitline_conns +
-                              ["sel[{}]".format(col_num % self.words_per_row), "gnd"])
+                              ["sel[{}]".format(col_num % self.words_per_row)] +
+                              self.power_nets)
 
     def add_layout_pins(self):
         """ Add the pins after we determine the height. """
@@ -123,10 +130,10 @@ class single_level_column_mux_array(design.design):
                 pin_names = [("bl", "bl"), ("br", "br")]
             for source_pin, dest_pin in pin_names:
                 self.copy_layout_pin(child_insts, source_pin, "{}[{}]".format(dest_pin, col_num))
-
-        for pin in self.child_insts[0].get_pins("gnd"):
-            self.add_layout_pin("gnd", pin.layer, offset=pin.ll(),
-                                width=self.width - pin.lx(), height=pin.height())
+        for pin_name in self.power_nets:
+            for pin in self.child_insts[0].get_pins(pin_name):
+                self.add_layout_pin(pin_name, pin.layer, offset=pin.ll(),
+                                    width=self.width - pin.lx(), height=pin.height())
 
     def add_routing(self):
         self.add_horizontal_input_rail()

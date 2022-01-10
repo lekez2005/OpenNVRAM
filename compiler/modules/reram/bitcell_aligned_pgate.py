@@ -2,6 +2,7 @@ from abc import ABC
 
 import tech
 from base import utils, well_active_contacts
+from base.analog_cell_mixin import AnalogMixin
 from base.contact import well as well_contact, poly as poly_contact, cross_poly, m1m2, m2m3, cross_m1m2, cross_m2m3
 from base.design import design, ACTIVE, METAL1, POLY, METAL3, METAL2, PWELL, NWELL
 from base.layout_clearances import find_clearances, HORIZONTAL
@@ -139,37 +140,8 @@ class BitcellAlignedPgate(design, metaclass=Unique):
         # add well
         self.extend_tx_well(tx_inst, well_type, pin, cont)
 
-        if not add_m3:
-            return pin, cont, well_type
-
-        self.add_layout_pin(pin.name, METAL3, pin.ll(), width=pin.width(),
-                            height=pin.height())
-        open_spaces = find_clearances(self, layer=METAL2, direction=HORIZONTAL,
-                                      region=(pin.by(), pin.uy()))
-
-        min_space = (max(m1m2.second_layer_width, m2m3.first_layer_width) +
-                     2 * self.get_parallel_space(METAL2))
-        half_space = utils.round_to_grid(0.5 * min_space)
-
-        for space in open_spaces:
-            space = [utils.round_to_grid(x) for x in space]
-            extent = utils.round_to_grid(space[1] - space[0])
-            if space[0] == 0.0:
-                mid_contact = 0
-                if extent <= half_space:
-                    continue
-            elif space[1] == utils.round_to_grid(self.width):
-                mid_contact = self.width
-                if extent <= half_space:
-                    continue
-            else:
-                if extent <= min_space:
-                    continue
-                mid_contact = utils.round_to_grid(0.5 * (space[0] + space[1]))
-            offset = vector(mid_contact, pin.cy())
-            self.add_cross_contact_center(cross_m1m2, offset, rotate=True)
-            self.add_cross_contact_center(cross_m2m3, offset, rotate=False)
-
+        if add_m3:
+            AnalogMixin.add_m1_m3_power_via(self, pin)
         return pin, cont, well_type
 
     def route_pin_to_power(self, pin_name, pin):

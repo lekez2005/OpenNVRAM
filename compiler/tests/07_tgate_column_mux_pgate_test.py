@@ -13,7 +13,7 @@ class TgateColMuxPgateTest(OpenRamTest):
         from globals import OPTS
         self.debug.info(1, "8x ptx tgate column mux")
 
-        OPTS.tgate_size = 8
+        OPTS.column_mux_size = 8
         a = tgate_column_mux_pgate()
         self.local_check(a)
 

@@ -20,7 +20,7 @@
 * View Name:    schematic
 ************************************************************************
 
-.SUBCKT tgate_column_mux bl br bl_out br_out sel gnd vdd
+.SUBCKT tgate_column_mux bl br bl_out br_out sel vdd gnd
 MM5 br_out sel_buf br gnd NMOS_VTG W=720.0n L=50n m=1
 MM2 bl_out sel_buf bl gnd NMOS_VTG W=720.0n L=50n m=1
 MM0 sel_buf sel_bar gnd gnd NMOS_VTG W=180.0n L=50n m=1

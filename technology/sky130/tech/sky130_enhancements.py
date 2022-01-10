@@ -70,7 +70,6 @@ def seal_poly_vias(obj: design):
 
 def flatten_vias(obj: design):
     """Flatten vias by moving via shapes from via instance to top level
-       Also combine multiple rects into encompassing rect
     """
     debug.info(2, f"Flattening vias in module {obj.name}")
     all_via_inst = get_vias(obj)

@@ -12,13 +12,13 @@ from pgates.ptx import ptx
 from pgates.ptx_spice import ptx_spice
 
 if TYPE_CHECKING:
-    from base.design import design
+    from base.design import design as design_
 else:
-    class design:
+    class design_:
         pass
 
 
-class AnalogMixin(design):
+class AnalogMixin(design_):
     """Contains commonly used routines in analog cells"""
 
     @staticmethod
@@ -80,15 +80,29 @@ class AnalogMixin(design):
                 self.add_m1_m3_power_via(self, pin)
 
     @staticmethod
-    def add_m1_m3_power_via(self: design, pin: pin_layout):
-        self.add_layout_pin(pin.name, METAL3, pin.ll(), width=pin.width(),
-                            height=pin.height())
+    def add_m1_m3_power_via(self: design_, pin: pin_layout, recursive=True,
+                            recursive_insts=None, existing=None, add_m3_pin=True):
+        if add_m3_pin:
+            self.add_layout_pin(pin.name, METAL3, pin.ll(), width=pin.width(),
+                                height=pin.height())
 
         m2_height = max(m1m2.second_layer_height, m2m3.first_layer_height)
         y_top = pin.cy() + 0.5 * m2_height + self.get_line_end_space(METAL2)
         y_bottom = pin.cy() - 0.5 * m2_height - self.get_line_end_space(METAL2)
+
+        if recursive_insts:
+            recursive = False
+
+        if existing:
+            left_edge = utils.round_to_grid(existing[0][0])
+            right_edge = utils.round_to_grid(existing[-1][1])
+        else:
+            left_edge = 0.0
+            right_edge = utils.round_to_grid(self.width)
+
         open_spaces = find_clearances(self, layer=METAL2, direction=HORIZONTAL,
-                                      region=(y_bottom, y_top))
+                                      region=(y_bottom, y_top), recursive=recursive,
+                                      recursive_insts=recursive_insts, existing=existing)
 
         min_space = (max(m1m2.second_layer_width, m2m3.first_layer_width) +
                      2 * self.get_parallel_space(METAL2))
@@ -104,15 +118,15 @@ class AnalogMixin(design):
             space = [utils.round_to_grid(x) for x in space]
             extent = utils.round_to_grid(space[1] - space[0])
             edge_via = False
-            if space[0] == 0.0:
+            if space[0] == left_edge:
                 # align with adjacent cell
-                mid_contact = 0
+                mid_contact = left_edge
                 edge_via = True
                 add_via_extension(mid_contact, -1)
                 if extent <= half_space:
                     continue
-            elif space[1] == utils.round_to_grid(self.width):
-                mid_contact = self.width
+            elif space[1] == right_edge:
+                mid_contact = right_edge
                 edge_via = True
                 add_via_extension(mid_contact, 1)
                 if extent <= half_space:

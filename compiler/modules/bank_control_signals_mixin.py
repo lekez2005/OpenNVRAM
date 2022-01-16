@@ -40,7 +40,8 @@ class ControlSignalsMixin(BaselineBank):
                 bottom_pins.append(pin_name)
 
         control_vdd = self.control_buffers.get_pins("vdd")[0]
-        module_space = 0.5 * control_vdd.height() + self.get_parallel_space(METAL3)
+        module_space = (0.5 * control_vdd.height() + self.get_parallel_space(METAL3) +
+                        0.5 * m2m3.w_2)
         if OPTS.route_control_signals_left:
             self.calculate_left_rail_offsets(top_pins, bottom_pins, module_space)
         else:
@@ -48,7 +49,9 @@ class ControlSignalsMixin(BaselineBank):
 
         self.top_control_rails, self.bottom_control_rails = top_pins, bottom_pins
         # mid power rails
-        self.wide_power_space = self.get_wide_space(METAL2)
+        self.wide_power_space = max([self.get_wide_space(METAL2),
+                                     self.get_wide_space(METAL3),
+                                    self.get_wide_space(METAL4)])
         self.mid_gnd_offset = self.get_mid_gnd_offset()
         self.mid_vdd_offset = self.mid_gnd_offset - self.wide_power_space - self.vdd_rail_width
 
@@ -99,14 +102,12 @@ class ControlSignalsMixin(BaselineBank):
         min_space = utils.floor(self.m4_width + 2 * rail_space)
 
         m4_spaces = None
-        top_inst = vertical_stack[-1]
         for index, inst in enumerate(vertical_stack):
             new_m4_spaces = layout_clearances.find_clearances(inst.mod.child_mod, METAL4,
                                                               layout_clearances.HORIZONTAL,
                                                               existing=m4_spaces)
             biggest_space = max(new_m4_spaces, key=lambda x: x[1] - x[0])
             if biggest_space[1] - biggest_space[0] <= min_space:
-                top_inst = vertical_stack[index - 1]
                 break
             m4_spaces = new_m4_spaces
 
@@ -118,12 +119,8 @@ class ControlSignalsMixin(BaselineBank):
                                                 biggest_space_span - 2 * rail_space))
         mid_x_offset = 0.5 * (biggest_space[0] + biggest_space[1])
         self.intra_m4_rail_mid_x = utils.round_to_grid(mid_x_offset)
-
-        vdd_gnd = top_inst.get_pins("vdd") + top_inst.get_pins("gnd")
-        self.max_intra_m4_rail_top = max(vdd_gnd, key=lambda x: x.uy()).uy()
         debug.info(1, "max_intra_m4_rail_width = %.3g", self.max_intra_m4_rail_width)
         debug.info(1, "intra_m4_rail_mid_x = %.3g", self.intra_m4_rail_mid_x)
-        debug.info(1, "max_intra_m4_rail_top = %.3g", self.max_intra_m4_rail_top)
 
     def calculate_mid_array_rail_x_offsets(self, control_outputs):
         """Compute x offset of rails that go in between bitcell arrays"""

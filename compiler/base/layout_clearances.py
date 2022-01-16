@@ -30,7 +30,8 @@ def validate_clearances(clearances):
     return results
 
 
-def find_clearances(module: design, layer, direction=HORIZONTAL, existing=None, region=None):
+def find_clearances(module: design, layer, direction=HORIZONTAL, existing=None, region=None,
+                    recursive=True, recursive_insts=None):
     if existing is None:
         edge = module.width if direction == HORIZONTAL else module.height
         existing = [(0, round_to_grid(edge))]
@@ -38,7 +39,10 @@ def find_clearances(module: design, layer, direction=HORIZONTAL, existing=None, 
         edge = module.width if direction == VERTICAL else module.height
         region = (0, round_to_grid(edge))
 
-    rects = module.get_layer_shapes(layer, recursive=True)
+    rects = module.get_layer_shapes(layer, recursive=recursive)
+    if recursive_insts:
+        for inst in recursive_insts:
+            rects.extend(inst.get_layer_shapes(layer, recursive=True))
     for rect in rects:
         # ensure rect is within considered range
         region_edges = get_extremities(rect, HORIZONTAL if direction == VERTICAL else VERTICAL)

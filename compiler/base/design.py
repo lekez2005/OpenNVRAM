@@ -55,6 +55,7 @@ class design(hierarchy_spice.spice, hierarchy_layout):
         # because each reference must be a unique name.
         # These modules ensure unique names or have no changes if they
         # aren't unique
+        # TODO: sky_tapeout: fix uniqueness
         ok_list = [
             'GdsLibImport',
             'ms_flop',
@@ -323,6 +324,8 @@ class design(hierarchy_spice.spice, hierarchy_layout):
         pin_rects = []
         for pins in self.pin_map.values():
             for pin in pins:
+                if layer and not pin.layer == layer:
+                    continue
                 layer_purpose = get_purpose(pin.layer)
                 pin_rects.append(rectangle(layerNumber=tech_layers[pin.layer],
                                            layerPurpose=layer_purpose,

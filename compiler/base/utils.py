@@ -236,15 +236,22 @@ def auto_measure_libcell(pin_list, name, units, layer):
     return cell
 
 
+def load_gds(name, units):
+    if os.path.isabs(name) and os.path.exists(name):
+        cell_gds = name
+    else:
+        cell_gds = os.path.join(OPTS.openram_tech, "gds_lib", str(name) + ".gds")
+    cell_vlsi = gdsMill.VlsiLayout(units=units, from_file=cell_gds)
+    cell_vlsi.load_from_file()
+    return cell_vlsi
+
 
 def get_libcell_size(name, units, layer):
     """
     Open a GDS file and return the library cell size from either the
     bounding box or a border layer.
     """
-    cell_gds = os.path.join(OPTS.openram_tech, "gds_lib", str(name) + ".gds")
-    cell_vlsi = gdsMill.VlsiLayout(units=units, from_file=cell_gds)
-    cell_vlsi.load_from_file()
+    cell_vlsi = load_gds(name, units)
 
     measure_result = cell_vlsi.getLayoutBorder(layer)
     if measure_result == None:
@@ -254,7 +261,7 @@ def get_libcell_size(name, units, layer):
     return measure_result
 
 
-def get_libcell_pins(pin_list, name, units=None, layer=None):
+def get_libcell_pins(pin_list, name, units=None, layer=None, cell_vlsi=None):
     """
     Open a GDS file and find the pins in pin_list as text on a given layer.
     Return these as a rectangle layer pair for each pin.
@@ -263,12 +270,7 @@ def get_libcell_pins(pin_list, name, units=None, layer=None):
         units = tech.GDS["unit"]
     if layer is None:
         layer = tech.layer["boundary"]
-    if os.path.isabs(name) and os.path.exists(name):
-        cell_gds = name
-    else:
-        cell_gds = os.path.join(OPTS.openram_tech, "gds_lib", str(name) + ".gds")
-    cell_vlsi = gdsMill.VlsiLayout(units=units, from_file=cell_gds)
-    cell_vlsi.load_from_file()
+    cell_vlsi = cell_vlsi or load_gds(name, units)
 
     cell = {}
     for pin in pin_list:

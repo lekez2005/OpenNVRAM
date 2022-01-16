@@ -167,6 +167,32 @@ class VlsiLayout(metaclass=UniqueMeta):
         #repopulate the 2d map so drawing occurs correctly
         self.prepareForWrite()
 
+    def add_suffix_to_structures(self, suffix):
+
+        def add_suffix(name_):
+            if name_ == self.rootStructureName:
+                return name_
+            if name_[-1] == "\x00":
+                name_ = name_[:-1]
+            name_ += suffix
+            if len(name_) % 2 == 1:
+                name_ += "\x00"
+            return name_
+
+        structures = {}
+        for name in self.structures:
+            if name == self.rootStructureName:
+                new_name = name
+            else:
+                new_name = add_suffix(name)
+            structures[new_name] = self.structures[name]
+            structures[new_name].name = new_name
+            for sref in structures[new_name].srefs:
+                sref.sName = add_suffix(sref.sName)
+        self.structures = structures
+        self.prepareForWrite()
+
+
     def prepareForWrite(self):
         del self.xyTree[:]
         self.populateCoordinateMap()
@@ -719,10 +745,12 @@ class VlsiLayout(metaclass=UniqueMeta):
         if layer_pin_map is None:
             layer_pin_map = {}
         label_list = []
+        label_name_ = label_name.lower()
 
         # Why must this be the last one found? It breaks if we return the first.
         for Text in self.structures[self.rootStructureName].texts:
-            if Text.textString == label_name or Text.textString == label_name+"\x00":
+            if (Text.textString.lower() == label_name_ or
+                    Text.textString.lower() == label_name_+"\x00"):
                 label_layer = Text.drawingLayer
                 label_coordinate = Text.coordinates[0]
                 if label_layer is not None:

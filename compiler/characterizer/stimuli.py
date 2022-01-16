@@ -12,8 +12,6 @@ import debug
 import tech
 from base import utils
 from globals import OPTS
-from modules.baseline_sram import BaselineSram
-
 
 class stimuli:
     """ Class for providing stimuli functions """
@@ -53,7 +51,7 @@ class stimuli:
                 ("DATA[", "D["), ("DATA_1[", "D["),
                 ("MASK_1[", "MASK[")]
 
-    def instantiate_sram(self, sram: BaselineSram):
+    def instantiate_sram(self, sram):
         replacements = self.get_sram_pin_replacements(sram)
         connections = " ".join(sram.bank.connections_from_mod(sram.pins, replacements))
         self.sf.write(f"Xsram {connections} {sram.name} \n")

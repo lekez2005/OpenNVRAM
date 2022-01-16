@@ -28,7 +28,7 @@ class ptx(design.design):
                  connect_active=False, connect_poly=False, num_contacts=None, dummy_pos=None,
                  active_cont_pos=None,
                  independent_poly=False,
-                 contact_poly=True):
+                 contact_poly=False):
         # We need to keep unique names because outputting to GDSII
         # will use the last record with a given name. I.e., you will
         # over-write a design in GDS if one has and the other doesn't
@@ -39,8 +39,8 @@ class ptx(design.design):
             name += "_a"
         if connect_poly:
             name += "_p"
-        if not contact_poly:
-            name += "_nopc"
+        if contact_poly:
+            name += "_pc"
         if not connect_poly and independent_poly and mults > 1:
             # poly pitch will be calculated based on
             # min space between independent poly contacts

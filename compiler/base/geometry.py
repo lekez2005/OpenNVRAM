@@ -6,6 +6,7 @@ import math
 
 import debug
 import tech
+from base.pin_layout import pin_layout
 from base.vector import vector
 
 
@@ -207,13 +208,12 @@ class instance(geometry):
         this instance location. Index will return one of several pins."""
 
         if index == -1:
-            pin = copy.deepcopy(self.mod.get_pin(name))
-            pin.transform(self.offset, self.mirror, self.rotate)
-            return pin
+            pin = self.mod.get_pin(name)
         else:
-            pin = copy.deepcopy(self.mod.get_pins(name)[index])
-            pin.transform(self.offset, self.mirror, self.rotate)
-            return pin[index]
+            pin = self.mod.get_pins(name)[index]
+        new_pin = pin_layout(pin.name, pin.rect, pin.layer)
+        new_pin.transform(self.offset, self.mirror, self.rotate)
+        return new_pin
 
     def get_num_pins(self, name):
         """ Return the number of pins of a given name """

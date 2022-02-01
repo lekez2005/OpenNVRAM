@@ -1,5 +1,5 @@
 from base import utils
-from base.contact import contact, m1m2, m2m3
+from base.contact import contact, m1m2, m2m3, cross_m1m2
 from base.design import NWELL, PIMP, METAL1, METAL2, METAL3
 from base.utils import round_to_grid
 from base.vector import vector
@@ -28,12 +28,13 @@ class sotfet_mram_precharge(precharge):
 
     def create_ptx(self):
         num_fingers = OPTS.precharge_num_fingers
-        self.ptx_width = utils.ceil(max(parameter["min_tx_size"], self.ptx_width / num_fingers))
-        self.pmos = ptx(width=self.ptx_width, mults=num_fingers, tx_type="pmos")
-        self.pmos.translate_all(self.pmos.active_offset.scale(-1, -1))
+        self.ptx_width = utils.ceil(max(parameter["min_tx_size"],
+                                        self.ptx_width / num_fingers))
+        pmos = self.pmos = ptx(width=self.ptx_width, mults=num_fingers, tx_type="pmos",
+                               contact_poly=True)
+        pmos.rotate_poly_contacts()
 
     def add_ptx_inst(self):
-
         # find middle of active
         active_rect = self.pmos.get_layer_shapes("active")[0]
         active_mid_x = 0.5 * (active_rect.lx() + active_rect.rx())
@@ -60,9 +61,10 @@ class sotfet_mram_precharge(precharge):
 
         metal_fill_height = utils.ceil(max(metal_fill_height, active_cont.first_layer_height))
 
-        source_pins = self.ptx_inst.get_pins("S")
+        source_pins = list(sorted(self.ptx_inst.get_pins("S"),
+                                  key=lambda x: x.lx()))
         self.max_fill_y = max(source_pins[0].uy(), source_pins[0].cy() + 0.5 * m1m2.height)
-        for pin in source_pins:
+        for i, pin in enumerate(source_pins):
             x_offset = pin.cx() - 0.5 * metal_fill_width
             y_offset = pin.cy() - 0.5 * max(self.ptx_width, m1m2.height)
             self.max_fill_y = max(self.max_fill_y, y_offset + metal_fill_height)
@@ -76,7 +78,10 @@ class sotfet_mram_precharge(precharge):
             for fill_layer in fill_layers:
                 self.add_rect(fill_layer, offset=vector(x_offset, y_offset),
                               width=metal_fill_width, height=metal_fill_height)
-            self.add_contact_center(m1m2.layer_stack, offset=pin.center())
+            if i == 0:
+                self.add_cross_contact_center(cross_m1m2, pin.center())
+            else:
+                self.add_contact_center(m1m2.layer_stack, offset=pin.center())
 
         if len(source_pins) > 1:
             left_most = min(source_pins, key=lambda x: x.lx())
@@ -85,9 +90,22 @@ class sotfet_mram_precharge(precharge):
                           width=right_most.cx() - left_most.cx())
 
     def connect_input_gates(self):
-        gate_pin = self.ptx_inst.get_pins("G")[0]
-        self.add_layout_pin("en", METAL1, offset=vector(0, gate_pin.cy() - 0.5 * self.m1_width),
-                            width=self.width)
+        poly_gates = list(sorted(self.ptx_inst.get_pins("G"),
+                                 key=lambda x: x.cx()))
+
+        mid_x = 0.5 * (poly_gates[0].cx() + poly_gates[-1].cx())
+        offset = vector(mid_x, poly_gates[0].cy())
+
+        self.add_rect_center(METAL1, offset, height=poly_gates[0].height(),
+                             width=poly_gates[-1].cx() - poly_gates[0].cx())
+
+        self.add_contact_center(m1m2.layer_stack, offset, rotate=90)
+        self.add_contact_center(m2m3.layer_stack, offset, rotate=90)
+        fill_width = max(m1m2.h_2, m2m3.h_1)
+        _, fill_height = self.calculate_min_area_fill(fill_width, layer=METAL2)
+        self.add_rect_center(METAL2, offset, width=fill_width, height=fill_height)
+        self.add_layout_pin_center_rect("en", METAL3, offset, width=self.width,
+                                        height=self.bus_width)
 
     def add_vdd_pin(self):
         pin_height = self.rail_height
@@ -95,11 +113,14 @@ class sotfet_mram_precharge(precharge):
         self.add_layout_pin("vdd", METAL1, offset=vector(0, y_offset),
                             height=pin_height, width=self.width)
         via_y = self.get_pin("vdd").cy()
-        self.add_contact_center(m1m2.layer_stack, offset=vector(self.mid_x, via_y),
+
+        mid_x = 0.5 * (self.bitcell.get_pin("bl").rx() + self.bitcell.get_pin("br").lx())
+
+        self.add_contact_center(m1m2.layer_stack, offset=vector(mid_x, via_y),
                                 size=[1, 2], rotate=90)
-        cont = self.add_contact_center(m2m3.layer_stack, offset=vector(self.mid_x, via_y),
+        cont = self.add_contact_center(m2m3.layer_stack, offset=vector(mid_x, via_y),
                                        size=[1, 2], rotate=90)
-        self.add_rect_center(METAL2, offset=vector(self.mid_x, via_y),
+        self.add_rect_center(METAL2, offset=vector(mid_x, via_y),
                              height=pin_height, width=cont.height)
 
         for pin in self.ptx_inst.get_pins("D"):
@@ -123,7 +144,7 @@ class sotfet_mram_precharge(precharge):
             if tx_source.lx() - bl_pin.rx() > wide_space:
                 fill_height = self.m2_width
             else:
-                fill_height = m1m2.height
+                fill_height = m1m2.w_2
             self.add_rect(METAL2, offset=vector(bl_pin.cx(), tx_source.cy() - 0.5 * fill_height),
                           width=tx_source.cx() - bl_pin.cx(), height=fill_height)
 

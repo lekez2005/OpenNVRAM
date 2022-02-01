@@ -11,7 +11,6 @@ from base.vector import vector
 from globals import OPTS
 from tech import drc, info
 from tech import layer as tech_layers
-from tech import purpose as tech_purpose
 
 DRAWING = "drawing"
 POLY = "poly"
@@ -82,6 +81,12 @@ class design(hierarchy_spice.spice, hierarchy_layout):
         else:
             debug.error("Duplicate layout reference name {0} of class {1}."
                         " GDS2 requires names be unique.".format(name, self.__class__), -1)
+
+    def rename(self, new_name):
+        self.name = new_name
+        self.drc_gds_name = new_name
+        self.name_map.append(new_name)
+        self.gds_read()
 
     def setup_drc_constants(self):
         """ These are some DRC constants used in many places in the compiler."""
@@ -361,6 +366,9 @@ class design(hierarchy_spice.spice, hierarchy_layout):
         return [rect(shape) for shape in shapes]
 
     def get_poly_fills(self, cell):
+        if not self.has_dummy:
+            return {}
+
         def to_boundary(fill_dict):
             for key in fill_dict:
                 boundaries = []
@@ -437,19 +445,12 @@ class design(hierarchy_spice.spice, hierarchy_layout):
             add_to_merged(current_fill)
         return to_boundary(merged_fills)
 
-    def get_dummy_poly(self, cell):
-        if PO_DUMMY in tech_layers:
-            shapes = cell.get_layer_shapes(PO_DUMMY, recursive=True)
-            leftmost = min(map(lambda x: x.lx(), shapes))
-            rightmost = max(map(lambda x: x.rx(), shapes))
-            return leftmost, rightmost
-        return []
-
     def add_dummy_poly(self, cell, instances, words_per_row, from_gds=True):
         if PO_DUMMY not in tech_layers:
-            return
+            return []
         instances = list(instances)
         cell_fills = self.get_poly_fills(cell)
+        rects = []
 
         def add_fill(x_offset, direction="left"):
             for rect in cell_fills[direction]:
@@ -458,8 +459,9 @@ class design(hierarchy_spice.spice, hierarchy_layout):
                     y_offset = instances[0].by() + instances[0].height - height - rect[0][1]
                 else:
                     y_offset = instances[0].by() + rect[0][1]
-                self.add_rect("po_dummy", offset=vector(x_offset + rect[0][0], y_offset),
-                              width=self.poly_width, height=height)
+                rects.append(self.add_rect(PO_DUMMY,
+                                           offset=vector(x_offset + rect[0][0], y_offset),
+                                           width=self.poly_width, height=height))
 
         if len(cell_fills.values()) > 0:
             if words_per_row > 1:
@@ -481,6 +483,8 @@ class design(hierarchy_spice.spice, hierarchy_layout):
                 if hasattr(OPTS, "repeaters_array_space_offsets") and len(OPTS.repeaters_array_space_offsets) > 0:
                     add_fill(OPTS.repeaters_array_space_offsets[-1] + tap_width, "left")
                     add_fill(OPTS.repeaters_array_space_offsets[0] - instances[0].width, "right")
+
+        return rects
 
     @staticmethod
     def import_mod_class_from_str(module_name, **kwargs):

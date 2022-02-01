@@ -2,7 +2,7 @@ import re
 
 import debug
 from base import design, utils
-from base.contact import contact, m1m2, poly as poly_contact, active as active_contact
+from base.contact import contact, m1m2, poly as poly_contact, active as active_contact, cross_poly
 from base.design import METAL1, METAL2, POLY, ACTIVE, CONTACT
 from base.hierarchy_spice import INOUT, INPUT
 from base.vector import vector
@@ -114,15 +114,17 @@ class ptx(design.design):
                                                  layer_stack=active_contact)
             n_metal_height = active_cont.h_2
             line_end_space = ptx.get_line_end_space(METAL1)
+            poly_m1_height = poly_contact.h_2
 
             if use_m1m2:
                 m1m2_cont = calculate_num_contacts(None, tx_width, return_sample=True,
                                                    layer_stack=m1m2)
                 n_metal_height = max(n_metal_height, m1m2_cont.h_1)
                 line_end_space = max(line_end_space, ptx.get_line_end_space(METAL2))
-            metal_extension = 0.5 * n_metal_height - 0.5 * tx_width
+                poly_m1_height = max(poly_m1_height, m1m2.h_1)
+            metal_extension = utils.round_to_grid(0.5 * n_metal_height - 0.5 * tx_width)
 
-            m1_space = metal_extension + line_end_space + 0.5 * poly_contact.h_2
+            m1_space = metal_extension + line_end_space + 0.5 * poly_m1_height
             return max(cont_space, m1_space)
         return cont_space
 
@@ -475,6 +477,23 @@ class ptx(design.design):
 
         if self.connect_poly:
             self.connect_fingered_poly(poly_positions)
+
+    def rotate_poly_contacts(self):
+        """Use cross_poly for poly contacts.
+        Removes existing poly contacts and layout pins and replaces them with
+         cross_poly which has horizontal M1 """
+        self.rename(self.name + "_cross")
+        self.pin_map["g"] = []
+        cont_indices = []
+        for i, inst in enumerate(self.insts):
+            if inst.mod.name == poly_contact.name:
+                cont_indices.append(i)
+                offset = vector(inst.cx(), inst.cy())
+                self.add_cross_contact_center(cross_poly, offset)
+                self.add_layout_pin_center_rect("G", METAL1, offset)
+
+        self.insts = [x for i, x in enumerate(self.insts) if i not in cont_indices]
+        self.conns = [x for i, x in enumerate(self.conns) if i not in cont_indices]
 
     def add_active(self):
         """ 

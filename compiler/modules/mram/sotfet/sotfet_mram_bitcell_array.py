@@ -20,11 +20,6 @@ class sotfet_mram_bitcell_array(bitcell_array):
         connections[2] = connections[2].replace("wl", "rwl")
         return connections
 
-    def add_dummy_polys(self):
-        for row in range(self.row_size + len(self.dummy_rows)):
-            row_instances = self.get_cell_inst_row(row)
-            self.add_dummy_poly(self.cell, row_instances, True)
-
     def add_layout_pins(self):
         def get_cell_pin(row_, col_, pin_name_="BL"):
             return self.get_cell_inst_row(row_ + OPTS.num_bitcell_dummies)[col_].get_pin(pin_name_)

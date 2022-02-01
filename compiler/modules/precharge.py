@@ -412,15 +412,16 @@ class precharge(precharge_characterization, design.design):
 
 
 class precharge_tap(design.design):
-    def __init__(self, precharge_cell: precharge):
+    def __init__(self, precharge_cell: precharge, name="precharge_tap"):
 
-        super().__init__("precharge_tap")
+        super().__init__(name)
 
         self.height = precharge_cell.height
         self.precharge_cell = precharge_cell
 
         self.create_layout()
         add_tech_layers(self)
+        self.add_boundary()
 
     def create_layout(self):
         body_tap = self.create_mod_from_str_(OPTS.body_tap)
@@ -484,11 +485,15 @@ class precharge_tap(design.design):
 
         all_nwell = self.precharge_cell.get_layer_shapes(NWELL)
         if not all_nwell:
-            return
-        nwell = max(all_nwell, key=lambda x: x.height * x.width)
+            offset = vector(mid_x, 0.5 * self.height)
+            implant_layer = PIMP
+        else:
+            nwell = max(all_nwell, key=lambda x: x.height * x.width)
+            offset = vector(mid_x, nwell.cy())
+            implant_layer = NIMP
+
         contact_active = sample_contact.get_layer_shapes(TAP_ACTIVE)[0]
 
-        offset = vector(mid_x, nwell.cy())
         real_cont = self.add_contact_center(sample_contact.layer_stack, offset,
                                             size=sample_contact.dimensions)
         tap_width = max(tap_width, contact_active.width)
@@ -502,10 +507,14 @@ class precharge_tap(design.design):
         _, implant_height = self.calculate_min_area_fill(implant_width, layer=NIMP)
         implant_height = max(tap_height + 2 * self.implant_enclose_active, implant_height)
 
-        self.add_rect_center(NIMP, offset, width=implant_width, height=implant_height)
+        self.add_rect_center(implant_layer, offset, width=implant_width,
+                             height=implant_height)
+        self.join_m1_vdd(real_cont)
+
+    def join_m1_vdd(self, well_cont):
         # join m1 to vdd
         x_offset = self.vdd_rail.cx() - 0.5 * self.m1_width
-        m1_rect = real_cont.get_layer_shapes(METAL1)[0]
+        m1_rect = well_cont.get_layer_shapes(METAL1)[0]
         self.add_rect(METAL1, vector(x_offset, m1_rect.by()),
                       width=m1_rect.cx() - x_offset, height=m1_rect.height)
         self.add_rect(METAL1, vector(x_offset, m1_rect.by()),

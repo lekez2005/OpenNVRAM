@@ -47,7 +47,6 @@ class PrechargeResetArray(precharge_array):
                                     height=pin.height())
 
     def get_col_mod(self, col):
-        import debug
         if col >= len(self.bitcell_offsets):
             # e.g. reference_cells == 2 and total number of columns = 1
             # x offset is overridden anyway

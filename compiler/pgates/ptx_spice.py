@@ -31,9 +31,8 @@ class ptx_spice(ptx.ptx):
         self.tx_length = tx_length
 
         self.create_spice()
-        self.create_layout()
+        self.width = self.height = 0
 
-    def create_layout(self):
-        self.width = self.height = self.m1_width
-        self.add_rect("boundary", offset=vector(0, 0), width=self.width, height=self.height)
-
+    def gds_write_file(self, newLayout):
+        self.visited = True
+        return

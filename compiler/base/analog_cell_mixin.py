@@ -122,15 +122,15 @@ class AnalogMixin(design_):
                 # align with adjacent cell
                 mid_contact = left_edge
                 edge_via = True
-                add_via_extension(mid_contact, -1)
                 if extent <= half_space:
                     continue
+                add_via_extension(mid_contact, -1)
             elif space[1] == right_edge:
                 mid_contact = right_edge
                 edge_via = True
-                add_via_extension(mid_contact, 1)
                 if extent <= half_space:
                     continue
+                add_via_extension(mid_contact, 1)
             else:
                 if extent <= min_space:
                     continue

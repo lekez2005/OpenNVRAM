@@ -537,7 +537,7 @@ class hierarchical_predecode(design.design):
             via_space = self.get_line_end_space(METAL2)
             via_x = max_rail + 0.5 * self.m2_width + via_space + 0.5*contact.m1m2.first_layer_height
             via_x = max(via_x, max_rail + 0.5 * m1m2.w_2 + via_space + 0.5 * m1m2.h_2)
-            for rail_pin, gate_pin_name in zip(index_lst,gate_lst):
+            for rail_pin, gate_pin_name in zip(index_lst, gate_lst):
                 gate_pin = self.nand_inst[k].get_pin(gate_pin_name)
                 pin_pos = gate_pin.lc()
                 rail_pos = vector(self.rails[rail_pin], pin_pos.y)
@@ -547,14 +547,18 @@ class hierarchical_predecode(design.design):
                     self.add_rect(METAL1, offset=vector(rail_pos.x, rail_pos.y - 0.5 * self.m1_width),
                                   width=gate_pin.lx() - rail_pos.x)
                 else:
-                    # TODO fix hack
-                    shift = 0.5 * (m1m2.w_1 - self.m1_width) + 0.04
-                    if gate_pin_name == "C":
-                        shift += shift + 0.03
+                    via_space = 0.5 * m1m2.h_2 + self.get_space(METAL2) + 0.5 * m1m2.h_2
                     if k % 2 == 0:
-                        via_y = rail_pos.y - shift
+                        via_space *= -1
+                        max_func = min
                     else:
-                        via_y = rail_pos.y + shift
+                        max_func = max
+                    if gate_pin_name == "B":
+                        a_pin = self.nand_inst[k].get_pin("A")
+                        via_y = max_func(a_pin.cy() + via_space, gate_pin.cy())
+                    else:
+                        b_pin = self.nand_inst[k].get_pin("B")
+                        via_y = max_func(b_pin.cy() + via_space, gate_pin.cy())
                     self.add_cross_contact_center(cross_m1m2, offset=vector(rail_pos.x, via_y),
                                                   rotate=True)
                     via_offset = vector(via_x, via_y)

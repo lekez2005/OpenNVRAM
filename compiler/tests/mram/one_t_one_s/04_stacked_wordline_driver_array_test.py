@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
-import os
-import sys
 
-parent_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-sys.path.insert(0, os.path.abspath(parent_dir))
-
-from test_base import TestBase
+from one_t_one_s_test_base import TestBase
 
 
 class StackedWordlineDriverArrayTest(TestBase):
@@ -22,7 +17,6 @@ class StackedWordlineDriverArrayTest(TestBase):
     def test_stacked_rwl_driver(self):
         from globals import OPTS
         self.debug.info(2, "Testing 16-row rwl_driver array")
-        # self.debug.pycharm_debug()
         dut = self.create_class_from_opts("rwl_driver", name="rwl_driver",
                                           rows=16, buffer_stages=OPTS.rwl_buffers)
         dut.add_body_taps()

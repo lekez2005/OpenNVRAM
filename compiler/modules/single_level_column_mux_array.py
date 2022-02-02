@@ -180,6 +180,10 @@ class single_level_column_mux_array(design.design):
 
         cross_via_extension = max(0.5 * cross_m1m2.height, 0.5 * cross_m2m3.width)
 
+        m2_fill_height = self.bus_width
+        _, m2_fill_width = self.calculate_min_area_fill(m2_fill_height, layer=METAL2)
+        m2_fill_width = max(m1m2.h_2, m2_fill_width)
+
         for j in range(self.columns):
             bl_out, br_out = self.get_output_bitlines(j)
             if self.mirror and (j + OPTS.num_bitcell_dummies) % 2 == 0:
@@ -192,8 +196,12 @@ class single_level_column_mux_array(design.design):
             br_via_offset = vector(br_out.cx(), br_out_y + 0.5 * self.bus_width)
 
             for pin, via_offset in zip([bl_out, br_out], [bl_via_offset, br_via_offset]):
-                self.add_rect(METAL2, offset=vector(pin.lx(), via_offset.y),
-                              width=pin.width(), height=pin.by() - via_offset.y)
+                if self.mirror and j % self.words_per_row == 0:
+                    rect_y = via_offset.y
+                else:
+                    rect_y = via_offset.y - 0.5 * m1m2.h_2
+                self.add_rect(METAL2, offset=vector(pin.lx(), rect_y),
+                              width=pin.width(), height=pin.by() - rect_y)
 
             if (j % self.words_per_row) == 0:
                 # Create the metal1 to connect the n-way mux output from the pass gate
@@ -222,8 +230,9 @@ class single_level_column_mux_array(design.design):
                     br_x_offset = bl_out.lx()
                     br_top_y = bl_top_y - self.bus_pitch
 
-                    self.add_rect(METAL2, offset=vector(adjacent_br_pin.lx(), br_top_y),
-                                  width=adjacent_br_pin.width(), height=br_out_y - br_top_y)
+                    m2_y = br_top_y - 0.5 * m1m2.h_2
+                    self.add_rect(METAL2, offset=vector(adjacent_br_pin.lx(), m2_y),
+                                  width=adjacent_br_pin.width(), height=br_out_y - m2_y)
                     self.add_cross_contact_center(cross_m1m2, rotate=True,
                                                   offset=vector(adjacent_br_pin.cx(), br_top_y))
                     self.add_cross_contact_center(cross_m2m3, rotate=False,
@@ -232,13 +241,16 @@ class single_level_column_mux_array(design.design):
                     for bitline_pin, pin_top, adj_pin in zip([br_out, bl_out], [bl_top_y, br_top_y],
                                                              [bl_out, adjacent_br_pin]):
                         rect_x = bitline_pin.cx() - cross_via_extension
+                        via_offset = vector(bitline_pin.cx(), pin_top)
                         for layer, via in zip([METAL1, METAL3], [m1m2, m2m3]):
                             self.add_rect(layer, offset=vector(rect_x,
                                                                pin_top - 0.5 * self.bus_width),
                                           height=self.bus_width,
                                           width=adj_pin.cx() + cross_via_extension - rect_x)
-                            via_offset = vector(bitline_pin.cx(), pin_top)
+
                             self.add_via_center(via.layer_stack, via_offset, rotate=GDS_ROT_90)
+                        self.add_rect_center(METAL2, via_offset, width=m2_fill_width,
+                                             height=m2_fill_height)
 
                 else:
                     self.add_cross_contact_center(cross_m1m2, bl_via_offset, rotate=True)

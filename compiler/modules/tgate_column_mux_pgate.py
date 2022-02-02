@@ -34,7 +34,6 @@ class tgate_column_mux_pgate(AnalogMixin, design, metaclass=Unique):
     def create_layout(self):
         self.inverter_size, self.tgate_size, self.tgate_pmos_size = self.get_sizes()
         self.setup_layout_constants()
-
         self.add_sel_inverter()
         self.route_inverter_inputs()
         self.route_inverter_outputs()
@@ -59,7 +58,8 @@ class tgate_column_mux_pgate(AnalogMixin, design, metaclass=Unique):
         connect_spice("inv_nmos", self.inverter_nmos, ["sel_bar", "sel", "gnd", "gnd"], 1)
         connect_spice("inv_pmos", self.inverter_pmos, ["sel_bar", "sel", "vdd", "vdd"], 1)
         connect_spice("buf_nmos", self.inverter_nmos, ["sel_buf", "sel_bar", "gnd", "gnd"], 1)
-        connect_spice("buf_pmos", self.inverter_pmos, ["sel_buf", "sel_bar", "vdd", "vdd"], 1)
+        connect_spice("buf_pmos", self.inverter_pmos,
+                      ["sel_buf", "sel_bar", "vdd", "vdd"], 1)
 
         # tgates
         nmos_insts = self.tgate_nmos_insts
@@ -74,6 +74,16 @@ class tgate_column_mux_pgate(AnalogMixin, design, metaclass=Unique):
         self.bitcell = self.create_mod_from_str(OPTS.bitcell)
         self.width = self.bitcell.width
         self.mid_x = utils.round_to_grid(0.5 * self.width)
+        self.bl_width = self.poly_pitch - self.get_parallel_space(METAL2)
+
+        # nmos_y
+        y_offset = (self.bl_width +  # bitline pin top
+                    self.get_parallel_space(METAL2) + self.m2_width +  # sel_bend top
+                    self.get_line_end_space(METAL2) + 0.5 * m1m2.h_2)  # cont mid
+        self.inv_cont_y = y_offset
+
+        self.bot_gnd_y = (self.inv_cont_y - 0.5 * max(m1m2.h_1, poly_contact.h_2) -
+                          self.get_line_end_space(METAL1) - self.rail_height)
 
         self.end_to_poly = ptx.calculate_end_to_poly()
         sample_ptx = ptx(mults=3, dummy_pos=[1, 2])
@@ -120,21 +130,9 @@ class tgate_column_mux_pgate(AnalogMixin, design, metaclass=Unique):
             finger_width = nmos_width
         nmos = self.create_ptx(finger_width, self.inverter_fingers * 2, dummy_pos=dummy_pos)
 
-        sel_height = self.m2_width + m1m2.h_2
-        cont_mid = sel_height - 0.5 * m1m2.h_2
-        self.inv_cont_y = cont_mid
-
         nmos_to_mid = ptx.calculate_active_to_poly_cont_mid(nmos.tx_type, nmos.tx_width,
                                                             use_m1m2=True)
-        y_offset = cont_mid + nmos_to_mid - nmos.active_rect.by()
-
-        if self.has_dummy:
-            # body tap will be below the tx
-            via_m1 = cont_mid - 0.5 * max(m1m2.h_1, poly_contact.h_2)
-            rail_bot = via_m1 - self.get_line_end_space(METAL1) - self.rail_height
-            # now shift y_offset back
-            y_offset = y_offset - rail_bot
-            self.inv_cont_y -= rail_bot
+        y_offset = self.inv_cont_y + nmos_to_mid - nmos.active_rect.by()
 
         x_offset = self.mid_x - 0.5 * nmos.width
         self.inverter_nmos = self.add_inst("inv_nmos", nmos, vector(x_offset, y_offset))
@@ -187,7 +185,7 @@ class tgate_column_mux_pgate(AnalogMixin, design, metaclass=Unique):
         """Add nmos tap beside nmos"""
         if self.has_dummy:
             # will clash with dummies, adjacent module might have tap
-            self.add_power_tap("gnd", 0)
+            self.add_power_tap("gnd", self.bot_gnd_y)
             return
         # add nmos tap
         nwell = min(self.get_layer_shapes(NWELL), key=lambda x: x.by())
@@ -260,10 +258,8 @@ class tgate_column_mux_pgate(AnalogMixin, design, metaclass=Unique):
             self.add_rect_center(METAL1, vector(fill_x, cont_y), width=fill_width,
                                  height=fill_height)
             if i == 0:
-                self.add_contact_center(m1m2.layer_stack,
-                                        vector(sel_x + 0.5 * self.m2_width, cont_y))
-                self.add_layout_pin("sel", METAL2, vector(sel_x, 0),
-                                    height=cont_y)
+                self.add_sel_pin(sel_x, cont_y)
+
         # sel_bar to sel_buf_in
         source_pin = self.get_sorted_pins(self.inverter_nmos, "S")[0]
         start_y = source_pin.cy() - 0.5 * m1m2.h_2 + 0.5 * self.m2_width
@@ -274,6 +270,17 @@ class tgate_column_mux_pgate(AnalogMixin, design, metaclass=Unique):
                                vector(self.mid_x, end_y),
                                vector(via_x, end_y)])
         self.add_contact_center(m1m2.layer_stack, vector(via_x, cont_y))
+
+    def add_sel_pin(self, sel_x, cont_y):
+        self.add_contact_center(m1m2.layer_stack,
+                                vector(sel_x + 0.5 * self.m2_width, cont_y))
+        y_bend = cont_y - 0.5 * m1m2.h_2 - self.m2_width - self.get_line_end_space(METAL2)
+
+        offset = vector(sel_x, y_bend)
+        self.add_rect(METAL2, offset, width=self.mid_x - offset.x)
+        self.add_rect(METAL2, offset, height=cont_y - offset.y)
+        self.add_layout_pin("sel", METAL2, vector(self.mid_x - 0.5 * self.m2_width, 0),
+                            height=offset.y + self.m2_width)
 
     def route_inverter_outputs(self):
         rails = []
@@ -463,16 +470,23 @@ class tgate_column_mux_pgate(AnalogMixin, design, metaclass=Unique):
         pin_names = ["bl", "br"]
         sample_nmos_pin = self.tgate_nmos_insts[0].get_pins("S")[0]
         nmos_y = sample_nmos_pin.cy()
+
+        nmos_pin_top = nmos_y + 0.5 * sample_n_cont.h_2
+
         for i, inst in enumerate(self.tgate_pmos_insts):
             source_drains = list(sorted(inst.get_pins("S") + inst.get_pins("D"),
                                         key=lambda x: x.lx()))
+            pmos_pin_bot = source_drains[0].cy() - 0.5 * sample_p_cont.h_2
+
+            bitcell_pin = self.bitcell.get_pin(pin_names[i])
+
             for pin in source_drains:
                 self.add_contact_center(m1m2.layer_stack, pin.center(),
                                         size=sample_p_cont.dimensions)
                 self.add_contact_center(m1m2.layer_stack, vector(pin.cx(), nmos_y),
                                         size=sample_n_cont.dimensions)
-                self.add_rect(METAL2, vector(pin.cx() - 0.5 * self.m2_width, pin.cy()),
-                              height=nmos_y - pin.cy())
+                self.add_rect(METAL2, vector(pin.cx() - 0.5 * self.bl_width, pmos_pin_bot),
+                              height=nmos_pin_top - pmos_pin_bot, width=self.bl_width)
             # bitline outputs
             if i == 0:
                 target_pin = source_drains[-2]
@@ -484,14 +498,13 @@ class tgate_column_mux_pgate(AnalogMixin, design, metaclass=Unique):
             y_offset = (target_pin.cy() - 0.5 * sample_p_cont.h_2 -
                         self.get_line_end_space(METAL2) - self.m2_width)
             for pin in out_pins:
-                self.add_rect(METAL2, vector(pin.cx() - 0.5 * self.m2_width, y_offset),
-                              height=pin.cy() - y_offset)
+                self.add_rect(METAL2, vector(pin.cx() - 0.5 * self.bl_width, y_offset),
+                              height=pmos_pin_bot - y_offset, width=self.bl_width)
             if len(out_pins) > 0:
                 self.add_rect(METAL2, vector(out_pins[0].cx(), y_offset),
                               width=out_pins[-1].cx() - out_pins[0].cx())
-            pin_x = target_pin.cx() - 0.5 * self.m2_width
-            self.add_layout_pin(f"{pin_names[i]}_out", METAL2, vector(pin_x, 0),
-                                height=y_offset)
+
+            self.add_bitline_out(target_pin, y_offset, pin_names[i])
 
             # bitline inputs
             nmos_inst = self.tgate_nmos_insts[i]
@@ -507,17 +520,33 @@ class tgate_column_mux_pgate(AnalogMixin, design, metaclass=Unique):
             y_offset = (target_pin.cy() + 0.5 * sample_n_cont.h_2 +
                         self.get_line_end_space(METAL2))
             for pin in out_pins:
-                self.add_rect(METAL2, vector(pin.cx() - 0.5 * self.m2_width, pin.cy()),
-                              height=y_offset - pin.cy() + self.m2_width)
+                self.add_rect(METAL2, vector(pin.cx() - 0.5 * self.bl_width, nmos_pin_top),
+                              height=y_offset - nmos_pin_top + self.bl_width,
+                              width=self.bl_width)
             if len(out_pins) > 0:
                 self.add_rect(METAL2, vector(out_pins[0].cx(), y_offset),
                               width=out_pins[-1].cx() - out_pins[0].cx())
-            bitcell_pin = self.bitcell.get_pin(pin_names[i])
+
             self.add_rect(METAL2, vector(target_pin.cx(), y_offset),
-                          width=bitcell_pin.cx() - target_pin.cx())
+                          width=bitcell_pin.cx() - target_pin.cx(), height=self.bl_width)
             self.add_layout_pin(pin_names[i], METAL2, vector(bitcell_pin.lx(), y_offset),
                                 width=bitcell_pin.width(),
                                 height=self.height - y_offset)
+
+    def add_bitline_out(self, pmos_pin, y_offset, pin_name):
+        sel_pin = self.get_pin("sel")
+        bitcell_pin = self.bitcell.get_pin(pin_name)
+        x_offset = pmos_pin.cx() - 0.5 * self.bl_width
+
+        y_bend = (sel_pin.uy() - self.m2_width - self.get_parallel_space(METAL2) -
+                  self.bl_width)
+        offset = vector(x_offset, y_bend)
+        self.add_rect(METAL2, offset, height=y_offset - offset.y, width=self.bl_width)
+        self.add_rect(METAL2, offset, width=bitcell_pin.cx() - offset.x)
+
+        self.add_layout_pin(f"{pin_name}_out", METAL2, vector(bitcell_pin.lx(), 0),
+                            width=self.bl_width,
+                            height=offset.y + self.bl_width)
 
     def add_tgates_taps(self):
         self.add_power_tap("gnd", self.top_gnd_y)

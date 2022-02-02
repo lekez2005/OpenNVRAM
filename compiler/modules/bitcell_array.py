@@ -3,7 +3,7 @@ from typing import List, Dict
 
 import debug
 from base import design
-from base.design import METAL1, METAL3, METAL2
+from base.design import METAL1, METAL3, METAL2, PO_DUMMY
 from base.geometry import NO_MIRROR, MIRROR_Y_AXIS, MIRROR_X_AXIS, MIRROR_XY, instance
 from base.vector import vector
 from base.well_implant_fills import create_wells_and_implants_fills
@@ -143,7 +143,6 @@ class bitcell_array(design.design):
         return "{0} {1} vdd gnd".format(bl_nets, wl_conn).split()
 
     def add_bitcell_cells(self):
-        self.add_left_dummy = self.add_right_dummy = True
         for col in range(self.column_size):
             for row in range(self.row_size):
                 name = "bit_r{0}_c{1}".format(row, col)
@@ -260,29 +259,17 @@ class bitcell_array(design.design):
                                   height=fill_rect[2] - fill_rect[1])
 
     def add_dummy_polys(self):
-
-        dummy_polys = self.get_dummy_poly(self.cell)
-        if not dummy_polys:
+        if not self.has_dummy:
             return
-        leftmost, rightmost = dummy_polys
-        poly_pitch = self.poly_width + self.poly_space
-        x_offsets = []
-        if self.add_left_dummy:
-            x_offsets.append(leftmost - poly_pitch)
-        if self.add_right_dummy:
-            x_offsets.append(self.width + (self.cell.width - rightmost) + poly_pitch)
-        cell_fills = self.get_poly_fills(self.cell)
-        left_dummies = cell_fills["left"]
-        dummy_height = left_dummies[0][1][1] - left_dummies[0][0][1]
-        for i in range(self.row_size):
-            y_base = i * self.cell.height
-            if i % 2 == 0:
-                y_offset = y_base + self.cell.height - left_dummies[0][1][1]
-            else:
-                y_offset = y_base + left_dummies[0][0][1]
-            for x_offset in x_offsets:
-                self.add_rect("po_dummy", offset=vector(x_offset, y_offset), width=self.poly_width,
-                              height=dummy_height)
+        min_height = self.get_min_area(PO_DUMMY) / self.poly_width
+
+        for row in range(self.row_size + len(self.dummy_rows)):
+            row_instances = self.get_cell_inst_row(row)
+            rects = self.add_dummy_poly(self.cell, row_instances, True)
+            for rect in rects:
+                if rect.height < min_height:
+                    self.add_rect_center(PO_DUMMY, vector(rect.cx(), rect.cy()),
+                                         width=rect.width, height=self.cell.height)
 
     def get_full_width(self):
         if "vdd" not in self.cell.pins:

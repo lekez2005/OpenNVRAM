@@ -130,13 +130,13 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
 
     def route_decoder(self):
         for row in range(self.rows):
-            # TODO confirm direct link for other techs
+            nand_z_pin = self.nand_inst[row].get_pin("Z")
             # route nand output to output inv input
             if self.row_to_side[row] == "left":
-                zr_pos = self.nand_inst[row].get_pin("Z").lc()
+                zr_pos = nand_z_pin.center()
                 al_pos = self.inv_inst[row].get_pin("A").rc()
             else:
-                zr_pos = self.nand_inst[row].get_pin("Z").rc()
+                zr_pos = nand_z_pin.center()
                 al_pos = self.inv_inst[row].get_pin("A").lc()
             # ensure the bend is in the middle
             mid_pos = vector(zr_pos.x, al_pos.y)

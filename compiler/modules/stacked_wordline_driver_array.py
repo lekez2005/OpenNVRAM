@@ -70,6 +70,8 @@ class stacked_wordline_driver_array(wordline_driver_array):
 
         x_offsets = [en_pin_clearance, 2 * en_pin_clearance + self.logic_buffer.width]
 
+        m3_clearance = 0.5 * m2m3.h_2 + self.get_line_end_space(METAL3)
+
         for row in range(self.rows):
             y_offset, mirror = self.get_row_y_offset(row)
             x_offset = x_offsets[row % 2]
@@ -79,15 +81,14 @@ class stacked_wordline_driver_array(wordline_driver_array):
             self.connect_inst(["en", "in[{}]".format(row), "wl_bar[{}]".format(row),
                                "wl[{}]".format(row), "vdd", "gnd"])
 
-            m3_clearance = 0.5 * self.rail_height + self.get_parallel_space(METAL3)
-            m3_pitch = self.m3_width + self.get_parallel_space(METAL3)
+            b_pin = buffer_inst.get_pin("B")
+
             if row % 2 == 0:
-                in_y_offset = buffer_inst.by() + m3_clearance + m3_pitch
+                in_y_offset = b_pin.cy() + m3_clearance
             else:
-                in_y_offset = buffer_inst.uy() - m3_clearance - self.m3_width - m3_pitch
+                in_y_offset = b_pin.cy() - m3_clearance - self.m3_width
 
             # decoder in
-            b_pin = buffer_inst.get_pin("B")
             self.add_layout_pin("in[{}]".format(row), METAL3,
                                 offset=vector(0, in_y_offset),
                                 width=b_pin.cx() + 0.5 * self.m3_width)

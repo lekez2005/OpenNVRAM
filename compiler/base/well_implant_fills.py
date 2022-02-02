@@ -4,6 +4,7 @@ import debug
 import tech
 from base import contact
 from base import utils
+from base.utils import round_to_grid as round_g
 from base.contact import m2m3, m3m4
 from base.design import design, NWELL, NIMP, PIMP, METAL1, PO_DUMMY, POLY, DRAWING, \
     METAL2, PWELL, METAL3, METAL4, ACTIVE, TAP_ACTIVE
@@ -90,7 +91,6 @@ def create_wells_and_implants_fills(left_mod: design_inst, right_mod: design_ins
         purposes = default_purposes
 
     all_fills = []
-    round_g = utils.round_to_grid
 
     for i in range(len(layers)):
         layer = layers[i]
@@ -100,11 +100,12 @@ def create_wells_and_implants_fills(left_mod: design_inst, right_mod: design_ins
         right_mod_rects = right_mod.get_layer_shapes(layer, purpose=purpose, recursive=True)
 
         for left_mod_rect in left_mod_rects:
-            if left_mod_rect.rx() < left_mod.width and isinstance(left_mod, design):
+            if (round_g(left_mod_rect.rx()) < round_g(left_mod.width) and
+                    isinstance(left_mod, design)):
                 continue
             # find right mod rect which overlaps
             for right_mod_rect in right_mod_rects:
-                if right_mod_rect.lx() > 0 and isinstance(right_mod, design):
+                if round_g(right_mod_rect.lx()) > 0 and isinstance(right_mod, design):
                     continue
                 if isinstance(left_mod, instance):
                     if round_g(right_mod_rect.lx()) > round_g(right_mod.lx()):

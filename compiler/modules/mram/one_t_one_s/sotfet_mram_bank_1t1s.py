@@ -1,133 +1,146 @@
 import debug
-from base.contact import cross_m1m2, m2m3, cross_m2m3, m1m2
-from base.design import METAL1, METAL3, METAL2
+from base.contact import m2m3, cross_m2m3
+from base.design import METAL3, METAL2, NWELL, design, METAL4
 from base.vector import vector
-from modules.baseline_bank import BaselineBank
+from globals import OPTS
+from modules.bank_mixins import TwoPrechargeMixin, WordlineVoltageMixin
+from modules.baseline_bank import BaselineBank, LEFT_FILL, RIGHT_FILL
 from modules.mram.one_t_one_s.sotfet_mram_control_buffers_1t1s import SotfetMramControlBuffers1t1s
-from modules.mram.sotfet.sotfet_mram_bank_br_precharge import SotfetMramBankBrPrecharge
+from modules.mram.sotfet.mram_bank import MramBank
 
 
-class SotfetMramBank1t1s(SotfetMramBankBrPrecharge):
+class SotfetMramBank1t1s(WordlineVoltageMixin, TwoPrechargeMixin, MramBank):
+
+    def add_pins(self):
+        super().add_pins()
+        self.add_pin("vdd_wordline")
+
     def create_control_buffers(self):
-        self.control_buffers = SotfetMramControlBuffers1t1s(self)
+        self.control_buffers = SotfetMramControlBuffers1t1s(bank=self)
         self.add_mod(self.control_buffers)
 
     @staticmethod
     def get_module_list():
-        return SotfetMramBankBrPrecharge.get_module_list() + ["br_precharge_array"]
+        return MramBank.get_module_list() + TwoPrechargeMixin.get_mixin_module_list()
 
-    def connect_inst(self, args, check=True):
-        if args and self.insts[-1].name in ["wwl_driver", "rwl_driver"]:
-            args.append("rw")
-        super().connect_inst(args, check)
+    def get_vertical_instance_stack(self):
+        stack = super().get_vertical_instance_stack()
+        return TwoPrechargeMixin.update_vertical_stack(self, stack)
 
-    def add_pins(self):
-        super().add_pins()
-        self.add_pin("rw")
+    def create_br_precharge_array(self):
+        self.br_precharge_array = self.create_module('br_precharge_array',
+                                                     columns=self.num_cols,
+                                                     size=OPTS.discharge_size)
 
-    def route_precharge(self):
-        if self.col_mux_array_inst is not None:
-            self.route_all_instance_power(self.br_precharge_array_inst)
-            BaselineBank.route_precharge(self)
-            return
-        debug.info(1, "Route Precharge")
-        self.join_bitlines(top_instance=self.bitcell_array_inst, top_suffix="",
-                           bottom_instance=self.precharge_array_inst,
-                           bottom_suffix="", word_size=self.num_cols)
-        y_offset = self.get_m2_m3_below_instance(self.br_precharge_array_inst)
-        y_shift = y_offset - self.br_precharge_array_inst.get_pin("br[0]").by()
+    def get_wwl_connections(self):
+        connections = MramBank.get_wwl_connections(self)
+        return WordlineVoltageMixin.update_wordline_driver_connections(self, connections)
 
-        self.join_bitlines(top_instance=self.br_precharge_array_inst, top_suffix="",
-                           bottom_instance=self.sense_amp_array_inst,
-                           bottom_suffix="", y_shift=y_shift)
-        for pin_name in ["bl", "br"]:
-            for col in range(self.num_cols):
-                full_pin_name = "{}[{}]".format(pin_name, col)
-                sense_pin = self.sense_amp_array_inst.get_pin(full_pin_name)
-                precharge_pin = self.br_precharge_array_inst.get_pin(full_pin_name)
-                self.add_path(METAL2, [vector(sense_pin.cx(), y_offset),
-                                       vector(sense_pin.cx(), precharge_pin.by())])
-        self.route_all_instance_power(self.precharge_array_inst)
+    def get_right_wordline_offset(self):
+        return MramBank.get_right_wordline_offset(self)
+
+    def get_wordline_driver_space(self):
+        """Separate wells based on minimum well space for wells on different voltages"""
+        self.rwl_driver.add_body_taps()
+        rwl_well = min(self.rwl_driver.get_layer_shapes(NWELL, recursive=True),
+                       key=lambda x: x.lx())
+        wwl_well = max(self.wwl_driver.get_layer_shapes(NWELL, recursive=True),
+                       key=lambda x: x.rx())
+
+        well_space = self.get_space(NWELL, prefix="different")
+
+        space = - rwl_well.lx() + (wwl_well.rx() - self.wwl_driver.width) + well_space
+        debug.info(2, "Wordline space is %.3g", space)
+        return space
+
+    def get_wordline_vdd_offset(self):
+        return self.wwl_driver_inst.rx() + 2 * self.get_wide_space(METAL2)
+
+    def join_wordline_power(self):
+        WordlineVoltageMixin.route_wordline_power_pins(self, self.wwl_driver_inst)
+        for pin in self.rwl_driver_inst.get_pins("vdd"):
+            self.add_rect(pin.layer, pin.lr(), height=pin.height(),
+                          width=self.mid_vdd.rx() - pin.rx())
+            self.add_power_via(pin, self.mid_vdd, 90)
 
     def route_wordline_in(self):
-        self.route_wwl_in()
-
-    def route_wwl_in(self):
-        self.join_rw_pin()
-
-        left_inst, right_inst = sorted([self.wwl_driver_inst, self.rwl_driver_inst],
-                                       key=lambda x: x.lx())
-
-        # left_inst.mod.add_body_taps()
-
-        if left_inst == self.wwl_driver_inst:
+        if self.wwl_driver_inst.lx() < self.rwl_driver_inst.lx():
             pin_names = ["wwl", "rwl"]
+            insts = [self.wwl_driver_inst, self.rwl_driver_inst]
         else:
             pin_names = ["rwl", "wwl"]
+            insts = [self.rwl_driver_inst, self.wwl_driver_inst]
 
-        for row in range(self.num_rows):
-            right_pin = right_inst.get_pin("wl[{}]".format(row))
-            right_bitcell_pin = self.bitcell_array_inst.get_pin(
-                "{}[{}]".format(pin_names[1], row))
-            bend_x = right_bitcell_pin.lx() - self.line_end_space - 0.5 * self.m1_width
-            self.add_path(METAL1, [right_pin.rc(), vector(bend_x, right_pin.cy()),
-                                   vector(bend_x, right_bitcell_pin.cy()),
-                                   right_bitcell_pin.lc()])
+        sample_bitcell = self.bitcell_array_inst.get_pin("wwl[0]")
 
-            left_bitcell_pin = self.bitcell_array_inst.get_pin(
-                "{}[{}]".format(pin_names[0], row))
-            left_pin = left_inst.get_pin("wl[{}]".format(row))
-            if left_bitcell_pin.cy() > right_bitcell_pin.cy():
-                y_offset = left_pin.uy()
-            else:
-                y_offset = left_pin.by()
-            self.add_cross_contact_center(cross_m2m3, vector(left_pin.cx(), y_offset),
-                                          fill=False)
-            x_offset = right_pin.rx() + self.get_via_space(m1m2)
-            self.add_rect(METAL3,
-                          offset=vector(left_pin.cx(), y_offset - 0.5 * self.m3_width),
-                          width=x_offset - left_pin.cx())
-            via_offset = vector(x_offset, y_offset - 0.5 * m1m2.height)
-            self.add_contact(m1m2.layer_stack, via_offset)
-            self.add_contact(m2m3.layer_stack, via_offset)
+        right_edge_1 = sample_bitcell.lx()
+        right_edge_0 = (right_edge_1 - self.get_line_end_space(METAL3) -
+                        sample_bitcell.height())
 
-            self.add_path(METAL1, [vector(x_offset, y_offset),
-                                   vector(bend_x, y_offset),
-                                   vector(bend_x, left_bitcell_pin.cy()),
-                                   left_bitcell_pin.lc()])
-            _, fill_height = self.calculate_min_area_fill(self.m2_width, layer=METAL2)
-            self.add_rect_center(METAL2,
-                                 offset=vector(x_offset + 0.5 * self.m2_width, y_offset),
-                                 width=self.m2_width, height=fill_height)
+        for i in range(2):
+            pin_name = pin_names[i]
+            driver_inst = insts[i]
+            for row in range(self.num_rows):
+                bitcell_pin = self.bitcell_array_inst.get_pin(f"{pin_name}[{row}]")
+                driver_pin = driver_inst.get_pin(f"wl[{row}]")
+                decoder_pin = driver_inst.get_pin(f"in[{row}]")
+
+                rail_height = decoder_pin.height()
+
+                if i == 0:
+                    right_edge = right_edge_0
+                    if row % 2 == 1:
+                        rail_y = decoder_pin.uy() + self.bus_space
+                    else:
+                        rail_y = decoder_pin.by() - self.bus_space - rail_height
+                else:
+                    right_edge = right_edge_1
+                    rail_y = decoder_pin.cy() - 0.5 * rail_height
+
+                y_start = min([driver_pin.uy(), driver_pin.by()],
+                              key=lambda x: abs(x - rail_y))
+
+                self.add_rect(METAL2,
+                              vector(driver_pin.cx() - 0.5 * self.m2_width, y_start),
+                              height=rail_y - y_start)
+                via_offset = vector(driver_pin.cx(), rail_y + 0.5 * rail_height)
+                design.add_cross_contact_center(self, cross_m2m3, via_offset)
+                rail_offset = vector(driver_pin.cx() - 0.5 * m2m3.h_2, rail_y)
+                self.add_rect(METAL3, rail_offset, height=rail_height,
+                              width=right_edge - rail_offset.x)
+                edges = [rail_y, rail_y + rail_height, bitcell_pin.by(), bitcell_pin.uy()]
+                y_offset = min(edges)
+                self.add_rect(METAL3, vector(right_edge, y_offset),
+                              width=rail_height, height=max(edges) - y_offset)
+                self.add_rect(METAL3, vector(right_edge, bitcell_pin.by()),
+                              width=bitcell_pin.lx() - right_edge,
+                              height=bitcell_pin.height())
 
     def route_decoder_in(self):
-        super().route_decoder_in()
-        fill_height = m2m3.second_layer_height
-        _, fill_width = self.calculate_min_area_fill(fill_height, layer=METAL2)
-        for inst in [self.wwl_driver_inst, self.rwl_driver_inst]:
-            for row in range(self.num_rows):
-                in_pin = inst.get_pin("in[{}]".format(row))
-                offset = vector(in_pin.cx(), in_pin.cy())
-                self.add_cross_contact_center(cross_m2m3, offset)
-                self.add_cross_contact_center(cross_m1m2, offset, rotate=True)
-                self.add_rect_center(METAL2, offset, width=fill_width,
-                                     height=fill_height)
+        self.join_decoder_in()
 
-    def join_rw_pin(self):
-        y_offset = self.get_decoder_enable_y() - 2 * self.bus_pitch - 0.5 * self.bus_width
-        left_inst, right_inst = sorted([self.wwl_driver_inst, self.rwl_driver_inst],
-                                       key=lambda x: x.lx())
-        left_pin = left_inst.get_pin("rw")
-        right_pin = right_inst.get_pin("rw")
-        x_offset = left_inst.lx()
-        self.add_layout_pin("rw", METAL3, offset=vector(x_offset, y_offset),
-                            width=right_pin.cx() - x_offset, height=self.bus_width)
-        for pin in [left_pin, right_pin]:
-            self.add_rect(METAL2, offset=vector(pin.lx(), y_offset), width=pin.width(),
-                          height=pin.by() - y_offset)
-            self.add_cross_contact_center(cross_m2m3,
-                                          offset=vector(pin.cx(),
-                                                        y_offset + 0.5 * self.bus_width))
+    def route_precharge_to_sense_or_mux(self):
+        if not self.col_mux_array_inst:
 
-    def mirror_wordline_fill_rect(self, row):
-        return row % 2 == 0
+            y_offset = self.get_m2_m3_below_instance(self.br_precharge_array_inst, 0)
+            for i, pin_name in enumerate(["bl", "br"]):
+                precharge_rects = []
+                sense_rects = []
+                align = LEFT_FILL if i == 0 else RIGHT_FILL
+                for col in range(self.num_cols):
+                    full_name = f"{pin_name}[{col}]"
+                    precharge_pin = self.br_precharge_array_inst.get_pin(full_name)
+                    sense_rects.append(self.sense_amp_array_inst.get_pin(full_name))
+                    rect = self.add_rect(METAL2, vector(precharge_pin.lx(), y_offset),
+                                         width=precharge_pin.width(),
+                                         height=precharge_pin.by() - y_offset)
+                    precharge_rects.append(rect)
+                self.join_rects(precharge_rects, METAL2, sense_rects, METAL4, align)
+        else:
+            super().route_precharge_to_sense_or_mux()
+
+    def get_intra_array_grid_top(self):
+        return self.bitcell_array_inst.by()
+
+    def get_inter_array_power_grid_offsets(self):
+        return BaselineBank.get_inter_array_power_grid_offsets(self)

@@ -132,18 +132,19 @@ class ControlSignalsMixin(BaselineBank):
         self.left_control_rails = left_rails
         num_mid_rails = len(control_outputs) - len(left_rails)
         if OPTS.centralize_control_signals:  # closest to middle
-            x_offset = 0.5 * self.bitcell_array.width - (1 + 0.5 * num_mid_rails)
+            x_offset = 0.5 * self.bitcell_array.width - (1 + 0.5 * num_mid_rails) * self.bitcell.width
         else:
             x_offset = 0  # closest to pin output
         left_x_offset = - 2 * self.vdd_rail_width
         left_rail_index = 0
         # find x offsets
         top_rails, bottom_rails = [], []
-        _, min_rail_width = self.calculate_min_area_fill(self.bus_width, layer=METAL3)
+
         rail_space = max(self.get_line_end_space(METAL3), self.get_parallel_space(METAL4))
         via_allowance = max(0.5 * m2m3.height, 0.5 * self.bus_width)
         for rail_name in control_outputs:
             pin = self.control_buffers.get_pin(rail_name)
+            bitcell_index = -1
             if rail_name in left_rails:
                 min_x, max_x = left_x_offset, pin.cx() + via_allowance
                 rail_x = left_rail_index
@@ -157,9 +158,10 @@ class ControlSignalsMixin(BaselineBank):
                 else:
                     bitcell_index, rail_x = closest_offset
                     self.occupied_m4_bitcell_indices.append(bitcell_index)
-                max_x = max(min_x + min_rail_width, rail_x)
+                max_x = rail_x
                 x_offset = max_x + rail_space
             rail = Rail(rail_name, min_x, max_x)
+            rail.x_index = bitcell_index
             rail.rail_x = rail_x
             if pin.cy() > 0.5 * self.control_buffers.height:
                 top_rails.append(rail)
@@ -302,6 +304,18 @@ class ControlSignalsMixin(BaselineBank):
         rail = self.control_rail_offsets[rail_name]
         control_pin = control_buffer_inst.get_pin(rail_name)
 
+        _, min_rail_width = self.calculate_min_area_fill(self.bus_width, layer=METAL3)
+        if rail.x_index >= 0:
+            base_x = self.bitcell_array_inst.lx() + self.bitcell_array.bitcell_offsets[rail.x_index]
+            rail_mid_x = self.intra_m4_rail_mid_x + base_x
+            if rail_mid_x > rail.min_x:
+                rail_end = max(rail_mid_x + 0.5 * m3m4.h_1, rail.min_x + min_rail_width)
+            else:
+                rail_end = min(rail_mid_x - m3m4.h_1, rail.min_x - min_rail_width)
+        else:
+            rail_mid_x = rail.rail_x
+            rail_end = max(rail.max_x, rail.min_x + min_rail_width)
+
         y_offset = rail.y_offset
 
         if control_pin.uy() < y_offset:
@@ -314,25 +328,24 @@ class ControlSignalsMixin(BaselineBank):
         self.add_cross_contact_center(cross_m2m3, offset=vector(control_pin.cx(),
                                                                 y_offset + 0.5 * self.bus_width))
         self.add_rect(METAL3, offset=vector(rail.min_x, y_offset),
-                      width=rail.max_x - rail.min_x, height=self.bus_width)
+                      width=rail_end - rail.min_x, height=self.bus_width)
         if not destination_pins:
-            m3_rail = self.add_rect(METAL3, vector(rail.max_x - self.m3_width, y_offset))
+            m3_rail = self.add_rect(METAL3, vector(rail_mid_x - 0.5 * self.m3_width, y_offset))
             setattr(self, rail_name + "_rail", m3_rail)
             return
         rail_top = (max(destination_pins, key=lambda x: x.uy()).cy() +
                     0.5 * cross_m3m4.second_layer_width)
 
-        self.add_cross_contact_center(cross_m3m4, offset=vector(rail.rail_x,
-                                                                y_offset + 0.5 * self.bus_width),
-                                      rotate=True)
+        self.add_cross_contact_center(cross_m3m4, rotate=True,
+                                      offset=vector(rail_mid_x, y_offset + 0.5 * self.bus_width))
 
         rail_width = max(self.bus_width, self.m4_width)
-        m4_rail = self.add_rect(METAL4, offset=vector(rail.rail_x - 0.5 * rail_width, y_offset),
+        m4_rail = self.add_rect(METAL4, offset=vector(rail_mid_x - 0.5 * rail_width, y_offset),
                                 width=rail_width, height=rail_top - y_offset)
         for dest_pin in destination_pins:
             vias, via_rotates, fill_layers = contact.get_layer_vias(dest_pin.layer, METAL4,
                                                                     cross_via=True)
-            via_offset = vector(rail.rail_x, dest_pin.cy())
+            via_offset = vector(rail_mid_x, dest_pin.cy())
 
             for via, via_rotate in zip(vias, via_rotates):
                 super(design, self).add_cross_contact_center(via, offset=via_offset,

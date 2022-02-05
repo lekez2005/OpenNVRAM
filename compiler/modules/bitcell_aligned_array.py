@@ -123,7 +123,7 @@ class BitcellAlignedArray(design, ABC):
             col = word * self.words_per_row
             name = self.child_name.format(word)
             offset = vector(self.bitcell_offsets[col], 0)
-            if self.mirror and col % 2 == 1:
+            if self.mirror and col % 2 == 0:
                 offset.x += self.child_mod.width
                 mirror = MIRROR_Y_AXIS
             else:

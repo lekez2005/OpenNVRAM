@@ -577,7 +577,6 @@ class tgate_column_mux_pgate(AnalogMixin, design, metaclass=Unique):
                           height=tgate_pwell.by() - tgate_nwell.uy())
 
         # extend inverter implants to width
-        # debug.pycharm_debug()
         for layer in [NIMP, PIMP]:
             for inst in [self.inverter_nmos, self.inverter_pmos]:
                 rect = get_largest_rect_at_inst(inst, layer)

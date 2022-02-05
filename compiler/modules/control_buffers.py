@@ -31,6 +31,7 @@ class Rail:
     def __init__(self, name, min_x, max_x):
         self.name = name
         self.index = -1
+        self.x_index = -1
         self.min_x = min_x
         self.max_x = max_x
         self.rect = None

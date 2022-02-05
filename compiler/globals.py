@@ -58,7 +58,7 @@ def parse_args():
     # If we don't specify a tech, assume freepdk45.
     # This may be overridden when we read a config file though...
     if OPTS.tech_name == "":
-        OPTS.tech_name = "freepdk45"
+        OPTS.tech_name = "sky130"
     # Alias SCMOS to AMI 0.5um
     if OPTS.tech_name == "scmos":
         OPTS.tech_name = "scn3me_subm"
@@ -280,7 +280,7 @@ def setup_paths():
 
     # Add all of the subdirs to the python path
     # These subdirs are modules and don't need to be added: characterizer, verify
-    for subdir in ["tests", "modules", "modules/cam"] + python_path:
+    for subdir in ["tests", "modules"] + python_path:
         full_path = os.path.abspath(os.path.join(OPENRAM_HOME, subdir))
         debug.check(os.path.isdir(full_path),
                     "{} does not exist:".format(full_path))

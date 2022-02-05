@@ -3,10 +3,11 @@ from base.design import METAL1, METAL3, METAL2, ACTIVE, design
 from base.vector import vector
 from base.well_implant_fills import create_wells_and_implants_fills
 from globals import OPTS
+from modules.bank_mixins import TwoPrechargeMixin
 from modules.mram.sotfet.mram_bank import MramBank
 
 
-class SotfetMramBankBrPrecharge(MramBank):
+class SotfetMramBankBrPrecharge(MramBank, TwoPrechargeMixin):
     """
     SotfetMramBank with
         - separate bl precharge and br precharge modules
@@ -15,12 +16,11 @@ class SotfetMramBankBrPrecharge(MramBank):
 
     def get_vertical_instance_stack(self):
         stack = super().get_vertical_instance_stack()
-        stack.insert(stack.index(self.precharge_array_inst), self.br_precharge_array_inst)
-        return stack
+        return TwoPrechargeMixin.update_vertical_stack(self, stack)
 
     @staticmethod
     def get_module_list():
-        return MramBank.get_module_list() + ["br_precharge_array"]
+        return MramBank.get_module_list() + TwoPrechargeMixin.get_mixin_module_list()
 
     def get_intra_array_grid_top(self):
         return self.mid_vdd.uy()
@@ -38,52 +38,8 @@ class SotfetMramBankBrPrecharge(MramBank):
 
         return x_offset - self.wide_m1_space - self.vdd_rail_width
 
-    def create_precharge_array(self):
-        self.precharge_array = self.create_module('precharge_array', columns=self.num_cols,
-                                                  size=OPTS.precharge_size)
-        self.br_precharge_array = self.create_module('br_precharge_array',
-                                                     columns=self.num_cols,
-                                                     bank=self)
-
-    def add_precharge_array(self):
-        y_offset = self.get_br_precharge_y()
-        self.br_precharge_array_inst = self.add_inst(name="br_precharge_array",
-                                                     mod=self.br_precharge_array,
-                                                     offset=vector(0, y_offset))
-        temp = []
-        for i in range(self.num_cols):
-            temp.append("bl[{0}]".format(i))
-            temp.append("br[{0}]".format(i))
-        temp.extend(["br_precharge_en_bar", "vdd"])
-        self.connect_inst(temp)
-
-        super().add_precharge_array()
-
-    def get_precharge_y(self):
-        return self.br_precharge_array_inst.uy()
-
-    def get_br_precharge_y(self):
-        if self.col_mux_array_inst is None:
-            bottom_mod = self.sense_amp_array
-            y_space = self.calculate_bitcell_aligned_spacing(self.precharge_array,
-                                                             bottom_mod, num_rails=1,
-                                                             min_space=0)
-            return self.sense_amp_array_inst.uy() + y_space
-        else:
-            return self.col_mux_array_inst.uy()
-
     def route_bitcell(self):
         pass
-
-    def route_precharge(self):
-        self.route_all_instance_power(self.precharge_array_inst)
-        self.route_all_instance_power(self.br_precharge_array_inst)
-
-        self.route_precharge_to_bitcell()
-        precharge_inst = self.precharge_array_inst
-        self.precharge_array_inst = self.br_precharge_array_inst
-        self.route_precharge_to_sense_or_mux()
-        self.precharge_array_inst = precharge_inst
 
     def route_wordline_in(self):
         self.route_wwl_in()

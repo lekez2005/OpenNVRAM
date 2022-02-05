@@ -2,7 +2,7 @@ import debug
 from base import utils
 from base.analog_cell_mixin import AnalogMixin
 from base.contact import m1m2, poly_contact, cross_m1m2, cross_m2m3, m2m3
-from base.design import design, METAL3, METAL2, METAL1
+from base.design import design, METAL3, METAL2, METAL1, ACTIVE
 from base.geometry import MIRROR_X_AXIS
 from base.vector import vector
 from base.well_active_contacts import calculate_num_contacts
@@ -76,11 +76,14 @@ class BlBrReset(precharge_characterization, design):
         y_bottom = gate_pins[0].cy()
         y_top = y_bottom + self.bus_width + utils.round_to_grid(1.5 * self.bus_space)
 
-        fill_height = poly_contact.h_2
-        _, fill_width = self.calculate_min_area_fill(fill_height, layer=METAL2)
+        fill_width = m1m2.w_2
+        _, fill_height = self.calculate_min_area_fill(fill_width, layer=METAL2)
+
+        via_extension = (self.get_drc_by_layer(METAL3, "wide_metal_via_extension") or 0.0)
 
         y_offsets = [y_top, y_bottom]
         pin_names = ["bl_reset", "br_reset"]
+        m2_top = None
         for i in range(2):
             self.add_layout_pin(pin_names[i], METAL3,
                                 vector(0, y_offsets[i] - 0.5 * self.bus_width),
@@ -90,31 +93,53 @@ class BlBrReset(precharge_characterization, design):
             mid_x = 0.5 * (tx_pins[0].cx() + tx_pins[-1].cx())
             offset = vector(mid_x, tx_pins[0].cy())
 
-            self.add_contact_center(m1m2.layer_stack, offset, rotate=90)
-            self.add_rect_center(METAL1, offset, height=poly_contact.h_2,
-                                 width=tx_pins[-1].cx() - tx_pins[0].cx())
+            height = max(poly_contact.h_2, m1m2.h_1)
+            self.add_rect_center(METAL1, offset, height=height,
+                                 width=tx_pins[-1].rx() - tx_pins[0].lx())
+            bl_space = self.get_parallel_space(METAL2) + 0.5 * m1m2.w_2
 
             if i == 0:
-                source_pin = self.get_sorted_pins("S")[0]
-                offset = vector(source_pin.cx() - 0.5 * self.m2_width,
-                                offset.y - 0.5 * self.m2_width)
-                self.add_rect(METAL2, offset, width=mid_x - offset.x)
-                self.add_rect(METAL2, offset, height=y_offsets[i] - offset.y)
-                self.add_cross_contact_center(cross_m2m3,
-                                              vector(source_pin.cx(), y_offsets[i]))
-                pass
+                bitcell_pin = self.bitcell.get_pin("bl")
+                m1m2_x = bitcell_pin.rx() + bl_space
+                via_y = (y_bottom + 0.5 * self.bus_width + via_extension +
+                         self.get_parallel_space(METAL3) + 0.5 * m1m2.w_2)
+                self.add_cross_contact_center(cross_m2m3, vector(m1m2_x, via_y))
+                self.add_rect(METAL2, vector(m1m2_x - 0.5 * self.m2_width, offset.y),
+                              height=via_y - offset.y)
+                m3_y = via_y - 0.5 * m2m3.w_2 - via_extension
+                self.add_rect(METAL3, vector(m1m2_x - 0.5 * m2m3.h_2, m3_y),
+                              width=m2m3.h_2, height=y_top - m3_y)
+                m2_top = via_y + 0.5 * m2m3.h_1
             else:
-                self.add_rect_center(METAL2, offset, width=fill_width, height=fill_height)
-                self.add_contact_center(m2m3.layer_stack, offset, rotate=90)
+                bitcell_pin = self.bitcell.get_pin("br")
+                m1m2_x = bitcell_pin.lx() - bl_space
+                self.add_cross_contact_center(cross_m2m3, vector(m1m2_x, y_offsets[i]))
+
+            fill_bottom = offset.y - 0.5 * m1m2.h_2
+            fill_top = min(fill_bottom + fill_height, m2_top)
+            fill_bottom = fill_top - fill_height
+            if fill_height > 0:
+                self.add_rect(METAL2, vector(m1m2_x - 0.5 * m1m2.w_2, fill_bottom),
+                              width=m1m2.w_2, height=fill_height)
+
+            self.add_contact_center(m1m2.layer_stack, vector(m1m2_x, offset.y))
+
+        self.m2_fill_top = m2_top
 
     def fill_drain_m1(self):
         self.fill_rects = fill_rects = []
         fill = calculate_tx_metal_fill(self.ptx_inst.mod.tx_width, self)
         if not fill:
             return
-        tx = self.ptx_inst.mod
-        _, _, fill_width, fill_height = fill
-        fill_height = max(fill_height, tx.get_pins("S")[0].height())
+
+        self.drain_via_y = (self.m2_fill_top + self.get_line_end_space(METAL2) +
+                            0.5 * m1m2.w_2)
+
+        tx_pin = self.ptx_inst.get_pins("S")[0]
+        fill_width = self.poly_pitch - self.get_parallel_space(METAL1)
+        _, fill_height = self.calculate_min_area_fill(fill_width, layer=METAL1)
+        fill_height = max(fill_height, tx_pin.height(),
+                          self.drain_via_y + 0.5 * m1m2.h_1 - tx_pin.by())
         drain_pins = self.get_sorted_pins("D")
         for i in range(2):
             pin = drain_pins[i]
@@ -145,37 +170,21 @@ class BlBrReset(precharge_characterization, design):
 
     def connect_bitlines(self):
         drain_pins = self.get_sorted_pins("D")
-        y_bend = (self.get_pin("bl_reset").cy() +
-                  0.5 * m1m2.h_2 + self.get_line_end_space(METAL2))
-
-        num_contacts = calculate_num_contacts(self, drain_pins[0].height(),
-                                              layer_stack=m1m2)
-
         pin_names = ["bl", "br"]
 
         for i in range(2):
             tx_pin = drain_pins[i]
             pin_name = pin_names[i]
             bitcell_pin = self.bitcell.get_pin(pin_name)
-            cont = self.add_contact_center(m1m2.layer_stack, tx_pin.center(),
-                                           size=[1, num_contacts])
-            y_offset = max(y_bend, tx_pin.cy() + 0.5 * cont.mod.h_2 - self.m2_width)
-            self.add_rect(METAL2, vector(tx_pin.cx() - 0.5 * m1m2.w_2, tx_pin.cy()),
-                          height=y_offset + self.m2_width - tx_pin.cy(), width=m1m2.w_2)
-            offset = vector(bitcell_pin.lx(), y_offset)
-            self.add_rect(METAL2, offset, width=tx_pin.cx() - offset.x)
+            via_offset = vector(tx_pin.cx(), self.drain_via_y)
+            self.add_cross_contact_center(cross_m1m2, via_offset)
+            offset = vector(bitcell_pin.cx(), via_offset.y - 0.5 * m1m2.w_2)
+            self.add_rect(METAL2, offset, width=via_offset.x - offset.x,
+                          height=m1m2.w_2)
+            offset = vector(bitcell_pin.lx(), 0)
             self.add_layout_pin(pin_name, METAL2, offset, width=bitcell_pin.width(),
-                                height=self.height - offset.y)
+                                height=self.height)
 
     def connect_gnd_pins(self):
         pin = self.m1_gnd
-        self.add_layout_pin("gnd", METAL3, pin.ll(), width=pin.width(),
-                            height=pin.height())
-        offset = pin.center()
-        self.add_cross_contact_center(cross_m1m2, offset, rotate=True)
-        self.add_cross_contact_center(cross_m2m3, offset, rotate=False)
-
-        fill_width = self.poly_pitch - self.get_parallel_space(METAL1)
-        _, fill_height = self.calculate_min_area_fill(fill_width, layer=METAL2)
-        self.add_rect(METAL2, vector(offset.x - 0.5 * fill_width, pin.uy() - fill_height),
-                      width=fill_width, height=fill_height)
+        AnalogMixin.add_m1_m3_power_via(self, pin, add_m3_pin=True)

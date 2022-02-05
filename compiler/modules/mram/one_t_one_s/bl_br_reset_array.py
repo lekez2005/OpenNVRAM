@@ -31,6 +31,7 @@ class BlBrResetArray(precharge_array):
     def create_modules(self):
         self.pc_cell = BlBrReset(name="precharge", size=self.size)
         self.add_mod(self.pc_cell)
+        self.child_mod = self.pc_cell
 
         if OPTS.use_x_body_taps:
             self.body_tap = ResetTap(self.pc_cell, name="bl_br_tap")

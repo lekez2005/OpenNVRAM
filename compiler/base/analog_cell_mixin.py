@@ -104,7 +104,11 @@ class AnalogMixin(design_):
                                       region=(y_bottom, y_top), recursive=recursive,
                                       recursive_insts=recursive_insts, existing=existing)
 
-        min_space = (max(m1m2.second_layer_width, m2m3.first_layer_width) +
+        fill_height = pin.height()
+        _, fill_width = self.calculate_min_area_fill(fill_height, layer=METAL2)
+        _, min_m2_width = self.calculate_min_area_fill(max(m1m2.w_2, m2m3.w_1))
+
+        min_space = (max(m1m2.h_2, m2m3.h_1, fill_width) +
                      2 * self.get_parallel_space(METAL2))
         half_space = utils.round_to_grid(0.5 * min_space)
 
@@ -139,11 +143,11 @@ class AnalogMixin(design_):
 
             via_extent = extent - 2 * self.get_line_end_space(METAL2)
 
-            for via, rotate in [(cross_m1m2, True), (cross_m2m3, False)]:
+            for i, via in enumerate([m1m2, m2m3]):
                 sample_contact = calculate_num_contacts(self, via_extent, layer_stack=via.layer_stack,
                                                         return_sample=True)
-                if sample_contact.dimensions[1] == 1 or edge_via:
-                    self.add_cross_contact_center(via, offset, rotate=rotate)
-                else:
-                    self.add_contact_center(via.layer_stack, offset, rotate=90,
-                                            size=sample_contact.dimensions)
+                self.add_contact_center(via.layer_stack, offset, rotate=90,
+                                        size=sample_contact.dimensions)
+                if i == 1 and sample_contact.h_2 < min_m2_width:
+                    width = max(fill_width, sample_contact.h_2)
+                    self.add_rect_center(METAL2, offset, width=width, height=fill_height)

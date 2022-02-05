@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import traceback
 from importlib import reload
 from typing import TYPE_CHECKING
 
@@ -10,15 +11,29 @@ else:
 
 
 class BankTestBase(OpenRamTest):
+    errors = []
+    error_message = ""
+
+    def print_error(self, error):
+        row, col, words_per_row, error = error
+        self.debug.warning("Fail: wpr= %d row = %d col = %d \n %s ",
+                           words_per_row, row, col, str(error))
+
+    def patch_print_error(self):
+        original_func = self.debug.error
+
+        def patch_func(message, return_value=-1, *args):
+            if return_value == 0:
+                return
+            self.error_message = message % args
+            original_func(message, return_value, *args)
+
+        self.debug.error = patch_func
 
     def local_check(self, a, final_verification=False):
         if hasattr(a.wordline_driver, "add_body_taps"):
             a.wordline_driver.add_body_taps()
         super().local_check(a, final_verification)
-
-    def test_baseline_array(self):
-        # self.sweep_all(cols=[], rows=[64], words_per_row=1, default_col=256)
-        self.sweep_all()
 
     @staticmethod
     def get_bank_class():
@@ -35,9 +50,10 @@ class BankTestBase(OpenRamTest):
         import tech
         from base import design
 
+        self.patch_print_error()
+
         bank_class, kwargs = self.get_bank_class()
 
-        # tech.drc_exceptions[bank_class.__name__] = tech.drc_exceptions["min_nwell"] + tech.drc_exceptions["latchup"]
         tech.drc_exceptions[bank_class.__name__] = tech.drc_exceptions.get("latchup", [])
 
         if rows is None:
@@ -45,37 +61,41 @@ class BankTestBase(OpenRamTest):
         if cols is None:
             cols = [32, 64, 128, 256]
 
-        try:
-            col = default_col
-            for row in rows:
-                for words_per_row_ in self.get_words_per_row(col, words_per_row):
-                    reload(design)
-                    self.debug.info(1, "Test {} single bank row = {} col = {} words_per_row = {}".
-                                    format(bank_class.__name__, row, col, words_per_row_))
-                    word_size = int(col / words_per_row_)
-                    num_words = row * words_per_row_
-                    a = bank_class(word_size=word_size, num_words=num_words, words_per_row=words_per_row_,
-                                   name="bank1", **kwargs)
+        trials = []
+        col = default_col
+        for row in rows:
+            for words_per_row_ in self.get_words_per_row(col, words_per_row):
+                trials.append((row, col, words_per_row_))
+        row = default_row
+        for col in cols:
+            if col == default_col:
+                continue
+            for words_per_row_ in self.get_words_per_row(col, words_per_row):
+                trials.append((row, col, words_per_row_))
 
-                    self.local_check(a)
-            row = default_row
-            for col in cols:
-                if col == default_col:
-                    continue
-                for words_per_row_ in self.get_words_per_row(col, words_per_row):
-                    reload(design)
-                    self.debug.info(1, "Test {} single bank row = {} col = {} words_per_row = {}".
-                                    format(bank_class.__name__, row, col, words_per_row_))
-                    word_size = int(col / words_per_row_)
-                    num_words = row * words_per_row_
-                    a = bank_class(word_size=word_size, num_words=num_words,
-                                   words_per_row=words_per_row_,
-                                   name="bank1")
-                    self.local_check(a)
-        except Exception as ex:
-            self.debug.error("Failed {} for row = {} col = {}: {} ".format(
-                bank_class.__name__, row, col, str(ex)), 0)
-            raise ex
+        for row, col, words_per_row_ in trials:
+            try:
+                reload(design)
+                self.debug.info(1, "Test %s single bank row = %d col = %d wpr = %d",
+                                bank_class.__name__, row, col, words_per_row_)
+                word_size = int(col / words_per_row_)
+                num_words = row * words_per_row_
+                a = bank_class(word_size=word_size, num_words=num_words,
+                               words_per_row=words_per_row_, name="bank1", **kwargs)
+                self.local_check(a)
+            except KeyboardInterrupt:
+                break
+            except Exception as ex:
+                error_message = self.error_message or traceback.format_exc()
+                self.errors.append((row, col, words_per_row_, error_message))
+                self.error_message = ""
+                self.print_error(self.errors[-1])
+        for error in self.errors:
+            self.print_error(error)
+
+    def test_sweep(self):
+        # self.sweep_all(cols=[256], rows=[64], words_per_row=1, default_col=256)
+        self.sweep_all()
 
     def test_chip_sel(self):
         """Test for chip sel: Two independent banks"""
@@ -84,7 +104,7 @@ class BankTestBase(OpenRamTest):
         OPTS.route_control_signals_left = True
         OPTS.independent_banks = True
         OPTS.num_banks = 1
-        a = bank_class(word_size=64, num_words=64, words_per_row=2,
+        a = bank_class(word_size=16, num_words=64, words_per_row=2,
                        name="bank1", **kwargs)
         self.local_check(a)
 

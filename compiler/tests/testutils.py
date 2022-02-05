@@ -88,14 +88,14 @@ class OpenRamTest(unittest.TestCase):
         try:
             self.assertTrue(verify.run_drc(a.drc_gds_name, tempgds,
                                            exception_group=a.__class__.__name__) == 0)
-        except:
+        except Exception as ex:
             self.reset()
             self.fail("DRC failed: {}".format(a.name))
 
             
         try:
             self.assertTrue(verify.run_lvs(a.name, tempgds, tempspice, final_verification)==0)
-        except:
+        except Exception as ex:
             self.reset()
             self.fail("LVS mismatch: {}".format(a.name))
 

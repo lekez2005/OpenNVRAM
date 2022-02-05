@@ -448,13 +448,14 @@ class design(hierarchy_spice.spice, hierarchy_layout):
     def add_dummy_poly(self, cell, instances, words_per_row, from_gds=True):
         if PO_DUMMY not in tech_layers:
             return []
+        _, min_height = self.calculate_min_area_fill(self.poly_width, layer=PO_DUMMY)
         instances = list(instances)
         cell_fills = self.get_poly_fills(cell)
         rects = []
 
         def add_fill(x_offset, direction="left"):
             for rect in cell_fills[direction]:
-                height = rect[1][1] - rect[0][1]
+                height = max(rect[1][1] - rect[0][1], min_height)
                 if instances[0].mirror == "MX":
                     y_offset = instances[0].by() + instances[0].height - height - rect[0][1]
                 else:

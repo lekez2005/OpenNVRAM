@@ -10,12 +10,8 @@ class SotMramBank(MramBank):
         self.add_pin("vclamp")
 
     def create_control_buffers(self):
-        self.control_buffers = SotMramControlBuffers(self)
+        self.control_buffers = SotMramControlBuffers(bank=self)
         self.add_mod(self.control_buffers)
-
-    def get_col_mux_connections(self):
-        connections = self.connections_from_mod(self.column_mux_array, [])
-        return connections
 
     def get_bitcell_array_connections(self):
         return self.connections_from_mod(self.bitcell_array, [])

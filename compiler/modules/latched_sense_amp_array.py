@@ -8,6 +8,8 @@ class latched_sense_amp_array(sense_amp_array):
             self.add_pin("bl[{0}]".format(word))
             self.add_pin("br[{0}]".format(word))
             self.add_pin("dout[{0}]".format(word))
+            if "dout_bar" in self.child_mod.pins:
+                self.add_pin("dout_bar[{0}]".format(word))
 
         self.add_pin("en")
         self.add_pin("sampleb")

@@ -4,18 +4,17 @@ Run a regression test on a logic_buffers module.
 """
 from types import SimpleNamespace
 
-from test_base import TestBase
+from one_t_one_s_test_base import TestBase
 
 
 class SotfetMramControlBuffersTest(TestBase):
-    config_template = "config_shared_1t1s_{}"
 
     def test_logic_buffers_no_mirror(self):
         from globals import OPTS
         OPTS.num_banks = 1
         OPTS.create_decoder_clk = True
         OPTS.control_buffers_num_rows = 2
-        driver_array = SimpleNamespace(pins=["en", "en_bar"])
+        driver_array = SimpleNamespace(pins=["en"])
 
         bank = SimpleNamespace(is_left_bank=False, words_per_row=1,
                                write_driver_array=driver_array,

@@ -1,4 +1,4 @@
-from base.contact import cross_m1m2, m2m3, cross_m2m3, m1m2, m3m4
+from base.contact import cross_m1m2, m2m3, cross_m2m3, m1m2, m3m4, cross_m3m4
 from base.design import METAL1, METAL3, METAL2, METAL4
 from base.vector import vector
 from globals import OPTS
@@ -25,12 +25,14 @@ class MramBank(BaselineBank):
 
     def create_modules(self):
         if not self.is_left_bank:
+            rwl_buffers = getattr(OPTS, "rwl_buffers", OPTS.wordline_buffers)
             self.rwl_driver = self.create_module("rwl_driver", name="rwl_driver",
                                                  rows=self.num_rows,
-                                                 buffer_stages=OPTS.wordline_buffers)
+                                                 buffer_stages=rwl_buffers)
+            wwl_buffers = getattr(OPTS, "wwl_buffers", OPTS.wordline_buffers)
             self.wwl_driver = self.create_module("wwl_driver", name="wwl_driver",
                                                  rows=self.num_rows,
-                                                 buffer_stages=OPTS.wordline_buffers)
+                                                 buffer_stages=wwl_buffers)
         super().create_modules()
 
     def create_optimizer(self):
@@ -39,7 +41,7 @@ class MramBank(BaselineBank):
         self.optimizer = SotfetControlBuffersOptimizer(self)
 
     def create_control_buffers(self):
-        self.control_buffers = SotfetMramControlBuffers(self)
+        self.control_buffers = SotfetMramControlBuffers(bank=self)
         self.add_mod(self.control_buffers)
 
     def get_non_flop_control_inputs(self):
@@ -53,7 +55,7 @@ class MramBank(BaselineBank):
         return self.vref_x_offset - self.bus_pitch
 
     def get_top_precharge_pin(self):
-        precharge_in_pins = self.precharge_array.get_input_pins()
+        precharge_in_pins = self.precharge_array.child_mod.get_input_pins()
         top_precharge = max([self.precharge_array_inst.get_pin(x) for x in precharge_in_pins],
                             key=lambda x: x.uy()).name
         if top_precharge == "en":
@@ -100,57 +102,68 @@ class MramBank(BaselineBank):
             via_rotate = 90
         super().route_vdd_pin(pin, add_via, via_rotate)
 
-    def add_wordline_driver(self):
-        """ Wordline Driver """
-        # calculate space to enable placing one M2 fill
-        fill_space = (self.get_parallel_space(METAL2) + self.fill_width +
-                      self.get_wide_space(METAL2))
+    def get_wwl_connections(self):
+        self.wordline_driver = self.wwl_driver
+        connections = BaselineBank.get_wordline_driver_connections(self)
+        replacements = [("wl[", "wwl["), ("wordline_en", "wwl_en")]
+        return self.connections_from_mod(connections, replacements)
 
-        rwl_connections = []
-        wwl_connections = []
-        for i in range(self.num_rows):
-            rwl_connections.append("dec_out[{}]".format(i))
-            wwl_connections.append("dec_out[{}]".format(i))
-        for i in range(self.num_rows):
-            rwl_connections.append("rwl[{}]".format(i))
-            wwl_connections.append("wwl[{}]".format(i))
-        rwl_connections.append("rwl_en")
-        wwl_connections.append("wwl_en")
-        rwl_connections.extend(["vdd", "gnd"])
-        wwl_connections.extend(["vdd", "gnd"])
+    def get_rwl_connections(self):
+        self.wordline_driver = self.rwl_driver
+        connections = BaselineBank.get_wordline_driver_connections(self)
+        replacements = [("wl[", "rwl["), ("wordline_en", "rwl_en")]
+        return self.connections_from_mod(connections, replacements)
 
-        names = ["rwl_driver", "wwl_driver"]
-        connections = [rwl_connections, wwl_connections]
-        modules = [self.rwl_driver, self.wwl_driver]
-
+    def get_wordline_driver_order(self):
         # arrange based on order of wwl, rwl bitcell pins
         wwl_pin = self.bitcell_array_inst.get_pin("wwl[0]")
         rwl_pin = self.bitcell_array_inst.get_pin("rwl[0]")
+        rwl_is_left = wwl_pin.cy() > rwl_pin.cy()
+        return rwl_is_left
 
-        if wwl_pin.cy() > rwl_pin.cy():
-            reverse = False
+    def get_right_wordline_offset(self):
+        # calculate space to enable placing one M2 fill
+        fill_space = (self.get_parallel_space(METAL2) + self.fill_width +
+                      self.get_wide_space(METAL2))
+        return self.mid_vdd_offset - fill_space
+
+    def get_wordline_driver_space(self):
+        return self.wide_m1_space
+
+    def get_rwl_wwl_offsets(self):
+
+        x_base = self.get_right_wordline_offset()
+        module_space = self.get_wordline_driver_space()
+
+        rwl_is_left = self.get_wordline_driver_order()
+        if rwl_is_left:
+            wwl_offset = x_base - self.wwl_driver.width
+            rwl_offset = wwl_offset - module_space - self.rwl_driver.width
         else:
-            names = list(reversed(names))
-            connections = list(reversed(connections))
-            modules = list(reversed(modules))
-            reverse = True
+            rwl_offset = x_base - self.rwl_driver.width
+            wwl_offset = rwl_offset - module_space - self.wwl_driver.width
 
-        left_mod, right_mod = modules
-        right_x_offset = self.mid_vdd_offset - (right_mod.width + fill_space)
-        left_x_offset = right_x_offset - self.wide_m1_space - left_mod.width
-        x_offsets = [left_x_offset, right_x_offset]
+        return rwl_offset, wwl_offset
+
+    def add_wordline_driver(self):
+        """ Wordline Driver """
+        rwl_connections = self.get_rwl_connections()
+        wwl_connections = self.get_wwl_connections()
+        connections = [rwl_connections, wwl_connections]
+
+        rwl_offset, wwl_offset = self.get_rwl_wwl_offsets()
+        names = ["rwl_driver", "wwl_driver"]
+        modules = [self.rwl_driver, self.wwl_driver]
 
         insts = []
-
-        for i in range(2):
-            inst = self.add_inst(name=names[i], mod=modules[i],
-                                 offset=vector(x_offsets[i], self.bitcell_array_inst.by()))
+        for (mod_name, module, x_offset, connection) in \
+                zip(names, modules, [rwl_offset, wwl_offset], connections):
+            inst = self.add_inst(name=mod_name, mod=module,
+                                 offset=vector(x_offset, self.bitcell_array_inst.by()))
+            self.connect_inst(connection)
             insts.append(inst)
-            self.connect_inst(connections[i])
-        self.wordline_driver_inst = min(insts, key=lambda x: x.lx())
-        self.wordline_driver = self.wordline_driver_inst.mod
-        self.rwl_driver_inst, self.wwl_driver_inst = sorted(insts, key=lambda x: x.lx(),
-                                                            reverse=reverse)
+
+        self.rwl_driver_inst, self.wwl_driver_inst = insts
 
     def get_bitcell_array_connections(self):
         connections = self.connections_from_mod(self.bitcell_array,
@@ -158,7 +171,7 @@ class MramBank(BaselineBank):
         return connections
 
     def route_sense_amp(self):
-        self.add_vref_pin()
+        self.route_external_control_pin_m4("vref", self.sense_amp_array_inst)
         super().route_sense_amp()
 
     def route_external_control_pin(self, pin_name, inst, x_offset, inst_pin_name=None):
@@ -174,10 +187,20 @@ class MramBank(BaselineBank):
         self.add_rect(METAL3, offset=vector(pin.cx(), inst_pin.cy() - 0.5 * rect_height),
                       width=inst_pin.lx() - pin.cx(), height=rect_height)
 
-    def add_vref_pin(self):
-        x_offset = self.vref_x_offset
-        self.route_external_control_pin("vref", inst=self.sense_amp_array_inst,
-                                        x_offset=x_offset)
+    def route_external_control_pin_m4(self, source_name, inst, dest_name=None):
+        dest_name = dest_name or source_name
+        index, x_offset = self.find_closest_unoccupied_mid_x(0)
+        self.occupied_m4_bitcell_indices.append(index)
+        top_y = 0
+        for pin in inst.get_pins(source_name):
+            self.add_cross_contact_center(cross_m3m4, vector(x_offset, pin.cy()),
+                                          rotate=True)
+            top_y = max(top_y, pin.cy())
+        rail_width = max(self.bus_width, self.m4_width)
+        self.add_layout_pin(dest_name, METAL4,
+                            vector(x_offset - 0.5 * rail_width, self.min_point),
+                            width=rail_width,
+                            height=top_y + 0.5 * m3m4.h_2 - self.min_point)
 
     def route_bitcell(self):
         """wordline driver wordline to bitcell array wordlines"""

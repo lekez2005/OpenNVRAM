@@ -8,11 +8,12 @@ from modules.precharge_array import precharge_array
 class sotfet_mram_precharge_array(precharge_array):
     def __init__(self, columns, size=1):
         design.__init__(self, "sotfet_mram_precharge_array")
-        debug.info(1, "Creating {0}".format(self.name))
+        debug.info(1, "Creating %s with precharge size %.3g", self.name, size)
 
         self.columns = columns
 
-        self.pc_cell = self.create_mod_from_str(OPTS.precharge, name="sotfet_mram_precharge", size=size)
+        self.pc_cell = self.create_mod_from_str(OPTS.precharge,
+                                                name="sotfet_mram_precharge", size=size)
 
         self.child_mod = self.pc_cell
 

@@ -106,17 +106,19 @@ class LatchedControlBuffers(ControlBuffers):
             if pin_name not in mod.pins and dest_pin in output_pins:
                 output_pins.remove(dest_pin)
 
-    def get_schematic_pins(self):
-        in_pins = self.get_input_schematic_pins()
-        decoder_clk = ["decoder_clk"] * self.use_decoder_clk
-        out_pins = decoder_clk + ["clk_buf", "clk_bar", "wordline_en", "precharge_en_bar",
-                                  "write_en", "write_en_bar", "sense_en", "sense_en_bar",
-                                  "tri_en", "tri_en_bar", "sample_en_bar"]
-
+    def trim_schematic_pins(self, out_pins):
         self.remove_floating_pins([("en", "write_en"), ("en_bar", "write_en_bar")],
                                   out_pins, "write_driver_array")
         self.remove_floating_pins([("en", "sense_en"), ("en_bar", "sense_en_bar")],
                                   out_pins, "sense_amp_array")
         self.remove_floating_pins([("en", "tri_en"), ("en_bar", "tri_en_bar")],
                                   out_pins, "tri_gate_array")
+
+    def get_schematic_pins(self):
+        in_pins = self.get_input_schematic_pins()
+        decoder_clk = ["decoder_clk"] * self.use_decoder_clk
+        out_pins = decoder_clk + ["clk_buf", "clk_bar", "wordline_en", "precharge_en_bar",
+                                  "write_en", "write_en_bar", "sense_en", "sense_en_bar",
+                                  "tri_en", "tri_en_bar", "sample_en_bar"]
+        self.trim_schematic_pins(out_pins)
         return in_pins, out_pins

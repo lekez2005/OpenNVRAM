@@ -157,6 +157,8 @@ class SotfetMramControlBuffers(BaseLatchedControlBuffers):
         in_pins.append("write_trig")
         out_pins.extend(["rwl_en", "wwl_en"])
 
+        self.trim_schematic_pins(out_pins)
+
         out_pins.remove("wordline_en")
         if not self.has_precharge_bl:
             out_pins.remove("precharge_en_bar")

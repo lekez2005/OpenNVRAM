@@ -31,11 +31,11 @@ class stacked_wordline_driver_array(wordline_driver_array):
 
     def create_modules(self):
         self.bitcell = self.create_mod_from_str(OPTS.bitcell)
-
         self.logic_buffer = LogicBuffer(self.buffer_stages, logic="pnand2",
                                         height=2 * self.bitcell.height, route_outputs=False,
                                         route_inputs=False,
-                                        contact_pwell=False, contact_nwell=False, align_bitcell=True)
+                                        contact_pwell=False, contact_nwell=False,
+                                        align_bitcell=True)
         self.add_mod(self.logic_buffer)
 
     def get_row_y_offset(self, row):
@@ -70,7 +70,7 @@ class stacked_wordline_driver_array(wordline_driver_array):
 
         x_offsets = [en_pin_clearance, 2 * en_pin_clearance + self.logic_buffer.width]
 
-        m3_clearance = 0.5 * m2m3.h_2 + self.get_line_end_space(METAL3)
+        m3_clearance = 0.5 * m2m3.w_2 + self.get_parallel_space(METAL3)
 
         for row in range(self.rows):
             y_offset, mirror = self.get_row_y_offset(row)
@@ -83,19 +83,20 @@ class stacked_wordline_driver_array(wordline_driver_array):
 
             b_pin = buffer_inst.get_pin("B")
 
-            if row % 2 == 0:
+            if row % 2 == 1:
                 in_y_offset = b_pin.cy() + m3_clearance
             else:
                 in_y_offset = b_pin.cy() - m3_clearance - self.m3_width
 
             # decoder in
+            pin_right = b_pin.cx() - 0.5 * m2m3.h_2 + self.m3_width
             self.add_layout_pin("in[{}]".format(row), METAL3,
                                 offset=vector(0, in_y_offset),
-                                width=b_pin.cx() + 0.5 * self.m3_width)
-            self.add_rect(METAL3, offset=vector(b_pin.cx() - 0.5 * self.m3_width, in_y_offset),
+                                width=pin_right)
+            self.add_rect(METAL3, offset=vector(pin_right - self.m3_width, in_y_offset),
                           height=b_pin.cy() - in_y_offset)
             self.add_contact_center(m1m2.layer_stack, offset=b_pin.center())
-            self.add_contact_center(m2m3.layer_stack, offset=b_pin.center())
+            self.add_cross_contact_center(cross_m2m3, offset=b_pin.center())
             fill_width = self.logic_buffer.logic_mod.gate_fill_width
             fill_height = self.logic_buffer.logic_mod.gate_fill_height
             self.add_rect_center(METAL2, offset=b_pin.center(),

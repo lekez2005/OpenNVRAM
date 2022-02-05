@@ -261,15 +261,15 @@ class bitcell_array(design.design):
     def add_dummy_polys(self):
         if not self.has_dummy:
             return
-        min_height = self.get_min_area(PO_DUMMY) / self.poly_width
 
         for row in range(self.row_size + len(self.dummy_rows)):
             row_instances = self.get_cell_inst_row(row)
+            y_base = row_instances[0].by()
             rects = self.add_dummy_poly(self.cell, row_instances, True)
             for rect in rects:
-                if rect.height < min_height:
-                    self.add_rect_center(PO_DUMMY, vector(rect.cx(), rect.cy()),
-                                         width=rect.width, height=self.cell.height)
+                if self.cell.height - rect.height < self.poly_vert_space:
+                    self.add_rect(PO_DUMMY, vector(rect.lx(), y_base),
+                                  width=rect.width, height=self.cell.height)
 
     def get_full_width(self):
         if "vdd" not in self.cell.pins:

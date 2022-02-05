@@ -3,7 +3,7 @@ from importlib import reload
 import debug
 import tech
 from base.contact import m1m2
-from base.design import design, ACTIVE, PIMP, NWELL
+from base.design import design, ACTIVE, PIMP, NWELL, TAP_ACTIVE
 from base.unique_meta import Unique
 from base.vector import vector
 from base.well_implant_fills import get_default_fill_layers
@@ -119,7 +119,7 @@ class FlopBuffer(design, metaclass=Unique):
         layers, purposes = get_default_fill_layers()
         for i in range(len(layers)):
             layer = layers[i]
-            if layer == ACTIVE:
+            if layer in [ACTIVE, TAP_ACTIVE]:
                 continue
             buffer_shapes = self.buffer_inst.get_layer_shapes(layer, purposes[i], recursive=True)
             flop_shapes = self.flop_inst.get_layer_shapes(layer, purposes[i], recursive=True)

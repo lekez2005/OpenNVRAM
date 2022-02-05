@@ -1,6 +1,6 @@
 from base import utils
 from base.contact import contact, m1m2, m2m3, cross_m1m2
-from base.design import NWELL, PIMP, METAL1, METAL2, METAL3
+from base.design import NWELL, PIMP, METAL1, METAL2, METAL3, ACTIVE
 from base.utils import round_to_grid
 from base.vector import vector
 from globals import OPTS
@@ -101,11 +101,17 @@ class sotfet_mram_precharge(precharge):
 
         self.add_contact_center(m1m2.layer_stack, offset, rotate=90)
         self.add_contact_center(m2m3.layer_stack, offset, rotate=90)
-        fill_width = max(m1m2.h_2, m2m3.h_1)
-        _, fill_height = self.calculate_min_area_fill(fill_width, layer=METAL2)
-        self.add_rect_center(METAL2, offset, width=fill_width, height=fill_height)
         self.add_layout_pin_center_rect("en", METAL3, offset, width=self.width,
                                         height=self.bus_width)
+        # M2 fill
+        fill_width = max(m1m2.h_2, m2m3.h_1)
+        _, fill_height = self.calculate_min_area_fill(fill_width, layer=METAL2)
+        active_rect = max(self.ptx_inst.get_layer_shapes(ACTIVE),
+                          key=lambda x: x.by())
+        fill_y = min(offset.y, active_rect.cy() - 0.5 * m1m2.h_2 -
+                     self.get_line_end_space(METAL2) - 0.5 * fill_height)
+        fill_offset = vector(offset.x, fill_y)
+        self.add_rect_center(METAL2, fill_offset, width=fill_width, height=fill_height)
 
     def add_vdd_pin(self):
         pin_height = self.rail_height

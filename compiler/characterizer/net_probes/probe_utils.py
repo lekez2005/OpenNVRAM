@@ -177,7 +177,7 @@ def get_extracted_prefix(child_net, inst_hierarchy):
 
 def format_bank_probes(probes, bank):
     if OPTS.use_pex:
-        prefix = tech.spice["tx_instance_prefix"]
+        prefix = tech.spice["tx_pex_prefix"]
     else:
         prefix = ""
     prefix = prefix + "Xbank{0}.".format(bank)

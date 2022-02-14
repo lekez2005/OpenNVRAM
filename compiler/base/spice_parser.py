@@ -113,6 +113,9 @@ class SpiceMod:
         self.contents = contents
         self.sub_modules = []  # type: List[SpiceMod]
 
+    def __str__(self):
+        return f"SpiceMod: ({self.name}: [{', '.join(self.pins)}])"
+
 
 class SpiceParser:
 

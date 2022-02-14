@@ -337,12 +337,24 @@ class design(hierarchy_spice.spice, hierarchy_layout):
                                            offset=pin.ll(), width=pin.rx() - pin.lx(),
                                            height=pin.uy() - pin.by()))
         shapes = list(filter(filter_match, self.objs + pin_rects))
-        if recursive:
+        if recursive or insts:
             if insts is None:
                 insts = self.insts
             for inst in insts:
                 shapes.extend(inst.get_layer_shapes(layer, purpose, recursive))
         return shapes
+
+    def get_max_shape(self, layer, prop_name, recursive=False):
+        shapes = self.get_layer_shapes(layer, recursive=recursive)
+        if prop_name in ["by", "lx"]:
+            scale = -1
+        else:
+            scale = 1
+
+        def get_prop(shape):
+            return scale * getattr(shape, prop_name)()
+
+        return max(shapes, key=get_prop)
 
     @staticmethod
     def get_gds_layer_shapes(cell, layer, purpose=None, recursive=False):

@@ -32,7 +32,8 @@ class pgate(pgates_characterization_base, design.design):
 
     @classmethod
     def get_name(cls, size=1, beta=None, height=None,
-                 contact_pwell=True, contact_nwell=True, align_bitcell=False, same_line_inputs=False,
+                 contact_pwell=True, contact_nwell=True, align_bitcell=False,
+                 same_line_inputs=False, fake_contacts=False,
                  *args, **kwargs):
         name = "{}_{:.3g}".format(cls.get_class_name(), size)
         if beta is None:
@@ -50,11 +51,13 @@ class pgate(pgates_characterization_base, design.design):
             name += "_align"
         if same_line_inputs:
             name += "_same_line"
+        if fake_contacts:
+            name += "_fake_c"
         name = name.replace(".", "__")
         return name
 
     def __init__(self, name, height, size=1, beta=None, contact_pwell=True, contact_nwell=True,
-                 align_bitcell=False, same_line_inputs=False):
+                 align_bitcell=False, same_line_inputs=False, fake_contacts=False):
         """ Creates a generic cell """
         design.design.__init__(self, name)
         height, height_suffix = self.get_height(height, align_bitcell)
@@ -65,6 +68,8 @@ class pgate(pgates_characterization_base, design.design):
         self.size = size
         self.contact_pwell = contact_pwell
         self.contact_nwell = contact_nwell
+        # calculate dimensions as if contacts will be added but don't actually add contacts
+        self.fake_contacts = fake_contacts
         self.height = height
         self.align_bitcell = align_bitcell
         if self.align_bitcell and OPTS.use_x_body_taps:
@@ -592,6 +597,8 @@ class pgate(pgates_characterization_base, design.design):
             self.add_layout_pin_center_rect(pin_names[i], METAL1, offset=vector(self.mid_x, y_offset),
                                             width=self.width, height=self.rail_height)
 
+            if self.fake_contacts:
+                continue
             if (i == 0 and self.contact_pwell) or (i == 1 and self.contact_nwell):
                 self.add_rect_center(implants[i], offset=vector(self.mid_x, y_offset),
                                      width=self.contact_implant_width,

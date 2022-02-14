@@ -91,6 +91,7 @@ class ContactFullStack(design.design, metaclass=unique_meta.Unique):
             num_rows = self.calculate_num_rows(self.stop_layer - 1, self.max_height)
             self.dimensions = [max(1, num_rows), self.dimensions[1]]
         self.top_via = contact(layer_stack=top_via_stack, dimensions=self.dimensions)
+        self.width = max(self.width, self.top_via.height)
         self.height = self.top_via.width
 
     def create_stack(self):
@@ -133,7 +134,7 @@ class ContactFullStack(design.design, metaclass=unique_meta.Unique):
             else:
                 num_cols -= 1
                 break
-        return num_cols
+        return max(num_cols, 1)
 
     def calculate_num_rows(self, layer_num, max_height):
         via_stack = self.get_via_layers(layer_num)

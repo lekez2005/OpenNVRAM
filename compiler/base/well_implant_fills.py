@@ -477,6 +477,21 @@ def evaluate_vertical_module_spacing(top_modules: List[design_inst],
     return min_space
 
 
+def calculate_modules_implant_space(left_module: design, right_module: design):
+    """Calculate the space between implants to prevent nimplant/pimplant overlap"""
+    for (left_layer, right_layer) in [(PIMP, NIMP), (NIMP, PIMP)]:
+        left_rect = left_module.get_max_shape(left_layer, "rx", True)
+        right_rect = right_module.get_max_shape(right_layer, "lx", True)
+        left_extension = round_g((left_rect.rx() - left_module.width))
+        right_extension = round_g(right_rect.lx())
+        space = 0
+        if left_extension > 0 or right_extension < 0:
+            space = round_g(max(0, left_extension - right_extension))
+            if left_module.has_dummy and space >= 0:
+                space = max(space, left_module.poly_pitch)
+    return space
+
+
 def get_ptaps(obj: design):
     tap_actives = obj.get_layer_shapes(TAP_ACTIVE, recursive=True)
     nwells = obj.get_layer_shapes(NWELL, recursive=True)

@@ -1,5 +1,4 @@
 import collections
-import itertools
 from abc import ABC
 from typing import List, Tuple, Union
 
@@ -79,6 +78,8 @@ class ControlBuffers(design, ABC):
         self.bank = bank
         self.is_left_bank = bank and bank.is_left_bank
 
+        self.num_additional_rails = 0
+
         if self.is_left_bank:
             self.name += "_left"
 
@@ -138,16 +139,27 @@ class ControlBuffers(design, ABC):
         self.create_pin_connections()
 
         self.derive_rails()
-        self.add_rails()
-        self.add_modules()
 
-        self.evaluate_vertical_connection_types()
+        self.original_m2_blockages = [x for x in self.m2_blockages]
+        self.add_modules_and_route()
 
-        self.route_pin_connections()
         self.add_output_pins()
         self.add_power_pins()
         self.fill_layers()
         self.add_boundary()
+
+    def increase_additional_rails(self):
+        self.num_additional_rails += 1
+        self.pin_map.clear()
+        self.objs, self.insts, self.conns = [], [], []
+        self.m2_blockages = [x for x in self.original_m2_blockages]
+        self.add_modules_and_route()
+
+    def add_modules_and_route(self):
+        self.add_rails()
+        self.add_modules()
+        self.evaluate_vertical_connection_types()
+        self.route_pin_connections()
 
     def add_pins(self):
         """Add schematic pins"""
@@ -658,15 +670,10 @@ class ControlBuffers(design, ABC):
             sample_module = self.schematic_connections[0].mod
             y_base = sample_module.height + 0.5 * sample_module.rail_height + self.bus_space
 
-            additional_rail = False
-            # find indirect connections
-            indirect_connections = [x for x in self.pin_connections if x.conn_type == PinConnection.VERT]
-            for _, group in itertools.groupby(indirect_connections, lambda x: x.inst_name):
-                if len(list(group)) > 1:  # add additional rail space if 2 indirect connections for one inst
-                    additional_rail = True
-            if additional_rail:
+            if self.num_additional_rails > 1:
                 rail_pitch = self.get_line_end_space(METAL2) + cross_m2m3.first_layer_height
-                y_base += rail_pitch  # to permit routing when there is m2 blockage for bottom module
+                # to permit routing when there is m2 blockage for bottom module
+                y_base += rail_pitch * self.num_additional_rails
 
         for rail in self.rails.values():
             x_offset = 0 if rail.min_x == 0 else rail.min_x - 0.5 * m2m3.second_layer_height
@@ -716,6 +723,7 @@ class ControlBuffers(design, ABC):
                                          self.inst_dict.values()))
             self.bottom_insts = list(filter(lambda x: x.by() < 0.5 * self.height,
                                             self.inst_dict.values()))
+            self.bottom_gnd_y = self.bottom_insts[0].get_pins("gnd")[0].by()
 
     def route_pin_connections(self):
         """Route all module input pins"""
@@ -748,7 +756,10 @@ class ControlBuffers(design, ABC):
                 else:
                     self.route_direct_rail_to_pin(pin_connection, rail, pin_connection.x_offset)
             else:
-                self.route_indirect_rail_to_pin(pin_connection)
+                is_valid = self.route_indirect_rail_to_pin(pin_connection)
+                if not is_valid:
+                    return False
+        return True
 
     def route_adjacent_nets(self, pin_connection: PinConnection):
         """Route nets for which there is a direct connection available
@@ -882,6 +893,9 @@ class ControlBuffers(design, ABC):
                 rail_y = max_rail.by()
 
         self.indirect_m3_connections.append((m3_x_offset, m3_end_x, rail_y))
+        if rail_y < self.bottom_gnd_y:
+            self.increase_additional_rails()
+            return False
 
         # add m2 to new rail
         _, min_m2_height = self.calculate_min_area_fill(self.m2_width, layer=METAL2)
@@ -904,7 +918,7 @@ class ControlBuffers(design, ABC):
                                      width=original_x_offset + self.m2_width - via_x)
             self.route_direct_rail_to_pin(pin_connection, new_rail, original_x_offset,
                                           add_rail_via=False)
-            return
+            return True
 
         self.add_cross_contact_center(cross_m2m3,
                                       offset=vector(via_x, rail_y + 0.5 * self.m3_width),
@@ -913,6 +927,7 @@ class ControlBuffers(design, ABC):
         new_rail = self.add_rect(METAL3, offset=vector(m3_x_offset, rail_y), width=m3_width)
 
         self.route_direct_rail_to_pin(pin_connection, new_rail, original_x_offset)
+        return True
 
     def join_rail_to_y_offset(self, x_offset, y_offset, rail, add_rail_via):
         if add_rail_via:

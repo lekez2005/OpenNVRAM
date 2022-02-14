@@ -211,8 +211,11 @@ class ControlBufferOptimizer:
         }
         self.driver_loads["col_decoder"] = driver_load
 
-    def extract_wordline_buffer_load(self, driver_mod, net, buffer_stages_str,
-                                     mod_pin_name="out_inv"):
+    def extract_wordline_buffer_load(self, driver_mod, net, buffer_stages_str):
+        if len(driver_mod.buffer_stages) % 2 == 1:
+            mod_pin_name = "out_inv"
+        else:
+            mod_pin_name = "out"
         parent_mod = driver_mod.logic_buffer
         driver_inst = parent_mod.logic_mod
         buffer_stages_inst = parent_mod.buffer_inst

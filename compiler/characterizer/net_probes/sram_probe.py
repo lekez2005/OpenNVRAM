@@ -184,8 +184,8 @@ class SramProbe(object):
         else:
             return self.decoder_probes[address]
 
-    def get_wordline_label(self, bank_index, row, col):
-        wl_label = "Xbank{}.wl[{}]".format(bank_index, row)
+    def get_wordline_label(self, bank_index, row, col, wl_net="wl"):
+        wl_label = f"Xbank{bank_index}.{wl_net}[{row}]"
         template = self.probe_net_at_inst(wl_label, self.sram.bank.bitcell_array_inst)
         label = re.sub(r"_r([0-9]+)_c([0-9]+)", "_r{row}_c{col}", template)
         return label.format(row=row, col=col)
@@ -410,9 +410,9 @@ class SramProbe(object):
             for net in self.get_wordline_nets():
                 # get wordline driver array
                 full_net = net + "[{}]".format(row)
-                out_drivers, _ = get_all_net_drivers(full_net, bank_mod)
+                out_drivers, in_out_drivers = get_all_net_drivers(full_net, bank_mod)
                 driver = list(filter(lambda x: not x[1].name == "bitcell_array",
-                                     out_drivers))[0]
+                                     out_drivers + in_out_drivers))[0]
                 _, wordline_driver_array, conns = driver
                 conn_index = bank_mod.conns.index(conns)
                 driver_inst = bank_mod.insts[conn_index]

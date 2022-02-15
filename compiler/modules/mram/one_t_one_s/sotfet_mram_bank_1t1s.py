@@ -11,6 +11,11 @@ from modules.mram.sotfet.mram_bank import MramBank
 
 class SotfetMramBank1t1s(WordlineVoltageMixin, TwoPrechargeMixin, MramBank):
 
+    def create_optimizer(self):
+        from modules.mram.one_t_one_s.sotfet_1t1s_control_buffers_optimizer \
+            import Sotfet1t1sControlBuffersOptimizer
+        self.optimizer = Sotfet1t1sControlBuffersOptimizer(self)
+
     def add_pins(self):
         super().add_pins()
         self.add_pin("vdd_wordline")

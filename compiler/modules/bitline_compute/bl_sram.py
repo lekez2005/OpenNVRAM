@@ -21,24 +21,6 @@ class BlSram(BaselineSram):
         super().compute_sizes(word_size, num_words, num_banks, words_per_row)
         self.alu_num_words = int(self.num_cols / OPTS.alu_word_size)
 
-    def add_pins(self):
-        """ Adding pins for Bank module"""
-        for inst in [self.bank_inst, self.alu_inst, self.left_decoder_inst,
-                     self.right_decoder_inst]:
-            conn_index = self.insts.index(inst)
-            inst_conns = self.conns[conn_index]
-            for net in inst_conns:
-                count = 0
-                for i, conns in enumerate(self.conns):
-                    if net in conns:
-                        count += 1
-                pin_index = inst_conns.index(net)
-                if count == 1:
-                    debug.info(2, "Add inst %s layout pin %s as %s", inst.name,
-                               inst.mod.pins[pin_index], net)
-                    self.add_pin(net)
-        self.add_pin_list(["clk", "vdd", "gnd"])
-
     def create_modules(self):
         super().create_modules()
 

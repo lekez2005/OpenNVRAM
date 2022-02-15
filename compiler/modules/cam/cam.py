@@ -30,17 +30,6 @@ class Cam(BaselineSram):
             connections = bank_mod.connections_from_mod(connections, replacements)
         return connections
 
-    def get_schematic_pins(self):
-        pins = super().get_schematic_pins()
-        search_pins = [f"search_out[{row}]" for row in range(self.num_rows)]
-        if self.num_banks == 2:
-            search_pins.extend([f"search_out_1[{row}]" for row in range(self.num_rows)])
-
-        search_pins.append("search_ref")
-        index = pins.index(f"ADDR[{self.bank_addr_size - 1}]") + 1
-        pins[index:index] = search_pins
-        return pins
-
     def copy_layout_pins(self):
         super().copy_layout_pins()
         self.copy_layout_pin(self.bank_inst, "search_ref")

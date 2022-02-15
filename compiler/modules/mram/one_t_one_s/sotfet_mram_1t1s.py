@@ -1,11 +1,18 @@
 from modules.mram.sotfet.sotfet_mram import SotfetMram
+from modules.sram_power_grid import WordlineVddMixin
 
 
-class SotfetMram1t1s(SotfetMram):
-    def add_pins(self):
-        super().add_pins()
-        self.add_pin("rw")
+class SotfetMram1t1s(WordlineVddMixin, SotfetMram):
 
-    def join_bank_controls(self):
-        super().join_bank_controls()
-        self.copy_layout_pin(self.bank_insts[0], "rw")
+    def add_row_decoder(self):
+        self.bank.wordline_driver_inst = self.bank.wwl_driver_inst
+        super().add_row_decoder()
+
+    def route_power_grid(self):
+        self.create_vdd_wordline()
+        super().route_power_grid()
+
+    def copy_layout_pins(self):
+        super().copy_layout_pins()
+        self.copy_layout_pin(self.bank_inst, "vdd_wordline", "vdd_wordline")
+

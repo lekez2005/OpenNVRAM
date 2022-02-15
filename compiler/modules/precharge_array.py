@@ -13,8 +13,9 @@ class precharge_array(design.design):
     of bit line columns, height is the height of the bit-cell array.
     """
 
-    def __init__(self, columns, size=1):
-        design.design.__init__(self, "precharge_array")
+    def __init__(self, columns, size=1, name=None):
+        name = name or "precharge_array"
+        design.design.__init__(self, name)
         debug.info(1, "Creating {0} with precharge size {1:.3g}".format(self.name, size))
 
         self.columns = columns

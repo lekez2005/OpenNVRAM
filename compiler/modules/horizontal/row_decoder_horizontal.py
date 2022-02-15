@@ -2,9 +2,8 @@ from base.contact import cross_m1m2
 from base.design import METAL1, PIMP, NIMP
 from base.geometry import NO_MIRROR, MIRROR_X_AXIS
 from base.vector import vector
+from globals import OPTS
 from modules.hierarchical_decoder import hierarchical_decoder
-from modules.hierarchical_predecode2x4 import hierarchical_predecode2x4
-from modules.hierarchical_predecode3x8 import hierarchical_predecode3x8
 from modules.horizontal.pinv_wordline import pinv_wordline
 from modules.horizontal.pnand2_wordline import pnand2_wordline, pnand3_wordline
 from modules.horizontal.wordline_pgate_tap import wordline_pgate_tap
@@ -29,22 +28,10 @@ class row_decoder_horizontal(hierarchical_decoder):
         self.nwell_tap = wordline_pgate_tap(self.inv, NIMP)
 
     def create_predecoders(self):
+        separate_vdd = OPTS.separate_vdd_wordline
+        OPTS.separate_vdd_wordline = True
         super().create_predecoders()
-        if self.no_of_pre3x8 == 0:
-            self.top_predecoder = hierarchical_predecode2x4(route_top_rail=True, use_flops=self.use_flops)
-        else:
-            self.top_predecoder = hierarchical_predecode3x8(route_top_rail=True, use_flops=self.use_flops)
-        self.add_mod(self.top_predecoder)
-
-    def get_pre2x4_mod(self, num):
-        if num == (self.no_of_pre2x4 + self.no_of_pre3x8) - 1:
-            return self.top_predecoder
-        return self.pre2_4
-
-    def get_pre3x8_mod(self, num):
-        if num == self.no_of_pre3x8 - 1:
-            return self.top_predecoder
-        return self.pre3_8
+        OPTS.separate_vdd_wordline = separate_vdd
 
     def get_row_y_offset(self, row):
         y_offset = self.bitcell_offsets[row]

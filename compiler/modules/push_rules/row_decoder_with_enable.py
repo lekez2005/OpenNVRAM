@@ -17,16 +17,6 @@ class row_decoder_with_enable(hierarchical_decoder):
     and_insts = []
     tap_insts = []
 
-    def get_pre2x4_mod(self, num):
-        if num == 0:
-            return self.pre2_4_neg
-        return self.pre2_4
-
-    def get_pre3x8_mod(self, num):
-        if num == 0 and self.no_of_pre2x4 == 0:
-            return self.pre3_8_neg
-        return self.pre3_8
-
     def add_pins(self):
         super().add_pins()
         self.add_pin("en")
@@ -41,6 +31,10 @@ class row_decoder_with_enable(hierarchical_decoder):
         self.add_mod(self.pre3_8_neg)
         self.pre3_8 = predecode3x8_horizontal(use_flops=self.use_flops, negate=False)
         self.add_mod(self.pre3_8)
+        self.all_predecoders = [self.pre2_4_neg] + (self.no_of_pre2x4 - 1) * [self.pre2_4]
+        if self.no_of_pre3x8 > 0:
+            all_pre_3_8 = [self.pre3_8_neg] + (self.no_of_pre3x8 - 1) * [self.pre3_8]
+            self.all_predecoders.extend(all_pre_3_8)
 
         if self.num_inputs in [4, 5]:
             self.decoder_and = self.create_mod_from_str(OPTS.decoder_and_2, rotation=GDS_ROT_270)

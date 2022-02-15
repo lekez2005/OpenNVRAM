@@ -5,7 +5,7 @@ from base import contact
 from base import design
 from base import utils
 from base.contact import m1m2, m2m3, cross_m2m3
-from base.design import ACTIVE, PIMP, METAL2, METAL3, METAL1
+from base.design import ACTIVE, PIMP, METAL2, METAL3, METAL1, NWELL
 from base.vector import vector
 from globals import OPTS
 from modules.hierarchical_predecode2x4 import hierarchical_predecode2x4 as pre2x4
@@ -13,7 +13,7 @@ from modules.hierarchical_predecode3x8 import hierarchical_predecode3x8 as pre3x
 from pgates.pinv import pinv
 from pgates.pnand2 import pnand2
 from pgates.pnand3 import pnand3
-from tech import drc, info
+from tech import drc, info, add_tech_layers
 
 
 class hierarchical_decoder(design.design):
@@ -53,6 +53,7 @@ class hierarchical_decoder(design.design):
         self.create_row_decoder()
         self.route_vertical_rail()
         self.route_vdd_gnd()
+        add_tech_layers(self)
 
     def create_modules(self):
         kwargs = {"align_bitcell": True, "contact_nwell": False, "contact_pwell": False,
@@ -72,6 +73,17 @@ class hierarchical_decoder(design.design):
         self.add_mod(self.pre2_4)
         self.pre3_8 = pre3x8(route_top_rail=False, use_flops=self.use_flops)
         self.add_mod(self.pre3_8)
+        self.all_predecoders = ([self.pre2_4] * self.no_of_pre2x4 +
+                                [self.pre3_8] * self.no_of_pre3x8)
+
+        if OPTS.separate_vdd_wordline:
+            if self.no_of_pre3x8 == 0:
+                top_predecoder = pre2x4(route_top_rail=True, use_flops=self.use_flops)
+            else:
+                top_predecoder = pre3x8(route_top_rail=True, use_flops=self.use_flops)
+            self.add_mod(top_predecoder)
+            self.all_predecoders[-1] = top_predecoder
+        self.top_predecoder = self.all_predecoders[-1]
 
     def determine_predecodes(self,num_inputs):
         """Determines the number of 2:4 pre-decoder and 3:8 pre-decoder
@@ -142,6 +154,22 @@ class hierarchical_decoder(design.design):
         self.add_pin("vdd")
         self.add_pin("gnd")
 
+    def calculate_predecoder_height(self):
+        self.predecoder_height = sum(map(lambda x: x.height, self.all_predecoders))
+
+        if OPTS.separate_vdd_wordline:
+            top_predecoder = self.all_predecoders[-1]
+            pre_nwell = top_predecoder.get_max_shape(NWELL, "uy", recursive=True)
+            pre_extension = pre_nwell.uy() - top_predecoder.height
+
+            inv_nwell = self.inv.get_max_shape(NWELL, "by", recursive=True)
+            inv_y_extension = inv_nwell.uy() - self.inv.height
+
+            well_space = self.get_space(NWELL, prefix="different")
+
+            # TODO take x space into account to reduce y_space
+            self.predecoder_height += (inv_y_extension + well_space + pre_extension)
+
     def calculate_dimensions(self):
         """ Calculate the overal dimensions of the hierarchical decoder """
 
@@ -158,8 +186,7 @@ class hierarchical_decoder(design.design):
         else:
             self.predecoder_width = self.pre2_4.width
 
-        self.predecoder_height = self.pre2_4.height*self.no_of_pre2x4 + self.pre3_8.height*self.no_of_pre3x8
-
+        self.calculate_predecoder_height()
 
         # Calculates height and width of row-decoder 
         if (self.num_inputs == 4 or self.num_inputs == 5):
@@ -190,12 +217,12 @@ class hierarchical_decoder(design.design):
                     bot_pin = self.pre2x4_inst[-1].get_pin("clk")
                     self.add_rect("metal2", offset=vector(bot_pin.ul() - vector(0, self.m2_width)),
                                   width=top_pin.rx() - bot_pin.lx())
-                    self.add_rect("metal2", offset=vector(top_pin.lx(), bot_pin.uy()),
-                                  height=top_pin.by() - bot_pin.uy())
+                    self.add_layout_pin("clk", METAL2, offset=vector(top_pin.lx(), bot_pin.uy()),
+                                        height=top_pin.by() - bot_pin.uy())
                 if len(self.pre3x8_inst) > 0:
                     clk_pin = self.pre3x8_inst[0].get_pin("clk")
                     self.add_layout_pin(text="clk", layer="metal2", offset=clk_pin.ll(),
-                                  height=self.pre3x8_inst[-1].get_pin("clk").uy() - clk_pin.by())
+                                        height=self.pre3x8_inst[-1].get_pin("clk").uy() - clk_pin.by())
 
                 if len(self.pre2x4_inst) > 1:  # connect the clk rails
                     clk_pin = self.pre2x4_inst[0].get_pin("clk")
@@ -241,7 +268,7 @@ class hierarchical_decoder(design.design):
         self.add_pre2x4_pins(num)
 
     def get_pre2x4_mod(self, num):
-        return self.pre2_4
+        return self.all_predecoders[num]
 
     def add_pre2x4_pins(self,num):
         """ Add the input pins to the 2x4 predecoder """
@@ -284,7 +311,7 @@ class hierarchical_decoder(design.design):
 
         pre_num = len(self.pre2x4_inst) + num
         self.pre3x8_inst.append(self.add_inst(name="pre_{0}".format(pre_num),
-                                              mod=self.get_pre3x8_mod(num),
+                                              mod=self.get_pre3x8_mod(pre_num),
                                               offset=offset,
                                               mirror=mirror))
         self.connect_inst(pins)
@@ -293,7 +320,7 @@ class hierarchical_decoder(design.design):
         self.add_pre3x8_pins(num,offset)
 
     def get_pre3x8_mod(self, num):
-        return self.pre3_8
+        return self.all_predecoders[num]
 
     def add_pre3x8_pins(self,num,offset):
         """ Add the input pins to the 3x8 predecoder at the given offset """
@@ -404,6 +431,8 @@ class hierarchical_decoder(design.design):
         Both predecoder top and row decoder bottom have no nwell contact
             leading to potential min-implant space issues
         """
+        if OPTS.separate_vdd_wordline:
+            return
         top_predecoder_inst = (self.pre2x4_inst + self.pre3x8_inst)[-1]
         predec_module = top_predecoder_inst.mod
 
@@ -577,12 +606,12 @@ class hierarchical_decoder(design.design):
             self.add_via_center(layers=contact.m1m2.layer_stack, offset=rail_offset, rotate=0)
         else:
             rail_x = self.rail_x_offsets[rail_index]
-            y_space = 0.5 * self.m3_width + self.get_parallel_space(METAL3)
+            y_space = 0.5 * m2m3.w_2 + self.get_parallel_space(METAL3)
 
             if pin.name == "B":
                 rail_y = pin.cy() + y_space
             else:
-                rail_y = pin.cy() - 0.5 * m2m3.height - self.get_line_end_space(METAL3) - self.m3_width
+                rail_y = pin.cy() - y_space - self.m3_width
 
             via_offset = vector(rail_x, rail_y + 0.5 * self.m3_width)
             self.add_cross_contact_center(cross_m2m3, offset=via_offset)
@@ -594,35 +623,52 @@ class hierarchical_decoder(design.design):
             m2_fill_width = utils.ceil(min_area / m2_fill_height)
 
             if pin.name == "B":
-                fill_x = pin.cx() + 0.5 * m1_fill_width - m2_fill_width
-                via_x = pin.cx()
-            else:
-                if rail_x < pin.cx():
-                    fill_x = pin.lx()
-                    via_x = pin.lx() + 0.5 * m1_fill_width
+                if pin.cx() > rail_x:
+                    fill_x = pin.cx() + 0.5 * m1_fill_width - 0.5 * m2_fill_width
+                    m2m3_via_x = fill_x
+                    m3_x = m2m3_via_x - 0.5 * m2m3.h_2
                 else:
-                    fill_x = pin.rx() - m1_fill_width
-                    via_x = pin.rx() - 0.5 * m1_fill_width
-
-            if via_x > rail_x:
-                rail_width = via_x - rail_x + 0.5 * self.m3_width
+                    fill_x = pin.cx() - 0.5 * m1_fill_width + 0.5 * m2_fill_width
+                    m2m3_via_x = fill_x
+                    m3_x = m2m3_via_x + 0.5 * m2m3.h_2 - self.m3_width
+                via_offset = vector(m2m3_via_x, pin.cy())
+                self.add_cross_contact_center(cross_m2m3, offset=via_offset)
             else:
-                rail_width = via_x - rail_x - 0.5 * self.m3_width
+                closest_nand = min(self.nand_inst,
+                                   key=lambda x: abs(pin.cy() - x.cy()) +
+                                                 (abs(pin.cx() - x.cx())))
+                b_pin = closest_nand.get_pin("B")
+                via_space = (0.5 * m2m3.h_2 + self.get_space(METAL3,
+                                                             prefix="dense_line_end") +
+                             0.5 * m2m3.w_2)
+
+                if rail_x < pin.cx():
+                    fill_x = pin.lx() + 0.5 * m2_fill_width
+                    m2m3_via_x = max(b_pin.cx() + via_space, fill_x)
+                else:
+                    fill_x = pin.rx() - 0.5 * m2_fill_width
+                    m2m3_via_x = min(b_pin.cx() - via_space, fill_x)
+                m3_x = m2m3_via_x - 0.5 * m2m3.w_2
+                via_offset = vector(m2m3_via_x, pin.cy())
+                self.add_contact_center(m2m3.layer_stack, via_offset)
+
+            if m3_x > rail_x:
+                rail_width = m3_x + self.m3_width - rail_x
+            else:
+                rail_width = m3_x - rail_x
             self.add_rect(METAL3, offset=vector(rail_x, rail_y), width=rail_width)
 
-            self.add_rect(METAL3, offset=vector(via_x - 0.5 * m2m3.w_2, pin.cy()),
+            self.add_rect(METAL3, offset=vector(m3_x, pin.cy()),
                           width=m2m3.w_2,
                           height=rail_y - pin.cy())
-            via_offset = vector(via_x, pin.cy())
-            self.add_via_center(layers=contact.m1m2.layer_stack, offset=via_offset)
-            self.add_via_center(layers=contact.m2m3.layer_stack, offset=via_offset)
 
-            fill_offset = vector(fill_x, pin.cy() - 0.5 * m2_fill_height)
-
-            self.add_rect(METAL2, offset=fill_offset, width=m2_fill_width, height=m2_fill_height)
+            fill_offset = vector(fill_x, pin.cy())
+            self.add_via_center(layers=contact.m1m2.layer_stack, offset=fill_offset)
+            self.add_rect_center(METAL2, offset=fill_offset,
+                                 width=m2_fill_width, height=m2_fill_height)
 
     def copy_power_pin(self, pin):
-        if hasattr(OPTS, 'separate_vdd') and pin.name == 'vdd':
+        if hasattr(OPTS, 'separate_vdd_wordline'):
             width = pin.rx()
         else:
             width = self.width
@@ -686,3 +732,15 @@ class hierarchical_decoder(design.design):
         else:
             pre = self.pre3_8
         return pre.input_load()
+
+
+class SeparateWordlineMixin(hierarchical_decoder):
+
+    def copy_power_pin(self, pin):
+        if pin.uy() <= self.row_decoder_min_y:
+            x_offset = 0
+        else:
+            x_offset = self.power_rail_x
+        right_x = self.inv_inst[1].lx()
+        self.add_layout_pin(pin.name, pin.layer, offset=vector(x_offset, pin.by()),
+                            width=right_x - x_offset, height=pin.height())

@@ -1,6 +1,7 @@
 from base import contact
 from base.design import METAL2, PIMP, NIMP, NWELL
 from base.vector import vector
+from globals import OPTS
 from modules.hierarchical_decoder import hierarchical_decoder
 from pgates.pinv import pinv
 from pgates.pnand2 import pnand2
@@ -188,6 +189,8 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
                                  width=nwell_width, height=nwell_height)
 
         # add pimplant for top predecoder
+        if OPTS.separate_vdd_wordline:
+            return
         top_predecoder = max(self.pre2x4_inst + self.pre3x8_inst, key=lambda x: x.uy())
         predec_module = top_predecoder.mod
         pre_module_width = predec_module.inv_inst[0].width + predec_module.nand_inst[0].width
@@ -206,5 +209,9 @@ class stacked_hierarchical_decoder(hierarchical_decoder):
             x_offset = 0
         else:
             x_offset = self.power_rail_x
+        if OPTS.separate_vdd_wordline:
+            width = pin.rx() - x_offset
+        else:
+            width = self.width - x_offset
         self.add_layout_pin(pin.name, pin.layer, offset=vector(x_offset, pin.by()),
-                            width=self.width - x_offset, height=pin.height())
+                            width=width, height=pin.height())

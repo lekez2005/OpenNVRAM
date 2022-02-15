@@ -12,11 +12,6 @@ class MramSimStepsGenerator(SpiceCharacterizer):
         super().__init__(*args, **kwargs)
         self.two_step_pulses["write_trig"] = 1
 
-        self.one_t_one_s = getattr(OPTS, "one_t_one_s", False)
-        if self.one_t_one_s:
-            self.control_sigs.append("rw")
-            self.rw = self.prev_rw = 0
-
     def create_probe(self):
         self.probe = MramProbe(self.sram, OPTS.pex_spice)
 
@@ -59,11 +54,6 @@ class MramSimStepsGenerator(SpiceCharacterizer):
         if key == "write_trig" and self.read:
             return False
         return super().is_signal_updated(key)
-
-    def update_output(self, increment_time=True):
-        if self.one_t_one_s:
-            self.rw = int(not self.read)
-        super().update_output(increment_time)
 
     def get_setup_time(self, key, prev_val, curr_val):
         if key == "write_trig":

@@ -86,10 +86,10 @@ class MramProbe(SramProbe):
                     self.saved_nodes.add(state_probe)
 
     def get_wordline_label(self, bank_index, row, col):
-        return super().get_wordline_label(bank_index, row, col).replace("wl", "rwl")
+        return super().get_wordline_label(bank_index, row, col, wl_net="rwl")
 
     def get_wwl_label(self, bank_index, row, col):
-        return super().get_wordline_label(bank_index, row, col).replace("wl", "wwl")
+        return super().get_wordline_label(bank_index, row, col, wl_net="wwl")
 
     def probe_address(self, address, pin_name="q"):
         super().probe_address(address, pin_name)

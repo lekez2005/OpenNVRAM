@@ -22,6 +22,9 @@ class SpiceDut(stimuli):
         elif OPTS.mram == "sot":
             self.gen_constant("vclamp", OPTS.sense_amp_vclamp, gnd_node="gnd")
 
+        if OPTS.separate_vdd_wordline:
+            self.gen_constant("vdd_wordline", OPTS.vdd_wordline, gnd_node="gnd")
+
     def write_include(self, circuit):
         super().write_include(circuit)
         self.add_device_model()
@@ -184,7 +187,7 @@ class SpiceDut(stimuli):
         else:
             drain, gate, source, body = definition_split[1:5]
             name_template = OPTS.bitcell_name_template
-            sot_p = (name_template + "_sot_p").format(**match_groups)
+            sot_p = OPTS.sot_p_template.format(**match_groups)
             bl_net = drain
             rwl_net = source
             sotfet_cell_name = "{}_XI0".format(name_template.format(**match_groups))

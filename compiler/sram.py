@@ -1,7 +1,6 @@
 
 import datetime
 import os
-from importlib import reload
 from math import log, sqrt
 
 import debug
@@ -11,13 +10,13 @@ from base import design
 from base.vector import vector
 from characterizer import lib
 from globals import OPTS, print_time
-from modules import sram_power_grid
+from modules import sram_power_grid_old
 from modules.bank import bank
 from modules.hierarchical_predecode2x4 import hierarchical_predecode2x4 as pre2x4
 from tech import drc
 
 
-class sram(design.design, sram_power_grid.Mixin):
+class sram(design.design, sram_power_grid_old.Mixin):
     """
     Dynamically generated SRAM by connecting banks to control logic. The
     number of banks should be 1 , 2 or 4

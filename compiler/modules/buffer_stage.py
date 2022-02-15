@@ -11,8 +11,8 @@ class BufferStage(design.design, metaclass=Unique):
     The last output is labeled out and the penultimate output is labelled out_bar regardless of number of buffer stages
     """
 
-    def __init__(self, buffer_stages, height=None, route_outputs=True, contact_pwell=True, contact_nwell=True,
-                 align_bitcell=False):
+    def __init__(self, buffer_stages, height=None, route_outputs=True, contact_pwell=True,
+                 contact_nwell=True, align_bitcell=False, fake_contacts=False):
         if buffer_stages is None or len(buffer_stages) < 1:
             debug.error("There should be at least one buffer stage", 1)
         self.buffer_stages = buffer_stages
@@ -20,6 +20,7 @@ class BufferStage(design.design, metaclass=Unique):
         self.contact_nwell = contact_nwell
         self.route_outputs = route_outputs
         self.align_bitcell = align_bitcell
+        self.fake_contacts = fake_contacts
 
         self.module_insts = []
         self.buffer_invs = []
@@ -41,8 +42,8 @@ class BufferStage(design.design, metaclass=Unique):
         self.DRC_LVS()
 
     @classmethod
-    def get_name(cls, buffer_stages, height=None, route_outputs=True, contact_pwell=True, contact_nwell=True,
-                 align_bitcell=False):
+    def get_name(cls, buffer_stages, height=None, route_outputs=True, contact_pwell=True,
+                 contact_nwell=True, align_bitcell=False, fake_contacts=False):
         name = "buffer_stage_" + "_".join(['{:.3g}'.format(x) for x in buffer_stages])
         if not route_outputs:
             name += "_no_out"
@@ -54,6 +55,8 @@ class BufferStage(design.design, metaclass=Unique):
             name += "_h_{:.4g}".format(height)
         if align_bitcell:
             name += "_align"
+        if fake_contacts:
+            name += "_fake_c"
 
         return name.replace(".", "__")
 
@@ -74,8 +77,9 @@ class BufferStage(design.design, metaclass=Unique):
         self.height = self.module_insts[-1].height
 
     def create_buffer_inv(self, size):
-        return pinv(size=size, height=self.height, contact_nwell=self.contact_nwell, contact_pwell=self.contact_pwell,
-                    align_bitcell=self.align_bitcell)
+        return pinv(size=size, height=self.height, contact_nwell=self.contact_nwell,
+                    contact_pwell=self.contact_pwell, align_bitcell=self.align_bitcell,
+                    fake_contacts=self.fake_contacts)
 
     def join_a_z_pins(self, a_pin, z_pin):
         self.add_rect("metal1", offset=vector(z_pin.rx(), a_pin.cy() - 0.5 * self.m1_width),

@@ -100,6 +100,15 @@ class wordline_driver_array(BitcellVerticalAligned):
             x_offset = max(x_offset, dummy_poly.cx())
         return x_offset
 
+    def get_connections(self, row):
+        outputs = [f"wl_bar[{row}]", f"wl[{row}]"]
+        if len(self.buffer_stages) % 2 == 0:
+            outputs = list(reversed(outputs))
+        return ["en", f"in[{row}]"] + outputs + ["vdd", "gnd"]
+
+    def get_out_pin_name(self):
+        return ["out_inv", "out"][len(self.buffer_stages) % 2]
+
     def add_modules(self):
         self.calculate_y_offsets()
 
@@ -108,14 +117,15 @@ class wordline_driver_array(BitcellVerticalAligned):
 
         self.height = self.get_height()
 
+        out_pin = self.get_out_pin_name()
+
         for row in range(self.rows):
             y_offset, mirror = self.get_row_y_offset(row)
 
             # add logic buffer
             buffer_inst = self.add_inst("mod_{}".format(row), mod=self.logic_buffer,
                                         offset=vector(x_offset, y_offset), mirror=mirror)
-            self.connect_inst(["en", "in[{}]".format(row), "wl_bar[{}]".format(row), "wl[{}]".format(row), "vdd",
-                               "gnd"])
+            self.connect_inst(self.get_connections(row))
             self.buffer_insts.append(buffer_inst)
 
             self.route_en_pin(buffer_inst, en_pin)
@@ -123,7 +133,7 @@ class wordline_driver_array(BitcellVerticalAligned):
             self.add_in_pin(buffer_inst, row)
 
             # output each WL on the right
-            self.copy_layout_pin(buffer_inst, "out", "wl[{0}]".format(row))
+            self.copy_layout_pin(buffer_inst, out_pin, "wl[{0}]".format(row))
 
             # Extend vdd and gnd of wordline_driver
             for pin_name in ["vdd", "gnd"]:

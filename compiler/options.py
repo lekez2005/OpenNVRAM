@@ -67,6 +67,7 @@ class options(optparse.Values):
     verbose_save = False  # whether to save all lots of internal nodes e.g. cols for control signals, currents
 
     separate_vdd = False
+    separate_vdd_wordline = False
 
     # cache delay optimization buffer sizes and suffix
     cache_optimization = True

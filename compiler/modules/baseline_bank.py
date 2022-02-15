@@ -478,6 +478,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         row_decoder_flop_space = self.get_row_decoder_control_flop_space()
         space = utils.ceil(1.2 * self.bus_space)
         row_decoder_col_decoder_space = flop_vdd.height() + 2 * space + self.bus_width
+        self.row_decoder_col_decoder_space = row_decoder_col_decoder_space
 
         # y offset based on control buffer
         y_offset_control_buffer = max(self.control_buffers_inst.by() + row_decoder_flop_space,
@@ -488,7 +489,6 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                        row_decoder_y - row_decoder_flop_space - total_flop_height)
 
         # check if we can squeeze column decoder between predecoder and control flops
-        self.col_decoder_is_left = False
         if self.words_per_row > 1:
             if self.words_per_row == 2:
                 col_decoder_height = self.control_flop.height
@@ -514,12 +514,11 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                 self.col_decoder_y = y_offset + total_flop_height + rail_space_above_controls
             else:
                 # predecoder will be moved left
-                self.col_decoder_is_left = True
                 y_offset = min(row_decoder_y - row_decoder_flop_space -
                                rail_space_above_controls - total_flop_height,
                                y_offset_control_buffer)
                 self.col_decoder_y = row_decoder_y - row_decoder_col_decoder_space - col_decoder_height
-                self.rail_space_above_controls = rail_space_above_controls
+            self.rail_space_above_controls = rail_space_above_controls
             self.min_point = min(self.min_point, self.col_decoder_y - self.rail_height)
 
         # place to the left of bottom rail
@@ -740,6 +739,13 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         bottom_mod = bottom_inst.mod
         self.precharge_array.child_mod = self.precharge_array.pc_cell
 
+        top_pin = bottom_inst.get_pin("bl[0]")
+        bottom_pin = self.precharge_array.get_pin("bl[0]")
+        if top_pin.layer == bottom_pin.layer:
+            num_rails = 0
+        else:
+            num_rails = 1
+
         if self.col_mux_array_inst is None:
             # we place via below precharge bl pin
             bl_pin = bottom_mod.get_pin("bl[0]")
@@ -751,12 +757,12 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
 
             y_space = evaluate_vertical_metal_spacing(self.precharge_array.child_mod,
                                                       bottom_mod.child_mod,
-                                                      num_rails=0, layers=layers,
+                                                      num_rails=num_rails, layers=layers,
                                                       vias=vias, via_space=False)
         else:
             y_space = -bottom_mod.height
         y_space = self.calculate_bitcell_aligned_spacing(self.precharge_array,
-                                                         bottom_mod, num_rails=0,
+                                                         bottom_mod, num_rails=num_rails,
                                                          min_space=y_space)
         return bottom_inst.uy() + y_space
 

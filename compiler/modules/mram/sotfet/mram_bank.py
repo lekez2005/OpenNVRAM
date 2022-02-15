@@ -212,6 +212,8 @@ class MramBank(BaselineBank):
         self.route_decoder_enable()
         self.join_wordline_power()
         self.fill_between_wordline_drivers()
+        self.wordline_driver_inst = min([self.rwl_driver_inst, self.rwl_driver_inst],
+                                        key=lambda x: x.lx())
 
     def route_wordline_in(self):
         for row in range(self.num_rows):

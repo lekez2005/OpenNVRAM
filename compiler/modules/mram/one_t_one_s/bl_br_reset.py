@@ -2,10 +2,9 @@ import debug
 from base import utils
 from base.analog_cell_mixin import AnalogMixin
 from base.contact import m1m2, poly_contact, cross_m1m2, cross_m2m3, m2m3
-from base.design import design, METAL3, METAL2, METAL1, ACTIVE
+from base.design import design, METAL3, METAL2, METAL1
 from base.geometry import MIRROR_X_AXIS
 from base.vector import vector
-from base.well_active_contacts import calculate_num_contacts
 from base.well_implant_fills import calculate_tx_metal_fill
 from globals import OPTS
 from modules.precharge import precharge_characterization
@@ -14,6 +13,15 @@ from pgates.ptx_spice import ptx_spice
 
 
 class BlBrReset(precharge_characterization, design):
+
+    def get_driver_resistance(self, pin_name, use_max_res=False,
+                              interpolate=None, corner=None):
+        """Temporarily set PMOS to calculate"""
+        self.pmos = self.tx_spice
+        res = super().get_driver_resistance(pin_name, use_max_res, interpolate, corner)
+        delattr(self, "pmos")
+        return res
+
     def __init__(self, name, size):
         design.__init__(self, name)
         self.size = size
@@ -37,6 +45,7 @@ class BlBrReset(precharge_characterization, design):
         tx_spice = ptx_spice(width=tx.tx_width, mults=2,
                              tx_type=tx.tx_type, tx_length=tx.tx_length)
         self.add_mod(tx_spice)
+        self.tx_spice = tx_spice
 
         self.add_inst("bl", tx_spice, vector(0, 0))
         self.connect_inst(["bl", "bl_reset", "gnd", "gnd"])
@@ -127,13 +136,14 @@ class BlBrReset(precharge_characterization, design):
         self.m2_fill_top = m2_top
 
     def fill_drain_m1(self):
+
+        self.drain_via_y = (self.m2_fill_top + self.get_line_end_space(METAL2) +
+                            0.5 * m1m2.w_2)
+
         self.fill_rects = fill_rects = []
         fill = calculate_tx_metal_fill(self.ptx_inst.mod.tx_width, self)
         if not fill:
             return
-
-        self.drain_via_y = (self.m2_fill_top + self.get_line_end_space(METAL2) +
-                            0.5 * m1m2.w_2)
 
         tx_pin = self.ptx_inst.get_pins("S")[0]
         fill_width = self.poly_pitch - self.get_parallel_space(METAL1)

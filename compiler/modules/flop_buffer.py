@@ -1,10 +1,9 @@
-from importlib import reload
-
 import debug
 import tech
 from base.contact import m1m2
 from base.design import design, ACTIVE, PIMP, NWELL, TAP_ACTIVE
 from base.unique_meta import Unique
+from base.utils import round_to_grid as rg
 from base.vector import vector
 from base.well_implant_fills import get_default_fill_layers
 from modules.buffer_stage import BufferStage
@@ -20,7 +19,7 @@ class FlopBuffer(design, metaclass=Unique):
         if name is not None:
             return name
         name = "flop_buffer_{}".format("_".join(
-            ["{:.3g}".format(x).replace(".", "_") for x in buffer_stages]))
+            ["{:.3g}".format(x).replace(".", "__") for x in buffer_stages]))
         if negate:
             name += "_neg"
         return name
@@ -141,6 +140,12 @@ class FlopBuffer(design, metaclass=Unique):
                     top, bottom = left_most_buffer_rect.uy(), - 0.5 * self.implant_width
                 self.add_rect(layer, offset=vector(x_offset, bottom), width=width,
                               height=top - bottom)
+                rightmost_buffer_rect = max(buffer_shapes, key=lambda x: x.rx())
+                if rg(rightmost_buffer_rect.rx()) > rg(left_most_buffer_rect.rx()):
+                    width = rightmost_buffer_rect.rx() - x_offset
+                    y_offset = top - self.implant_width if layer == PIMP else bottom
+                    self.add_rect(layer, offset=vector(x_offset, y_offset),
+                                  width=width, height=self.implant_width)
             else:
                 right_most_flop_rect = max(flop_shapes, key=lambda x: x.rx())
                 left_most_buffer_rect = min(buffer_shapes, key=lambda x: x.lx())

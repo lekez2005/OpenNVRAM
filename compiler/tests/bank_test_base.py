@@ -10,25 +10,36 @@ else:
         pass
 
 
+def patch_print_error(self):
+    import debug
+    original_func = debug.error
+
+    def patch_func(message, return_value=-1, *args):
+        if return_value == 0:
+            return
+        self.error_message = message % args
+        original_func(message, return_value, *args)
+
+    debug.error = patch_func
+
+
+def catch_errors(self, row, col, words_per_row_):
+    error_message = self.error_message or traceback.format_exc()
+    self.errors.append((row, col, words_per_row_, error_message))
+    self.error_message = ""
+    print_error(self.errors[-1])
+
+
+def print_error(error):
+    import debug
+    row, col, words_per_row, error = error
+    debug.warning("Fail: wpr= %d row = %d col = %d \n %s ",
+                  words_per_row, row, col, str(error))
+
+
 class BankTestBase(OpenRamTest):
     errors = []
     error_message = ""
-
-    def print_error(self, error):
-        row, col, words_per_row, error = error
-        self.debug.warning("Fail: wpr= %d row = %d col = %d \n %s ",
-                           words_per_row, row, col, str(error))
-
-    def patch_print_error(self):
-        original_func = self.debug.error
-
-        def patch_func(message, return_value=-1, *args):
-            if return_value == 0:
-                return
-            self.error_message = message % args
-            original_func(message, return_value, *args)
-
-        self.debug.error = patch_func
 
     def local_check(self, a, final_verification=False):
         if hasattr(a.wordline_driver, "add_body_taps"):
@@ -46,16 +57,9 @@ class BankTestBase(OpenRamTest):
         bank_class = BaselineBank
         return bank_class, {}
 
-    def sweep_all(self, rows=None, cols=None, words_per_row=None, default_row=64, default_col=64):
-        import tech
-        from base import design
-
-        self.patch_print_error()
-
-        bank_class, kwargs = self.get_bank_class()
-
-        tech.drc_exceptions[bank_class.__name__] = tech.drc_exceptions.get("latchup", [])
-
+    @staticmethod
+    def create_trials(rows, cols, words_per_row, default_col, default_row):
+        from testutils import OpenRamTest as OpenRamTest_
         if rows is None:
             rows = [16, 32, 64, 128, 256]
         if cols is None:
@@ -64,18 +68,26 @@ class BankTestBase(OpenRamTest):
         trials = []
         col = default_col
         for row in rows:
-            for words_per_row_ in self.get_words_per_row(col, words_per_row):
+            for words_per_row_ in OpenRamTest_.get_words_per_row(col, words_per_row):
                 trials.append((row, col, words_per_row_))
         row = default_row
         for col in cols:
             if col == default_col:
                 continue
-            for words_per_row_ in self.get_words_per_row(col, words_per_row):
+            for words_per_row_ in OpenRamTest_.get_words_per_row(col, words_per_row):
                 trials.append((row, col, words_per_row_))
+        return trials
+
+    def sweep_all(self, rows=None, cols=None, words_per_row=None, default_row=64, default_col=64):
+        from base import design
+        patch_print_error(self)
+
+        bank_class, kwargs = self.get_bank_class()
+        trials = self.create_trials(rows, cols, words_per_row, default_col, default_row)
 
         for row, col, words_per_row_ in trials:
             try:
-                reload(design)
+                self.reset()
                 self.debug.info(1, "Test %s single bank row = %d col = %d wpr = %d",
                                 bank_class.__name__, row, col, words_per_row_)
                 word_size = int(col / words_per_row_)
@@ -86,16 +98,14 @@ class BankTestBase(OpenRamTest):
             except KeyboardInterrupt:
                 break
             except Exception as ex:
-                error_message = self.error_message or traceback.format_exc()
-                self.errors.append((row, col, words_per_row_, error_message))
-                self.error_message = ""
-                self.print_error(self.errors[-1])
-        for error in self.errors:
-            self.print_error(error)
+                catch_errors(self, row, col, words_per_row_)
 
-    def test_sweep(self):
-        # self.sweep_all(cols=[256], rows=[64], words_per_row=1, default_col=256)
-        self.sweep_all()
+        for error in self.errors:
+            print_error(error)
+
+    # def test_sweep(self):
+    #     # self.sweep_all(cols=[256], rows=[64], words_per_row=1, default_col=256)
+    #     self.sweep_all()
 
     def test_chip_sel(self):
         """Test for chip sel: Two independent banks"""
@@ -104,6 +114,7 @@ class BankTestBase(OpenRamTest):
         OPTS.route_control_signals_left = True
         OPTS.independent_banks = True
         OPTS.num_banks = 1
+        OPTS.run_optimizations = True
         a = bank_class(word_size=16, num_words=64, words_per_row=2,
                        name="bank1", **kwargs)
         self.local_check(a)

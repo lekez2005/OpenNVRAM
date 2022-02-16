@@ -79,7 +79,6 @@ class BankTestBase(OpenRamTest):
         return trials
 
     def sweep_all(self, rows=None, cols=None, words_per_row=None, default_row=64, default_col=64):
-        from base import design
         patch_print_error(self)
 
         bank_class, kwargs = self.get_bank_class()
@@ -103,9 +102,9 @@ class BankTestBase(OpenRamTest):
         for error in self.errors:
             print_error(error)
 
-    # def test_sweep(self):
-    #     # self.sweep_all(cols=[256], rows=[64], words_per_row=1, default_col=256)
-    #     self.sweep_all()
+    def test_sweep(self):
+        # self.sweep_all(cols=[256], rows=[64], words_per_row=1, default_col=256)
+        self.sweep_all()
 
     def test_chip_sel(self):
         """Test for chip sel: Two independent banks"""

@@ -26,6 +26,7 @@ sense_amp_array = "latched_sense_amp_array"
 sense_amp_type = "latched_sense_amp"
 control_buffers_class = "baseline_latched_control_buffers.LatchedControlBuffers"
 bank_class = "baseline_bank.BaselineBank"
+sram_class = "baseline_sram.BaselineSram"
 
 run_optimizations = True
 

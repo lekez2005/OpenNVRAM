@@ -170,6 +170,10 @@ class options(optparse.Values):
     # applies when not 'route_control_signals_left'
     centralize_control_signals = False
 
+    # whether control flops within bank should be shifted down when row decoder overlaps
+    # if false, the row decoder will be shifted left at the top level sram
+    shift_control_flops_down = True
+
     # repeaters configuration
     add_buffer_repeaters = True  # whether to add repeaters
     # whether to add dedicated space between bitcells or just use space between the bitlines

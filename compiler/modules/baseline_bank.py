@@ -11,10 +11,10 @@ import tech
 from base import utils
 from base.analog_cell_mixin import AnalogMixin
 from base.contact import m2m3, m1m2, m3m4, contact, cross_m2m3, cross_m1m2, cross_m3m4
-from base.design import design, METAL2, METAL3, METAL1, METAL4, DRAWING, NWELL, PWELL
+from base.design import design, METAL2, METAL3, METAL1, METAL4, NWELL
 from base.geometry import NO_MIRROR, MIRROR_X_AXIS
 from base.vector import vector
-from base.well_implant_fills import create_wells_and_implants_fills, evaluate_vertical_metal_spacing, \
+from base.well_implant_fills import evaluate_vertical_metal_spacing, \
     join_vertical_adjacent_module_wells, evaluate_vertical_module_spacing
 from globals import OPTS
 from modules.bank_control_signals_mixin import ControlSignalsMixin
@@ -465,15 +465,44 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         precharge_trigger = ["precharge_trig"] * self.control_buffers.use_precharge_trigger
         return ["sense_trig"] + precharge_trigger
 
+    def get_control_flop_m1_extension(self):
+        num_control_flops = len(self.get_control_flop_connections())
+        if num_control_flops % 2 == 1:
+            flop_m1 = self.control_flop.get_max_shape(METAL1, "uy", recursive=True)
+            flop_extension = max(flop_m1.uy() - self.control_flop.height, 0)
+        else:
+            flop_m1 = self.control_flop.get_max_shape(METAL1, "by", recursive=True)
+            flop_extension = max(-flop_m1.by(), 0)
+        return flop_extension
+
     def get_row_decoder_control_flop_space(self):
-        flop_vdd = self.control_flop.get_pins("vdd")[0]
-        return flop_vdd.height() + self.get_wide_space(flop_vdd.layer)
+        num_control_flops = len(self.get_control_flop_connections())
+        row_mod = self.decoder.all_predecoders[0]
+        control_flop = self.control_flop
+        if num_control_flops % 2 == 1:
+            # space NWELL
+            row_nwell = row_mod.get_max_shape(NWELL, "by", recursive=True)
+            flop_nwell = control_flop.get_max_shape(NWELL, "uy", recursive=True)
+            well_space = self.get_parallel_space(NWELL)
+            space = -row_nwell.by() + (flop_nwell.uy() - control_flop.height) + well_space
+        else:
+            space = 0
+
+        row_m1 = row_mod.get_max_shape(METAL1, "by", recursive=True)
+        row_extension = max(0, - row_m1.by())
+        m1_space = self.get_wide_space(METAL1) + row_extension + self.get_control_flop_m1_extension()
+
+        return max(space, m1_space)
+
+    def get_rail_space_above_controls(self):
+        return (self.get_control_flop_m1_extension() + self.get_wide_space(METAL1) +
+                (self.words_per_row + 1) * self.bus_pitch)  # extra 1 for decoder clock
 
     def get_control_flops_offset(self):
         num_control_flops = len(self.get_control_flop_connections())
         total_flop_height = num_control_flops * self.control_flop.height
         wide_space = max(self.get_wide_space(METAL2), self.bus_space)
-        # place below predecoder
+
         flop_vdd = self.control_flop.get_pins("vdd")[0]
         row_decoder_flop_space = self.get_row_decoder_control_flop_space()
         space = utils.ceil(1.2 * self.bus_space)
@@ -484,12 +513,16 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         y_offset_control_buffer = max(self.control_buffers_inst.by() + row_decoder_flop_space,
                                       self.control_buffers_inst.cy() - 0.5 * total_flop_height)
 
-        row_decoder_y = self.bitcell_array_inst.uy() - self.decoder.height - self.bitcell.height
-        y_offset = min(y_offset_control_buffer,
-                       row_decoder_y - row_decoder_flop_space - total_flop_height)
+        row_decoder_y = self.bitcell_array_inst.uy() - self.decoder.height
+        self.min_point = min(self.min_point, row_decoder_y)
+        y_offset = y_offset_control_buffer
+        if OPTS.shift_control_flops_down:
+            # place below predecoder
+            y_offset = min(y_offset,
+                           row_decoder_y - row_decoder_flop_space - total_flop_height)
 
         # check if we can squeeze column decoder between predecoder and control flops
-        if self.words_per_row > 1:
+        if self.words_per_row > 1 and OPTS.shift_control_flops_down:
             if self.words_per_row == 2:
                 col_decoder_height = self.control_flop.height
             elif self.words_per_row == 4:
@@ -497,7 +530,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
             else:
                 col_decoder_height = self.decoder.pre3_8.height
 
-            rail_space_above_controls = row_decoder_flop_space + (1 + self.words_per_row) * self.bus_pitch
+            rail_space_above_controls = self.get_rail_space_above_controls()
 
             if row_decoder_y - row_decoder_col_decoder_space - col_decoder_height - row_decoder_col_decoder_space > \
                     y_offset_control_buffer + total_flop_height:
@@ -893,9 +926,10 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
 
     def get_right_vdd_offset(self):
         """x offset for right vdd rail"""
+        space = self.wide_power_space + 0.5 * m2m3.h_2  # for vias shared across abutting cells
         return (max(self.bitcell_array_inst.rx(), self.rightmost_rail.rx(),
                     self.control_buffers_inst.rx() + m2m3.w_1 - self.m2_width)
-                + self.wide_power_space)
+                + space)
 
     def get_mid_gnd_offset(self):
         """x offset for middle gnd rail"""
@@ -1709,7 +1743,6 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         """wordline driver out to bitcell wl in + wordline_enable route"""
         debug.info(1, "Route wordline driver")
         self.route_wordline_in()
-        self.join_wordline_bitcell_nwell()
         self.route_wordline_enable()
 
         if OPTS.separate_vdd:
@@ -1732,36 +1765,6 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                 self.add_rect(pin.layer, offset=vector(x_offset, pin.cy() - 0.5 * pin_height),
                               height=pin_height,
                               width=pin_end[i] - x_offset)
-
-    def join_wordline_bitcell_nwell(self):
-        wordline_inverter = self.wordline_driver.logic_buffer.buffer_mod.buffer_invs[-1]
-        layers = [NWELL]
-        purposes = [DRAWING]
-        if self.has_pwell:
-            layers.append(PWELL)
-            purposes.append(DRAWING)
-        rects = create_wells_and_implants_fills(wordline_inverter,
-                                                self.bitcell, layers=layers,
-                                                purposes=purposes)
-        bitcell_nwell = max(self.bitcell.get_layer_shapes(NWELL), key=lambda x: x.height * x.width)
-        wordline_nwell = max(wordline_inverter.get_layer_shapes(NWELL), key=lambda x: x.height * x.width)
-        x_offset = self.wordline_driver_inst.rx()
-        width = self.bitcell_array_inst.get_pin("bl[0]").lx() - x_offset
-        for row in range(self.num_rows):
-            y_base = self.bitcell_array_inst.by() + row * self.bitcell.height
-            for layer, rect_bottom, rect_top, _, _ in rects:
-                # cover align with bitcell nwell
-                if row in [0, self.num_rows - 1]:
-                    if layer == PWELL:
-                        continue
-                    rect_top = max(bitcell_nwell.uy(), wordline_nwell.uy())
-
-                if (row % 2 == 0 and layer == NWELL) or (row % 2 == 0 and layer == PWELL):
-                    y_offset = y_base + (self.bitcell.height - rect_top)
-                else:
-                    y_offset = y_base + rect_bottom
-                self.add_rect(layer, offset=vector(x_offset, y_offset), width=width,
-                              height=rect_top - rect_bottom)
 
     def route_gnd_pin(self, pin, add_via=True, via_rotate=90):
         self.add_rect(pin.layer, offset=vector(self.mid_gnd.lx(), pin.by()),

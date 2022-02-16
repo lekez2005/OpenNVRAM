@@ -35,6 +35,9 @@ def find_clearances(module: design, layer, direction=HORIZONTAL, existing=None, 
     if existing is None:
         edge = module.width if direction == HORIZONTAL else module.height
         existing = [(0, round_to_grid(edge))]
+        full_range = existing[0]
+    else:
+        full_range = (min(map(min, existing)), max(map(max, existing)))
     if region is None:
         edge = module.width if direction == VERTICAL else module.height
         region = (0, round_to_grid(edge))
@@ -50,6 +53,8 @@ def find_clearances(module: design, layer, direction=HORIZONTAL, existing=None, 
             continue
 
         edges = get_extremities(rect, direction)
+        if not get_range_overlap(full_range, edges):
+            continue
 
         new_clearances = []
         for clearance in existing:

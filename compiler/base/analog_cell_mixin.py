@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING
 
 import tech
 from base import utils
-from base.contact import well as well_contact, m1m2, m2m3, cross_m1m2, cross_m2m3
+from base.contact import well as well_contact, m1m2, m2m3
 from base.design import ACTIVE, NIMP, PIMP, METAL2, METAL3, METAL1
 from base.layout_clearances import find_clearances, HORIZONTAL
 from base.pin_layout import pin_layout
@@ -121,17 +121,14 @@ class AnalogMixin(design_):
         for space in open_spaces:
             space = [utils.round_to_grid(x) for x in space]
             extent = utils.round_to_grid(space[1] - space[0])
-            edge_via = False
             if space[0] == left_edge:
                 # align with adjacent cell
                 mid_contact = left_edge
-                edge_via = True
                 if extent <= half_space:
                     continue
                 add_via_extension(mid_contact, -1)
             elif space[1] == right_edge:
                 mid_contact = right_edge
-                edge_via = True
                 if extent <= half_space:
                     continue
                 add_via_extension(mid_contact, 1)

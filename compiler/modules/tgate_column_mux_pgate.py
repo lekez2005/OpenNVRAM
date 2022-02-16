@@ -543,8 +543,12 @@ class tgate_column_mux_pgate(AnalogMixin, design, metaclass=Unique):
         offset = vector(x_offset, y_bend)
         self.add_rect(METAL2, offset, height=y_offset - offset.y, width=self.bl_width)
         self.add_rect(METAL2, offset, width=bitcell_pin.cx() - offset.x)
+        if bitcell_pin.rx() > 0.5 * self.bitcell.width:
+            x_offset = bitcell_pin.rx() - self.bl_width
+        else:
+            x_offset = bitcell_pin.lx()
 
-        self.add_layout_pin(f"{pin_name}_out", METAL2, vector(bitcell_pin.lx(), 0),
+        self.add_layout_pin(f"{pin_name}_out", METAL2, vector(x_offset, 0),
                             width=self.bl_width,
                             height=offset.y + self.bl_width)
 

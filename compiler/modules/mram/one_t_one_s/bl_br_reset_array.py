@@ -23,14 +23,13 @@ class BlBrResetArray(precharge_array):
         for i in range(self.columns):
             self.add_pin("bl[{0}]".format(i))
             self.add_pin("br[{0}]".format(i))
-        self.add_pin_list(["bl_reset", "br_reset", "gnd"])
+        self.add_pin_list(self.pc_cell.pins[2:])
 
     def get_connections(self, col):
-        return f"bl[{col}] br[{col}] bl_reset br_reset gnd".split()
+        return f"bl[{col}] br[{col}]".split() + self.pc_cell.pins[2:]
 
     def create_modules(self):
-        self.pc_cell = BlBrReset(name="precharge", size=self.size)
-        self.add_mod(self.pc_cell)
+        self.pc_cell = self.create_mod_from_str(OPTS.br_precharge, size=self.size)
         self.child_mod = self.pc_cell
 
         if OPTS.use_x_body_taps:
@@ -40,7 +39,7 @@ class BlBrResetArray(precharge_array):
     def create_layout(self):
         self.add_insts()
         self.add_dummy_poly(self.pc_cell, self.child_insts, words_per_row=1)
-        for pin_name in ["bl_reset", "br_reset", "gnd"]:
+        for pin_name in self.pc_cell.pins[2:]:
             for pin in self.child_insts[0].get_pins(pin_name):
                 self.add_layout_pin(pin_name, pin.layer, pin.ll(), height=pin.height(),
                                     width=self.width - pin.lx())

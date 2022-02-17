@@ -1,3 +1,4 @@
+import debug
 from globals import OPTS
 from modules.baseline_latched_control_buffers import LatchedControlBuffers as BaseLatchedControlBuffers
 from modules.buffer_stage import BufferStage
@@ -39,19 +40,32 @@ class SotfetMramControlBuffers(BaseLatchedControlBuffers):
         assert len(OPTS.precharge_buffers) % 2 == 0, "Number of precharge buffers should be even"
 
         if self.has_precharge_bl:
-            self.precharge_buf = self.create_mod(LogicBuffer, buffer_stages="precharge_buffers",
+            self.precharge_buf = self.create_mod(LogicBuffer,
+                                                 buffer_stages="precharge_buffers",
                                                  logic="pnand3")
+        self.create_bl_reset()
+        self.create_br_reset()
+
+    def create_bl_reset(self):
+        if not self.has_bl_reset:
+            return
+        if self.has_precharge_bl:
             bl_reset = "pnand3"
         else:
             bl_reset = "pnand2"
+        self.bl_reset_buf = self.create_mod(LogicBuffer,
+                                            buffer_stages="bl_reset_buffers",
+                                            logic=bl_reset)
 
-        if self.has_br_reset:
+    def create_br_reset(self):
+        if not self.has_br_reset:
+            return
+        if self.one_wpr:
+            self.br_reset_buf = self.create_mod(LogicBuffer, buffer_stages="br_reset_buffers",
+                                                logic="pnand2")
+        else:
             self.br_reset_buf = self.create_mod(LogicBuffer, buffer_stages="br_reset_buffers",
                                                 logic="pnor2")
-        if self.has_bl_reset:
-            self.bl_reset_buf = self.create_mod(LogicBuffer,
-                                                buffer_stages="bl_reset_buffers",
-                                                logic=bl_reset)
 
     def create_wordline_en(self):
         assert len(OPTS.rwl_en_buffers) % 2 == 1, "Number of rwl buffers should be odd"
@@ -98,10 +112,14 @@ class SotfetMramControlBuffers(BaseLatchedControlBuffers):
 
         if self.has_br_reset:
             # br_reset
-            if not self.use_chip_sel:
-                connections.insert(0, ("bank_sel_bar", self.inv, ["bank_sel", "bank_sel_bar"]))
-            connections.insert(1, ("br_reset", self.br_reset_buf,
-                                   ["nor_read_clk", "bank_sel_bar", "br_reset", "br_reset_bar"]))
+            if self.one_wpr:
+                connections.insert(1, ("br_reset", self.br_reset_buf,
+                                       ["read", "bank_sel", "br_reset_bar", "br_reset"]))
+            else:
+                if not self.use_chip_sel:
+                    connections.insert(0, ("bank_sel_bar", self.inv, ["bank_sel", "bank_sel_bar"]))
+                connections.insert(1, ("br_reset", self.br_reset_buf,
+                                       ["nor_read_clk", "bank_sel_bar", "br_reset", "br_reset_bar"]))
         # precharge_en_bar
         if self.has_precharge_bl:
             if self.has_bl_reset:
@@ -145,6 +163,7 @@ class SotfetMramControlBuffers(BaseLatchedControlBuffers):
             ])
 
     def extract_precharge_inputs(self):
+        self.one_wpr = self.bank.words_per_row == 1
         precharge_pins = self.bank.precharge_array.get_input_pins()
         self.has_precharge_bl = getattr(OPTS, "precharge_bl", False) or "en" in precharge_pins
         self.has_bl_reset = getattr(OPTS, "has_bl_reset", False) or "bl_reset" in precharge_pins
@@ -166,4 +185,7 @@ class SotfetMramControlBuffers(BaseLatchedControlBuffers):
         for pin in ["bl_reset", "br_reset"]:
             if getattr(self, f"has_{pin}", False):
                 out_pins.append(pin)
+        debug.info(2, "in_pins = [%s] out_pins = [%s]", ", ".join(in_pins),
+                   ", ".join(out_pins))
+
         return in_pins, out_pins

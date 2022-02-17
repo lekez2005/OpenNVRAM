@@ -4,6 +4,7 @@ from base.analog_cell_mixin import AnalogMixin
 from base.contact import m1m2, poly_contact, cross_m1m2, cross_m2m3, m2m3
 from base.design import design, METAL3, METAL2, METAL1
 from base.geometry import MIRROR_X_AXIS
+from base.unique_meta import Unique
 from base.vector import vector
 from base.well_implant_fills import calculate_tx_metal_fill
 from globals import OPTS
@@ -12,7 +13,11 @@ from pgates.ptx import ptx
 from pgates.ptx_spice import ptx_spice
 
 
-class BlBrReset(precharge_characterization, design):
+class BlBrReset(precharge_characterization, design, metaclass=Unique):
+    @classmethod
+    def get_name(cls, name=None, size=1):
+        name = name or f"bl_br_reset_{size:.5g}"
+        return name.replace(".", "__")
 
     def get_driver_resistance(self, pin_name, use_max_res=False,
                               interpolate=None, corner=None):
@@ -22,7 +27,8 @@ class BlBrReset(precharge_characterization, design):
         delattr(self, "pmos")
         return res
 
-    def __init__(self, name, size):
+    def __init__(self, name=None, size=1):
+        name = self.get_name(name, size)
         design.__init__(self, name)
         self.size = size
         debug.info(2, "Create %s with size %.3g", self.name, size)

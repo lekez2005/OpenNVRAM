@@ -10,10 +10,14 @@ from ms_flop_horz_pitch import MsFlopHorzPitch
 
 
 class MsFlopClkBuf(MsFlopHorzPitch):
-    def __init__(self):
+
+    @classmethod
+    def get_name(cls, *args, **kwargs):
+        return "ms_flop_clk_buf"
+
+    def __init__(self, *args, **kwargs):
         # spice file is loaded if name matches file in sp_lib
-        name = "ms_flop_clk_buf"
-        design.__init__(self, name)
+        design.__init__(self, self.get_name())
         self.create_modules()
 
         self.create_layout()

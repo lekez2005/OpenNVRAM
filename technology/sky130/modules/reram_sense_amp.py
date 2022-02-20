@@ -1,3 +1,4 @@
+from base import utils
 from base.contact import m1m2, poly as poly_contact, cross_m1m2, cross_poly, \
     active as active_contact, m2m3, cross_m2m3, cross_m3m4
 from base.design import design, METAL2, METAL1, NWELL, POLY, METAL3, METAL4
@@ -6,14 +7,17 @@ from modules.reram.bitcell_aligned_pgate import BitcellAlignedPgate
 
 
 class ReRamSenseAmp(BitcellAlignedPgate):
+
+    @classmethod
+    def get_name(cls, *args, **kwargs):
+        return "reram_sense_amp"
+
     def __init__(self):
         # spice file is loaded if name matches file in sp_lib
-        name = "re_ram_sense_amp"
-        design.__init__(self, name)
+        design.__init__(self, self.get_name())
         self.create_layout()
 
     def create_layout(self):
-        self.add_pins()
         self.create_modules()
         self.add_output_buffer()
         self.add_differential_amp()
@@ -23,9 +27,6 @@ class ReRamSenseAmp(BitcellAlignedPgate):
         self.route_power()
         self.flatten_tx()
         self.add_boundary()
-
-    def add_pins(self):
-        self.add_pin_list("bl br dout dout_bar en gnd sampleb vclamp vclampp vdd vref".split())
 
     def add_ptx_inst(self, tx, y_offset, **kwargs):
         x_offset = self.mid_x - 0.5 * tx.width
@@ -63,8 +64,10 @@ class ReRamSenseAmp(BitcellAlignedPgate):
                       width=via_x_offsets[0] - x_offset)
         offset = vector(x_offset + 0.5 * self.m2_width, contact_y)
         self.add_cross_contact_center(cross_m1m2, offset, rotate=True)
+        # dout not needed so leave it at via
         self.add_layout_pin("dout", METAL2,
-                            vector(x_offset, 0), height=vdd_y + self.rail_height)
+                            vector(x_offset, contact_y),
+                            height=vdd_y + self.rail_height - contact_y)
 
         # dout_bar
         nmos_pin = self.buffer_nmos.get_pin("D")
@@ -339,15 +342,17 @@ class ReRamSenseAmp(BitcellAlignedPgate):
                                offset])
 
         vdd_y = active_bottom + pmos.active_rect.height + self.bottom_space - self.rail_height
+        vdd_y = utils.ceil(vdd_y)
         self.add_power_tap(vdd_y, "vdd", self.sample_pmos)
         self.height = vdd_y + self.rail_height
 
     def add_bitlines(self):
         for pin_name in ["bl", "br"]:
             bitcell_pin = self.bitcell.get_pin(pin_name)
+            pin_y = self.rail_height
             self.add_layout_pin(pin_name, METAL4,
-                                vector(bitcell_pin.cx() - 0.5 * self.m4_width, 0),
-                                height=self.height,
+                                vector(bitcell_pin.cx() - 0.5 * self.m4_width, pin_y),
+                                height=self.height - pin_y,
                                 width=max(bitcell_pin.width(), self.m4_width))
         bl_pin = self.get_pin("bl")
         m2_via_width = max(m1m2.w_2, m2m3.w_1)

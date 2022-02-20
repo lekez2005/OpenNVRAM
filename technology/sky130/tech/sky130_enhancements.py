@@ -25,47 +25,55 @@ def seal_poly_vias(obj: design):
     debug.info(2, f"Sealing Poly vias in module {obj.name}")
 
     sample_via = poly_via_insts[0].mod
-    x_extension = 0.5 * (sample_via.first_layer_width - sample_via.width)
-    y_extension = 0.5 * (sample_via.first_layer_height - sample_via.height)
 
     npc_enclose_poly = drc.get("npc_enclose_poly")
+    npc_space = 0.27
+
+    center_to_edge = 0.5 * sample_via.contact_width + npc_enclose_poly
 
     poly_via_insts = list(sorted(poly_via_insts, key=lambda x: (x.lx(), x.by())))
 
     # group vias that are close together
 
-    contact_span = 0.5  # max x/y space between contacts for them to be grouped together
+    def enclose_cont(via_inst_):
+        left = via_inst_.cx() - center_to_edge
+        right = via_inst_.cx() + center_to_edge
+        bottom = via_inst_.cy() - center_to_edge
+        top = via_inst_.cy() + center_to_edge
+        return [left, right, bottom, top]
+
     via_groups = []
     for via_inst in poly_via_insts:
         found = False
         for via_group in via_groups:
-            (left_x, right_x, bot, top, existing_insts) = via_group
-            span_left = left_x - contact_span
-            span_right = right_x + contact_span
-            span_top = top + contact_span
-            span_bot = bot - contact_span
+            (left_x, right_x, bot_y, top_y, existing_insts) = via_group
+            span_left = left_x - npc_space
+            span_right = right_x + npc_space
+            span_top = top_y + npc_space
+            span_bot = bot_y - npc_space
 
-            if span_left <= via_inst.cx() <= span_right:
-                if span_bot <= via_inst.cy() <= span_top:
+            left_, right_, bottom_, top_ = enclose_cont(via_inst)
+
+            if span_left <= left_ <= span_right or span_left <= right_ <= span_right:
+                if span_bot <= bottom_ <= span_top or span_bot <= top_ <= span_top:
                     existing_insts.append(via_inst)
-                    via_group[0] = min(left_x, via_inst.lx())
-                    via_group[1] = max(right_x, via_inst.rx())
-                    via_group[2] = min(bot, via_inst.by())
-                    via_group[3] = max(top, via_inst.uy())
+                    via_group[0] = min(left_x, left_)
+                    via_group[1] = max(right_x, right_)
+                    via_group[2] = min(bot_y, bottom_)
+                    via_group[3] = max(top_y, top_)
                     found = True
                     break
 
         if not found:
-            via_groups.append([via_inst.lx(), via_inst.rx(),
-                               via_inst.by(), via_inst.uy(),
-                               [via_inst]])
+            via_groups.append([*enclose_cont(via_inst), [via_inst]])
 
-    for left, right, bot, top, _ in via_groups:
-        x_offset = left - npc_enclose_poly - x_extension
-        width = right + npc_enclose_poly + x_extension - x_offset
-        y_offset = bot - npc_enclose_poly - y_extension
-        height = top + npc_enclose_poly + y_extension - y_offset
-        obj.add_rect("npc", vector(x_offset, y_offset), width=width, height=height)
+    class_name = obj.__class__.__name__
+    for left_, right_, bot_, top_, _ in via_groups:
+        if class_name == "reram_bitcell":
+            height = obj.height - bot_  # no space between adjacent bitcells
+        else:
+            height = top_ - bot_
+        obj.add_rect("npc", vector(left_, bot_), width=right_ - left_, height=height)
 
 
 def flatten_vias(obj: design):

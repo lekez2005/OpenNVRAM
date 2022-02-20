@@ -79,6 +79,12 @@ layer_pin_purpose = {"default": 5}
 layer_pin_map = {layer[key]: value for key, value in layer_pin_map_.items()}
 layer_pin_map["text_layers"] = []
 
+power_grid_layers = ["metal5", "metal6"]
+power_grid_width = 4
+
+power_grid_y_space = 3.5
+power_grid_x_space = 3.5
+
 #########################
 # Parameter
 parameter = {"min_tx_size": 0.36, "beta": 2.5}
@@ -187,8 +193,8 @@ drc["minwidth_metal5"] = 0.3
 drc["metal5_to_metal5"] = 0.3
 drc["metal5_extend_via4"] = 0.065
 drc["metal5_enclosure_via4"] = 0.065
-drc["metal5_enclosure_via5"] = 0.06
-drc["metal5_extend_via5"] = 0.06
+drc["metal5_enclosure_via5"] = 0.19
+drc["metal5_extend_via5"] = 0.19
 drc["minarea_metal5"] = 0.24
 # M6
 drc["minwidth_via5"] = 0.8

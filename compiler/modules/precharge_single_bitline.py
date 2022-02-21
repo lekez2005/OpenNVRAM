@@ -1,4 +1,5 @@
 import debug
+from base import utils
 from base.contact import poly_contact, m1m2, cross_m1m2, m2m3
 from base.design import design, METAL1, METAL2, METAL3, ACTIVE, NIMP, PIMP
 from base.geometry import NO_MIRROR, MIRROR_X_AXIS
@@ -123,8 +124,10 @@ class PrechargeSingleBitline(design, precharge_characterization, metaclass=Uniqu
         else:
             fill_width = self.poly_pitch - self.get_parallel_space(METAL1)
             _, fill_height = self.calculate_min_area_fill(fill_width, layer=METAL1)
-            fill_height - max(fill_height, drain_pins[0].height())
-            fill_y = max(active_rect.by(), drain_pins[0].cy() - 0.5 * fill_height)
+            fill_height = max(fill_height, drain_pins[0].height())
+            gate_pin = self.tx_inst.get_pins("G")[0]
+            fill_y = max(gate_pin.uy() + self.get_parallel_space(METAL1),
+                         utils.round_to_grid(drain_pins[0].cy() - 0.5 * fill_height))
             fill = True
             self.drain_top = fill_y + fill_height
 

@@ -121,28 +121,33 @@ class AnalogMixin(design_):
         for space in open_spaces:
             space = [utils.round_to_grid(x) for x in space]
             extent = utils.round_to_grid(space[1] - space[0])
-            if space[0] == left_edge:
-                # align with adjacent cell
-                mid_contact = left_edge
-                if extent <= half_space:
-                    continue
-                add_via_extension(mid_contact, -1)
-            elif space[1] == right_edge:
-                mid_contact = right_edge
-                if extent <= half_space:
-                    continue
-                add_via_extension(mid_contact, 1)
-            else:
-                if extent <= min_space:
-                    continue
-                mid_contact = utils.round_to_grid(0.5 * (space[0] + space[1]))
-            offset = vector(mid_contact, pin.cy())
 
             via_extent = extent - 2 * self.get_line_end_space(METAL2)
 
             for i, via in enumerate([m1m2, m2m3]):
-                sample_contact = calculate_num_contacts(self, via_extent, layer_stack=via.layer_stack,
+                sample_contact = calculate_num_contacts(self, via_extent,
+                                                        layer_stack=via.layer_stack,
                                                         return_sample=True)
+                if space[0] == left_edge:
+                    # align with adjacent cell
+                    mid_contact = (left_edge - 0.5 * via.height +
+                                   0.5 * sample_contact.height)
+                    if extent <= half_space:
+                        continue
+                    add_via_extension(left_edge, -1)
+                elif space[1] == right_edge:
+                    mid_contact = (right_edge + 0.5 * via.height -
+                                   0.5 * sample_contact.height)
+                    if extent <= half_space:
+                        continue
+                    add_via_extension(right_edge, 1)
+                else:
+                    if extent <= min_space:
+                        continue
+                    mid_contact = utils.round_to_grid(0.5 * (space[0] + space[1]))
+
+                offset = vector(mid_contact, pin.cy())
+
                 self.add_contact_center(via.layer_stack, offset, rotate=90,
                                         size=sample_contact.dimensions)
                 if i == 1 and sample_contact.h_2 < min_m2_width:

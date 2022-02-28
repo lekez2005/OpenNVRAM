@@ -1,28 +1,29 @@
-import tech
 from base.contact import well as well_contact, m1m2, m2m3
 from base.design import METAL2, NWELL, PWELL, METAL3
 from base.layout_clearances import find_clearances, HORIZONTAL
 from base.vector import vector
 from base.well_active_contacts import calculate_num_contacts
+from globals import OPTS
+from modules.bitcell_vertical_aligned import BitcellVerticalAligned
+from modules.hierarchical_decoder import SeparateWordlineMixin
 from modules.stacked_hierarchical_decoder import stacked_hierarchical_decoder
 
 
-class reram_row_decoder(stacked_hierarchical_decoder):
-    def create_layout(self):
-        super().create_layout()
-        tech.add_tech_layers(self)
-
-    def copy_power_pin(self, pin):
-        if pin.uy() <= self.row_decoder_min_y:
-            x_offset = 0
-        else:
-            x_offset = self.power_rail_x
-        right_x = self.inv_inst[1].lx()
-        self.add_layout_pin(pin.name, pin.layer, offset=vector(x_offset, pin.by()),
-                            width=right_x - x_offset, height=pin.height())
-
+class reram_row_decoder(SeparateWordlineMixin, stacked_hierarchical_decoder):
     def add_body_contacts(self):
-        pass
+        self.bitcell = self.create_mod_from_str(OPTS.bitcell)
+        self.num_rows = self.rows
+        x_offset = min(self.inv_inst[0].get_layer_shapes(NWELL, recursive=True),
+                       key=lambda x: x.lx()).lx()
+        right_x = max(self.inv_inst[1].get_layer_shapes(NWELL, recursive=True),
+                      key=lambda x: x.rx()).rx()
+        y_shift = self.inv_inst[0].by()
+        nwell_width = right_x - x_offset
+        for y_offset, y_top in BitcellVerticalAligned.calculate_nwell_y_fills(self):
+            height = y_top - y_offset
+            y_offset += y_shift
+            self.add_rect(NWELL, vector(x_offset, y_offset), height=height,
+                          width=nwell_width)
 
     def route_vdd_gnd(self):
         super().route_vdd_gnd()
@@ -35,10 +36,10 @@ class reram_row_decoder(stacked_hierarchical_decoder):
         _, min_fill_width = self.calculate_min_area_fill(fill_height, layer=METAL2)
 
         def calculate_sample_vias(sample_pin):
-            # debug.pycharm_debug()
             open_spaces = find_clearances(self, layer=METAL2, direction=HORIZONTAL,
                                           region=(sample_pin.by(), sample_pin.uy()),
-                                          existing=[(sample_pin.lx(), sample_pin.rx())])
+                                          existing=[(sample_pin.lx(), sample_pin.rx())],
+                                          recursive=False)
             vias = []
             for open_space in open_spaces:
                 open_space = [open_space[0], min(open_space[1], sample_pin.rx())]
@@ -53,9 +54,6 @@ class reram_row_decoder(stacked_hierarchical_decoder):
                     if available_space > sample_contact.h_2 > min_fill_width:
                         vias.append((mid_via_x, sample_contact))
             return vias
-
-        import debug
-        # debug.pycharm_debug()
 
         for pin_name in ["vdd", "gnd"]:
             layout_pins = list(sorted(self.get_pins(pin_name), key=lambda x: x.by()))

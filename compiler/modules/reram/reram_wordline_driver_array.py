@@ -4,16 +4,32 @@ from base.design import METAL2, PWELL, NWELL, METAL3
 from base.layout_clearances import find_clearances, HORIZONTAL
 from base.vector import vector
 from base.well_active_contacts import calculate_num_contacts
+from modules.bitcell_vertical_aligned import BitcellVerticalAligned
 from modules.stacked_wordline_driver_array import stacked_wordline_driver_array
 
 
 class reram_wordline_driver_array(stacked_wordline_driver_array):
     def __init__(self, rows, buffer_stages=None, name=None):
         name = name or "wordline_driver_array"
-        super().__init__(name, rows, buffer_stages)
+        super().__init__(name=name, rows=rows, buffer_stages=buffer_stages)
 
     def get_en_rail_y(self, en_rail):
         return en_rail.by() - m2m3.h_2 - self.m3_space
+
+    def add_modules(self):
+        super().add_modules()
+        self.fill_tap_well()
+
+    def fill_tap_well(self):
+        body_tap = self.logic_buffer.logic_inst.mod.create_pgate_tap()
+        x_offset = - body_tap.get_layer_shapes(NWELL)[0].width
+        right_rect = max(self.buffer_insts[1].get_layer_shapes(NWELL, recursive=True),
+                         key=lambda x: x.rx())
+        nwell_width = right_rect.rx() - x_offset
+
+        for y_offset, y_top in BitcellVerticalAligned.calculate_nwell_y_fills(self):
+            self.add_rect(NWELL, vector(x_offset, y_offset), height=y_top - y_offset,
+                          width=nwell_width)
 
     def create_power_pins(self):
         super().create_power_pins()
@@ -22,7 +38,8 @@ class reram_wordline_driver_array(stacked_wordline_driver_array):
             layout_pins = list(sorted(self.get_pins(pin_name), key=lambda x: x.by()))
             sample_pin = layout_pins[-1]  # use top pin to avoid bottom en rail
             open_spaces = find_clearances(self, layer=METAL2, direction=HORIZONTAL,
-                                          region=(sample_pin.by(), sample_pin.uy()))
+                                          region=(sample_pin.by(), sample_pin.uy()),
+                                          recursive=False)
             # calculate m1m2 via locations
             vias = []
             for open_space in open_spaces:

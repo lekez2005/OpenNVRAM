@@ -1,6 +1,6 @@
 from abc import ABC
 
-from base.design import design
+from base.design import design, NWELL
 from base.vector import vector
 from globals import OPTS
 
@@ -41,3 +41,22 @@ class BitcellVerticalAligned(design, ABC):
                     pin = adjacent_inst.get_pin(pin_name)
                     self.add_rect(pin.layer, vector(x_offset, pin.by()),
                                   height=pin.height(), width=pin.lx() - x_offset)
+
+    @staticmethod
+    def calculate_nwell_y_fills(self):
+        bitcell_offsets = list(sorted(self.bitcell_offsets))
+
+        def find_closest_index(y_offset_):
+            valid_indices = [i for i in range(self.num_rows)
+                             if bitcell_offsets[i] >= y_offset_]
+            return valid_indices[0]
+
+        for y_offset in self.tap_offsets:
+            closest_index = find_closest_index(y_offset)
+            if closest_index % 4 in [0, 3]:
+                if closest_index % 4 == 3:
+                    y_offset = y_offset + self.bitcell.height
+                    closest_index += 1
+                y_top = max(bitcell_offsets[closest_index],
+                            y_offset + self.get_min_layer_width(NWELL))
+                yield y_offset, y_top

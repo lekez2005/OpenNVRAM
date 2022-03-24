@@ -1,11 +1,14 @@
 """Dimensions are hard-coded
 Should really be done in magic but...
 """
+import itertools
+
 import tech
 from base.contact import m1m2, cross_m1m2, poly as poly_contact
-from base.design import design, POLY, METAL1, METAL2, ACTIVE
+from base.design import design, POLY, METAL1, METAL2, ACTIVE, NIMP, PIMP
 from base.vector import vector
 from modules.reram.bitcell_aligned_pgate import BitcellAlignedPgate
+from pgates.ptx import ptx
 
 
 class MsFlopHorzPitch(BitcellAlignedPgate):
@@ -29,6 +32,7 @@ class MsFlopHorzPitch(BitcellAlignedPgate):
         self.add_follower_buffer()
         self.add_power()
         self.add_boundary()
+        self.join_implants()
         self.flatten_tx()
         tech.add_tech_layers(self)
 
@@ -460,11 +464,44 @@ class MsFlopHorzPitch(BitcellAlignedPgate):
         self.width = self.get_pin("dout").rx()
 
     def add_power(self):
-        self.add_power_tap(-0.5*self.rail_height, "gnd", self.l_tgate_nmos, add_m3=False)
-        self.add_power_tap(self.height-0.5*self.rail_height, "vdd",
+        # leader nmos gnd
+        self.add_power_tap(-0.5 * self.rail_height, "gnd", self.l_tgate_nmos, add_m3=False)
+        # leader pmos vdd
+        self.add_power_tap(self.height - 0.5 * self.rail_height, "vdd",
                            self.l_buffer_pmos, add_m3=False)
 
         for inst in [self.clk_buf_nmos_inst, self.clk_buf_pmos_inst,
                      self.l_buffer_nmos, self.l_buffer_pmos,
                      self.f_buffer_nmos, self.f_buffer_pmos]:
             self.route_tx_to_power(inst)
+
+    def join_implants(self):
+        def tx_type_func(inst):
+            return inst.mod.tx_type
+
+        def get_implant(inst):
+            return max(inst.get_layer_shapes(NIMP) + inst.get_layer_shapes(PIMP),
+                       key=lambda x: x.width * x.height)
+
+        ptx_insts = [x for x in self.insts if isinstance(x.mod, ptx)]
+        implant_width = self.implant_width
+        # sort by tx type
+        ptx_insts = sorted(ptx_insts, key=tx_type_func)
+        for tx_type, insts in itertools.groupby(ptx_insts, key=tx_type_func):
+            insts = list(sorted(insts, key=lambda x: x.lx()))
+            for i, (left_inst, right_inst) in enumerate(zip(insts[:-1], insts[1:])):
+                left_rect = get_implant(left_inst)
+                right_rect = get_implant(right_inst)
+                if tx_type == "nmos":
+                    layer = NIMP
+                    bottom = min(left_rect.by(), right_rect.by())
+                    height = min(left_rect.uy(), right_rect.uy()) - bottom
+                else:
+                    layer = PIMP
+                    bottom = max(left_rect.by(), right_rect.by())
+                    height = max(left_rect.uy(), right_rect.uy()) - bottom
+                self.add_rect(layer, vector(left_rect.lx(), bottom), height=height,
+                              width=right_rect.lx() - left_rect.lx() + implant_width)
+                if i == len(insts) - 2:
+                    self.add_rect(layer, right_rect.lr(), height=right_rect.height,
+                                  width=self.width - right_rect.rx())

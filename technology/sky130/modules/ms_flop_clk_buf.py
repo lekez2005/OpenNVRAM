@@ -2,6 +2,7 @@
 Should really be done in magic but...
 """
 from base import utils
+from base.analog_cell_mixin import AnalogMixin
 from base.contact import poly as poly_contact, m1m2, m2m3, cross_m1m2
 from base.design import design, METAL1, METAL3, METAL2, POLY, NWELL, PWELL
 from base.vector import vector
@@ -14,6 +15,9 @@ class MsFlopClkBuf(MsFlopHorzPitch):
     @classmethod
     def get_name(cls, *args, **kwargs):
         return "ms_flop_clk_buf"
+
+    def join_implants(self):
+        pass
 
     def __init__(self, *args, **kwargs):
         # spice file is loaded if name matches file in sp_lib
@@ -366,7 +370,8 @@ class MsFlopClkBuf(MsFlopHorzPitch):
         gnd_pin = list(sorted(self.get_pins("gnd"), key=lambda x: x.cy()))[-1]
         self.extend_tx_well(self.l_buffer_nmos, PWELL, gnd_pin)
         self.l_buffer_vdd_y = vdd_top - self.rail_height
-        self.add_power_tap(vdd_top - self.rail_height, "vdd", self.l_buffer_pmos)
+        self.add_power_tap(vdd_top - self.rail_height, "vdd", self.l_buffer_pmos,
+                           add_m3=False)
 
     def add_follower_tgate(self):
         tgate_nmos = self.create_ptx(self.nmos_tgate_size, False, mults=2)
@@ -468,6 +473,10 @@ class MsFlopClkBuf(MsFlopHorzPitch):
         self.add_power_tap(vdd_y, "vdd", self.f_buffer_pmos)
 
     def add_power(self):
+
+        leader_vdd = min(self.get_pins("vdd"), key=lambda x: abs(x.cy() - self.l_buffer_pmos.uy()))
+        AnalogMixin.add_m1_m3_power_via(self, leader_vdd)
+
         for inst in [self.clk_buf_nmos_inst, self.clk_buf_pmos_inst,
                      self.l_buffer_nmos, self.l_buffer_pmos,
                      self.f_buffer_nmos, self.f_buffer_pmos]:

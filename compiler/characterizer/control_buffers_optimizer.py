@@ -109,6 +109,8 @@ class ControlBufferOptimizer:
             for output_net in output_nets:
                 pin_index = buffer_conns[driver_index].index(output_net)
                 mod_pin_name = driver_inst.mod.pins[pin_index]
+                debug.info(2, "Extracting control buffers load for %s, pin %s",
+                           driver_inst.name, output_net)
 
                 # internal loads
                 loads, rails = self.get_internal_loads(driver_index, output_net)
@@ -144,6 +146,7 @@ class ControlBufferOptimizer:
             rail_layer = next(key for key, value in tech.layer.items()
                               if value == rail.layerNumber)
             rail_length, rail_width = rail.height, rail.width
+        rail_width, rail_length = sorted([rail_length, rail_width])
         return self.bank.get_wire_cap(rail_layer, wire_width=rail_width,
                                       wire_length=rail_length)
 
@@ -295,8 +298,12 @@ class ControlBufferOptimizer:
             unique_config_keys[key]["data"] = {}
             unique_config_keys[key]["convex_data"] = {}
             unique_config_keys[key]["spline"] = {}
+            debug.info(3, "Characterization data for %s", key)
+            debug.info(3, "Sizes: %s", list(map(lambda x: f"{x:3.3g}", actual_sizes)))
 
             for i in range(len(data_keys)):
+                debug.info(3, "%10s: %s", data_keys[i], list(map(lambda x: f"{x:3.3g}", data[i])))
+
                 fit_sizes, fit_data = self.create_convex_fit(actual_sizes, data[i])
 
                 unique_config_keys[key]["convex_data"][data_keys[i]] = (fit_sizes, fit_data)

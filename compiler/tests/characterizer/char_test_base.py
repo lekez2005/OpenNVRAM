@@ -192,6 +192,7 @@ class CharTestBase(testutils.OpenRamTest):
         debug.info(1, "Temp folder = {}".format(OPTS.openram_temp))
 
     def run_pex_extraction(self, module, name_prefix, run_drc=False, run_lvs=False):
+        import tech
         import verify
 
         spice_file = self.prefix("{}.sp".format(name_prefix))
@@ -200,6 +201,15 @@ class CharTestBase(testutils.OpenRamTest):
         pex_file = self.prefix("{}.pex.sp".format(name_prefix))
 
         run_pex = self.run_pex or not os.path.exists(pex_file)
+        if tech.has_local_interconnect:
+            from base.analog_cell_mixin import AnalogMixin
+            for pin_name in ["vdd", "gnd"]:
+                if pin_name in module.pin_map:
+                    for pin in module.get_pins(pin_name):
+                        AnalogMixin.add_m1_m3_power_via(module, pin, recursive=True)
+                    # only one drive point
+                    module.pin_map[pin_name] = [x for x in module.pin_map[pin_name]
+                                                if x.layer == "metal3"]
 
         if run_pex or run_lvs or run_drc:
             module.sp_write(spice_file)

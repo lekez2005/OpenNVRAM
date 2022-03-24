@@ -29,10 +29,10 @@ class body_tap(design, metaclass=Unique):
         self.create_layout()
 
     def create_layout(self):
-        y_space = 0.5 * self.m1_width
-        reram_bitcell.add_power_pin(self, y_space, "gnd", "p")
-        self.height = self.rail_height + 2 * y_space
-
+        self.height = self.implant_width + self.implant_space
+        rail_height = self.height - self.rail_height
+        pin_y = 0.5 * self.height - 0.5 * rail_height
+        reram_bitcell.add_power_pin(self, pin_y, "gnd", "p", rail_height=rail_height)
         self.add_boundary()
 
 
@@ -61,6 +61,13 @@ class reram_bitcell(design, metaclass=Unique):
         debug.info(1, f"Bitcell height = {self.height:.5g}")
         self.add_boundary()
         tech.add_tech_layers(self)
+
+    def get_input_cap(self, pin_name, num_elements: int = 1, wire_length: float = 0.0,
+                      interpolate=None, **kwargs):
+        if pin_name == "bl":
+            pin_name = "br"
+        return super().get_input_cap(pin_name, num_elements, wire_length, interpolate,
+                                     **kwargs)
 
     @staticmethod
     def fill_m2_via(obj, offset):
@@ -131,7 +138,7 @@ class reram_bitcell(design, metaclass=Unique):
         be_pin = reram_device.get_pin("BE")
         y_offset = min(y_offset, self.top_via_y - self.m2_space - be_pin.width())
 
-        self.reram = self.add_inst(reram_device.name, reram_device,
+        self.reram = self.add_inst("mem", reram_device,
                                    vector(x_offset, y_offset), rotate=90)
         self.connect_inst(["bl", "be"])
 
@@ -201,7 +208,8 @@ class reram_bitcell(design, metaclass=Unique):
                                       rotate=True)
 
     @staticmethod
-    def add_power_pin(self, y_offset, pin_name, implant_type):
+    def add_power_pin(self, y_offset, pin_name, implant_type, rail_height=None):
+        rail_height = rail_height or self.rail_height
         max_width = self.width - self.get_space(ACTIVE)
         num_contacts = calculate_num_contacts(self, max_width,
                                               layer_stack=well_contact.layer_stack,
@@ -209,9 +217,9 @@ class reram_bitcell(design, metaclass=Unique):
         pin_width = self.width + max(m1m2.first_layer_height, m2m3.second_layer_height)
         for layer in [METAL1, METAL3]:
             self.add_layout_pin(pin_name, layer, vector(0, y_offset),
-                                width=pin_width, height=self.rail_height)
+                                width=pin_width, height=rail_height)
 
-        mid_offset = (0.5 * self.width, 0.5 * self.rail_height + y_offset)
+        mid_offset = (0.5 * self.width, 0.5 * rail_height + y_offset)
         self.add_contact_center(well_contact.layer_stack, mid_offset, rotate=90,
                                 size=[1, num_contacts],
                                 implant_type=implant_type, well_type=PWELL)

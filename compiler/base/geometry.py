@@ -246,6 +246,10 @@ class instance(geometry):
             rect.size = vector(rect.width, rect.height)
             results.append(rect)
         return results
+
+    def get_max_shape(self, layer, prop_name, recursive=False):
+        shapes = self.get_layer_shapes(layer, recursive=recursive)
+        return self.mod.get_max_shape_(shapes, prop_name=prop_name)
         
     def __str__(self):
         """ override print function output """
@@ -346,7 +350,7 @@ class rectangle(geometry):
         self.layerNumber = layerNumber
         self.layerPurpose= layerPurpose
         self.offset = vector(offset).snap_to_grid()
-        self.size = (vector(offset) + vector(width, height)).snap_to_grid() - self.offset  # prevent roundoff errors
+        self.size = vector(width, height).snap_to_grid()
         self.width = self.size.x
         self.height = self.size.y
         self.compute_boundary(offset,"",0)
@@ -384,6 +388,10 @@ class rectangle(geometry):
             if lower.lx() <= upper.lx() <= lower.rx():
                 return True
         return False
+
+    @property
+    def area(self):
+        return self.height * self.width
 
     def __str__(self):
         """ override print function output """

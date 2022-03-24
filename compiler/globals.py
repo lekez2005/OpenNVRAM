@@ -348,6 +348,8 @@ def standardize_tech_config():
 
     info.setdefault("horizontal_poly", True)
 
+    tech.has_local_interconnect = getattr(tech, "has_local_interconnect", False)
+
     if not hasattr(tech, "add_tech_layers"):
         tech.add_tech_layers = no_op
 

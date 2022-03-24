@@ -22,6 +22,7 @@ TAP_ACTIVE = "tap_active"
 CONTACT = "contact"
 NIMP = "nimplant"
 PIMP = "pimplant"
+BOUNDARY = "boundary"
 METAL1 = "metal1"
 METAL2 = "metal2"
 METAL3 = "metal3"
@@ -72,7 +73,8 @@ class design(hierarchy_spice.spice, hierarchy_layout):
             'sram',
             'hierarchical_predecode2x4',
             'hierarchical_predecode3x8',
-            'RotationWrapper'
+            'RotationWrapper',
+            'reram_bitcell',
         ]
         if name not in design.name_map:
             design.name_map.append(name)
@@ -346,6 +348,10 @@ class design(hierarchy_spice.spice, hierarchy_layout):
 
     def get_max_shape(self, layer, prop_name, recursive=False):
         shapes = self.get_layer_shapes(layer, recursive=recursive)
+        return self.get_max_shape_(shapes, prop_name)
+
+    @staticmethod
+    def get_max_shape_(shapes, prop_name):
         if prop_name in ["by", "lx"]:
             scale = -1
         else:

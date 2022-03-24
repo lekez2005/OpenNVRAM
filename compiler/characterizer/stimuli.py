@@ -23,6 +23,7 @@ class stimuli:
         self.nmos_name = tech.spice["nmos"]
         self.tx_width = tech.spice["minwidth_tx"]
         self.tx_length = tech.spice["channel"]
+        self.tx_prefix = tech.spice["tx_instance_prefix"]
 
         self.sf = stim_file
 
@@ -121,19 +122,16 @@ class stimuli:
     def inst_accesstx(self, dbits):
         """ Adds transmission gate for inputs to data-bus (only for sim purposes) """
         self.sf.write("* Tx Pin-list: Drain Gate Source Body\n")
+        if not tech.spice["scale_tx_parameters"]:
+            unit = ""
+        else:
+            unit = "u"
         for i in range(dbits):
-            pmos_access_string = "mp{0} DATA[{0}] acc_en D[{0}] {1} {2} w={3}u l={4}u\n"
-            self.sf.write(pmos_access_string.format(i,
-                                                    "test" + self.vdd_name,
-                                                    self.pmos_name,
-                                                    20 * self.tx_width,
-                                                    self.tx_length))
-            nmos_access_string = "mn{0} DATA[{0}] acc_en_inv D[{0}] {1} {2} w={3}u l={4}u\n"
-            self.sf.write(nmos_access_string.format(i,
-                                                    "test" + self.gnd_name,
-                                                    self.nmos_name,
-                                                    10 * self.tx_width,
-                                                    self.tx_length))
+            self.sf.write(f"{self.tx_prefix}p{i} DATA[{i}] acc_en D[{i}] test{self.vdd_name} "
+                          f"{self.pmos_name} w={20 * self.tx_width}{unit} l={self.tx_length}{unit}\n")
+
+            self.sf.write(f"{self.tx_prefix}n{i} DATA[{i}] acc_en_inv D[{i}] test{self.gnd_name} "
+                          f"{self.nmos_name} w={10 * self.tx_width}{unit} l={self.tx_length}{unit}\n")
 
     def gen_pulse(self, sig_name, v1, v2, offset, period, t_rise, t_fall):
         """ 
@@ -429,3 +427,4 @@ usim_opt  rcr_fmax=20G
             end_time = datetime.datetime.now()
             delta_time = round((end_time - start_time).total_seconds(), 1)
             debug.info(2, "*** Spice: {} seconds".format(delta_time))
+        return retcode

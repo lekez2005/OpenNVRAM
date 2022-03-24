@@ -10,6 +10,7 @@ from characterizer.dependency_graph import get_instance_module, get_net_driver, 
 from characterizer.net_probes.probe_utils import get_current_drivers, get_all_tx_fingers, format_bank_probes, \
     get_voltage_connections, get_extracted_prefix
 from globals import OPTS
+from tech import spice as tech_spice
 
 
 class SramProbe(object):
@@ -215,7 +216,8 @@ class SramProbe(object):
                     suffix = ""
                 else:
                     suffix = "@{}".format(finger + 1)
-                results.add("{}.Xinv{}.Mpmos1{}".format(prefix, i, suffix))
+                tx_prefix = tech_spice["tx_instance_prefix"]
+                results.add(f"{prefix}.Xinv{i}.{tx_prefix}pmos1{suffix}")
         return list(results)
 
     def driver_current_probes(self, net_template, nets, bits, modules, replacements=None):

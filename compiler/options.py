@@ -203,11 +203,12 @@ class options(optparse.Values):
 
     def set_temp_folder(self, openram_temp=None):
         # openram_temp is the temp directory where all intermediate results are stored.
+        openram_temp = openram_temp or self.openram_temp
+        default_openram_temp = os.path.join(os.environ["SCRATCH"], "openram")
         if openram_temp is None:
-            if self.openram_temp is None:
-                openram_temp = os.path.join(os.environ["SCRATCH"], "openram")
-            else:
-                openram_temp = self.openram_temp
+            openram_temp = default_openram_temp
+        elif not os.path.isabs(openram_temp):
+            openram_temp = os.path.join(default_openram_temp, openram_temp)
 
         self.openram_temp = openram_temp
         self.log_file = os.path.join(openram_temp, 'openram.log')

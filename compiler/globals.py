@@ -55,7 +55,6 @@ def parse_args():
                                    version="OpenRAM")
 
     (options, args) = parser.parse_args(values=OPTS)
-    # If we don't specify a tech, assume freepdk45.
     # This may be overridden when we read a config file though...
     if OPTS.tech_name == "":
         OPTS.tech_name = "sky130"
@@ -118,6 +117,8 @@ def init_openram(config_file, is_unit_test=True, openram_temp=None):
     if openram_temp is not None:
         OPTS.set_temp_folder(openram_temp)
 
+    initialize_home_and_tech()
+
     check_versions()
 
     debug.info(1,"Initializing OpenRAM...")
@@ -157,13 +158,18 @@ def get_tool(tool_type, preferences, default=None):
         return (None, "")
 
 
+def initialize_home_and_tech():
+    for (variable, dir_name) in [("OPENRAM_HOME", "compiler"), ("OPENRAM_TECH", "technology")]:
+        if not os.environ.get(f"FORCE_{variable}", False):
+            openram_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+            variable_directory = os.path.join(openram_dir, dir_name)
+            if os.path.exists(variable_directory):
+                os.environ[variable] = variable_directory
+
+
 def setup_technology():
     # environment variable should point to the technology dir
     openram_tech = os.environ.get("OPENRAM_TECH", None)
-    if not openram_tech:
-        debug.error("$OPENRAM_TECH is not properly defined.", 1)
-    openram_tech = os.path.abspath(openram_tech)
-
     debug.check(os.path.isdir(openram_tech),
                 f"$OPENRAM_TECH does not exist: {openram_tech}")
 

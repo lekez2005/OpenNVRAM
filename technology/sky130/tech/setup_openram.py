@@ -6,14 +6,16 @@ TECHNOLOGY = "sky130"
 ##########################
 # Sky130 paths
 
+variant = "sky130B"
+
 PDK_ROOT = os.path.abspath(os.environ.get("PDK_ROOT"))
-PDK_DIR = os.path.join(PDK_ROOT, "sky130A", "libs.tech")
+PDK_DIR = os.path.join(PDK_ROOT, variant, "libs.tech")
 
 os.environ["SPICE_MODEL_DIR"] = os.path.join(PDK_DIR, "ngspice")
-os.environ["SPICE_MODEL_HSPICE"] = os.path.join(PDK_ROOT, "sky130A", "libs.ref", "hspice", "models")
+os.environ["SPICE_MODEL_HSPICE"] = os.path.join(PDK_ROOT, variant, "libs.tech", "hspice")
 
 magic_dir = os.path.join(PDK_DIR, "magic", "current")
-os.environ["MAGIC_RC"] = os.path.join(magic_dir, "sky130A.magicrc")
+os.environ["MAGIC_RC"] = os.path.join(magic_dir, f"{variant}.magicrc")
 tmp_dir = os.path.join(os.environ.get("SCRATCH", "/"), "tmp")
 os.environ["MGC_TMPDIR"] = os.path.join(tmp_dir, "magic")
 

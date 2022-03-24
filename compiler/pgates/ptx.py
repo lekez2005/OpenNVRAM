@@ -3,7 +3,7 @@ import re
 import debug
 from base import design, utils
 from base.contact import contact, m1m2, poly as poly_contact, active as active_contact, cross_poly
-from base.design import METAL1, METAL2, POLY, ACTIVE, CONTACT
+from base.design import METAL1, METAL2, POLY, ACTIVE, CONTACT, NWELL
 from base.hierarchy_spice import INOUT, INPUT
 from base.vector import vector
 from base.well_active_contacts import calculate_num_contacts
@@ -282,7 +282,7 @@ class ptx(design.design):
             self.implant_offset = vector(self.active_offset.x + 0.5 * self.active_width,
                                          0.5 * (self.implant_top + self.implant_bottom))
         else:
-            self.implant_height = self.active_height + 2 * self.implant_enclose_ptx_active
+            self.implant_height = max(self.active_height, drc.get("minwidth_implant"))
             self.implant_offset = (self.active_offset +
                                    vector(self.active_width, self.active_height).scale(0.5, 0.5))
         self.implant_width = self.active_width + 2 * self.implant_enclose_ptx_active
@@ -583,6 +583,22 @@ class ptx(design.design):
             self.connect_fingered_active(drain_positions, source_positions)
 
     @staticmethod
+    def get_mos_active(parent_mod: design.design, tx_type="n"):
+        all_active = parent_mod.get_layer_shapes(ACTIVE, recursive=True)
+        all_poly = parent_mod.get_layer_shapes(POLY, recursive=True)
+        all_nwell = parent_mod.get_layer_shapes(NWELL, recursive=True)
+
+        def is_overlap(reference, rects):
+            return any(reference.overlaps(x) for x in rects)
+
+        mos_active = [x for x in all_active if is_overlap(x, all_poly)]
+        mos_active = [x for x in mos_active if x.width > parent_mod.poly_pitch]
+        if tx_type[0] == "n":
+            return [x for x in mos_active if not is_overlap(x, all_nwell)]
+        else:
+            return [x for x in mos_active if is_overlap(x, all_nwell)]
+
+    @staticmethod
     def flatten_tx_inst(parent_mod: design.design, tx_inst):
         """Move all rects from transistor instance to parent_mod"""
         from base.flatten_layout import flatten_rects
@@ -648,6 +664,8 @@ class ptx(design.design):
         res_per_micron = None
         if width is None:
             width = spice["minwidth_tx"]
+        if not spice["scale_tx_parameters"]:
+            width /= 1e6
         if OPTS.use_characterization_data:
             cell_name = tx_type + "mos"
             if corner is not None:

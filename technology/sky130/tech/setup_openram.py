@@ -20,6 +20,9 @@ os.environ["MGC_TMPDIR"] = os.path.join(tmp_dir, "magic")
 netgen_dir = os.path.join(PDK_DIR, "netgen")
 os.environ["NETGEN_RC"] = os.path.join(netgen_dir, "setup.tcl")
 
+klayout_dir = os.path.join(PDK_DIR, "klayout")
+os.environ["KLAYOUT_DRC_DECK"] = os.path.join(klayout_dir, "sky130A_mr.drc")
+
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
                                                 "modules")))

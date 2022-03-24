@@ -346,7 +346,7 @@ def standardize_tech_config():
     def no_op(_):
         pass
 
-    info["horizontal_poly"] = info.get("horizontal_poly", True)
+    info.setdefault("horizontal_poly", True)
 
     if not hasattr(tech, "add_tech_layers"):
         tech.add_tech_layers = no_op

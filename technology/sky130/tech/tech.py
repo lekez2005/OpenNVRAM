@@ -9,12 +9,16 @@ def add_tech_layers(obj):
     enhance_module(obj)
 
 
+def delay_params_class():
+    from delay_params import DelayParams
+    return DelayParams
+
 info = {}
 info["name"] = "sky130"
 info["has_pwell"] = False
 info["has_nwell"] = True
 
-drc_name = "magic"
+drc_name = "klayout"
 lvs_name = "netgen"
 pex_name = "magic"
 
@@ -54,7 +58,11 @@ layer = {
     "boundary": 235,
     "npc": 95,
     "stdc": 81,
-    "reram_ox": 201
+    "reram_ox": 201,
+    "diode": 81,
+    "res_metal3": 69,
+    "res_metal4": 70,
+    "cap2m": 97,
 }
 
 purpose = {
@@ -68,6 +76,10 @@ purpose = {
     "via3": 44,
     "via4": 44,
     "via5": 44,
+    "cap2m": 44,
+    "diode": 23,
+    "res_metal3": 13,
+    "res_metal4": 13,
     "stdc": 4,
     "boundary": 4
 }
@@ -84,6 +96,14 @@ power_grid_width = 4
 
 power_grid_y_space = 3.5
 power_grid_x_space = 3.5
+
+# MIM cap
+mim_cap_top_layer = "metal6"
+mim_cap_bottom_layer = "metal5"
+mim_cap_via_layer = "via5"
+mim_cap_cap_layer = "cap2m"
+mim_cap_bottom_enclosure = 0.14
+mim_cap_top_enclosure = 0.0
 
 #########################
 # Parameter
@@ -103,7 +123,7 @@ drc = {
 drc["rail_height"] = 0.3
 
 drc["pwell_to_nwell"] = 0.22
-drc["nwell_to_nwell"] = 0.0
+drc["nwell_to_nwell"] = 1.27
 drc["same_net_line_space_nwell"] = 1.27
 drc["pwell_to_pwell"] = 0.0
 drc["minwidth_well"] = 0.84
@@ -132,11 +152,12 @@ drc["nwell_to_tap_active_space"] = 0.13
 # implant
 drc["implant_to_channel"] = 0.135
 drc["implant_enclosure_active"] = 0.0
+drc["implant_enclosure_diode"] = 0.05  # arbitrary. magic seems to use 0.125 but DRC is fine with 0!
 drc["ptx_implant_enclosure_active"] = 0.0
 drc["implant_enclosure_contact"] = 0
 drc["implant_to_contact"] = 0.07
 drc["implant_to_implant"] = 0.38
-drc["minwidth_implant"] = 0.17
+drc["minwidth_implant"] = 0.38
 # contact
 drc["minwidth_contact"] = 0.17
 drc["contact_to_contact"] = 0.17
@@ -208,21 +229,34 @@ drc["minarea_metal6"] = 4
 #########################
 # DRC Rules Exceptions
 drc_exceptions = {}
-drc_exceptions["latchup"] = ["N-diff distance to P-tap must be < 15.0um (LU.2)",
-                             "P-diff distance to N-tap must be < 15.0um (LU.3)",
-                             "All nwells must contain metal-connected N+ taps (nwell.4)"]
+if drc_name == "magic":
+    drc_exceptions["latchup"] = ["N-diff distance to P-tap must be < 15.0um (LU.2)",
+                                 "P-diff distance to N-tap must be < 15.0um (LU.3)",
+                                 "All nwells must contain metal-connected N+ taps (nwell.4)"]
+else:
+    drc_exceptions["latchup"] = []
+
 drc_exceptions["ptx"] = drc_exceptions["latchup"]
 drc_exceptions["reram_bitcell"] = drc_exceptions["latchup"]
+drc_exceptions["Diode"] = ["met1.6"]
 
 #########################
 # Spice Simulation Parameters
 spice = {}
 spice["minwidth_tx"] = drc["minwidth_tx"]
+spice["minwidth_tx_pmos"] = 0.42
 spice["channel"] = drc["minlength_channel"]
 spice["tx_instance_prefix"] = "X"
 spice["scale_tx_parameters"] = False
 spice["nmos"] = "sky130_fd_pr__nfet_01v8"
 spice["pmos"] = "sky130_fd_pr__pfet_01v8"
+spice["p_diode_name"] = "sky130_fd_pr__diode_pw2nd_05v5"
+spice["n_diode_name"] = "sky130_fd_pr__diode_pd2nw_05v5"
+spice["mim_cap_name"] = "sky130_fd_pr__cap_mim_m3_2"
+spice["metal3_res_name"] = "sky130_fd_pr__res_generic_m2"
+spice["metal4_res_name"] = "sky130_fd_pr__res_generic_m3"
+spice["subckt_nmos"] = "msky130_fd_pr__nfet_01v8"
+spice["subckt_pmos"] = "msky130_fd_pr__pfet_01v8"
 spice["vdd_name"] = "vdd"
 spice["gnd_name"] = "gnd"
 spice["gmin"] = 1e-13
@@ -258,5 +292,5 @@ spice["min_tx_r_p"] = 9000  # Minimum transistor on resistance in ohms
 spice["min_tx_r_n"] = 11000  # Minimum transistor on resistance in ohms
 spice["min_tx_drain_c"] = 0.092  # Minimum transistor drain capacitance in ff
 spice["min_tx_gate_c"] = 0.101  # Minimum transistor gate capacitance in ff
-spice["pmos_unit_gm"] = 175e-6
-spice["nmos_unit_gm"] = 150e-6
+spice["pmos_unit_gm"] = 109e-6
+spice["nmos_unit_gm"] = 32e-6

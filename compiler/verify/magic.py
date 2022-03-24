@@ -26,7 +26,6 @@ gds read "{gds_file}"
 puts "Finished reading gds {gds_file}"
 {load_command}
 cellname delete \\(UNNAMED\\)
-writeall force
 ### additional commands
 {other_commands}
 ### commands
@@ -67,7 +66,7 @@ ext2spice hierarchy on
 ext2spice scale off
 ext2spice format ngspice
 ext2spice cthresh infinite
-ext2spice rthresh infinite
+ext2spice rthresh infinite:q
 ext2spice renumber off
 ext2spice global off
 ext2spice {cell_name_}{flat_suffix} -o {cell_name_}.spice
@@ -95,15 +94,15 @@ select top cell
 extract all
 ext2sim labels on
 ext2sim
-extresist simplify off
-extresist
+# extresist simplify off
+# extresist
 ext2spice lvs
 ext2spice format ngspice
 ext2spice scale off
 ext2spice cthresh 0
 ext2spice rthresh 0
-ext2spice extresist on
-ext2spice "{cell_name_}_flat" -o {output_file}
+# ext2spice extresist on
+ext2spice -d "{cell_name_}_flat" -o {output_file}
 puts "Finished extraction export"
 exit
 """
@@ -186,7 +185,7 @@ def run_subprocess(script_file_name):
 def export_gds_to_magic(gds_file, cell_name=None, flatten=False):
     refresh_command = get_refresh_command(cell_name)
     kwargs = {
-        "other_commands": refresh_command
+        "other_commands": "writeall force\n" + refresh_command
     }
     script = generate_magic_script(gds_file, cell_name, flatten, "export", **kwargs)
     return_code = run_subprocess(script)
@@ -240,7 +239,7 @@ def run_drc(cell_name, gds_name, exception_group="", flatten=None):
                           f'writeall force "{drc_cell_name}"\n'
     else:
         drc_cell_name = cell_name
-        flatten_command = "expand"
+        flatten_command = "writeall force\nexpand"
     drc_cell_name = os.path.join(os.path.dirname(gds_name), drc_cell_name)
     refresh_command = get_refresh_command(drc_cell_name)
 
@@ -271,7 +270,7 @@ def run_drc(cell_name, gds_name, exception_group="", flatten=None):
                 ignore_error = False
                 if exception_group in drc_exceptions:
                     for exception in drc_exceptions[exception_group]:
-                        if description == exception:
+                        if exception in description:
                             ignore_error = True
                             break
                 if ignore_error:
@@ -325,7 +324,8 @@ def generate_lvs_spice(mag_file, source_spice, final_verification=False, flatten
                                            op_name="spice_gen",
                                            template=spice_gen_template, **kwargs)
     return_code, out_file, err_file = run_script(extract_script, cell_name, "spice_gen")
-    check_process_errors(err_file, "gen_spice", benign_errors=["Couldn't find label"])
+    benign_errors = ["Couldn't find label", r"Total of \d+ warnings."]
+    check_process_errors(err_file, "gen_spice", benign_errors=benign_errors)
     debug.info(1, f"Generated layout spice")
     return return_code, out_file, err_file
 
@@ -360,7 +360,7 @@ def run_netgen(cell_name, lvs_cell_name, layout_spice, source_spice):
     return_code, out_file, err_file = run_script(None, cell_name, "lvs",
                                                  command_template=setup_script)
 
-    check_process_errors(err_file, "LVS")
+    check_process_errors(err_file, "LVS", benign_errors=['property "area_ox"'])
     return return_code, out_file, report_file
 
 
@@ -375,7 +375,7 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
     mag_file = os.path.join(OPTS.openram_temp, f"{cell_name}.mag")
     if not os.path.exists(mag_file) or os.path.getmtime(mag_file) < os.path.getmtime(gds_name):
         run_script(generate_magic_script(gds_name, cell_name, True,
-                                         "export", **{"other_commands": ""}),
+                                         "export", **{"other_commands": "writeall force\n"}),
                    cell_name=cell_name, op_name="export")
 
     generate_lvs_spice(mag_file, sp_name, final_verification, flatten)
@@ -405,7 +405,8 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
     if len(split) > 1:
         property_errors = split[1].split("Subcircuit pins:")[0].strip()
         num_prop_errors = property_errors.count("vs.")
-        debug.info(1, f"{num_prop_errors} Property errors\n%s", property_errors)
+        if num_prop_errors > 0:
+            debug.info(1, f"{num_prop_errors} Property errors\n%s", property_errors)
         total_errors += num_prop_errors
 
     # Netlists match uniquely.
@@ -433,7 +434,8 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
 
 
 def run_pex(cell_name, gds_name, sp_name, output=None,
-            run_drc_lvs=True, correct_port_order=True, port_spice_file=None):
+            run_drc_lvs=True, correct_port_order=True, port_spice_file=None,
+            exception_group=""):
     """Run pex on a given top-level name which is
        implemented in gds_name and sp_name. """
     from globals import OPTS
@@ -450,11 +452,11 @@ def run_pex(cell_name, gds_name, sp_name, output=None,
 
     if run_drc_lvs or not os.path.exists(mag_file) or not os.path.exists(lvs_report):
         debug.info(1, "Forcing DRC + LVS runs before PEX")
-        run_drc(cell_name, gds_name)
+        run_drc(cell_name, gds_name, exception_group=exception_group)
         run_lvs(cell_name, gds_name, sp_name)
 
     debug.info(1, "Run PEX for {}".format(cell_name))
-    kwargs = get_lvs_kwargs(cell_name, mag_file, sp_name, final_verification=True)
+    kwargs = get_lvs_kwargs(cell_name, mag_file, sp_name, flatten=True, final_verification=True)
     kwargs["output_file"] = output
     extract_script = generate_magic_script(mag_file, cell_name, flatten=False,
                                            op_name="pex",
@@ -465,7 +467,7 @@ def run_pex(cell_name, gds_name, sp_name, output=None,
     debug.info(1, f"Generated pex spice {output}")
     from verify.calibre import correct_port
     # TODO confirm large number of pins
-    subckt_end_regex = re.compile(r"^[XRCM]+", re.MULTILINE)
+    subckt_end_regex = re.compile(r"^[XRCMD]+", re.MULTILINE)
     correct_port(cell_name, output, port_spice_file, subckt_end_regex=subckt_end_regex)
     remove_transistors_unit_suffix(output)
     return 0
@@ -480,8 +482,8 @@ def remove_transistors_unit_suffix(extracted_pex):
     regex = re.compile(rf"((\S+)=([0-9e+\-.]+)([{''.join(SUFFIXES.keys())}]+))")
     with open(extracted_pex, "w") as f:
         for line in lines:
-            if line.startswith("X"):
+            if line.startswith("X") or line.startswith("D") or line.startswith("C"):
                 for match in regex.findall(line):
                     numeric_val = float(match[2]) * SUFFIXES[match[3]]
-                    line = line.replace(match[0], f"{match[1]}={numeric_val}")
+                    line = line.replace(match[0], f"{match[1]}={numeric_val:.8g}")
             f.write(line)

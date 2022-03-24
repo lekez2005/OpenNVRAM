@@ -25,20 +25,22 @@ else:
     OPTS.lvs_exe = get_tool("LVS", ["calibre", "assura", "netgen"],
                             getattr(tech, "lvs_name", None))
     OPTS.pex_exe = get_tool("PEX", ["calibre", "magic"],
-                            getattr(tech, "drc_name", None))
+                            getattr(tech, "pex_name", None))
     OPTS.grep_exe = get_tool("GREP", ["rg", "grep"])
 
 if OPTS.check_lvsdrc and OPTS.tech_name == "freepdk45":
     debug.check(OPTS.drc_exe[0]!="magic","Magic does not support FreePDK45 for DRC.")
-    
+
 if OPTS.drc_exe == None:
     pass
-elif "calibre"==OPTS.drc_exe[0]:
+elif "calibre" == OPTS.drc_exe[0]:
     from .calibre import run_drc
-elif "assura"==OPTS.drc_exe[0]:
+elif "assura" == OPTS.drc_exe[0]:
     from .assura import run_drc
-elif "magic"==OPTS.drc_exe[0]:
+elif "magic" == OPTS.drc_exe[0]:
     from .magic import run_drc
+elif "klayout" == OPTS.drc_exe[0]:
+    from .klayout import run_drc
 else:
     debug.warning("Did not find a supported DRC tool.")
 

@@ -10,12 +10,15 @@ class ReRamSenseAmp(BitcellAlignedPgate):
 
     @classmethod
     def get_name(cls, *args, **kwargs):
-        return "reram_sense_amp"
+        return "re_ram_sense_amp"
 
     def __init__(self):
         # spice file is loaded if name matches file in sp_lib
         design.__init__(self, self.get_name())
         self.create_layout()
+
+    def is_delay_primitive(self):
+        return True
 
     def create_layout(self):
         self.create_modules()
@@ -78,7 +81,7 @@ class ReRamSenseAmp(BitcellAlignedPgate):
         self.add_layout_pin("dout_bar", METAL2, vector(pin.cx() - 0.5 * self.m2_width, 0),
                             height=pmos_pin.cy())
 
-        self.add_power_tap(0, "gnd", self.buffer_nmos)
+        self.add_power_tap(0, "gnd", self.buffer_nmos, add_m3=False)
         self.add_power_tap(vdd_y, "vdd", self.buffer_pmos)
 
     def add_differential_amp(self):
@@ -350,10 +353,12 @@ class ReRamSenseAmp(BitcellAlignedPgate):
         for pin_name in ["bl", "br"]:
             bitcell_pin = self.bitcell.get_pin(pin_name)
             pin_y = self.rail_height
-            self.add_layout_pin(pin_name, METAL4,
-                                vector(bitcell_pin.cx() - 0.5 * self.m4_width, pin_y),
-                                height=self.height - pin_y,
-                                width=max(bitcell_pin.width(), self.m4_width))
+            offset = vector(bitcell_pin.cx() - 0.5 * self.m4_width, pin_y)
+            width = max(bitcell_pin.width(), self.m4_width)
+            self.add_layout_pin(pin_name, METAL4, offset, width=width,
+                                height=self.height - pin_y)
+            # add m2 to bottom to prevent adding m1-m3 vias at bitline positions
+            self.add_rect(METAL2, vector(offset.x, 0), width=width, height=offset.y)
         bl_pin = self.get_pin("bl")
         m2_via_width = max(m1m2.w_2, m2m3.w_1)
         via_x = min(bl_pin.cx(),
@@ -365,6 +370,25 @@ class ReRamSenseAmp(BitcellAlignedPgate):
         self.fill_m2_via(offset)
 
     def route_power(self):
+        # route m1-m3 for bottom gnd
+        bottom_gnd = min(self.get_pins("gnd"), key=lambda x: x.by())
+        self.add_layout_pin("gnd", METAL3, bottom_gnd.ll(), width=bottom_gnd.width(),
+                            height=bottom_gnd.height())
+
+        dout_bar = self.get_pin("dout_bar")
+        min_space = max(m2m3.w_1, m1m2.w_2) + 2 * self.get_space(METAL2)
+
+        for pin_name in ["bl", "br"]:
+            pin = self.get_pin(pin_name)
+            left_pin, right_pin = sorted([pin, dout_bar], key=lambda x: x.lx())
+            space = right_pin.lx() - left_pin.rx()
+            if space >= min_space:
+                offset = vector(0.5 * (left_pin.rx() + right_pin.lx()),
+                                bottom_gnd.by() + 0.5 * max(m1m2.h_2, m2m3.h_1))
+                self.add_cross_contact_center(cross_m1m2, offset, rotate=True)
+                self.add_cross_contact_center(cross_m2m3, offset)
+
+        # connect transistors to power
         for inst in [self.buffer_nmos, self.buffer_pmos, self.diff_pmos]:
             self.route_tx_to_power(inst, tx_pin_name="S")
 

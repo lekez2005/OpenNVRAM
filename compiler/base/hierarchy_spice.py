@@ -337,6 +337,7 @@ class spice(verilog.verilog):
         """Compute unit capacitance in F for pin_name and wire_length"""
 
         from pgates.ptx import ptx
+        from tech import spice as tech_spice
 
         wire_cap = self.compute_pin_wire_cap(pin_name, wire_length)
 
@@ -346,7 +347,8 @@ class spice(verilog.verilog):
         for tx_type in transistor_connections:
             for terminal in transistor_connections[tx_type]:
                 for m, nf, width in transistor_connections[tx_type][terminal][1]:
-                    width *= 1e6
+                    if tech_spice["scale_tx_parameters"]:
+                        width *= 1e6
                     total_caps += ptx.get_tx_cap(tx_type, terminal, width, nf, m)
 
         debug.info(4, "Computed input cap for {} module {} = {:.4g}fF".
@@ -447,7 +449,7 @@ class spice(verilog.verilog):
             if cap_value is not None:
                 return cap_value * num_elements, cap_value
 
-        if self.conns and next(filter(len, self.conns)):
+        if self.conns and list(filter(len, self.conns)):
             # contains instances i.e. probably not an imported custom cell
             _, cap_per_stage = self.get_input_cap_from_instances(pin_name, wire_length,
                                                                  **kwargs)
@@ -510,6 +512,11 @@ class spice(verilog.verilog):
         resistance_paths = self.get_spice_parser().extract_res_for_pin(pin_name, self.name)
         gm = math.inf
 
+        if tech_spice["scale_tx_parameters"]:
+            tx_scale = 1e-6
+        else:
+            tx_scale = 1
+
         dick_keys = ["p", "n"]
         for i in range(2):
             key = dick_keys[i]
@@ -518,7 +525,7 @@ class spice(verilog.verilog):
                 min_tx = min(flat_list, key=lambda x: x[0] * x[1] * x[2])
                 total_width = min_tx[0] * min_tx[1] * min_tx[2]
                 gm_key = "{}mos_unit_gm".format(key)
-                min_tx_gm = tech_spice[gm_key] * total_width / (tech_spice["minwidth_tx"] * 1e-6)
+                min_tx_gm = tech_spice[gm_key] * total_width / (tech_spice["minwidth_tx"] * tx_scale)
                 gm = min(min_tx_gm, gm)
         return gm
 

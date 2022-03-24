@@ -3,10 +3,10 @@ Implements a simple spice parser to enable constructing cell hierarchy
 """
 import os
 import re
-from copy import deepcopy
 from typing import Union, TextIO, List
 
 import debug
+from tech import spice as tech_spice
 
 SUFFIXES = {
     "m": 1e-3,
@@ -116,6 +116,9 @@ class SpiceMod:
     def __str__(self):
         return f"SpiceMod: ({self.name}: [{', '.join(self.pins)}])"
 
+    def __repr__(self):
+        return str(self)
+
 
 class SpiceParser:
 
@@ -143,6 +146,11 @@ class SpiceParser:
     def get_pins(self, module_name):
         return self.get_module(module_name).pins
 
+    @staticmethod
+    def line_contains_tx(line: str):
+        return (line.startswith("m") or tech_spice["nmos"] in line.split() or
+                tech_spice["pmos"] in line.split())
+
     def deduce_hierarchy_for_pin(self, pin_name, module_name):
         pin_name = pin_name.lower()
         module = self.get_module(module_name)
@@ -153,8 +161,7 @@ class SpiceParser:
                 continue
 
             pin_index = line.split().index(pin_name) - 1
-
-            if not line.startswith("x"):  # end of hierarchy
+            if self.line_contains_tx(line):  # end of hierarchy
                 pin_index = line.split().index(pin_name) - 1
                 yield [(["d", "g", "s", "b"][pin_index], line)]
             else:
@@ -192,14 +199,19 @@ class SpiceParser:
         """Extract tx_type, m, nf, width from spice statement
         TODO: Careful divides width by nf
         """
-        assert spice_statement.startswith("m"), "Line must start with m"
+        assert SpiceParser.line_contains_tx(spice_statement), "Line must contain tx"
         line_elements = spice_statement.split()
-        tx_type = line_elements[5][0]
+        if line_elements[5] == tech_spice["nmos"]:
+            tx_type = "n"
+        elif line_elements[5] == tech_spice["pmos"]:
+            tx_type = "p"
+        else:
+            assert False, f"Invalid tx name {line_elements[5]} in {spice_statement}"
         m = int(tx_extract_parameter("m", spice_statement) or 1)
         nf = int(tx_extract_parameter("nf", spice_statement) or 1)
 
         width = tx_extract_parameter("w", spice_statement)
-        return tx_type, m, nf, width/nf
+        return tx_type, m, nf, width / nf
 
     def extract_caps_for_pin(self, pin_name, module_name):
         """
@@ -223,7 +235,7 @@ class SpiceParser:
         }
         for child in self.deduce_hierarchy_for_pin(pin_name, module_name):
             spice_statement = child[-1][1]
-            if not spice_statement.startswith("m"):
+            if not self.line_contains_tx(spice_statement):
                 continue
             tx_type, m, nf, width = self.extract_all_tx_properties(spice_statement)
             num_drains = 1 + int((nf - 1) / 2)
@@ -278,7 +290,8 @@ class SpiceParser:
 
             line_elements = spice_statement.split()
 
-            tx_type = line_elements[5][0]
+            tx_type, _, _, _ = self.extract_all_tx_properties(spice_statement)
+
             adjacent_net = line_elements[1] if tx_terminal == 's' else line_elements[3]
             original_net = line_elements[3] if tx_terminal == 's' else line_elements[1]
 
@@ -292,7 +305,7 @@ class SpiceParser:
                 continue
             elif depth >= max_depth:
                 continue
-            else:   # intermediate node
+            else:  # intermediate node
                 if len(child[:-1]) > 0:
                     next_route = ".".join(child[:-1]) + "." + adjacent_net
                 else:
@@ -306,3 +319,24 @@ class SpiceParser:
                 final_paths.append([spice_statement] + path)
 
         return final_paths
+
+    def add_module_suffix(self, suffix, exclusions=None):
+        exclusions = exclusions or []
+        # rename mods
+        for mod in self.mods:
+            if mod.name not in exclusions:
+                mod.name += suffix
+            for i, spice_statement in enumerate(mod.contents):
+                if self.line_contains_tx(spice_statement):
+                    continue
+                child_module_name = spice_statement.split()[-1]
+                new_line = spice_statement.split()[:-1] + [(child_module_name + suffix)]
+                mod.contents[i] = " ".join(new_line)
+
+    def export_spice(self):
+        content = []
+        for mod in self.mods:
+            content.append(f".subckt {mod.name} {' '.join(mod.pins)}")
+            content.extend(mod.contents)
+            content.append(".ends\n")
+        return content

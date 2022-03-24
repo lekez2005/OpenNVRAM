@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING
 
 import tech
 from base import utils
+from base.utils import round_to_grid as rg
 from base.contact import well as well_contact, m1m2, m2m3
 from base.design import ACTIVE, NIMP, PIMP, METAL2, METAL3, METAL1
 from base.layout_clearances import find_clearances, HORIZONTAL
@@ -129,12 +130,19 @@ class AnalogMixin(design_):
                                                         layer_stack=via.layer_stack,
                                                         return_sample=True)
                 if space[0] == left_edge:
-                    # align with adjacent cell
-                    mid_contact = (left_edge - 0.5 * via.height +
-                                   0.5 * sample_contact.height)
-                    if extent <= half_space:
-                        continue
-                    add_via_extension(left_edge, -1)
+                    mid_contact = None
+                    if space[1] == right_edge:
+                        m2_extent = sample_contact.h_2 if i == 0 else sample_contact.h_1
+                        m2_space = self.get_line_end_space(METAL2)
+                        if rg((right_edge - left_edge) - (m2_extent + m2_space)) >= 0:
+                            mid_contact = rg(0.5 * (space[0] + space[1]))
+                    if mid_contact is None:
+                        # align with adjacent cell
+                        mid_contact = (left_edge - 0.5 * via.height +
+                                       0.5 * sample_contact.height)
+                        if extent <= half_space:
+                            continue
+                        add_via_extension(left_edge, -1)
                 elif space[1] == right_edge:
                     mid_contact = (right_edge + 0.5 * via.height -
                                    0.5 * sample_contact.height)

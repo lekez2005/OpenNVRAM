@@ -4,10 +4,10 @@ import debug
 from base import design
 from base.contact import m1m2, cross_m1m2, cross_m2m3, m2m3
 from base.design import METAL2, METAL1, METAL3
+from base.geometry import MIRROR_Y_AXIS, NO_MIRROR
 from base.hierarchy_layout import GDS_ROT_90
 from base.vector import vector
 from globals import OPTS
-from modules.single_level_column_mux import single_level_column_mux
 
 
 class single_level_column_mux_array(design.design):
@@ -89,7 +89,8 @@ class single_level_column_mux_array(design.design):
 
         self.route_height = (self.words_per_row + 3) * self.bus_pitch
         self.mirror = OPTS.mirror_bitcell_y_axis and not OPTS.symmetric_bitcell
-        if self.mirror:
+        self.swap_output = getattr(OPTS, "swap_col_mux_outputs", False)
+        if self.swap_output:
             self.route_height += self.bus_pitch  # extra space to cross br
 
     def create_array(self):
@@ -106,14 +107,17 @@ class single_level_column_mux_array(design.design):
             offset = vector(self.bitcell_offsets[col_num], self.route_height)
 
             if (col_num + OPTS.num_bitcell_dummies) % 2 == 0 and self.mirror:
-                bitline_nets = "br[{0}] bl[{0}] "
+                mirror = MIRROR_Y_AXIS
+                offset.x += self.mux.width
             else:
-                bitline_nets = "bl[{0}] br[{0}] "
+                mirror = NO_MIRROR
+            bitline_nets = "bl[{0}] br[{0}] "
             bitline_nets += (bitline_nets.replace("bl", "bl_out").replace("br", "br_out")
                              .replace("{0}", "{1}"))
             bitline_conns = bitline_nets.format(col_num, int(col_num / self.words_per_row)).split()
 
-            self.child_insts.append(self.add_inst(name=name, mod=self.mux, offset=offset))
+            self.child_insts.append(self.add_inst(name=name, mod=self.mux, offset=offset,
+                                                  mirror=mirror))
 
             self.connect_inst(bitline_conns +
                               ["sel[{}]".format(col_num % self.words_per_row)] +
@@ -124,12 +128,8 @@ class single_level_column_mux_array(design.design):
         # For every column, add a pass gate
         for col_num in range(self.columns):
             child_insts = self.child_insts[col_num]
-            if (col_num + OPTS.num_bitcell_dummies) % 2 == 0 and self.mirror:
-                pin_names = [("bl", "br"), ("br", "bl")]
-            else:
-                pin_names = [("bl", "bl"), ("br", "br")]
-            for source_pin, dest_pin in pin_names:
-                self.copy_layout_pin(child_insts, source_pin, "{}[{}]".format(dest_pin, col_num))
+            for pin_name in ["bl", "br"]:
+                self.copy_layout_pin(child_insts, pin_name, f"{pin_name}[{col_num}]")
         for pin_name in self.power_nets:
             for pin in self.child_insts[0].get_pins(pin_name):
                 self.add_layout_pin(pin_name, pin.layer, offset=pin.ll(),
@@ -175,7 +175,9 @@ class single_level_column_mux_array(design.design):
         """  Connect the output bit-lines to form the appropriate width mux """
         bl_out_y = self.get_pin("sel[{}]".format(self.words_per_row - 1)).by() - self.bus_pitch
         br_out_y = bl_out_y - self.bus_pitch
-        if self.mirror:
+
+        bl_out, br_out = self.get_output_bitlines(0)
+        if bl_out.lx() > br_out.lx():
             bl_out_y, br_out_y = br_out_y, bl_out_y
 
         cross_via_extension = max(0.5 * cross_m1m2.height, 0.5 * cross_m2m3.width)
@@ -186,7 +188,7 @@ class single_level_column_mux_array(design.design):
 
         for j in range(self.columns):
             bl_out, br_out = self.get_output_bitlines(j)
-            if self.mirror and (j + OPTS.num_bitcell_dummies) % 2 == 0:
+            if self.swap_output and (j + OPTS.num_bitcell_dummies) % 2 == 0:
                 bl_out, br_out = br_out, bl_out
 
             bl_out_offset = vector(bl_out.cx() - cross_via_extension, bl_out_y)
@@ -196,7 +198,7 @@ class single_level_column_mux_array(design.design):
             br_via_offset = vector(br_out.cx(), br_out_y + 0.5 * self.bus_width)
 
             for pin, via_offset in zip([bl_out, br_out], [bl_via_offset, br_via_offset]):
-                if self.mirror and j % self.words_per_row == 0:
+                if self.swap_output and j % self.words_per_row == 0:
                     rect_y = via_offset.y
                 else:
                     rect_y = via_offset.y - 0.5 * m1m2.h_2
@@ -217,7 +219,7 @@ class single_level_column_mux_array(design.design):
                         self.add_rect(layer, offset=rect_offset, width=width,
                                       height=self.bus_width)
 
-                if self.mirror:
+                if self.swap_output:
                     # prevent clash with bl pin below it
                     self.add_via_center(m1m2.layer_stack, bl_via_offset, rotate=GDS_ROT_90)
                     self.add_via_center(m2m3.layer_stack, bl_via_offset, rotate=GDS_ROT_90)

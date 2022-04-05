@@ -193,17 +193,20 @@ class tgate_column_mux_pgate(AnalogMixin, design, metaclass=Unique):
                                     tech.drc.get("nwell_to_active_space", 0))
 
         ptap_top = nwell.by() - max(tap_to_nwell, self.implant_enclose_active)
+        gnd_pin = max(self.get_pins("gnd"), key=lambda x: x.uy())
 
         tap_width = well_contact.w_1
         _, tap_height = self.calculate_min_area_fill(tap_width, layer=TAP_ACTIVE)
 
-        x_offset = 0.5 * well_contact.w_2 - 0.5 * well_contact.width
+        x_offset = - 0.5 * tap_width
         tap_rect = self.add_rect(TAP_ACTIVE, vector(x_offset, ptap_top), width=tap_width,
                                  height=-tap_height)
         mid_offset = vector(tap_rect.cx(), tap_rect.cy())
+        m1_x = - 0.5 * well_contact.w_1
+        self.add_rect(METAL1, vector(m1_x, gnd_pin.by()), width=gnd_pin.lx() - m1_x,
+                      height=gnd_pin.height())
         self.add_ptap(tap_height, mid_offset)
 
-        gnd_pin = max(self.get_pins("gnd"), key=lambda x: x.uy())
         extend_tx_well(self, self.inverter_nmos, gnd_pin)
 
     def add_ptap(self, tap_height, mid_offset, rotate=0):

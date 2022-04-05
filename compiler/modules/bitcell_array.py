@@ -17,8 +17,6 @@ class bitcell_array(design.design):
     and word line is connected by abutment.
     Connects the word lines and bit lines.
     """
-    body_tap_insts = []
-    bitcell_x_offsets = None
 
     def __init__(self, cols, rows, name="bitcell_array"):
         design.design.__init__(self, name)
@@ -26,6 +24,8 @@ class bitcell_array(design.design):
 
         self.column_size = cols
         self.row_size = rows
+        self.body_tap_insts = []
+        self.bitcell_x_offsets = None
 
         mods = self.create_modules()
         self.cell, self.body_tap, self.dummy_cell = mods

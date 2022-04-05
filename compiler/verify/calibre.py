@@ -405,7 +405,7 @@ def correct_port(name, output_file_name, ref_file_name, subckt_end_regex=None):
     pex_file = open(output_file_name, "r")
     contents = pex_file.read()
     # locate the start of circuit definition line
-    match = re.search(".subckt " + str(name) + ".*", contents)
+    match = re.search(".subckt " + str(name) + ".*", contents, re.IGNORECASE)
     match_index_start = match.start()
     pex_file.seek(match_index_start)
     rest_text = pex_file.read()

@@ -475,7 +475,11 @@ class ControlBuffers(design, ABC):
         all_m2 = list(map(lambda x: x.x_offset, all_m2_blockages))
 
         parallel_space = self.get_parallel_space(METAL2)  # space for parallel lines
-        m2_pitch = parallel_space + max(self.m2_width, m1m2.w_2)
+        trace_extent = max(self.m2_width, m1m2.w_2, m2m3.w_1)
+        if self.bus_width < m2m3.w_2:
+            trace_extent = max(trace_extent, m2m3.h_2)
+            parallel_space = max(parallel_space, self.get_parallel_space(METAL3))
+        m2_pitch = parallel_space + trace_extent
 
         y_space = self.get_line_end_space(METAL2)
 
@@ -850,7 +854,8 @@ class ControlBuffers(design, ABC):
         original_x_offset = self.evaluate_pin_x_offset(self.module_offsets[inst_name], pin_index)
 
         m3_x_offset = pin_connection.x_offset + 0.5 * self.m2_width - 0.5 * m2m3.height
-        _, min_m3_width = self.calculate_min_area_fill(self.m3_width, layer=METAL3)
+        m3_fill_height = max(self.m3_width, m2m3.w_2)
+        _, min_m3_width = self.calculate_min_area_fill(m3_fill_height, layer=METAL3)
         m3_end_x = original_x_offset + max(0.5 * self.m2_width + 0.5 * m2m3.height, min_m3_width)
         m3_width = m3_end_x - m3_x_offset
 
@@ -893,7 +898,7 @@ class ControlBuffers(design, ABC):
                 rail_y = max_rail.by()
 
         self.indirect_m3_connections.append((m3_x_offset, m3_end_x, rail_y))
-        if rail_y < self.bottom_gnd_y:
+        if rail_y < self.bottom_gnd_y + self.rail_height + self.get_space(METAL3):
             self.increase_additional_rails()
             return False
 
@@ -912,7 +917,11 @@ class ControlBuffers(design, ABC):
             self.add_cross_contact_center(cross_m2m3, offset=vector(via_x, original_rail.cy()),
                                           rotate=False)
 
-        if via_x + 0.5 * m2m3.contact_width + self.get_via_space(m2m3) > original_x_offset:
+        min_adjacent_m2_x = (via_x + 0.5 * m2m3.w_1 + self.get_parallel_space(METAL2)
+                             + 0.5 * m2m3.w_1 - 0.5 * self.m2_width)
+
+        if (via_x + 0.5 * m2m3.contact_width + self.get_via_space(m2m3) > original_x_offset or
+                min_adjacent_m2_x > original_x_offset):
             # use a direct M2 connection (no vias)
             new_rail = self.add_rect(METAL2, offset=vector(via_x, rail_y),
                                      width=original_x_offset + self.m2_width - via_x)
@@ -923,8 +932,9 @@ class ControlBuffers(design, ABC):
         self.add_cross_contact_center(cross_m2m3,
                                       offset=vector(via_x, rail_y + 0.5 * self.m3_width),
                                       rotate=False)
-
-        new_rail = self.add_rect(METAL3, offset=vector(m3_x_offset, rail_y), width=m3_width)
+        m3_y = rail_y + 0.5 * self.m3_width - 0.5 * m3_fill_height
+        new_rail = self.add_rect(METAL3, offset=vector(m3_x_offset, m3_y), width=m3_width,
+                                 height=m3_fill_height)
 
         self.route_direct_rail_to_pin(pin_connection, new_rail, original_x_offset)
         return True

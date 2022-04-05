@@ -381,11 +381,10 @@ class pgate(pgates_characterization_base, design.design):
         self.well_contact_active_width = active_width
 
         implant_area = self.get_min_area(PIMP) or 0
-        self.contact_implant_width = max(self.implant_width,
-                                         utils.ceil(self.well_contact_active_width +
-                                                    2 * self.implant_enclose_active),
-                                         utils.ceil_2x_grid(implant_area /
-                                                            self.well_contact_implant_height))
+        contact_implant_width = max(self.implant_width,
+                                    self.well_contact_active_width + 2 * self.implant_enclose_active,
+                                    implant_area / self.well_contact_implant_height)
+        self.contact_implant_width = utils.ceil_2x_grid(contact_implant_width)
 
         self.nwell_width = self.contact_nwell_width = max(self.contact_implant_width,
                                                           self.well_contact_active_width +
@@ -540,25 +539,28 @@ class pgate(pgates_characterization_base, design.design):
     def add_implants(self):
         # implants
         # nimplant
+        implant_enclosure = self.implant_enclose_ptx_active
         poly_y_offset = self.poly_offsets[0].y - 0.5 * self.poly_height
-        nimplant_y = min(self.n_active_rect.by() - self.implant_to_channel,
+        nimplant_y = min(self.n_active_rect.by() - implant_enclosure,
                          0.5 * self.well_contact_implant_height)
         if not self.contact_pwell and self.align_bitcell:
             # Vertical neighbors have same size
             # and implants can be vertically overlapped with above/below neighbor
             if self.implant_enclose_poly:
                 nimplant_y = min(nimplant_y, poly_y_offset - self.implant_enclose_poly)
-            nimplant_y = min(0, nimplant_y)
+            if implant_enclosure:
+                nimplant_y = min(0, nimplant_y)
         self.nimplant_height = self.nwell_y - nimplant_y
 
         # pimplant
-        pimplant_top = max(self.p_active_rect.uy() + self.implant_to_channel,
+        pimplant_top = max(self.p_active_rect.uy() + implant_enclosure,
                            self.height - 0.5 * self.well_contact_implant_height)
         if not self.contact_nwell and self.align_bitcell:
             if self.implant_enclose_poly:
                 pimplant_top = max(pimplant_top, poly_y_offset + self.poly_height +
                                    self.implant_enclose_poly)
-            pimplant_top = max(pimplant_top, self.height)
+            if implant_enclosure:
+                pimplant_top = max(pimplant_top, self.height)
         self.pimplant_height = pimplant_top - self.nwell_y
 
         implant_x = 0.5 * (self.width - self.implant_width)
@@ -676,34 +678,27 @@ class pgate(pgates_characterization_base, design.design):
     @staticmethod
     def calculate_min_space(left_module: design.design, right_module: design.design):
         # calculate based on min nwell to nmos active space
-        # find right nmos rects
-        right_active = right_module.get_layer_shapes(ACTIVE, recursive=True)
-        right_mod_nwell = right_module.get_layer_shapes(NWELL, recursive=True)
-        right_mod_poly = right_module.get_layer_shapes(POLY, recursive=True)
+        well_active_space = drc.get("nwell_to_active_space", 0)
+        min_space = 0
+        left_nwell = None
 
-        def is_overlap(reference, rects):
-            return any(reference.overlaps(x) for x in rects)
+        for i in range(2):
+            if i == 0:
+                # left_module mos active to right module NWELL
+                mos_active = max(ptx_spice.get_mos_active(left_module), key=lambda x: x.rx())
+                nwell_rect = right_module.get_max_shape(NWELL, "lx", recursive=True)
+                x_slack = left_module.width - mos_active.rx() + nwell_rect.lx()
+            else:
+                # left module NWELL to right module active
+                mos_active = min(ptx_spice.get_mos_active(right_module), key=lambda x: x.lx())
+                nwell_rect = left_module.get_max_shape(NWELL, "rx", recursive=True)
+                left_nwell = nwell_rect
+                x_slack = left_module.width - nwell_rect.rx() + mos_active.lx()
+            y_diff = abs(nwell_rect.by() - mos_active.uy())
 
-        mos_active = [x for x in right_active if is_overlap(x, right_mod_poly)]
-        mos_active = [x for x in mos_active if x.width > left_module.poly_pitch]
-        nmos_active_rects = [x for x in mos_active if not is_overlap(x, right_mod_nwell)]
-        nmos_active = min(nmos_active_rects, key=lambda x: x.lx())
-
-        left_nwell_rects = left_module.get_layer_shapes(NWELL, recursive=True)
-        left_nwell_rects = [x for x in left_nwell_rects if x.rx() >= left_module.width]
-        # find closest to the middle
-        left_nwell = min(left_nwell_rects,
-                         key=lambda x: abs(x.cy() - 0.5 * left_module.height))
-
-        x_slack = (left_module.width - left_nwell.rx()) + nmos_active.lx()
-
-        y_diff = max(0, left_nwell.by() - nmos_active.uy())
-        min_space = drc.get("nwell_to_active_space", 0)
-        if min_space > y_diff:
-            x_diff = (min_space ** 2 - y_diff ** 2) ** 0.5
-            min_space = max(0, utils.ceil(x_diff - x_slack))
-        else:
-            min_space = 0
+            if well_active_space > y_diff:
+                x_diff = (well_active_space ** 2 - y_diff ** 2) ** 0.5
+                min_space = max(min_space, utils.ceil(x_diff - x_slack))
 
         # calculate based on min nwell space
         # only select non-overlapping well

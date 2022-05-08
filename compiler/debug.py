@@ -1,6 +1,7 @@
 import inspect
-import os
 import logging
+import os
+import sys
 from logging.handlers import RotatingFileHandler
 
 # the debug levels:
@@ -19,6 +20,7 @@ formatter = logging.Formatter("%(message)s")
 # add a default console handler
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
+console_handler.setStream(sys.stdout)
 logger.addHandler(console_handler)
 
 file_handler = None

@@ -14,6 +14,7 @@ from modules.baseline_bank import BaselineBank
 from modules.buffer_stage import BufferStage
 from modules.control_buffers import ControlBuffers
 from modules.logic_buffer import LogicBuffer
+from modules.precharge import precharge_characterization
 
 
 class ControlBufferOptimizer:
@@ -220,8 +221,14 @@ class ControlBufferOptimizer:
         else:
             mod_pin_name = "out"
         parent_mod = driver_mod.logic_buffer
-        driver_inst = parent_mod.logic_mod
         buffer_stages_inst = parent_mod.buffer_inst
+        buffer_stage_inst_index = parent_mod.insts.index(buffer_stages_inst)
+        output_net = parent_mod.conns[buffer_stage_inst_index][0]
+        driver_indices = [index for index in range(len(parent_mod.insts))
+                          if not index == buffer_stage_inst_index and
+                          output_net in parent_mod.conns[index]]
+        driver_inst = parent_mod.insts[driver_indices[0]]
+
         config = (buffer_stages_inst, driver_inst, parent_mod)
 
         wl_in_cap, _ = self.bank.bitcell_array.get_input_cap("{}[0]".format(net))
@@ -773,7 +780,7 @@ class ControlBufferOptimizer:
 
     def get_mod_args(self, buffer_mod, size):
         class_name = buffer_mod.__class__.__name__
-        if class_name == "pinv":
+        if "pinv" in class_name:
             args = {"height": buffer_mod.height, "size": size, "beta": buffer_mod.beta,
                     "contact_nwell": buffer_mod.contact_nwell,
                     "contact_pwell": buffer_mod.contact_pwell,
@@ -781,7 +788,7 @@ class ControlBufferOptimizer:
                     "same_line_inputs": buffer_mod.same_line_inputs}
         elif class_name == "pinv_wordline":
             args = {"size": size, "beta": buffer_mod.beta}
-        elif class_name == "precharge":
+        elif isinstance(buffer_mod, precharge_characterization):
             name = "precharge_{:.5g}".format(size)
             args = {"name": name, "size": size}
         else:

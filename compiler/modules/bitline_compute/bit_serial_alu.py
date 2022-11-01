@@ -44,7 +44,7 @@ class sa_col_bs(design):
 class sa_col_bs_tap(design):
     """
     """
-    pin_names = []
+    pin_names = ["vdd", "gnd"]
     lib_name = "sa_col_bs_tap"
 
 
@@ -140,6 +140,8 @@ class BitSerialALU(BitlineALU):
             self.add_inst(self.col_tap.name, self.col_tap, vector(x_offset + self.bank_x_shift, self.col_tap.height),
                           mirror="MX")
             self.connect_inst([])
+            self.copy_layout_pin(self.insts[-1], "vdd")
+            self.copy_layout_pin(self.insts[-1], "gnd")
 
         # add sr clk buffer
         self.add_clk_buf()

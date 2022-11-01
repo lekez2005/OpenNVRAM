@@ -4,6 +4,7 @@ from base import design
 from base import utils
 from base.contact import m1m2, m2m3, m3m4, well as well_contact
 from base.design import METAL2, METAL1, METAL3, NIMP, TAP_ACTIVE, NWELL, PIMP
+from base.unique_meta import Unique
 from base.vector import vector
 from base.well_active_contacts import calculate_contact_width, calculate_num_contacts
 from globals import OPTS
@@ -64,7 +65,8 @@ class precharge(precharge_characterization, design.design):
     This module implements the precharge bitline cell used in the design.
     """
 
-    def __init__(self, name, size=1):
+    def __init__(self, name=None, size=1):
+        name = name or f"precharge_{size:.5g}"
         design.design.__init__(self, name)
         debug.info(2, "create single precharge cell: {0}".format(name))
 
@@ -94,12 +96,16 @@ class precharge(precharge_characterization, design.design):
         self.add_ptx_inst()
         self.add_boundary()
 
+    @staticmethod
+    def get_tx_mults():
+        # TODO should depend on bitcell width
+        return 3
+
     def set_layout_constants(self):
 
         self.mid_x = 0.5 * self.width
 
-        # TODO should depend on bitcell width
-        self.mults = 3
+        self.mults = self.get_tx_mults()
 
         self.well_contact_active_height = contact.well.first_layer_width
         self.well_contact_implant_height = max(self.implant_width,
@@ -411,10 +417,14 @@ class precharge(precharge_characterization, design.design):
                           width=fill_width, height=fill_height)
 
 
-class precharge_tap(design.design):
-    def __init__(self, precharge_cell: precharge, name="precharge_tap"):
+class precharge_tap(design.design, metaclass=Unique):
+    @classmethod
+    def get_name(cls, precharge_cell, name=None):
+        name = name or f"precharge_tap_{precharge_cell.name}_{precharge_cell.size:.3g}"
+        return name
 
-        super().__init__(name)
+    def __init__(self, precharge_cell: precharge, name=None):
+        design.design.__init__(self, self.get_name(precharge_cell, name))
 
         self.height = precharge_cell.height
         self.precharge_cell = precharge_cell
@@ -437,7 +447,7 @@ class precharge_tap(design.design):
                       height=precharge_vdd.height())
         en_pin = self.precharge_cell.get_pin("en")
 
-        max_via_height = precharge_vdd.uy() - en_pin.uy() - self.get_parallel_space(METAL2)
+        max_via_height = precharge_vdd.uy() - en_pin.uy() - self.get_line_end_space(METAL2)
         num_vias = 1
         while True:
             sample_contact = contact.contact(m1m2.layer_stack, dimensions=[1, num_vias])

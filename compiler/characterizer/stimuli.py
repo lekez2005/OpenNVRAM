@@ -10,7 +10,7 @@ import numpy as np
 
 import debug
 import tech
-from base import utils
+from base.run_command import run_command
 from globals import OPTS
 
 class stimuli:
@@ -223,19 +223,47 @@ class stimuli:
             self.write_control_spectre(end_time)
             return
 
+        g_min = tech.spice["gmin"]
+        output_interval = OPTS.spice_output_interval
+        initial_step = "1p"
+
+        max_step = getattr(OPTS, "max_spice_time_step", "")
+        end_time_str = f"{end_time:.3g}n"
+
         if OPTS.spice_name == "ngspice":
             # UIC is needed for ngspice to converge
-            self.sf.write(".TRAN 5p {0}n UIC\n".format(end_time))
+            self.sf.write(f".TRAN {output_interval} {end_time_str} UIC\n")
             # ngspice sometimes has convergence problems if not using gear method
             # which is more accurate, but slower than the default trapezoid method
             # Do not remove this or it may not converge due to some "pa_00" nodes
             # unless you figure out what these are.
-            self.sf.write(".OPTIONS POST=1 RUNLVL=4 PROBE method=gear TEMP={}\n".format(self.temperature))
+            self.sf.write(f".OPTIONS POST=1 "
+                          f"PROBE method={OPTS.spice_integrator} GMIN={g_min}"
+                          f"TEMP={self.temperature}\n")
+            self.sf.write(f".OPTIONS ABSTOL={OPTS.spice_i_abs_tol} VNTOL={OPTS.spice_v_abs_tol} "
+                          f"RELTOL={OPTS.spice_rel_tol} \n")
+            # ngspice doesn't like measure commands + raw output in batch mode
+            # so run in interactive mode and use control section to save raw data
+            self.sf.write(".control \nunset askquit \nrun \nwrite timing.raw \nquit \n.endc\n")
+        elif OPTS.spice_name == "Xyce":
+            # Options are separated by category
+            self.sf.write(f"V{self.gnd_name} {self.gnd_name} 0 0\n")
+            self.sf.write(".OPTIONS MEASURE MEASFAIL=1 MEASOUT=1\n")
+            self.sf.write(f".OPTIONS DEVICE TEMP={self.temperature} GMIN={g_min}\n")
+            self.sf.write(f".OPTIONS LINSOL type={OPTS.xyce_solver} \n")
+            abs_tol = min(OPTS.spice_i_abs_tol, OPTS.spice_v_abs_tol)
+            self.sf.write(f".OPTIONS NONLIN ABSTOL={abs_tol} \n")
+            self.sf.write(f".OPTIONS NONLIN-TRAN ABSTOL={abs_tol}\n")
+            self.sf.write(f".OPTIONS TIMEINT ABSTOL={abs_tol} RELTOL={OPTS.spice_rel_tol}\n")
+            self.sf.write(f".OPTIONS TIMEINT METHOD={OPTS.spice_integrator} MINORD=2\n")
+            self.sf.write(f".TRAN {initial_step} {end_time_str} 0 {max_step} \n")
         else:
-            self.sf.write(".TRAN 5p {0}n \n".format(end_time))
-            self.sf.write(".OPTIONS RUNLVL=4 PROBE MEASFAIL=1 MEASFORM=2\n".format(self.temperature))
+            self.sf.write(f".TRAN {output_interval} {end_time_str} \n")
+            self.sf.write(f".OPTIONS RUNLVL={OPTS.spice_runlvl} PROBE MEASFAIL=1 MEASFORM=2\n")
             self.sf.write(".TEMP={}\n".format(self.temperature))
-            self.sf.write(".OPTION GMIN={0} GMINDC={0}\n".format(tech.spice["gmin"]))
+            if max_step:
+                self.sf.write(f".OPTION DELMAX {max_step}\n")
+            self.sf.write(f".OPTION GMIN={g_min} GMINDC={g_min}\n")
             # only one of POST or PSF should be specified
             # self.sf.write(".OPTION POST=1\n".format(tech.spice["gmin"]))
             self.sf.write(".OPTIONS PSF=1 \n")
@@ -247,11 +275,14 @@ class stimuli:
             if OPTS.debug_level > 1:
                 if OPTS.spice_name in ["hspice", "xa"]:
                     self.sf.write(".probe V(*)\n")
+                elif OPTS.spice_name == "ngspice":
+                    self.sf.write(".probe V(*)\n")
+                    pass
                 else:
-                    self.sf.write(".plot V(*)\n")
+                    self.sf.write(".print V(*)\n")
             else:
                 self.sf.write("*.probe V(*)\n")
-                self.sf.write("*.plot V(*)\n")
+                self.sf.write("*.plot tran V(*)\n")
 
         # end the stimulus file
         self.sf.write(".end\n\n")
@@ -304,9 +335,11 @@ usim_opt  rcr_fmax=20G
 
             self.sf.write("simulator lang=spice\n")
 
-    def write_include(self, circuit):
+    def write_include(self, circuit=None):
         """Writes include statements, inputs are lists of model files"""
-        includes = self.device_models + [circuit]
+        includes = [x for x in self.device_models]
+        if circuit is not None:
+            includes += [circuit]
         if OPTS.spice_name == "spectre":
             self.sf.write("simulator lang=spectre\n")
             self.sf.write("// {} process corner\n".format(self.process))
@@ -371,6 +404,7 @@ usim_opt  rcr_fmax=20G
         import datetime
         start_time = datetime.datetime.now()
         debug.check(OPTS.spice_exe != "", "No spice simulator has been found.")
+        valid_retcode = 0
 
         if OPTS.spice_name == "xa":
             # Output the xa configurations here. FIXME: Move this to write it once.
@@ -382,13 +416,11 @@ usim_opt  rcr_fmax=20G
                                                                temp_stim,
                                                                os.path.join(OPTS.openram_temp, "xa"),
                                                                OPTS.simulator_threads)
-            valid_retcode = 0
         elif OPTS.spice_name == "hspice":
             display_out = "-d" * (OPTS.debug_level > 0)
             cmd = "{0} -mt {1} -hpp -i {2} {3} -o {4}".format(OPTS.spice_exe, OPTS.simulator_threads,
                                                               temp_stim, display_out,
                                                               os.path.join(OPTS.openram_temp, "timing"))
-            valid_retcode = 0
         elif OPTS.spice_name == "spectre":
             use_ultrasim = OPTS.use_ultrasim
             if use_ultrasim:
@@ -408,18 +440,35 @@ usim_opt  rcr_fmax=20G
                                                                            OPTS.spectre_format,
                                                                            OPTS.openram_temp,
                                                                            extra_options)
-            valid_retcode = 0
+        elif OPTS.spice_name == "Xyce":
+            xyce_plugin = mpi_prefix = ""
+            if OPTS.simulator_threads > 1:
+                mpi_prefix = f"{OPTS.mpi_exe} -np {OPTS.simulator_threads} "
+            if getattr(OPTS, "xyce_plugins"):
+                xyce_plugin = f"-plugin {','.join(OPTS.xyce_plugins)}"
+
+            cmd = f"{mpi_prefix} {OPTS.spice_exe} {xyce_plugin} -r timing.raw -o timing" \
+                  f" -hspice-ext all {temp_stim}"
         else:
+            with open(os.path.join(OPTS.openram_temp, ".spiceinit"), "w") as init_file:
+                init_file.write(f"set num_threads={OPTS.simulator_threads}\n")
+                init_file.write(f"set ngbehavior=hsa\n")
+                init_file.write(f"set ng_nomodcheck\n")
             # ngspice 27+ supports threading with "set num_threads=4" in the stimulus file or a .spiceinit
-            cmd = "{0} -b -o {2} {1}".format(OPTS.spice_exe,
-                                                       temp_stim,
-                                                       os.path.join(OPTS.openram_temp, "timing.lis"))
+            cmd = f"{OPTS.spice_exe} -i {temp_stim}"
             # for some reason, ngspice-25 returns 1 when it only has acceptable warnings
             valid_retcode = 1
 
-        retcode = utils.run_command(cmd, stdout_file=os.path.join(OPTS.openram_temp, "spice_stdout.log"),
-                                    stderror_file=os.path.join(OPTS.openram_temp, "spice_stderr.log"),
-                                    verbose_level=1)
+        std_out_file = os.path.join(OPTS.openram_temp, "spice_stdout.log")
+        retcode = run_command(cmd, stdout_file=std_out_file,
+                              stderror_file=os.path.join(OPTS.openram_temp, "spice_stderr.log"),
+                              verbose_level=1)
+
+        if OPTS.spice_name == "ngspice" and retcode > 0:
+            with open(std_out_file, "r") as std_out:
+                # even fatal errors get swallowed by error code 1
+                if "ERROR: fatal error in ngspice" in std_out.read():
+                    retcode = 2
 
         if retcode > valid_retcode:
             debug.error("Spice simulation error: " + cmd, -1)

@@ -61,6 +61,15 @@ class options(optparse.Values):
     temperatures = ""
     process_corners = ""
 
+    xyce_solver = "klu"
+    xyce_plugins = []
+    spice_rel_tol = 1e-3
+    spice_v_abs_tol = 1e-6
+    spice_i_abs_tol = 1e-12
+    spice_integrator = "gear"
+    spice_runlvl = 4
+    spice_output_interval = "1p"
+
     spectre_format = "psfbin"
     spectre_ic_mode = "node"
     spectre_simulator_options = " "

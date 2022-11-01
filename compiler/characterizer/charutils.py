@@ -18,7 +18,7 @@ def get_measurement_file():
         if OPTS.use_ultrasim:
             return "stim.meas0"
         return "stim.measure"
-    elif OPTS.spice_name == "hspice":
+    elif OPTS.spice_name in ["hspice", "Xyce"]:
         return "timing.mt0"
     else:
         # ngspice using a .lis file
@@ -30,10 +30,12 @@ def get_sim_file():
         return "tran.tran.tran"
     elif OPTS.spice_name == "hspice":
         return "timing.tr0"
+    elif OPTS.spice_name in ["ngspice", "Xyce"]:
+        return "timing.raw"
     elif OPTS.spice_name == "xa":
         return "xa"
     else:
-        return "timing.lis"
+        return "spice_stdout.log"
 
 
 def parse_output(filename, key, find_max=True, sim_dir=None):

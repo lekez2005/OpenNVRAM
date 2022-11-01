@@ -1,20 +1,14 @@
 import debug
-from base.contact import m2m3, m1m2, cross_m2m3
-from base.design import METAL3, METAL2
 from base.vector import vector
 from base.well_implant_fills import create_wells_and_implants_fills
 from globals import OPTS
 from modules.baseline_sram import BaselineSram
-from modules.horizontal.pinv_wordline import pinv_wordline
+from modules.sram_mixins import StackedDecoderMixin
 
 
-class SotfetMram(BaselineSram):
+class SotfetMram(StackedDecoderMixin, BaselineSram):
 
     def create_bank(self):
-        if OPTS.mram == "sotfet":
-            self.fixed_controls = ["vref"]
-        else:
-            self.fixed_controls = ["vclamp"]
         kwargs = {"name": "bank",
                   "word_size": self.word_size,
                   "num_words": self.num_words_per_bank,
@@ -22,6 +16,11 @@ class SotfetMram(BaselineSram):
                   "num_banks": self.num_banks}
         self.bank = self.create_mod_from_str(OPTS.bank_class, **kwargs)
         self.add_mod(self.bank)
+
+        self.fixed_controls = []
+        for pin_name in ["vref", "vclamp"]:
+            if pin_name in self.bank.pins:
+                self.fixed_controls.append(pin_name)
 
         if self.num_banks == 2:
             debug.info(1, "Creating left bank")
@@ -51,50 +50,6 @@ class SotfetMram(BaselineSram):
                                                           y_shift + fill_rect[1]),
                               height=fill_rect[2] - fill_rect[1],
                               width=wordline_left - decoder_right_x)
-
-    def get_decoder_output_offsets(self, bank_inst):
-        offsets = []
-        for row in range(self.bank.num_rows):
-            wordline_in = bank_inst.get_pin("dec_out[{}]".format(row))
-            y_offset = wordline_in.by()
-            if row % 2 == 0:
-                decoder_out = self.row_decoder_inst.get_pin("decode[{}]".format(row))
-                is_stacked = decoder_out.cx() < self.row_decoder_inst.cx()
-                if is_stacked:
-                    y_offset = decoder_out.by() - 0.5 * m2m3.h_2 - 0.5 * self.m3_width
-            offsets.append(y_offset)
-        return offsets
-
-    def route_decoder_outputs(self):
-
-        for i in range(len(self.bank_insts)):
-            bank_inst = self.bank_insts[i]
-            y_offsets = self.get_decoder_output_offsets(bank_inst)
-            for row in range(self.bank.num_rows):
-                decoder_out = self.row_decoder_inst.get_pin("decode[{}]".format(row))
-                rail_offset = y_offsets[row]
-                wordline_in = bank_inst.get_pin("dec_out[{}]".format(row))
-                if row % 2 == 0:
-                    self.add_rect(METAL2, offset=decoder_out.ll(),
-                                  height=rail_offset - decoder_out.by())
-                else:
-                    self.add_rect(METAL2, offset=decoder_out.ul(),
-                                  height=rail_offset - decoder_out.uy())
-                via_offset = vector(decoder_out.cx(), rail_offset + 0.5 * self.m3_width)
-
-                if isinstance(self.row_decoder.inv, pinv_wordline):
-                    self.add_contact_center(m1m2.layer_stack, offset=via_offset)
-                self.add_cross_contact_center(cross_m2m3, offset=via_offset, fill=False)
-                if i == 0:
-                    end_x = wordline_in.lx() + self.m3_width
-                else:
-                    end_x = wordline_in.rx() - self.m3_width
-
-                self.add_rect(METAL3, offset=vector(decoder_out.lx(), rail_offset),
-                              width=end_x - decoder_out.lx())
-
-                self.add_rect(METAL3, vector(end_x, rail_offset), width=self.m3_width,
-                              height=wordline_in.cy() - rail_offset)
 
     def join_bank_controls(self):
         if self.single_bank:

@@ -11,11 +11,6 @@ from modules.mram.sotfet.mram_bank import MramBank
 
 class SotfetMramBank1t1s(WordlineVoltageMixin, TwoPrechargeMixin, MramBank):
 
-    def create_optimizer(self):
-        from modules.mram.one_t_one_s.sotfet_1t1s_control_buffers_optimizer \
-            import Sotfet1t1sControlBuffersOptimizer
-        self.optimizer = Sotfet1t1sControlBuffersOptimizer(self)
-
     def add_pins(self):
         super().add_pins()
         self.add_pin("vdd_wordline")
@@ -34,6 +29,7 @@ class SotfetMramBank1t1s(WordlineVoltageMixin, TwoPrechargeMixin, MramBank):
 
     def create_br_precharge_array(self):
         self.br_precharge_array = self.create_module('br_precharge_array',
+                                                     name="br_precharge_array",
                                                      columns=self.num_cols,
                                                      size=OPTS.discharge_size)
 
@@ -43,20 +39,6 @@ class SotfetMramBank1t1s(WordlineVoltageMixin, TwoPrechargeMixin, MramBank):
 
     def get_right_wordline_offset(self):
         return MramBank.get_right_wordline_offset(self)
-
-    def get_wordline_driver_space(self):
-        """Separate wells based on minimum well space for wells on different voltages"""
-        self.rwl_driver.add_body_taps()
-        rwl_well = min(self.rwl_driver.get_layer_shapes(NWELL, recursive=True),
-                       key=lambda x: x.lx())
-        wwl_well = max(self.wwl_driver.get_layer_shapes(NWELL, recursive=True),
-                       key=lambda x: x.rx())
-
-        well_space = self.get_space(NWELL, prefix="different")
-
-        space = - rwl_well.lx() + (wwl_well.rx() - self.wwl_driver.width) + well_space
-        debug.info(2, "Wordline space is %.3g", space)
-        return space
 
     def get_wordline_vdd_offset(self):
         return self.wwl_driver_inst.rx() + 2 * self.get_wide_space(METAL2)

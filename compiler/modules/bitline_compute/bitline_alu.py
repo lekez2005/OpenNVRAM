@@ -78,7 +78,7 @@ class sa_col_tap(design):
     """
     Contains mcc col for cinb and coutb
     """
-    pin_names = []
+    pin_names = ["vdd", "gnd"]
     lib_name = "sa_col_tap"
 
 
@@ -135,12 +135,7 @@ class BitlineALU(design):
         debug.info(2, "ALU pins: %s", self.pins)
 
     def create_clk_buf(self, logic_name):
-        # TODO Move to optimizer
-        if OPTS.run_optimizations:
-            delay_strategy = delay_strategy_class()(self.bank)
-            sizes = delay_strategy.get_alu_clk_sizes()
-        else:
-            sizes = OPTS.sr_clk_buffers
+        sizes = OPTS.sr_clk_buffers
         self.clk_buf = LogicBuffer(buffer_stages=sizes, logic=logic_name,
                                    height=OPTS.logic_buffers_height,
                                    route_inputs=False,
@@ -153,24 +148,23 @@ class BitlineALU(design):
         _, self.m3_fill_height = self.calculate_min_area_fill(self.m3_fill_width,
                                                               layer=METAL3)
 
-    def create_modules(self):
-
+    @staticmethod
+    def get_mcc_modules():
         if OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
-            self.mcc_col = mcc_col()
-            self.add_mod(self.mcc_col)
-            self.mcc_col_bar = mcc_col_bar()
-            self.add_mod(self.mcc_col_bar)
-
-            self.col_tap = col_tap()
-            self.add_mod(self.col_tap)
+            mcc_col_ = mcc_col()
+            mcc_col_bar_ = mcc_col_bar()
+            col_tap_ = col_tap()
         else:
-            self.mcc_col = sa_col()
-            self.add_mod(self.mcc_col)
-            self.mcc_col_bar = sa_col_bar()
-            self.add_mod(self.mcc_col_bar)
+            mcc_col_ = sa_col()
+            mcc_col_bar_ = sa_col_bar()
+            col_tap_ = sa_col_tap()
+        return mcc_col_, mcc_col_bar_, col_tap_
 
-            self.col_tap = sa_col_tap()
-            self.add_mod(self.col_tap)
+    def create_modules(self):
+        self.mcc_col, self.mcc_col_bar, self.col_tap = self.get_mcc_modules()
+        self.add_mod(self.mcc_col)
+        self.add_mod(self.mcc_col_bar)
+        self.add_mod(self.col_tap)
 
         self.height = self.mcc_col.height
         self.create_clk_buf("pnand2")
@@ -267,6 +261,8 @@ class BitlineALU(design):
                           vector(x_offset, self.col_tap.height),
                           mirror="MX")
             self.connect_inst([])
+            self.copy_layout_pin(self.insts[-1], "vdd")
+            self.copy_layout_pin(self.insts[-1], "gnd")
 
         # add sr clk buffer
         self.add_clk_buf()
@@ -477,11 +473,37 @@ class BitlineALU(design):
                           height=m1m2.height + self.m2_width)
             self.add_rect(METAL2, vector(x_offset, out_pin.uy()), width=self.bus_width,
                           height=clk_pin.cy() - out_pin.uy() + 0.5 * m1m2.height)
-            self.add_contact_center(m1m2.layer_stack,
+            self.add_contact_center(m2m3.layer_stack,
                                     vector(x_offset + 0.5 * self.bus_width, clk_pin.cy()))
-            x_offset += 0.5 * self.bus_width
-            self.add_rect(METAL1, vector(x_offset, clk_pin.by()), height=clk_pin.height(),
-                          width=clk_pin.lx() - x_offset)
+
+            m2_left = self.mid_gnd.rx() + self.get_line_end_space(METAL2)
+
+            _, fill_height = self.calculate_min_area_fill(self.m2_width, layer=METAL2)
+
+            mcc_m2_rects = self.mcc_insts[0].get_layer_shapes(METAL2, recursive=True)
+            top_range = clk_pin.cy() + 0.5 * fill_height
+            bottom_range = clk_pin.cy() - 0.5 * fill_height
+            mcc_m2_rects = [x for x in mcc_m2_rects if x.by() < top_range
+                            and x.uy() > bottom_range ]
+            if mcc_m2_rects:
+                m2_x = min(mcc_m2_rects, key=lambda x: x.lx()).lx()
+            else:
+                m2_x = self.mcc_insts[0].lx() + self.m2_width
+
+            m2_right = m2_x - self.get_parallel_space(METAL2)
+            fill_width = min(self.rail_height, m2_right - m2_left)
+            _, fill_height = self.calculate_min_area_fill(fill_width, layer=METAL2)
+            mid_offset = vector(0.5 * (m2_left + m2_right), clk_pin.cy())
+            self.add_rect_center(METAL2, mid_offset, width=fill_width, height=fill_height)
+            self.add_cross_contact_center(cross_m1m2, mid_offset, rotate=True)
+            self.add_contact_center(m2m3.layer_stack, mid_offset)
+
+            m3_x = x_offset + 0.5 * self.bus_width
+            self.add_rect(METAL3, vector(m3_x, clk_pin.by()), height=clk_pin.height(),
+                          width=mid_offset.x - m3_x)
+            self.add_rect(METAL1, vector(mid_offset.x, clk_pin.by()), height=clk_pin.height(),
+                          width=clk_pin.lx() - mid_offset.x)
+
         else:
             self.add_rect(METAL1, offset=vector(out_pin.lx(), clk_pin.by()),
                           width=clk_pin.lx() - out_pin.lx(), height=clk_pin.height())
@@ -497,7 +519,8 @@ class BitlineALU(design):
         x_offset = self.clk_buf_inst.lx()
         self.add_rect(METAL2, offset=vector(x_offset, clk_in.cy() - 0.5 * self.m2_width),
                       width=clk_in.cx() - x_offset)
-        self.add_rect(METAL2, vector(x_offset, clk_in.cy()), height=y_offset - clk_in.cy())
+        self.add_rect(METAL2, vector(x_offset, clk_in.cy()),
+                      height=y_offset + self.m2_width - clk_in.cy())
         self.add_rect(METAL2, vector(x_offset, y_offset),
                       width=bank_clk.lx() - x_offset)
         self.add_layout_pin("sr_clk", METAL2, vector(bank_clk.lx() -
@@ -518,7 +541,8 @@ class BitlineALU(design):
             pin = self.add_layout_pin(layout_names[i], rail.layer,
                                       offset=vector(rail.lx(), y_offset),
                                       width=rail.width(), height=self.height - y_offset)
-            self.add_rect(METAL4, pin.ll(), width=pin.width(), height=pin.height())
+            self.add_layout_pin(layout_names[i], METAL4, pin.ll(),
+                                width=pin.width(), height=pin.height())
             m2_pins[i] = pin
         self.mid_vdd, self.mid_gnd, self.right_vdd, self.right_gnd = m2_pins
 

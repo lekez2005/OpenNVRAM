@@ -6,7 +6,6 @@ from typing import Union, List, Tuple
 import debug
 from base import verilog
 from base.spice_parser import SpiceParser
-from characterizer.characterization_data import load_data
 
 INPUT = "INPUT"
 INOUT = "INOUT"
@@ -311,6 +310,7 @@ class spice(verilog.verilog):
     def get_input_cap_from_char(self, pin_name, num_elements: int = 1,
                                 wire_length: float = 0.0, interpolate=True, **kwargs):
         """Loads input cap from characterized data"""
+        from characterizer.characterization_data import load_data
         module_name = self.get_char_data_name(**kwargs)
 
         file_suffixes = self.get_char_data_file_suffixes(**kwargs)

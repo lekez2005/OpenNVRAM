@@ -34,6 +34,7 @@ class precharge_array(design.design):
         else:
             self.pc_cell = precharge(name="precharge", size=self.size)
             self.add_mod(self.pc_cell)
+        self.child_mod = self.pc_cell
 
         if OPTS.use_x_body_taps:
             self.body_tap = precharge_tap(self.pc_cell)
@@ -76,6 +77,7 @@ class precharge_array(design.design):
         """Creates a precharge array by horizontally tiling the precharge cell"""
         self.load_bitcell_offsets()
         self.child_insts = []
+        self.tap_insts = []
         for i in range(self.columns):
             name = "mod_{0}".format(i)
             offset, mirror = self.get_cell_offset(i)
@@ -87,7 +89,9 @@ class precharge_array(design.design):
             self.connect_inst(self.get_connections(i))
         if getattr(self, "body_tap", None):
             for x_offset in self.tap_offsets:
-                self.add_inst(self.body_tap.name, self.body_tap, offset=vector(x_offset, 0))
+                inst = self.add_inst(self.body_tap.name, self.body_tap,
+                                     offset=vector(x_offset, 0))
+                self.tap_insts.append(inst)
                 self.connect_inst([])
         self.width = inst.rx()
         self.extend_wells()

@@ -251,8 +251,12 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         self.run_optimizations()
 
     def create_optimizer(self):
-        from characterizer.control_buffers_optimizer import ControlBufferOptimizer
-        self.optimizer = ControlBufferOptimizer(self)
+        if hasattr(OPTS, "control_optimizer"):
+            optimizer_class = self.import_mod_class_from_str(OPTS.control_optimizer)
+        else:
+            from characterizer.control_buffers_optimizer import \
+                ControlBufferOptimizer as optimizer_class
+        self.optimizer = optimizer_class(self)
 
     def run_optimizations(self):
         if self.is_optimized or self.is_left_bank:
@@ -463,6 +467,8 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
     def get_non_flop_control_inputs(self):
         """Get control buffers inputs that don't go through flops"""
         precharge_trigger = ["precharge_trig"] * self.control_buffers.use_precharge_trigger
+        if self.mirror_sense_amp:
+            return precharge_trigger
         return ["sense_trig"] + precharge_trigger
 
     def get_control_flop_m1_extension(self):
@@ -703,7 +709,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                         ("en_bar", "write_en_bar", EXACT), ("en", "write_en", EXACT)]
 
         if self.words_per_row > 1:
-            replacements.extend([("bl", "bl_out"), ("br", "br_out")])
+            replacements.extend([("bl[", "bl_out["), ("br[", "br_out[")])
         return replacements
 
     def add_write_driver_array(self):
@@ -772,7 +778,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         bottom_mod = bottom_inst.mod
         self.precharge_array.child_mod = self.precharge_array.pc_cell
 
-        top_pin = bottom_inst.get_pin("bl[0]")
+        top_pin = max(bottom_inst.get_pins("bl[0]"), key=lambda x: x.uy())
         bottom_pin = self.precharge_array.get_pin("bl[0]")
         if top_pin.layer == bottom_pin.layer:
             num_rails = 0
@@ -781,7 +787,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
 
         if self.col_mux_array_inst is None:
             # we place via below precharge bl pin
-            bl_pin = bottom_mod.get_pin("bl[0]")
+            bl_pin = max(bottom_mod.get_pins("bl[0]"), key=lambda x: x.uy())
             # find vias and layers used in going from top to bottom pins
             vias, _, fill_layers = contact.get_layer_vias(bl_pin.layer,
                                                           METAL2,
@@ -1046,10 +1052,10 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                               width=fill_width, height=fill_height)
 
     def get_bitline_pins(self, top_instance, bottom_instance, top_suffix="",
-                         bottom_suffix="", word_size=None):
+                         bottom_suffix="", word_size=None, pin_names=None):
         if word_size is None:
             word_size = self.word_size
-        pin_names = ["bl", "br"]
+        pin_names = pin_names or ["bl", "br"]
 
         all_pins = []
         for i in range(2):
@@ -1064,14 +1070,15 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         return all_pins
 
     def join_bitlines(self, top_instance, top_suffix, bottom_instance,
-                      bottom_suffix, word_size=None, y_shift=0, rect_align=JOIN_TOP_ALIGN):
+                      bottom_suffix, word_size=None, y_shift=0, rect_align=JOIN_TOP_ALIGN,
+                      pin_names=None):
         """Join bitlines using given 'top_instance' and 'bottom_instance
         Pin names are extracted by adding 'top/bottom_suffix to 'bl' and 'br'
         bl fill is aligned to the left and br fill is aligned to the right"""
         alignments = [LEFT_FILL, RIGHT_FILL]
         all_pins = self.get_bitline_pins(top_instance, bottom_instance, top_suffix,
-                                         bottom_suffix, word_size)
-        for i in range(2):
+                                         bottom_suffix, word_size, pin_names=pin_names)
+        for i in range(len(all_pins)):
             top_pins, bottom_pins = all_pins[i]
             alignment = alignments[i]
             self.join_rects(top_pins, top_pins[0].layer, bottom_pins, bottom_pins[0].layer,
@@ -1228,7 +1235,14 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         driver_pin = self.get_write_driver_mask_in(word)
         self.add_rect(METAL2, offset=flop_pin.ul(), width=flop_pin.width(),
                       height=mask_flop_out_via_y + self.m2_width - flop_pin.uy())
-        self.add_contact(m2m3.layer_stack, offset=vector(flop_pin.lx(), mask_flop_out_via_y))
+
+        bl_pin = br_inst.get_pin("bl[{}]".format(word))
+        mid_x = 0.5 * (br_pin.cx() + bl_pin.cx())
+        if flop_pin.cx() > mid_x:
+            via_x = flop_pin.rx() - m2m3.w_2
+        else:
+            via_x = flop_pin.lx()
+        self.add_contact(m2m3.layer_stack, offset=vector(via_x, mask_flop_out_via_y))
 
         # add via to m4
         via_offset = vector(br_x_offset, mask_flop_out_via_y + 0.5 * m2m3.second_layer_height
@@ -1345,18 +1359,23 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
             if abs(bl_pin.cx() - br_pin.cx()) <= (2 * power_rail_width + self.m4_space):
                 self.occupied_m4_bitcell_indices.append(column_index)
 
-    def route_data_flop_in(self, bitline_pins, word, data_via_y, fill_width, fill_height):
-        br_pin = next(filter(lambda x: "br" in x.name, bitline_pins))
+    def get_data_in_m2m3_x_offset(self, data_in, word):
+        return data_in.lx()
+
+    def route_data_flop_in(self, bitline_pins, word, data_via_y, fill_width, fill_height,
+                           pin_name="br"):
+        bitline_pin = next(filter(lambda x: pin_name in x.name, bitline_pins))
         # align data flop in with br
         data_in = self.data_in_flops_inst.get_pin("din[{}]".format(word))
         y_offset = data_via_y
         x_offset = data_in.lx()
         offset = vector(x_offset, y_offset)
         self.add_rect(METAL2, offset=offset, height=data_in.by() - y_offset)
-        cont = self.add_contact(m2m3.layer_stack, offset=offset)
+        x_offset = self.get_data_in_m2m3_x_offset(data_in, word)
+        cont = self.add_contact(m2m3.layer_stack, offset=vector(x_offset, offset.y))
 
-        x_offset = br_pin.lx()
-        self.join_pins_with_m3(cont, br_pin, cont.cy(), fill_width, fill_height)
+        x_offset = bitline_pin.lx()
+        self.join_pins_with_m3(cont, bitline_pin, cont.cy(), fill_width, fill_height)
 
         self.add_contact(m3m4.layer_stack, offset=vector(x_offset, y_offset +
                                                          0.5 * m2m3.second_layer_height -

@@ -19,7 +19,7 @@ class WordlineBuffer(BufferStage):
         self.width = self.module_insts[-1].rx()
         self.add_boundary()
 
-    def create_buffer_inv(self, size):
+    def create_buffer_inv(self, size, index=None):
         index = self.buffer_stages.index(size)
         mirror = index % 2 == 1
         beta = OPTS.wordline_beta[index]

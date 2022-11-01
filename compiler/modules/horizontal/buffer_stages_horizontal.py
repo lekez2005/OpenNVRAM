@@ -9,7 +9,7 @@ class BufferStagesHorizontal(BufferStage):
         name = "buffer_stage_" + "_".join(['{:.3g}'.format(x) for x in buffer_stages])
         return name.replace(".", "__")
 
-    def create_buffer_inv(self, size):
+    def create_buffer_inv(self, size, index=None):
         self.route_outputs = False
         inv = pinv_horizontal(size=size)
         self.height = inv.height

@@ -76,7 +76,7 @@ class BufferStage(design.design, metaclass=Unique):
         self.width = self.x_offset
         self.height = self.module_insts[-1].height
 
-    def create_buffer_inv(self, size):
+    def create_buffer_inv(self, size, index=None):
         return pinv(size=size, height=self.height, contact_nwell=self.contact_nwell,
                     contact_pwell=self.contact_pwell, align_bitcell=self.align_bitcell,
                     fake_contacts=self.fake_contacts)
@@ -88,7 +88,7 @@ class BufferStage(design.design, metaclass=Unique):
     def add_buffers(self):
         for i in range(self.total_instances):
             size = self.buffer_stages[i]
-            inv = self.create_buffer_inv(size)
+            inv = self.create_buffer_inv(size, index=i)
             self.add_mod(inv)
             self.buffer_invs.append(inv)
 

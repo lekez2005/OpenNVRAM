@@ -72,14 +72,8 @@ from tech import drc
 def run_drc(cell_name, gds_name, exception_group=""):
     """Run DRC check on a given top-level name which is
        implemented in gds_name."""
-    bail = 2
-    if bail == 1:
+    if OPTS.export_drc_cadence:
         utils.to_cadence(gds_name)
-        debug.check(False, "quick fail")
-    elif bail == 2:
-        utils.to_cadence(gds_name)
-    elif bail == 3:
-        return
 
     # the runset file contains all the options to run calibre
     debug.info(1, "Run DRC for {}".format(cell_name))

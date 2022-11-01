@@ -19,6 +19,8 @@ class options(optparse.Values):
     debug_level = 0
     # This determines whether  LVS and DRC is checked for each submodule.
     check_lvsdrc = True
+    # Whether to export designs to cadence during Calibre DRC runs to ease debugging
+    export_drc_cadence = False
     # Variable to select the variant of spice
     spice_name = ""
     # Should we print out the banner at startup
@@ -65,6 +67,7 @@ class options(optparse.Values):
     decoder_flops = False
 
     verbose_save = False  # whether to save all lots of internal nodes e.g. cols for control signals, currents
+    simulator_num_probes = 5
 
     separate_vdd = False
     separate_vdd_wordline = False

@@ -12,7 +12,7 @@ from pgates.ptx import ptx
 from tech import parameter
 
 
-class PrechargeSingleBitline(design, precharge_characterization, metaclass=Unique):
+class PrechargeSingleBitline(precharge_characterization, design, metaclass=Unique):
     @classmethod
     def get_name(cls, name=None, size=1):
         power_name = OPTS.precharge_power_name
@@ -44,12 +44,12 @@ class PrechargeSingleBitline(design, precharge_characterization, metaclass=Uniqu
 
     def add_pins(self):
         if self.power_name == "vdd":
-            enable_pin = "precharge_en_bar"
+            enable_pin = "en"
         else:
             enable_pin = f"{self.bl_pin_name}_reset"
         self.enable_pin = enable_pin
         self.add_pin_list(["bl", "br", enable_pin, self.power_name])
-        debug.info(2, "br_precharge pins is [%s]", ", ".join(self.pins))
+        debug.info(2, "PrechargeSingleBitline pins is [%s]", ", ".join(self.pins))
 
     def add_tx(self):
         self.bitcell = self.create_mod_from_str(OPTS.bitcell)
@@ -86,6 +86,7 @@ class PrechargeSingleBitline(design, precharge_characterization, metaclass=Uniqu
         x_offset = 0.5 * (self.width - tx.width)
         self.tx_inst = self.add_inst("tx", tx, vector(x_offset, y_offset), mirror=mirror)
         self.connect_inst([self.bl_pin_name, self.enable_pin, self.power_name, self.power_name])
+        self.pmos = tx  # for delay characterization
 
     def add_enable_pin(self):
         m1_fill_height = poly_contact.h_2
@@ -185,3 +186,20 @@ class PrechargeSingleBitline(design, precharge_characterization, metaclass=Uniqu
         tx_implant = max(self.tx_inst.get_layer_shapes(layer), key=lambda x: x.width * x.height)
         self.add_rect(layer, vector(0, tx_implant.by()), width=self.width,
                       height=tx_implant.height)
+
+
+def make_precharge(pin_name, power_name, name, size):
+    power_name_ = OPTS.precharge_power_name
+    pin_name_ = OPTS.precharge_pin_name
+    OPTS.precharge_power_name, OPTS.precharge_pin_name = power_name, pin_name
+    cell = PrechargeSingleBitline(name=name, size=size)
+    OPTS.precharge_power_name, OPTS.precharge_pin_name = power_name_, pin_name_
+    return cell
+
+
+def precharge_bl(name=None, size=1):
+    return make_precharge("bl", "vdd", name, size)
+
+
+def precharge_br(name=None, size=1):
+    return make_precharge("br", "vdd", name, size)

@@ -17,6 +17,9 @@ DATA_IN_PATTERN = 'DATA[{}]'
 DATA_OUT_PATTERN = 'D[{}]'
 VDD_CURRENT = 'i(vvdd)'
 
+brief_errors = False
+probe_bits = [0]
+
 
 def search_str(content, pattern):
     matches = re.findall(pattern, content)
@@ -62,7 +65,13 @@ def debug_error(comment, expected_data, actual_data):
         wrong_bits = [(len(actual_data) - 1 - x) for x in
                       np.nonzero(np.invert(equal_vec))[0]]
         print("{} btw bits {}, {}".format(comment, wrong_bits[0], wrong_bits[-1]))
-        print_data = [list(reversed(range(len(actual_data)))), expected_data, actual_data]
+        if brief_errors:
+            debug_bits = [x for x in reversed(probe_bits)]
+            expected_data = [expected_data[debug_bits[i]] for i in range(len(debug_bits))]
+            actual_data = [actual_data[debug_bits[i]] for i in range(len(debug_bits))]
+        else:
+            debug_bits = list(reversed(range(len(actual_data))))
+        print_data = [debug_bits, expected_data, actual_data]
         print_comments = ["", "expected", "actual"]
         print_vectors(print_comments, print_data)
 
@@ -120,6 +129,7 @@ class SimAnalyzer:
         self.meas_file = os.path.join(sim_dir, measure_file)
 
         self.sim_data = SpiceReader(sim_file)
+        self.address_data_threshold = None
 
         self.all_saved_list = list(self.sim_data.get_signal_names())
         self.all_saved_signals = "\n".join(sorted(self.all_saved_list))
@@ -139,6 +149,8 @@ class SimAnalyzer:
     def load_events(self, op_name):
         event_pattern = r"-- {}.*\[(.*)\]".format(op_name)
         matches = search_str(self.stim_str, event_pattern)
+        if isinstance(matches, str):
+            matches = [matches]
         events_ = []
 
         for match in matches:
@@ -151,6 +163,7 @@ class SimAnalyzer:
         return events_
 
     def load_probes(self):
+        global probe_bits
         json_contents = []
         for file_name in ["state_probes", "voltage_probes", "current_probes"]:
             with open(os.path.join(OPTS.openram_temp, f"{file_name}.json"), "r") as f:
@@ -167,6 +180,7 @@ class SimAnalyzer:
         self.probe_cols, self.probe_bits = values
         debug.info(1, "Probe cols = %s \nProbe bits = %s", self.probe_cols,
                    self.probe_bits)
+        probe_bits = self.probe_bits
 
     def load_periods(self):
         names = ['read period', 'write period']
@@ -223,6 +237,7 @@ class SimAnalyzer:
                                            event_time, index_pattern)
 
     def get_address_data(self, address, time, threshold=None):
+        threshold = threshold or self.address_data_threshold
         if threshold is None:
             threshold = 0.5 * self.sim_data.vdd
 

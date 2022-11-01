@@ -233,6 +233,19 @@ class pgate(pgates_characterization_base, design.design):
         rail_extent = 0.5 * self.rail_height + power_rail_space + via_extension
         return rail_extent, fill_width, fill_height
 
+    def validate_min_widths(self):
+        min_n_width = utils.round_to_grid(self.nmos_scale * self.min_tx_width)
+        min_p_width = utils.round_to_grid(self.pmos_scale * self.beta * self.min_tx_width)
+        # logic gates must pass min-width requirement, inverter width is determined later
+        if min_n_width < self.min_tx_width or min_p_width < self.min_tx_width:
+            return None, None
+        return min_n_width, min_p_width
+
+    def get_tx_widths(self):
+        nmos_width = round_to_grid(self.nmos_width / self.tx_mults)
+        pmos_width = round_to_grid(self.pmos_width / self.tx_mults)
+        return nmos_width, pmos_width
+
     def determine_tx_mults(self):
         """
         Determines the number of fingers needed to achieve the size within
@@ -244,9 +257,9 @@ class pgate(pgates_characterization_base, design.design):
 
         self.tx_height_available = tx_height_available = self.height - self.get_total_vertical_space()
 
-        min_n_width = utils.round_to_grid(self.nmos_scale * self.min_tx_width)
-        min_p_width = utils.round_to_grid(self.pmos_scale * self.beta * self.min_tx_width)
-        if min_n_width < self.min_tx_width or min_p_width < self.min_tx_width:
+        min_n_width, min_p_width = self.validate_min_widths()
+
+        if not min_n_width or not min_p_width:
             return False
 
         if tx_height_available < min_n_width + min_p_width:
@@ -274,10 +287,9 @@ class pgate(pgates_characterization_base, design.design):
         # User should pick a bigger size to fix it...
         # We also need to round the width to the grid or we will end up with LVS property
         # mismatch errors when fingers are not a grid length and get rounded in the offset geometry.
-        self.nmos_width = round_to_grid(self.nmos_width / self.tx_mults)
+        self.nmos_width, self.pmos_width = self.get_tx_widths()
         debug.check(self.nmos_width >= self.min_tx_width,
                     "{}: Cannot finger NMOS transistors to fit cell height.".format(self.name))
-        self.pmos_width = round_to_grid(self.pmos_width / self.tx_mults)
         debug.check(self.pmos_width >= self.min_tx_width,
                     "{}: Cannot finger PMOS transistors to fit cell height.".format(self.name))
 

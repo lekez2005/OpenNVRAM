@@ -14,6 +14,8 @@ class Sotfet1t1sControlBuffersOptimizer(SotfetControlBuffersOptimizer):
         if class_name == "BlBrReset":
             name = "bl_br_reset{:.5g}".format(size)
             return {"name": name, "size": size}
+        elif class_name == "PrechargeSingleBitline":
+            return {"size": size}
         else:
             return super().get_mod_args(buffer_mod, size)
 
@@ -68,8 +70,8 @@ class Sotfet1t1sControlBuffersOptimizer(SotfetControlBuffersOptimizer):
         design.name_map.remove("bl_br_tap")
         array = self.bank.create_module('br_precharge_array', columns=self.bank.num_cols,
                                         size=OPTS.discharge_size)
-        br_reset_cap, _ = array.get_input_cap("bl_reset")
-        loads[-1] += br_reset_cap
+        bl_reset_cap, _ = array.get_input_cap("bl_reset")
+        loads[-1] += bl_reset_cap
         return self.adjust_optimization_loads(loads, eval_buffer_stage_delay_slew)
 
     def post_process_buffer_sizes(self, stages, buffer_stages_str, parent_mod):

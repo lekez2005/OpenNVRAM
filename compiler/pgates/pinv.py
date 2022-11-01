@@ -30,6 +30,10 @@ class pinv(pgate.pgate, metaclass=unique_meta.Unique):
         # will use the last record with a given name. I.e., you will
         # over-write a design in GDS if one has and the other doesn't
         # have poly connected, for example.
+        if beta is None:
+            beta = parameter["beta"]
+        if beta * size < 1:
+            beta = parameter["beta"]
 
         pgate.pgate.__init__(self, self.name, height, size=size, beta=beta,
                              contact_pwell=contact_pwell,
@@ -75,6 +79,14 @@ class pinv(pgate.pgate, metaclass=unique_meta.Unique):
         self.add_ptx_inst()
         add_tech_layers(self)
         self.add_boundary()
+
+    def validate_min_widths(self):
+        # logic gates must pass min-width requirement, inverter width is determined later
+        return self.min_tx_width, max(1, self.beta) * self.min_tx_width
+
+    def get_tx_widths(self):
+        nmos_width, pmos_width = super().get_tx_widths()
+        return max(nmos_width, self.min_tx_width), max(pmos_width, self.min_tx_width)
 
     def get_total_vertical_space(self, nmos_width=None, pmos_width=None):
         """Use min-tx width for calculating vertical spaces"""

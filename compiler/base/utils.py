@@ -3,14 +3,13 @@ import json
 import math
 import os
 import random
-import subprocess
-import time
 from functools import lru_cache
 from importlib import reload
 from typing import List, TYPE_CHECKING
 
 import globals
 import tech
+from base import run_command as run_command_mod
 from base.geometry import rectangle
 from base.pin_layout import pin_layout
 from base.vector import vector
@@ -23,6 +22,7 @@ except ImportError:
 
 OPTS = globals.OPTS
 round_scale = 10000
+run_command = run_command_mod.run_command
 
 
 def ceil(decimal):
@@ -68,7 +68,7 @@ def round_to_grid(number):
     """
     Rounds an arbitrary number to the grid.
     """
-    grid = tech.drc["grid"]  
+    grid = tech.drc["grid"]
     # this gets the nearest integer value
     # 0.001 added for edge cases: round(196.5, 0) rounds to 196 in python3 but 197 in python 2
     number_grid = int(math.copysign(1, number) * round(round((abs(number) / grid), 2) + 0.001, 0))
@@ -231,7 +231,7 @@ def auto_measure_libcell(pin_list, name, units, layer):
     [cell["width"], cell["height"]] = measure_result
 
     for pin in pin_list:
-        (name,layer,boundary)=cell_vlsi.getPinShapeByLabel(str(pin))        
+        (name,layer,boundary)=cell_vlsi.getPinShapeByLabel(str(pin))
         cell[str(pin)] = pin_center(boundary)
     return cell
 
@@ -343,47 +343,6 @@ def load_class(class_name):
     config_mod_name = getattr(OPTS, class_name)
     class_file = reload(__import__(config_mod_name))
     return getattr(class_file, config_mod_name)
-
-
-def run_command(command, stdout_file, stderror_file, verbose_level=1, cwd=None):
-    import debug
-
-    pre_exec_fcn = None
-    try:
-        import psutil
-        nice_value = os.getenv("OPENRAM_SUBPROCESS_NICE", 15)
-        if nice_value:
-            def pre_exec_fcn():
-                pid = os.getpid()
-                ps = psutil.Process(pid)
-                ps.nice(int(nice_value))
-    except ImportError:
-        pass
-
-    verbose = OPTS.debug_level >= verbose_level
-    if cwd is None:
-        cwd = OPTS.openram_temp
-    with open(stdout_file, "w") as stdout_f, open(stderror_file, "w") as stderr_f:
-        stdout = subprocess.PIPE if verbose else stdout_f
-        stderr = subprocess.STDOUT if verbose else stderr_f
-        process = subprocess.Popen(command, stdout=stdout, stderr=stderr, shell=True,
-                                   cwd=cwd, preexec_fn=pre_exec_fcn)
-        while verbose:
-            line = process.stdout.readline().decode()
-            if not line:
-                process.stdout.close()
-                break
-            else:
-                debug.print_str(line.rstrip())
-                stdout_f.write(line)
-
-    if process is not None:
-        while process.poll() is None:
-            # Process hasn't exited yet, let's wait some
-            time.sleep(0.5)
-        return process.returncode
-    else:
-        return -1
 
 
 def get_temp_file(file_name):

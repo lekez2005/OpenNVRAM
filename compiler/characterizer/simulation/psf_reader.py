@@ -1,23 +1,28 @@
 # pip install libpsf (patched version available at https://github.com/lekez2005/libpsf
 import os
 
-import libpsf
-
-from characterizer.simulation.sim_reader import SimReader
+try:
+    from sim_reader import SimReader
+except ModuleNotFoundError:
+    from .sim_reader import SimReader
 
 
 class PsfReader(SimReader):
     data = None
     is_open = False
 
+    def create_data(self):
+        import libpsf
+        self.data = libpsf.PSFDataSet(self.simulation_file)
+
     def initialize(self):
         assert os.path.exists(self.simulation_file), f"{self.simulation_file} does not exist"
-        self.data = libpsf.PSFDataSet(self.simulation_file)
+        self.create_data()
         self.time = self.data.get_sweep_values()
         self.all_signal_names = list(self.get_signal_names())
         if self.vdd_name:
             try:
-                self.vdd = self.data.get_signal(self.vdd_name)[0]
+                self.vdd = self.get_signal(self.vdd_name)[0]
             except:
                 pass
         self.is_open = True

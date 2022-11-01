@@ -13,6 +13,9 @@ LAST_EDGE = "last"
 class SimReader(ABC):
     time = vdd = None
 
+    RAW_READER = "raw"
+    PSF_READER = "psf"
+
     def initialize(self):
         raise NotImplementedError
 
@@ -34,6 +37,22 @@ class SimReader(ABC):
         self.thresh = 0.5
 
         self.initialize()
+
+    @staticmethod
+    def get_reader(simulation_file, simulator=None, vdd_name="vdd"):
+        if simulator is None:
+            if simulation_file.endswith(".raw"):
+                simulator = SimReader.RAW_READER
+            else:
+                simulator = SimReader.PSF_READER
+        if simulator == SimReader.RAW_READER:
+            from spice_raw_reader import SpiceRawReader as SpiceReader
+        else:
+            try:
+                from psf_reader import PsfReader as SpiceReader
+            except ImportError:
+                from .psf_reader import PsfReader as SpiceReader
+        return SpiceReader(simulation_file, vdd_name=vdd_name)
 
     def find_nearest(self, time_t):
         idx = (np.abs(self.time - time_t)).argmin()

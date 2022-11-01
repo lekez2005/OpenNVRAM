@@ -1,6 +1,8 @@
 # find open space in a module given the layer
+from base.geometry import rectangle
 from base.utils import round_to_grid
 from base.design import design
+from base.vector import vector
 
 HORIZONTAL = "horizontal"
 VERTICAL = "vertical"
@@ -68,3 +70,36 @@ def find_clearances(module: design, layer, direction=HORIZONTAL, existing=None, 
         existing = validate_clearances(new_clearances)
 
     return existing
+
+
+def combine_rects(rect_1, rect_2):
+    x_offset = min(rect_1.lx(), rect_2.lx())
+    y_offset = min(rect_1.by(), rect_2.by())
+    width = max(rect_1.rx(), rect_2.rx()) - x_offset
+    height = max(rect_1.uy(), rect_2.uy()) - y_offset
+    combined_rect = rectangle(layerNumber=rect_1.layerNumber,
+                              layerPurpose=rect_1.layerPurpose,
+                              offset=vector(x_offset, y_offset),
+                              width=width, height=height)
+    return combined_rect
+
+
+def extract_unique_rects(rects, min_space=0):
+    unique_rects = []
+    for original_rect in rects:
+        overlap = False
+        expanded_rect = rectangle(layerNumber=0,
+                                  offset=original_rect.ll() - vector(min_space, min_space),
+                                  width=original_rect.width + 2 * min_space,
+                                  height=original_rect.height + 2 * min_space)
+
+        for existing_index, existing_rect in enumerate(unique_rects):
+            if expanded_rect.overlaps(existing_rect):
+                combined_rect = combine_rects(original_rect, existing_rect)
+                unique_rects[existing_index] = combined_rect
+                overlap = True
+                break
+        if not overlap:
+            unique_rects.append(original_rect)
+
+    return unique_rects

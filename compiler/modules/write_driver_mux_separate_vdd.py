@@ -21,6 +21,9 @@ class WriteDriverMuxSeparateVdd(BitcellAlignedPgate, AnalogMixin, design):
     def __init__(self, size=None, name=None):
         super().__init__(size, name)
 
+    def is_delay_primitive(self):
+        return True
+
     def create_layout(self):
         self.size = OPTS.write_driver_buffer_size
         self.create_modules()

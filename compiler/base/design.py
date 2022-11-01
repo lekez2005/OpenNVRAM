@@ -352,6 +352,8 @@ class design(hierarchy_spice.spice, hierarchy_layout):
 
     @staticmethod
     def get_max_shape_(shapes, prop_name):
+        if not shapes:
+            return None
         if prop_name in ["by", "lx"]:
             scale = -1
         else:

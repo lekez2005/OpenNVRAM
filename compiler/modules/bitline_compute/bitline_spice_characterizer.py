@@ -62,11 +62,14 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
         self.control_sigs.extend(self.select_sigs + bitline_signals)
         debug.info(1, "Delay control_sigs %s", self.control_sigs)
 
-        for i in range(self.words_per_row):
-            if OPTS.serial:
+        if OPTS.serial:
+            for i in range(self.num_cols):
                 self.bus_sigs.append("c_val[{}]".format(i))
-            else:
+            self.c_val = self.prev_c_val = [0] * self.num_cols
+        else:
+            for i in range(self.words_per_row):
                 self.bus_sigs.append("cin[{}]".format(i))
+            self.cin = self.prev_cin = [0] * self.words_per_row
 
         for sig in self.select_sigs + bitline_signals:
             setattr(self, sig, 0)
@@ -74,7 +77,6 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
 
         self.diff = self.prev_diff = 1
         self.diffb = self.prev_diffb = 0
-        self.cin = self.prev_cin = [0] * self.words_per_row
         mid_address = int(0.5 * self.sram.num_words)
         self.address_1 = self.prev_address_1 = self.convert_address(mid_address)
 
@@ -107,11 +109,13 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
                     slack = 0.1
                     # only fall slack after sense_trig_rise or clock rise
                     slack += max(trigger_delay - (1 - self.duty_cycle) * self.period, 0)
-                    setup_time = -(self.slew + slack + self.period)
+                    setup_time = -(self.period + self.duty_cycle * self.period)
             return setup_time
+        elif key.startswith("mask["):
+            return getattr(OPTS, "mask_setup_time", self.setup_time)
 
         elif key in ["diff", "diffb"]:
-            if self.diffb and self.prev_diff:
+            if self.diffb:
                 return - OPTS.diff_setup_time
 
         return super().get_setup_time(key, prev_val, curr_val)
@@ -164,7 +168,7 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
                 repeats = ceil(num_cols / len(x))
                 return (x * repeats)[:num_cols]
 
-        if OPTS.baseline:
+        if OPTS.baseline or getattr(OPTS, "sim_rw_only", False):
 
             data_one = [1, 0] * int(num_cols / 2)
             data_two = [0, 1] * int(num_cols / 2)
@@ -178,6 +182,9 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
                 c_address: self.invert_vec(data_three),
             }
             self.existing_data = existing_data
+
+            self.setup_write_measurements(a_address)
+            self.wr(a_address, data_two, mask_two)
 
             self.setup_read_measurements(a_address)
             self.rd(a_address)
@@ -196,6 +203,9 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
 
             self.setup_write_measurements(b_address)
             self.wr(b_address, data_one, mask_one)
+
+            self.setup_read_measurements(c_address)
+            self.rd(c_address)
 
         else:
             existing_data = {
@@ -243,7 +253,8 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
             # BL compute C = A + B
             self.cin = [1, 0] * max(1, int(self.words_per_row / 2))
             if OPTS.serial:
-                self.set_c_val(self.cin)
+                c_val = [1, 0] * max(1, int(self.num_cols / 2))
+                self.set_c_val(c_val)
             self.blc(a_address, b_address, a_address)
 
             self.setup_write_measurements(c_address)
@@ -263,19 +274,19 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
             # SR = A ( from previous read )
             self.wb_mask_and()
 
+            # Write back B + C if MSB
+            self.blc(b_address, c_address, b_address)
+            self.sr_en = 0
+            self.setup_write_measurements(c_address)
+            self.wb(c_address, src="add", cond="msb")
+            # Write back B + C if LSB
+            self.blc(b_address, c_address, b_address)
             if not OPTS.serial:
-                # Write back B + C if MSB
-                self.blc(b_address, c_address, b_address)
-                self.sr_en = 0
-                self.setup_write_measurements(c_address)
-                self.wb(c_address, src="add", cond="msb")
-                # Write back B + C if LSB
-                self.blc(b_address, c_address, b_address)
                 self.srl()
 
-                self.setup_write_measurements(c_address)
+            self.setup_write_measurements(c_address)
 
-                self.wb(c_address, src="add", cond="lsb")
+            self.wb(c_address, src="add", cond="lsb")
 
     def setup_mask_measurements(self):
         clk_buf_probe = self.probe.clk_probes[0]

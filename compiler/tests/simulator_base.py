@@ -18,11 +18,7 @@ class SimulatorBase(OpenRamTest):
     valid_modes = [CMOS_MODE]
 
     def get_sram_class(self):
-        from globals import OPTS
-        if hasattr(OPTS, "sram_class"):
-            return self.load_class_from_opts("sram_class")
-        from modules.baseline_sram import BaselineSram
-        return BaselineSram
+        return self.load_class_from_opts("sram_class")
 
     def create_sram(self):
         from globals import OPTS
@@ -101,6 +97,8 @@ class SimulatorBase(OpenRamTest):
         parser.add_argument("--run_lvs", action="store_true")
         parser.add_argument("--run_pex", action="store_true")
         parser.add_argument("--verbose_save", action="store_true")
+        parser.add_argument("--brief_errors", action="store_true",
+                            help="Only print errors in saved nodes")
         parser.add_argument("--skip_write_check", action="store_true")
         parser.add_argument("--skip_read_check", action="store_true")
         parser.add_argument("--energy", default=None, type=int)
@@ -162,6 +160,9 @@ class SimulatorBase(OpenRamTest):
 
         if options.energy:
             OPTS.pex_spice = OPTS.pex_spice.replace("_energy", "")
+
+        from characterizer.simulation import sim_analyzer
+        sim_analyzer.brief_errors = options.brief_errors
 
     @classmethod
     def get_sim_directory(cls, cmd_line_opts):

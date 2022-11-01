@@ -477,6 +477,28 @@ def evaluate_vertical_module_spacing(top_modules: List[design_inst],
     return min_space
 
 
+def evaluate_module_space_by_layer(mod_1: design, mod_2: design, layer,
+                                   direction=HORIZONTAL, recursive=True,
+                                   min_space=None, layer_2=None):
+    if layer_2 is None:
+        layer_2 = layer
+    if min_space is None:
+        min_space = mod_1.get_space(layer)
+    if direction == HORIZONTAL:
+        properties = ["rx", "lx"]
+        mod_1_length = mod_1.width
+    else:
+        properties = ["uy", "by"]
+        mod_1_length = mod_1.height
+    rect_1 = mod_1.get_max_shape(layer, properties[0], recursive=recursive)
+    rect_2 = mod_2.get_max_shape(layer_2, properties[1], recursive=recursive)
+    if not rect_1 or not rect_2:
+        return -mod_1_length
+    rect_1_value = getattr(rect_1, properties[0])()
+    rect_2_value = getattr(rect_2, properties[1])()
+    return (rect_1_value - mod_1_length) + min_space - rect_2_value
+
+
 def calculate_modules_implant_space(left_module: design, right_module: design):
     """Calculate the space between implants to prevent nimplant/pimplant overlap"""
     for (left_layer, right_layer) in [(PIMP, NIMP), (NIMP, PIMP)]:

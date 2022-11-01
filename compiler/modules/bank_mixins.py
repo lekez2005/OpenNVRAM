@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 
 import debug
-from base.design import METAL2
+from base.design import METAL2, METAL4, NWELL
 from base.vector import vector
 from globals import OPTS
 
@@ -35,6 +35,7 @@ class TwoPrechargeMixin(BaselineBank):
                                                      bank=self)
 
     def add_precharge_array(self):
+        from modules.baseline_bank import EXACT
         y_offset = self.get_br_precharge_y()
         self.br_precharge_array_inst = self.add_inst(name="br_precharge_array",
                                                      mod=self.br_precharge_array,
@@ -44,6 +45,8 @@ class TwoPrechargeMixin(BaselineBank):
             temp.append("bl[{0}]".format(i))
             temp.append("br[{0}]".format(i))
         temp.extend(self.br_precharge_array.pc_cell.pins[2:])
+        replacements = [("en", "precharge_en_bar", EXACT)]
+        temp = self.connections_from_mod(temp, replacements)
         self.connect_inst(temp)
 
         super().add_precharge_array()
@@ -74,6 +77,21 @@ class TwoPrechargeMixin(BaselineBank):
 
 
 class WordlineVoltageMixin(BaselineBank):
+
+    def get_wordline_driver_space(self):
+        """Separate wells based on minimum well space for wells on different voltages"""
+        self.rwl_driver.add_body_taps()
+        rwl_well = min(self.rwl_driver.get_layer_shapes(NWELL, recursive=True),
+                       key=lambda x: x.lx())
+        wwl_well = max(self.wwl_driver.get_layer_shapes(NWELL, recursive=True),
+                       key=lambda x: x.rx())
+
+        well_space = self.get_space(NWELL, prefix="different")
+
+        space = - rwl_well.lx() + (wwl_well.rx() - self.wwl_driver.width) + well_space
+        debug.info(2, "Wordline space is %.3g", space)
+        return space
+
     def get_mid_gnd_offset(self):
         """x offset for middle gnd rail"""
         offset = - self.wide_power_space - self.vdd_rail_width - self.bus_pitch
@@ -82,12 +100,13 @@ class WordlineVoltageMixin(BaselineBank):
 
     def update_wordline_offset(self, offset):
         # leave space for wordline vdd
-        offset -= (self.wide_power_space + self.vdd_rail_width)
-        debug.info(2, "Wordline offset = %.3g", offset)
+        offset -= ((self.wide_power_space + self.vdd_rail_width), 0.0)
+        debug.info(2, "Wordline offset = %.3g", offset.x)
         return offset
 
     def update_wordline_driver_connections(self, connections):
-        return self.connections_from_mod(connections, [("vdd", "vdd_wordline")])
+        replacements = [("vdd", "vdd_wordline", "exact"), ("vdd_lo", "vdd", "exact")]
+        return self.connections_from_mod(connections, replacements)
 
     def get_wordline_vdd_offset(self):
         return self.mid_vdd.lx() - self.wide_power_space - self.vdd_rail_width
@@ -95,6 +114,10 @@ class WordlineVoltageMixin(BaselineBank):
     def route_wordline_power_pins(self, wordline_driver_inst):
         # gnd
         for pin in wordline_driver_inst.get_pins("gnd"):
+            if pin.layer == METAL4:
+                self.add_layout_pin(pin.name, pin.layer, pin.ll(),
+                                    width=pin.width(), height=pin.height())
+                continue
             self.add_rect(pin.layer, pin.lr(), height=pin.height(),
                           width=self.mid_gnd.rx() - pin.rx())
             self.add_power_via(pin, self.mid_gnd, 90)
@@ -110,6 +133,14 @@ class WordlineVoltageMixin(BaselineBank):
                                                 height=vdd_pins[-1].uy() - y_offset)
 
         for pin in vdd_pins:
-            self.add_rect(pin.layer, pin.lr(), height=pin.height(),
-                          width=self.vdd_wordline.rx() - pin.rx())
+            if pin.rx() < self.vdd_wordline.lx():
+                self.add_rect(pin.layer, pin.lr(), height=pin.height(),
+                              width=self.vdd_wordline.rx() - pin.rx())
+            else:
+                self.add_rect(pin.layer, pin.ll(), height=pin.height(),
+                              width=self.vdd_wordline.lx() - pin.lx())
             self.add_power_via(pin, self.vdd_wordline, 90)
+
+        # vdd_lo
+        if "vdd_lo" in self.wordline_driver.pins:
+            self.copy_layout_pin(self.wordline_driver_inst, "vdd_lo", "vdd")

@@ -24,16 +24,11 @@ class ptx(design.design):
 
     """
 
-    def __init__(self, width=drc["minwidth_tx"], mults=1, tx_type="nmos",
+    @classmethod
+    def get_name(cls, width=drc["minwidth_tx"], mults=1, tx_type="nmos",
                  connect_active=False, connect_poly=False, num_contacts=None, dummy_pos=None,
-                 active_cont_pos=None,
-                 independent_poly=False,
-                 contact_poly=False):
-        # We need to keep unique names because outputting to GDSII
-        # will use the last record with a given name. I.e., you will
-        # over-write a design in GDS if one has and the other doesn't
-        # have poly connected, for example.
-        width = utils.ceil(width)
+                 active_cont_pos=None, independent_poly=False, contact_poly=False):
+
         name = "{0}_m{1}_w{2:.4g}".format(tx_type, mults, width)
         if connect_active:
             name += "_a"
@@ -52,7 +47,21 @@ class ptx(design.design):
         if dummy_pos is not None:
             name += "_d{}".format("".join([str(pos) for pos in dummy_pos]))
         # replace periods with underscore for newer spice compatibility
-        name = re.sub('\.', '_', name)
+        name = name.replace('.', '__')
+        return name
+
+    def __init__(self, width=drc["minwidth_tx"], mults=1, tx_type="nmos",
+                 connect_active=False, connect_poly=False, num_contacts=None, dummy_pos=None,
+                 active_cont_pos=None,
+                 independent_poly=False,
+                 contact_poly=False):
+        # We need to keep unique names because outputting to GDSII
+        # will use the last record with a given name. I.e., you will
+        # over-write a design in GDS if one has and the other doesn't
+        # have poly connected, for example.
+        width = utils.ceil(width)
+        name = self.get_name(width, mults, tx_type, connect_active, connect_poly, num_contacts,
+                             dummy_pos, active_cont_pos, independent_poly, contact_poly)
 
         if dummy_pos is None:
             dummy_pos = list(range(0, 2 * self.num_poly_dummies))
@@ -583,10 +592,10 @@ class ptx(design.design):
             self.connect_fingered_active(drain_positions, source_positions)
 
     @staticmethod
-    def get_mos_active(parent_mod: design.design, tx_type="n"):
-        all_active = parent_mod.get_layer_shapes(ACTIVE, recursive=True)
-        all_poly = parent_mod.get_layer_shapes(POLY, recursive=True)
-        all_nwell = parent_mod.get_layer_shapes(NWELL, recursive=True)
+    def get_mos_active(parent_mod: design.design, tx_type="n", recursive=True):
+        all_active = parent_mod.get_layer_shapes(ACTIVE, recursive=recursive)
+        all_poly = parent_mod.get_layer_shapes(POLY, recursive=recursive)
+        all_nwell = parent_mod.get_layer_shapes(NWELL, recursive=recursive)
 
         def is_overlap(reference, rects):
             return any(reference.overlaps(x) for x in rects)

@@ -6,11 +6,30 @@ from globals import OPTS
 from modules.mram.spice_dut import SpiceDut
 
 
-class MramSimStepsGenerator(SpiceCharacterizer):
-
+class WriteTrigMixin:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.two_step_pulses["write_trig"] = 1
+
+    def is_signal_updated(self, key):
+        """Determine whether signal should be updated depending on key and current operation"""
+        if key == "write_trig" and self.read:
+            return False
+        return super().is_signal_updated(key)
+
+    def get_setup_time(self, key, prev_val, curr_val):
+        if key == "write_trig":
+            if prev_val == 0:
+                setup_time = self.slew
+            else:
+                trigger_delay = OPTS.write_trigger_delay
+                setup_time = -(self.slew + self.duty_cycle * self.period + trigger_delay)
+            return setup_time
+        else:
+            return super().get_setup_time(key, prev_val, curr_val)
+
+
+class MramSimStepsGenerator(WriteTrigMixin, SpiceCharacterizer):
 
     def create_probe(self):
         self.probe = MramProbe(self.sram, OPTS.pex_spice)
@@ -48,23 +67,6 @@ class MramSimStepsGenerator(SpiceCharacterizer):
     def finalize_sim_file(self):
         self.stim.replace_bitcell(self)
         super().finalize_sim_file()
-
-    def is_signal_updated(self, key):
-        """Determine whether signal should be updated depending on key and current operation"""
-        if key == "write_trig" and self.read:
-            return False
-        return super().is_signal_updated(key)
-
-    def get_setup_time(self, key, prev_val, curr_val):
-        if key == "write_trig":
-            if prev_val == 0:
-                setup_time = self.slew
-            else:
-                trigger_delay = OPTS.write_trigger_delay
-                setup_time = -(self.slew + self.duty_cycle * self.period + trigger_delay)
-            return setup_time
-        else:
-            return super().get_setup_time(key, prev_val, curr_val)
 
     def binary_to_voltage(self, x):
         return 0.995 * ((x * 2) - 1)  # close to +-1 but not exactly equal for convergence reasons

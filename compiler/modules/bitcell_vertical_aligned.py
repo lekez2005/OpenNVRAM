@@ -29,12 +29,14 @@ class BitcellVerticalAligned(design, ABC):
     def _add_body_taps(self, logic_inst, adjacent_insts, x_shift=0):
         body_tap = logic_inst.mod.create_pgate_tap()
         x_offset = logic_inst.lx() + x_shift - body_tap.width
+        self.body_tap_insts = []
 
         for row in range(self.num_rows):
             y_offset, mirror = self.get_row_y_offset(row)
-            self.add_inst(body_tap.name, body_tap, vector(x_offset, y_offset),
-                          mirror=mirror)
+            tap_inst = self.add_inst(body_tap.name, body_tap, vector(x_offset, y_offset),
+                                     mirror=mirror)
             self.connect_inst([])
+            self.body_tap_insts.append(tap_inst)
             if x_offset < 0:
                 adjacent_inst = adjacent_insts[row]
                 for pin_name in ["vdd", "gnd"]:

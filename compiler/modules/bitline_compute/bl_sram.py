@@ -56,6 +56,10 @@ class BlSram(BaselineSram):
         self.route_bitline_compute_pins()
         super().route_layout()
 
+    def get_schematic_pin_insts(self):
+        return [self.bank_inst, self.right_decoder_inst, self.left_decoder_inst,
+                self.column_decoder_inst, self.alu_inst]
+
     def get_alu_connections(self):
         connections = self.bank.connections_from_mod(self.alu, [
             ("data_in[", "DATA["), ("mask_in[", "MASK["),
@@ -150,8 +154,10 @@ class BlSram(BaselineSram):
                                       width=self.m3_width,
                                       height=y_offsets[0] + m3m4.height - y_offsets[2])
 
-    def route_row_decoder_clk(self):
-        super().route_row_decoder_clk()
+    def route_row_decoder_clk(self, min_clk_rail_y=None):
+        min_clk_rail_y = (self.bank.decoder_enable_rail.by() + self.bus_pitch +
+                          self.bank_inst.by())
+        super().route_row_decoder_clk(min_clk_rail_y=min_clk_rail_y)
         decoder_clk_pins = self.row_decoder_inst.get_pins("clk")
         lowest_pin = min(decoder_clk_pins, key=lambda x: x.by())
         y_offset = (lowest_pin.uy() - 0.5 * self.rail_height -
@@ -178,7 +184,24 @@ class BlSram(BaselineSram):
             self.add_rect(pin.layer, pin.lr(), width=right_pin.lx() - pin.rx(),
                           height=pin.height())
 
+        # bank power to alu power
+        bank_power_y = self.bank_inst.by() + self.bank.right_vdd.by()
+
+        for pin_name in ["vdd", "gnd"]:
+            for alu_pin in self.alu_inst.get_pins(pin_name):
+                if not alu_pin.layer == METAL4:
+                    continue
+                self.add_rect(METAL4, alu_pin.ul(), width=alu_pin.width(),
+                              height=bank_power_y - alu_pin.uy())
+                # self.add_rect(METAL2, alu_pin.ul(), width=alu_pin.width(),
+                #               height=bank_power_y - alu_pin.uy())
+                if pin_name == "vdd":
+                    self.m4_vdd_rects.append(alu_pin)
+                else:
+                    self.m4_gnd_rects.append(alu_pin)
+
     def add_power_rails(self):
+        # decoder power
         min_decoder_x = self.left_decoder_inst.lx()
         if self.column_decoder_inst is not None:
             min_decoder_x = min(min_decoder_x, self.column_decoder_inst.lx() - 2 * self.bus_pitch)

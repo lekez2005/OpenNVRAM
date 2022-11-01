@@ -22,15 +22,38 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
         super().initialize()
         if self.baseline:
             self.read_settling_time = 120e-12
+        elif self.one_t_one_s:
+            self.address_data_threshold = 0
+            self.read_settling_time = -50e-12
         else:
-            self.read_settling_time = 0e-12
+            self.read_settling_time = -50e-12
         self.write_settling_time = 150e-12
+        self.bitline_settling_time = 100e-12
+
+    def create_analyzer(self):
+        from characterizer.simulation.sim_analyzer import SimAnalyzer
+        test_self = self
+
+        class BlAnalyzer(SimAnalyzer):
+            def get_address_data(self, address, time, threshold=None):
+                address_data = super().get_address_data(address, time, threshold)
+                if test_self.one_t_one_s:
+                    return [int(not x) for x in address_data]
+                return address_data
+
+        self.analyzer = BlAnalyzer(self.temp_folder)
 
     def plot_internal_sense_amp(self):
         if self.baseline:
             return super().plot_internal_sense_amp()
+        for net in ["and", "nor"]:
+            sig_name = self.analyzer.get_probe(net, bank=None, net=None,
+                                               bit=self.probe_control_bit)
+            self.plot_sig(sig_name, label=net)
+
         if self.latched:
-            internal_nets = ["and", "nor", "int1"]
+            # internal_nets = ["and", "nor", "int1", "int2"]
+            internal_nets = ["int1", "int2", "net28", "net32", "vref"]
         else:
             internal_nets = ["int1", "int2"]
         for net in internal_nets:
@@ -65,7 +88,6 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
                 actual_write_events.append(event)
         self.all_write_events = actual_write_events
 
-        self.bitline_settling_time = self.read_duty_cycle * self.read_period
         self.all_blc_events = self.analyzer.load_events("BLC")
         self.all_src_events = self.analyzer.load_events("src")
         self.all_c_val_events = self.analyzer.load_events("c_val")
@@ -102,9 +124,8 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
         from characterizer.simulation.sim_analyzer import debug_error
 
         event_time, _, period, duty_cycle = event[:4]
-        bitline_settling_time = duty_cycle * period
 
-        cycle_end = event_time + period + bitline_settling_time
+        cycle_end = event_time + (1 + duty_cycle) * period
 
         addr_1 = self.get_bus_as_int("A[{}]", self.addr_size, event_time)
         event[1] = addr_1
@@ -152,21 +173,25 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
         get_msb_binary = self.analyzer.get_msb_first_binary
         period = event[2]
         # verify sum and carry
-        if self.serial:
-            cin = get_msb_binary(self.voltage_probes["c_val"], blc_end)
-        else:
-            probes = self.voltage_probes["cin"]
-            cin = get_msb_binary(probes, blc_end)
 
         compute_time = event[0]
-        sum_end = blc_end + 200e-12  # check before end of cycle
+        event_duty = event[3]
+        sum_end = compute_time + (1 + event_duty) * period + self.bitline_settling_time
         write_end = blc_end + period
 
         blc_bus_out = get_msb_binary(self.voltage_probes["dout"], sum_end)
-        write_address = self.get_bus_as_int("A[{}]", self.addr_size, sum_end)
+        write_address = self.get_bus_as_int("A[{}]", self.addr_size, blc_end)
         actual_mask_bar = get_msb_binary(self.voltage_probes["bank_mask_bar"], sum_end)
 
-        cout = get_msb_binary(self.voltage_probes["cout"], sum_end)
+        if self.serial:
+            # cin = get_msb_binary(self.voltage_probes["cin"], blc_end)
+            probes = self.voltage_probes["alu"]["cin"]
+            cin = get_msb_binary(probes, blc_end)
+            cout = get_msb_binary(self.voltage_probes["cout"], sum_end)
+        else:
+            probes = self.voltage_probes["cin"]
+            cin = get_msb_binary(probes, blc_end)
+            cout = get_msb_binary(self.voltage_probes["cout"], sum_end)
 
         previous_data = self.analyzer.get_address_data(write_address, compute_time)
         actual_data = self.analyzer.get_address_data(write_address, write_end)
@@ -196,7 +221,7 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
                 expected_sum_ = int_to_vec(d1 + d2 + cin[num_words - word - 1],
                                            word_size + 1)
 
-                expected_carry = expected_sum_[0]
+                expected_carry = [expected_sum_[0]]
                 expected_sum = expected_sum_[1:]
 
             actual_sum = get_word(word, blc_bus_out)
@@ -208,8 +233,11 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
             is_correct = debug_error(f"Incorrect sum (word {word}) "
                                      f"at time {compute_time * 1e9:.3g} n",
                                      expected_sum, actual_sum)
-            if is_correct and False:
-                actual_carry = cout[word]
+            if is_correct:
+                if self.serial:
+                    actual_carry = get_word(word, cout)
+                else:
+                    actual_carry = [list(reversed(cout))[word]]
                 debug_error(f"Incorrect carry (word {word}) at time"
                             f" {compute_time * 1e9:.3g}",
                             expected_carry, actual_carry)
@@ -229,6 +257,7 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
             return
         from characterizer.simulation.sim_analyzer import debug_error
         print("TODO: Verify c_val")
+        return
 
         for event in self.all_c_val_events:
             event_time, _, period, duty_cycle = event[:4]
@@ -290,6 +319,8 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
         self.analyze_delay_sim_energies()
 
     def analyze_delay_sim_energies(self):
+        if not self.all_blc_events:
+            return
         energy_func = self.analyzer.measure_energy
 
         period = self.all_blc_events[0][2]
@@ -312,7 +343,12 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
     def run_plots(self):
         if self.cmd_line_opts.plot == "blc":
             max_read_event_old = self.max_read_event
-            max_read_event = self.get_analysis_events(self.all_blc_events, None)
+            max_read_event = (self.get_analysis_events(self.all_blc_events, None)
+                              or self.all_blc_events[0])
+            max_read_event = [x for x in max_read_event]
+            # cover both blc and write back
+            max_read_event[2] *= 2
+
             self.max_read_event = max_read_event or self.all_blc_events[0]
             self.cmd_line_opts.plot = "read"
             super().run_plots()
@@ -320,6 +356,33 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
             self.max_read_event = max_read_event_old
         else:
             super().run_plots()
+
+    def plot_write_signals(self):
+        super().plot_write_signals()
+        if self.one_t_one_s:
+            self.plot_mram_current()
+            # self.probe_address += 1
+            # self.plot_mram_current()
+            # self.probe_address -= 1
+
+    def plot_bitlines(self):
+        if not self.one_t_one_s or self.cmd_line_opts.plot == "read":
+            return super().plot_bitlines()
+        address = self.probe_address
+        if address % 2 == 0:
+            bl, br = ["bl", "blb"]
+        else:
+            bl, br = ["br", "brb"]
+
+        self.plot_sig(self.get_plot_probe(bl, None, self.probe_col),
+                      label=f"{bl}[{self.probe_col}]")
+        self.plot_sig(self.get_plot_probe(br, None, self.probe_col),
+                      label=f"{br}[{self.probe_col}]")
+
+    def get_wl_name(self):
+        if self.one_t_one_s and self.cmd_line_opts.plot == "write":
+            return "wwl"
+        return "wl"
 
     def test_analysis(self):
         self.analyze()

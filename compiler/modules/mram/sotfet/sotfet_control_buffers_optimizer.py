@@ -37,7 +37,7 @@ class SotfetControlBuffersOptimizer(ControlBufferOptimizer):
         from globals import OPTS
         # add precharge
         precharge = self.bank.precharge_array.child_insts[0].mod
-        if getattr(OPTS, "precharge_bl", True):
+        if "en" in precharge.pins:
             in_pin = "en"
         else:
             in_pin = "bl_reset"

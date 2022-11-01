@@ -207,8 +207,10 @@ def read_config(config_file, is_unit_test=True, openram_temp=None):
     debug.info(1, "Configuration file is " + config_file)
     try:
         if os.path.exists(config_file):
-            spec = importlib.util.spec_from_file_location("config_file", config_file)
+            config_module_name, _ = os.path.splitext(os.path.basename(config_file))
+            spec = importlib.util.spec_from_file_location(config_module_name, config_file)
             config = importlib.util.module_from_spec(spec)
+            sys.modules[config_module_name] = config
             spec.loader.exec_module(config)
         else:
             config = importlib.import_module(os.path.basename(config_file))

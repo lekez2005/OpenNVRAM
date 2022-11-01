@@ -111,7 +111,7 @@ class PulseGenMixin(SpiceCharacterizer):
             else:
                 setup_time = 0
         elif key in ["acc_en", "acc_en_inv"]:  # to prevent contention with tri-state buffer
-            setup_time = -0.75 * self.duty_cycle * self.period
+            setup_time = - getattr(OPTS, "acc_en_setup_time", 0.75 * self.duty_cycle * self.period)
         else:
             setup_time = self.setup_time
         return setup_time
@@ -125,7 +125,7 @@ class PulseGenMixin(SpiceCharacterizer):
         setup_time = self.get_setup_time(key, prev_val, curr_val)
         t2 = max(self.slew, self.current_time + 0.5 * self.slew - setup_time)
         t1 = max(0.0, self.current_time - 0.5 * self.slew - setup_time)
-        self.v_data[key] += " {0:8.8g}n {1}v {2:8.8g}n {3}v ". \
+        self.v_data[key] += " {0:8.8f}n {1}v {2:8.8g}n {3}v ". \
             format(t1, self.vdd_voltage * prev_val, t2, self.vdd_voltage * curr_val)
         self.v_comments[key] += " ({0}, {1}) ".format(int(self.current_time / self.period),
                                                       curr_val)

@@ -11,7 +11,7 @@ class MramSimulator(SimulatorBase):
     SOTFET_MODE = "sotfet"
     SOT_MODE = "sot"
     ONE_T_ONE_S = "1t1s"
-    valid_modes = [SOTFET_MODE, SOT_MODE, ONE_T_ONE_S]
+    valid_modes = [SOTFET_MODE, SOT_MODE, ONE_T_ONE_S, "2t1s", "2t2s", "1t2s"]
 
     @classmethod
     def create_arg_parser(cls):

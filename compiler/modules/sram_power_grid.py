@@ -19,8 +19,11 @@ class SramPowerGridMixin(BaselineSram):
 
     def initialize_power_grid(self, add_power_grid):
         self.add_power_grid = add_power_grid
+        if not self.add_power_grid:
+            return
         self.power_grid_x_forbidden = []
         self.power_grid_y_forbidden = []
+        self.calculate_power_grid_pitch()
 
     def get_power_grid_forbidden_regions(self):
         return self.power_grid_x_forbidden, self.power_grid_y_forbidden
@@ -39,7 +42,8 @@ class SramPowerGridMixin(BaselineSram):
 
         # second_top to top layer via
         m_top_via = ContactFullStack(start_layer=second_top_layer, stop_layer=top_layer,
-                                     centralize=True, max_width=power_grid_width)
+                                     centralize=True, max_width=power_grid_width,
+                                     max_height=power_grid_width)
         power_grid_width = max(power_grid_width, m_top_via.width)
 
         power_grid_height = max(m_top_via.height, power_grid_width)
@@ -52,7 +56,7 @@ class SramPowerGridMixin(BaselineSram):
         self.power_grid_x_pitch = self.power_grid_x_space + self.power_grid_width
         self.power_grid_y_pitch = self.power_grid_y_space + self.power_grid_height
 
-        return m_top_via
+        self.power_grid_top_via = m_top_via
 
     def calculate_grid_m4_vias(self, m_top_via):
         """ m4 to second_top layer vias """
@@ -84,7 +88,7 @@ class SramPowerGridMixin(BaselineSram):
     def calculate_grid_positions(self, min_value, max_value, forbidden_values, pitch):
         forbidden_regions = []
         for offset in forbidden_values:
-            forbidden_values.append((round_(offset - pitch), round_(offset + pitch)))
+            forbidden_regions.append((round_(offset - pitch), round_(offset + pitch)))
         grid_pos = []
         offset = min_value
         while offset <= max_value:
@@ -148,7 +152,7 @@ class SramPowerGridMixin(BaselineSram):
         second_top_layer, top_layer = tech.power_grid_layers
         debug.check(int(second_top_layer[5:]) > 4 and int(top_layer[5:]) > 5,
                     "Power grid only supported for > M4")
-        m_top_via = self.calculate_power_grid_pitch()
+        m_top_via = self.power_grid_top_via
         m5_via, all_m4_power_pins, all_m4_vias = self.calculate_grid_m4_vias(m_top_via)
 
         x_forbidden, y_forbidden = self.get_power_grid_forbidden_regions()
@@ -157,7 +161,7 @@ class SramPowerGridMixin(BaselineSram):
         left = min(map(lambda x: x.cx(), all_m4_power_pins)) - 0.5 * m_top_via.width
         right = max(map(lambda x: x.cx(), all_m4_power_pins)) - 0.5 * m_top_via.width
         bottom = min(map(lambda x: x.by(), all_m4_power_pins))
-        top = max(map(lambda x: x.uy(), all_m4_power_pins)) - m_top_via.height
+        top = max(map(lambda x: x.uy(), all_m4_power_pins))
 
         # add top layer
         top_layer_pins = []
@@ -177,7 +181,8 @@ class SramPowerGridMixin(BaselineSram):
         m4_gnd_rects = self.m4_gnd_rects + [x for x in self.m4_power_pins if x.name == "gnd"]
         m4_gnd_rects = list(sorted(m4_gnd_rects, key=lambda x: x.lx()))
 
-        y_grid_pos = self.calculate_grid_positions(bottom, top, y_forbidden, self.power_grid_y_pitch)
+        y_grid_pos = self.calculate_grid_positions(bottom, top - self.power_grid_height,
+                                                   y_forbidden, self.power_grid_y_pitch)
 
         for i, y_offset in enumerate(y_grid_pos):
             pin_name = "gnd" if i % 2 == 0 else "vdd"
@@ -199,17 +204,21 @@ class SramPowerGridMixin(BaselineSram):
 
 class WordlineVddMixin(BaselineSram):
 
+    def get_wordline_vdd_reference_y(self):
+        wordline_driver = self.bank.wordline_driver_inst.mod
+        return utils.round_to_grid(wordline_driver.buffer_insts[0].by())
+
     def calculate_separate_vdd_row_dec_x(self, max_x_offset):
         # wordline nwell x
         wordline_driver = self.bank.wordline_driver_inst.mod
         if hasattr(wordline_driver, "add_body_taps"):
             wordline_driver.add_body_taps()
 
-        reference_y = utils.round_to_grid(wordline_driver.buffer_insts[0].by())
+        reference_y = self.get_wordline_vdd_reference_y()
 
         insts = [x for x in wordline_driver.insts
                  if utils.round_to_grid(x.by()) == reference_y]
-        wordline_well = min(wordline_driver.get_layer_shapes(NWELL, insts=insts),
+        wordline_well = min(wordline_driver.get_layer_shapes(NWELL, insts=insts, recursive=True),
                             key=lambda x: x.lx())
         wordline_x = (wordline_well.lx() + self.bank.wordline_driver_inst.lx() +
                       self.bank_inst.lx())
@@ -227,7 +236,6 @@ class WordlineVddMixin(BaselineSram):
         return max_x_offset
 
     def create_vdd_wordline(self: 'BaselineSram'):
-        self.calculate_power_grid_pitch()
         _, top_layer = tech.power_grid_layers
         for bank_inst in self.bank_insts:
             pins = bank_inst.get_pins("vdd_wordline")

@@ -1,5 +1,4 @@
 import debug
-from base import layout_clearances, utils
 from base.contact import m3m4, cross_m2m3, m2m3, cross_m1m2, cross_m3m4
 from base.design import METAL3, METAL2, METAL4, design
 from base.vector import vector
@@ -100,8 +99,11 @@ class BlBank(BaselineBank):
         super().add_wordline_driver()
         self.add_decoder_logic()
 
+    def get_decoder_logic_x(self):
+        return self.wordline_driver_inst.lx() - self.decoder_logic.width
+
     def add_decoder_logic(self):
-        x_offset = self.wordline_driver_inst.lx() - self.decoder_logic.width
+        x_offset = self.get_decoder_logic_x()
         y_offset = self.wordline_driver_inst.by()
         self.decoder_logic_inst = self.add_inst(self.decoder_logic.name, mod=self.decoder_logic,
                                                 offset=vector(x_offset, y_offset))
@@ -174,9 +176,10 @@ class BlBank(BaselineBank):
         pin_names = ["diff", "diffb"]
         for i, pins in enumerate([diff_pins, diffb_pins]):
             x_offset = x_offsets[i]
+            m3_x_offset = x_offset + 0.5 * self.bus_width - 0.5 * m2m3.h_2
             for pin in pins:
-                self.add_rect(METAL3, vector(x_offset, pin.by()), height=pin.height(),
-                              width=pin.lx() - x_offset)
+                self.add_rect(METAL3, vector(m3_x_offset, pin.by()), height=pin.height(),
+                              width=pin.lx() - m3_x_offset)
                 design.add_cross_contact_center(self, cross_m2m3,
                                                 vector(x_offset + 0.5 * self.bus_width, pin.cy()))
 
@@ -202,11 +205,11 @@ class BlBank(BaselineBank):
     def get_mask_flop_via_y(self):
         return None
 
-    def route_data_flop_in(self, bitline_pins, word, data_via_y, fill_width, fill_height):
-        # use the left pin
-        left_bitline, right_bitline = sorted(bitline_pins, key=lambda x: x.lx())
-        bitline_pins = [left_bitline, left_bitline]
-        super().route_data_flop_in(bitline_pins, word, data_via_y, fill_width, fill_height)
+    def route_data_flop_in(self, bitline_pins, word, data_via_y, fill_width, fill_height,
+                           pin_name="bl"):
+        # use the bl pin
+        super().route_data_flop_in(bitline_pins, word, data_via_y, fill_width, fill_height,
+                                   pin_name=pin_name)
 
     def route_write_driver_mask_in(self, word, mask_flop_out_via_y, mask_driver_in_via_y):
         via_y = mask_driver_in_via_y
@@ -218,11 +221,9 @@ class BlBank(BaselineBank):
                       width=driver_pin.width(), height=driver_pin.by() - via_y)
         via_offset = vector(driver_pin.cx() - 0.5 * m2m3.width, via_y)
         cont1 = self.add_contact(m2m3.layer_stack, via_offset)
-
-        cont2 = self.add_contact(m3m4.layer_stack,
-                                 offset=vector(br_x_offset, via_y +
-                                               0.5 * m2m3.second_layer_height -
-                                               0.5 * m3m4.height))
+        via_offset = vector(br_x_offset, via_y + 0.5 * m2m3.second_layer_height -
+                            0.5 * m3m4.height)
+        cont2 = self.add_contact(m3m4.layer_stack, offset=via_offset)
 
         self.join_pins_with_m3(cont1, cont2, cont1.cy(), fill_height=m3m4.first_layer_height)
 
@@ -237,31 +238,50 @@ class BlBank(BaselineBank):
 
     def route_wordline_enable(self):
         super().route_wordline_enable()
+        self.route_dec_en_1()
+
+    def get_dec_en_1_y(self):
+        return self.get_decoder_enable_y() - self.bus_pitch
+
+    def route_dec_en_1(self):
         # route dec_en_1
         flop_pin = self.dec_en_1_buf_inst.get_pin("dout")
-        m2_rails = [x for x in self.m2_rails if x.by() > flop_pin.uy()]
-        bottom_rail = min(m2_rails, key=lambda x: x.by())
-        y_offset = bottom_rail.by() - self.bus_pitch
-        x_offset = self.leftmost_rail.lx() - self.bus_pitch
+        m2_rails = [x for x in self.m2_rails if x.uy() > flop_pin.uy() - self.bus_pitch]
+        leftmost_rail = min(m2_rails, key=lambda x: x.lx())
+
+        y_offset = self.dec_en_1_buf_inst.uy() + 0.5 * self.rail_height + self.parallel_line_space
+        x_offset = leftmost_rail.lx() - self.bus_pitch
+
         # flop output to m2 rail x
         self.add_rect(METAL2, flop_pin.ul(), width=flop_pin.width(),
-                      height=y_offset - flop_pin.uy())
-        self.add_rect(METAL2, vector(x_offset, y_offset), width=flop_pin.rx() - x_offset,
+                      height=y_offset + self.bus_width - flop_pin.uy())
+        via_y = y_offset + 0.5 * self.bus_width
+        self.add_cross_contact_center(cross_m2m3, vector(flop_pin.cx(), via_y))
+        self.add_rect(METAL3, vector(x_offset, y_offset), width=flop_pin.cx() - x_offset,
                       height=self.bus_width)
+        self.add_cross_contact_center(cross_m2m3, vector(x_offset +
+                                                         0.5 * self.bus_width, via_y))
 
-        enable_y = self.get_decoder_enable_y() - self.bus_pitch
+        enable_y = self.get_dec_en_1_y()
         # create m2 rail
         rail = self.add_rect(METAL2, vector(x_offset, y_offset), width=self.bus_width,
                              height=enable_y - y_offset)
         self.m2_rails.append(rail)
         self.leftmost_rail = rail
+        self.decoder_enable_rail = rail
         # m2 rail to enable input
         dec_pin = self.decoder_logic_inst.get_pin("en_1")
         self.add_cross_contact_center(cross_m2m3, vector(rail.cx(), enable_y))
         self.add_rect(METAL3, vector(dec_pin.cx(), enable_y - 0.5 * self.bus_width),
                       height=self.bus_width, width=rail.cx() - dec_pin.cx())
-        self.add_cross_contact_center(cross_m2m3, vector(dec_pin.cx(), enable_y))
-        self.add_rect(METAL2, vector(dec_pin.lx(), enable_y), width=dec_pin.width(),
+
+        mid_y = enable_y + self.bus_pitch
+
+        self.add_contact_center(m2m3.layer_stack, vector(dec_pin.cx(), mid_y),
+                                rotate=90)
+        self.add_rect(METAL3, vector(dec_pin.lx(), mid_y), width=dec_pin.width(),
+                      height=enable_y - 0.5 * self.bus_width - mid_y)
+        self.add_rect(METAL2, vector(dec_pin.lx(), mid_y), width=dec_pin.width(),
                       height=dec_pin.by() - enable_y)
 
     def route_wordline_in(self):

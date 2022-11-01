@@ -42,12 +42,14 @@ def load_source(source: Union[str, TextIO]):
     return source
 
 
-def extract_lines(source: str):
+def extract_lines(source: str, lower_case=True):
     all_lines = []
     for line in source.splitlines():
         if not line or not line.strip() or line.strip().startswith("*"):
             continue
-        line = line.strip().lower()
+        line = line.strip()
+        if lower_case:
+            line = line.lower()
         if '*' not in line:
             all_lines.append(line)
         else:  # strip comment from end if applicable
@@ -88,13 +90,13 @@ def group_lines_by_mod(all_lines: List[str]):
             else:
                 break
 
-        if line.startswith(".subckt"):
+        if line.lower().startswith(".subckt"):
             if len(current_mod) > 0:
                 lines_by_module.append(current_mod)
             current_mod = [line]
             mode = MODE_PARSING
             continue
-        elif line.startswith(".ends"):
+        elif line.lower().startswith(".ends"):
             mode = MODE_END
             continue
         if mode == MODE_PARSING:
@@ -122,17 +124,17 @@ class SpiceMod:
 
 class SpiceParser:
 
-    def __init__(self, source: Union[str, TextIO]):
+    def __init__(self, source: Union[str, TextIO], lower_case=True):
         self.mods = []  # type: List[SpiceMod]
 
         source = load_source(source)
-        self.all_lines = all_lines = extract_lines(source)
+        self.all_lines = all_lines = extract_lines(source, lower_case=lower_case)
 
         mods_by_lines = group_lines_by_mod(all_lines)
         for mod_lines in mods_by_lines:
             subckt_line = mod_lines[0].split()
             mod_name = subckt_line[1]
-            mod_pins = subckt_line[2:]
+            mod_pins = [x for x in subckt_line[2:] if "=" not in x]
             self.mods.append(SpiceMod(mod_name, mod_pins,
                                       contents=[] if len(mod_lines) == 1 else mod_lines[1:]))
 
@@ -148,8 +150,16 @@ class SpiceParser:
 
     @staticmethod
     def line_contains_tx(line: str):
-        return (line.startswith("m") or tech_spice["nmos"] in line.split() or
-                tech_spice["pmos"] in line.split())
+        if line.startswith("m"):
+            return True
+        line_split = line.split()
+        if len(line_split) < 6:
+            return False
+        mod_name = line_split[5]
+        tx_names = {tech_spice["nmos"], tech_spice["pmos"]}
+        if "tx_names" in tech_spice:
+            tx_names.update(tech_spice["tx_names"].keys())
+        return mod_name in tx_names
 
     def deduce_hierarchy_for_pin(self, pin_name, module_name):
         pin_name = pin_name.lower()
@@ -201,12 +211,16 @@ class SpiceParser:
         """
         assert SpiceParser.line_contains_tx(spice_statement), "Line must contain tx"
         line_elements = spice_statement.split()
-        if line_elements[5] == tech_spice["nmos"]:
+        tx_mod = line_elements[5]
+        if tx_mod == tech_spice["nmos"]:
             tx_type = "n"
-        elif line_elements[5] == tech_spice["pmos"]:
+        elif tx_mod == tech_spice["pmos"]:
             tx_type = "p"
         else:
-            assert False, f"Invalid tx name {line_elements[5]} in {spice_statement}"
+            if "tx_names" in tech_spice and tx_mod in tech_spice["tx_names"]:
+                tx_type = tech_spice["tx_names"][tx_mod]
+            else:
+                assert False, f"Invalid tx name {line_elements[5]} in {spice_statement}"
         m = int(tx_extract_parameter("m", spice_statement) or 1)
         nf = int(tx_extract_parameter("nf", spice_statement) or 1)
 

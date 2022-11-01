@@ -21,5 +21,6 @@ class SimulationTest(OpenRamTest, SimulatorBase):
         self.run_simulation()
 
 
-SimulationTest.parse_options()
-SimulationTest.run_tests(__name__)
+if __name__ == "__main__":
+    SimulationTest.parse_options()
+    SimulationTest.run_tests(__name__)

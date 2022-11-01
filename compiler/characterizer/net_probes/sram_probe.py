@@ -7,6 +7,8 @@ import numpy as np
 
 import debug
 from characterizer.dependency_graph import get_instance_module, get_net_driver, get_all_net_drivers
+from characterizer.net_probes.calibre_label_extractor import CalibreLabelExtractor
+from characterizer.net_probes.magic_label_extractor import MagicLabelExtractor
 from characterizer.net_probes.probe_utils import get_current_drivers, get_all_tx_fingers, format_bank_probes, \
     get_voltage_connections, get_extracted_prefix
 from globals import OPTS
@@ -101,8 +103,12 @@ class SramProbe(object):
             label = label.replace(".", "_")
         return "Xsram.{}.{}".format(label, pin_name)
 
+    @staticmethod
+    def get_bitline_names():
+        return ["bl", "br"]
+
     def probe_bitlines(self, bank, row=None):
-        for pin_name in ["bl", "br"]:
+        for pin_name in self.get_bitline_names():
             if pin_name not in self.voltage_probes:
                 self.voltage_probes[pin_name] = {}
             if bank not in self.voltage_probes[pin_name]:
@@ -111,7 +117,7 @@ class SramProbe(object):
         if row is None:
             row = self.sram.num_rows - 1
         for col in range(self.sram.num_cols):
-            for pin_name in ["bl", "br"]:
+            for pin_name in self.get_bitline_names():
                 pin_label = self.get_bitline_label(bank, col, pin_name, row)
                 self.probe_labels.add(pin_label)
                 self.voltage_probes[pin_name][bank][col] = pin_label
@@ -715,6 +721,8 @@ class SramProbe(object):
                                  internal_nets=self.get_write_driver_internal_nets())
 
     def get_sense_amp_internal_nets(self):
+        if OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
+            return ["bl", "br", "dout"]
         return ["dout", "out_int", "outb_int", "bl", "br"]
 
     def probe_sense_amps(self, bank_):
@@ -787,21 +795,34 @@ class SramProbe(object):
             pex_file = self.pex_file
 
         label_sub = label.replace("Xsram.", "")
-        match, pattern = self.extract_pex_pattern(label_sub, pex_file)
-        if not match:
+        if OPTS.pex_exe[0] == "magic":
+            match, pattern = self.extract_magic_pex_pattern(label_sub, pex_file, self.sram)
+        else:
+            match, pattern = self.extract_calibre_pex_pattern(label_sub, pex_file, self.sram)
+        if match is None:
             debug.error("Match not found in pex file for label {} {}".format(label,
                                                                              pattern))
             return label
         return 'Xsram.' + match
 
     @staticmethod
-    def extract_pex_pattern(label, pex_file):
+    def extract_magic_pex_pattern(label, pex_file, parent_mod):
+        return MagicLabelExtractor.extract(label, pex_file, parent_mod)
+
+    @staticmethod
+    def extract_calibre_pex_pattern(label, pex_file, parent_mod):
         label_sub = label.replace(".", "_").replace("[", r"\[").replace("]", r"\]")
         prefix = "" if label.startswith("N_") else "N_"
-        pattern = r"\s{}{}_[MX]\S+_[gsd]".format(prefix, label_sub)
-        match = (SramProbe.grep_file(pattern, pex_file, regex=True) or
-                 SramProbe.grep_file(label, pex_file, regex=False))
-        return match, pattern
+
+        use_grep = True
+        if use_grep:
+            pattern = r"\s{}{}_[MX]\S+_[gsd]".format(prefix, label_sub)
+            match = (SramProbe.grep_file(pattern, pex_file, regex=True) or
+                     SramProbe.grep_file(label, pex_file, regex=False))
+            return match, pattern
+        else:
+            pattern = r"{}{}_[mxMX]\S+_[gsd]".format(prefix.lower(), label_sub.lower())
+            return CalibreLabelExtractor.extract(pattern, pex_file, parent_mod)
 
     @staticmethod
     def grep_file(pattern, pex_file, regex=True):

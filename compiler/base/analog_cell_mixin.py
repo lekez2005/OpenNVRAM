@@ -105,7 +105,7 @@ class AnalogMixin(design_):
                                       region=(y_bottom, y_top), recursive=recursive,
                                       recursive_insts=recursive_insts, existing=existing)
 
-        fill_height = pin.height()
+        fill_height = pin.uy() - pin.by()
         _, fill_width = self.calculate_min_area_fill(fill_height, layer=METAL2)
         _, min_m2_width = self.calculate_min_area_fill(max(m1m2.w_2, m2m3.w_1))
 

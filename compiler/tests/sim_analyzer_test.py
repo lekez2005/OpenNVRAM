@@ -27,9 +27,8 @@ class SimAnalyzerTest(SimulatorBase):
 
     def initialize(self):
         self.update_global_opts()
-        from characterizer.simulation.sim_analyzer import SimAnalyzer
         self.debug.info(1, "Simulation Dir: %s", self.temp_folder)
-        self.analyzer = SimAnalyzer(self.temp_folder)
+        self.create_analyzer()
         self.debug.info(1, "Simulation end: %s",
                         time.ctime(os.path.getmtime(self.analyzer.stim_file)))
         self.sim_data = self.analyzer.sim_data
@@ -45,6 +44,10 @@ class SimAnalyzerTest(SimulatorBase):
         self.current_probes = self.analyzer.current_probes
         self.state_probes = self.analyzer.state_probes
 
+    def create_analyzer(self):
+        from characterizer.simulation.sim_analyzer import SimAnalyzer
+        self.analyzer = SimAnalyzer(self.temp_folder)
+
     def analyze(self):
         from globals import OPTS
         if OPTS.energy:
@@ -55,13 +58,17 @@ class SimAnalyzerTest(SimulatorBase):
         self.analyze_precharge_decoder(self.all_read_events +
                                        self.all_write_events)
 
-        max_read_event, max_read_bit_delays = self.analyze_read_events()
-        self.max_read_event, self.max_read_bit_delays = max_read_event, max_read_bit_delays
-        max_write_event, max_write_bit_delays = self.analyze_write_events()
-        self.max_write_event, self.max_write_bit_delays = max_write_event, max_write_bit_delays
+        if not self.cmd_line_opts.skip_read_check:
+            max_read_event, max_read_bit_delays = self.analyze_read_events()
+            self.max_read_event, self.max_read_bit_delays = max_read_event, max_read_bit_delays
+        if not self.cmd_line_opts.skip_write_check:
+            max_write_event, max_write_bit_delays = self.analyze_write_events()
+            self.max_write_event, self.max_write_bit_delays = max_write_event, max_write_bit_delays
         print("----------------Critical Paths---------------")
-        self.evaluate_read_critical_path(max_read_event, max_read_bit_delays)
-        self.evaluate_write_critical_path(max_write_event, max_write_bit_delays)
+        if not self.cmd_line_opts.skip_read_check:
+            self.evaluate_read_critical_path(max_read_event, max_read_bit_delays)
+        if not self.cmd_line_opts.skip_write_check:
+            self.evaluate_write_critical_path(max_write_event, max_write_bit_delays)
 
         self.run_plots()
 
@@ -350,17 +357,19 @@ class SimAnalyzerTest(SimulatorBase):
         self.print_sense_en_delay()
         self.print_sense_out_delay()
 
+    def get_q_net_and_col(self, address, bit):
+        q_net = "v({})".format(self.state_probes[str(address)][bit])
+        col = int(re.search("r[0-9]+_c([0-9]+)", q_net, re.IGNORECASE).group(1))
+        bank = int(re.search("Xbank([0-9]+)", q_net, re.IGNORECASE).group(1))
+        return bank, col, q_net
+
     def set_critical_path_params(self, event, bit_delays, settling_time):
         start_time, address, period, _, row = event[:5]
         end_time = start_time + period + settling_time
         max_bit = self.get_analysis_bit(bit_delays)
-
-        q_net = "v({})".format(self.state_probes[str(address)][max_bit])
-        col = int(re.search("r[0-9]+_c([0-9]+)", q_net).group(1))
+        bank, col, q_net = self.get_q_net_and_col(address, max_bit)
         controls_bit = int(col / self.words_per_row)
         self.probe_event = event
-
-        bank = int(re.search("Xbank([0-9]+)", q_net).group(1))
 
         self.probe_start_time, self.probe_end_time = start_time, end_time
         self.probe_col = col
@@ -378,7 +387,7 @@ class SimAnalyzerTest(SimulatorBase):
                                                     self.read_settling_time)
         period, row, max_read_bit, bank, address, q_net = path_params
 
-        print("\nRead Period: {:.3g} ns".format(period * 1e9))
+        print("\nRead Period: {:.4g} ns".format(period * 1e9))
         print("Read Critical Path: t = {:.3g}n row={} bit={} bank={}".
               format(max_read_event[0], row, max_read_bit, bank))
 
@@ -430,7 +439,7 @@ class SimAnalyzerTest(SimulatorBase):
                                                     self.write_settling_time)
         period, row, max_write_bit, write_bank, address, q_net = path_params
 
-        print("\nWrite Period: {:.3g}".format(max_write_event[2] * 1e9))
+        print("\nWrite Period: {:.4g}".format(max_write_event[2] * 1e9))
         print(f"Write Critical Path: t = {max_write_event[0]:.3g}n"
               f" row={row} bit={max_write_bit} bank={write_bank}\n")
         self.print_write_critical_path(q_net)
@@ -452,7 +461,7 @@ class SimAnalyzerTest(SimulatorBase):
             if excl in signal_name:
                 return
         try:
-            print(signal_name)
+            self.debug.print_str(signal_name)
             signal = self.sim_data.get_signal_time(signal_name,
                                                    from_t=from_t, to_t=to_t)
             self.ax1.plot(*signal, label=label)
@@ -462,12 +471,15 @@ class SimAnalyzerTest(SimulatorBase):
     def get_wl_name(self):
         return "wl"
 
-    def plot_common_signals(self):
-        self.plot_sig(self.analyzer.clk_reference, label="clk_buf")
+    def plot_bitlines(self):
         self.plot_sig(self.get_plot_probe("bl", None, self.probe_col),
                       label=f"bl[{self.probe_col}]")
         self.plot_sig(self.get_plot_probe("br", None, self.probe_col),
                       label=f"br[{self.probe_col}]")
+
+    def plot_common_signals(self):
+        self.plot_sig(self.analyzer.clk_reference, label="clk_buf")
+        self.plot_bitlines()
         if self.words_per_row > 1 and "sense_amp_array" in self.voltage_probes:
             self.plot_sig(self.get_plot_probe("sense_amp_array", "bl"),
                           label=f"bl_out[{self.probe_control_bit}]")
@@ -477,6 +489,9 @@ class SimAnalyzerTest(SimulatorBase):
         wl_name = self.get_wl_name()
         self.plot_sig(self.voltage_probes[wl_name][str(address)],
                       label=f"{wl_name}[{row}]")
+        self.plot_q_data()
+
+    def plot_q_data(self):
         self.plot_sig(self.probe_q_net, label="Q")
 
     def plot_write_signals(self):
@@ -507,16 +522,18 @@ class SimAnalyzerTest(SimulatorBase):
                           label=net)
 
     def plot_read_signals(self):
-        from characterizer.simulation.sim_analyzer import DATA_OUT_PATTERN
         if self.words_per_row > 1:
             self.plot_sig(self.get_plot_probe("control_buffers", "sample_en_bar"),
                           label="sample_en_bar")
         self.plot_sig(self.get_plot_probe("control_buffers", "sense_en"),
                       label="sense_en")
         self.plot_internal_sense_amp()
+        self.plot_data_out()
 
-        key = DATA_OUT_PATTERN.format(self.probe_control_bit)
-        self.plot_sig(key, label=key)
+    def plot_data_out(self):
+        sig_name = self.analyzer.get_probe("dout", bank=None, net=None,
+                                           bit=self.probe_control_bit)
+        self.plot_sig(sig_name, label="dout")
 
     def run_plots(self):
         if self.cmd_line_opts.plot is None:
@@ -527,8 +544,6 @@ class SimAnalyzerTest(SimulatorBase):
         from matplotlib import pyplot as plt
         logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
-        print("\nPlot Signals: ")
-
         if self.cmd_line_opts.plot == "write":
             self.set_critical_path_params(self.max_write_event, self.max_write_bit_delays,
                                           self.write_settling_time)
@@ -537,6 +552,9 @@ class SimAnalyzerTest(SimulatorBase):
             self.set_critical_path_params(self.max_read_event, self.max_read_bit_delays,
                                           self.read_settling_time)
             plot_func = self.plot_read_signals
+
+        self.debug.print_str(f"\nPlot signals: ({self.probe_start_time * 1e9:.5g}, "
+                             f"{self.probe_end_time * 1e9:.5g})")
 
         self.fig, self.ax1 = plt.subplots()
         self.plot_common_signals()

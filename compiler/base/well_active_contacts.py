@@ -82,12 +82,14 @@ def get_well_type(pin_name):
     return well_type, implant
 
 
-def add_power_tap(self, y_offset, pin_name, pin_width):
+def add_power_tap(self, y_offset, pin_name, pin_width, pin_center_x=None):
     well_type, implant = get_well_type(pin_name)
+    if pin_center_x is None:
+        pin_center_x = 0.5 * self.width
 
     active_width, sample_contact = calculate_contact_width(self, self.width, well_contact.w_1)
 
-    x_offset = 0.5 * (self.width - pin_width)
+    x_offset = pin_center_x - 0.5 * pin_width
     pin = self.add_layout_pin(pin_name, METAL1, offset=vector(x_offset, y_offset),
                               height=self.rail_height, width=pin_width)
     cont = self.add_contact_center(well_contact.layer_stack, pin.center(), rotate=90,

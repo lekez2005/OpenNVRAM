@@ -1,3 +1,5 @@
+OpenRAM Port to support generation and simulation-based characterizations of non-volatile memories
+
 # BASIC SETUP
 
 Please look at the OpenRAM ICCAD paper and presentation in the repository:
@@ -5,28 +7,33 @@ https://github.com/mguthaus/OpenRAM/blob/master/OpenRAM_ICCAD_2016_paper.pdf
 https://github.com/mguthaus/OpenRAM/blob/master/OpenRAM_ICCAD_2016_presentation.pdf
 
 The OpenRAM compiler has very few dependencies:
-* ngspice-26 (or later) or HSpice I-2013.12-1 (or later) or CustomSim 2017 (or later)
-* Python 2.7 and higher (currently excludes Python 3 and up)
-* Python numpy
+* ngspice-26 (or later) or HSpice I-2013.12-1 (or later) or CustomSim 2017 (or later) or Spectre 15 (or later)
+* Python 3.6 and higher
+* Python numpy (and scipy if using optimized buffer stages)
+* [libpsf](https://github.com/lekez2005/libpsf) is running simulations using spectre or hspice
 * a setup script for each technology
 * a technology directory for each technology with the base cells
 
 If you want to perform DRC and LVS, you will need either:
 * Calibre (for FreePDK45 or SCMOS)
-* Magic + Netgen (for SCMOS only)
+* Magic + Netgen (for Skywater 130 and SCMOS)
+* klayout (DRC) (for Skywater 130)
 
-You must set two environment variables: OPENRAM_HOME should point to
-the compiler source directory. OPENERAM_TECH should point to a root
-technology directory that contains subdirs of all other technologies.
+You must set three environment variables: 
+* OPENRAM_HOME should point to the compiler source directory. 
+* OPENERAM_TECH should point to a root technology directory that contains subdirs of all other technologies.
+* SCRATCH should point to the directory where temporary files are saved e.g. `/tmp/<USER>`
 For example, in bash, add to your .bashrc:
 ```
   export OPENRAM_HOME="$HOME/OpenRAM/compiler"
   export OPENRAM_TECH="$HOME/OpenRAM/technology"
+  export SCRATCH=/tmp/<USER>
 ```
 For example, in csh/tcsh, add to your .cshrc/.tcshrc:
 ```
   setenv OPENRAM_HOME "$HOME/OpenRAM/compiler"
   setenv OPENRAM_TECH "$HOME/OpenRAM/technology"
+  setenv SCRATCH "/tmp/<USER>
 ```
 If you are using FreePDK, you should also have that set up and have the
 environment variable point to the PDK. 
@@ -55,10 +62,21 @@ that are part of QFlow:
   * compiler/gdsMill - GDSII reader/writer
   * compiler/router - detailed router
   * compiler/tests - unit tests
+    - / - standard logic rule sram. Simulate using 21_simulation_test.py
+    - /horizontal - unit tests for horizontal orientation modules
+    - /push_rules - logic rules sram. Simulate using top-level 21_simulation_test.py
+    - /cam - 10T CAM implementation. Simulate using 21_cam_simulation_test.py
+    - /mram - SOT-MRAM and SOTFET-MRAM implementations. Simulate using 21_mram_simulation_test.py
+    - /reram - Sky130 ReRAM implementation. Includes Sky130 caravel wrapper implementation. Simulate using 21_reram_simulation_test.py
+    - /bitline_compute - 6T SRAM and 1T1S SOTFET bitline compute implementations. Simulate using 21_bitline_simulation_test.py
+    - /characterizer - Module characterization for estimating input/output capacitance and drive strengths for use in buffer stage optimization and analytical delay estimation
+    
+  
 * technology - openram technology directory (pointed to by OPENRAM_TECH)
   * technology/freepdk45 - example configuration library for freepdk45 technology node
   * technology/scn3me_subm - example configuration library SCMOS technology node
-  * technology/setup_scripts - setup scripts to customize your PDKs and OpenRAM technologies
+  * technology/sky130 - example configuration library for sky130 technology node
+  * technology/scripts - command line scripts for importing and exporting custom modules from magic/cadence/pdf
 
 
 # UNIT TESTS
@@ -98,19 +116,19 @@ All setup scripts should be in the setup_scripts directory under the
 $OPENRAM_TECH directory.  Please look at the following file for an
 example of what is needed for OpenRAM:
 ```
-  $OPENRAM_TECH/setup_scripts/setup_openram_freepdk45.py
+  $OPENRAM_TECH/freepdk45/tech/setup_openram.py
 ```
-Each setup script should be named as: setup_openram_{tech name}.py.
+Each setup script should be named as: setup_openram.py and placed within the corresponding technology's 'tech' directory.
 
 Each specific technology (e.g., freepdk45) should be a subdirectory
 (e.g., $OPENRAM_TECH/freepdk45) and include certain folders and files:
   1. gds_lib folder with all the .gds (premade) library cells. At a
      minimum this includes:
-     * ms_flop.gds
-     * sense_amp.gds
-     * write_driver.gds
-     * cell_6t.gds
-     * replica_cell_6t.gds 
+     * cell_6t.gds (the unit bitcell)
+     * ms_flop.gds (width should be the same pitch as the bitcell)
+     * ms_flop_clk_buf.gds (height should be at least as high as a 3 input-NAND gate)
+     * sense_amp.gds (the sense amp module, same width as cell_6t.gds)
+     * write_driver.gds (the write driver module, same width as cell_6t.gds)
      * tri_gate.gds
   2. sp_lib folder with all the .sp (premade) library netlists for the above cells.
   3. layers.map 
@@ -207,8 +225,8 @@ ui().importCds("default",
 
 3. Magic
 
-   Magic is only supported in SCMOS. You will need to install the MOSIS SCMOS rules
-   and Magic from: http://opencircuitdesign.com/
+   Magic is only supported in SCMOS and Sky130. You will need to install the MOSIS SCMOS rules
+   and Magic from: http://opencircuitdesign.com/ for SCMOS
 
    When running DRC or extraction, OpenRAM will load the GDS file, save
    the .ext/.mag files, and export an extracted netlist (.spice).

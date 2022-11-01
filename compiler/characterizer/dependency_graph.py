@@ -496,7 +496,7 @@ def get_all_net_connections(net: str, module: design):
         pin_index = conn.index(net)
         child_pin = child_module.pins[pin_index]
         pin_dir = child_module.get_pin_dir(child_pin)
-        yield child_pin, child_module, module.conns[i], pin_dir
+        yield child_pin, child_module, i, pin_dir
 
 
 def get_net_driver(net: str, module: design):
@@ -512,6 +512,7 @@ def get_net_driver(net: str, module: design):
 
 def get_all_net_drivers(net: str, module: design):
     all_connections = list(get_all_net_connections(net, module))
+    all_connections = [(x[0], x[1], module.conns[x[2]], x[3]) for x in all_connections]
     output_drivers = [tuple(x[:3]) for x in all_connections if x[3] == OUTPUT]
     inout_drivers = [tuple(x[:3]) for x in all_connections if x[3] == INOUT]
     if not output_drivers + inout_drivers:

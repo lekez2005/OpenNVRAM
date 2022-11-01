@@ -30,9 +30,9 @@ def get_voltage_connections(net, module, candidate_drivers=None, match_patterns=
         child_pin = destination_net
     else:
         child_module = child_pin = None
-        for child_pin, child_module, conns, _ in get_all_net_connections(destination_net,
-                                                                         parent_module):
-            child_inst = parent_module.insts[parent_module.conns.index(conns)]
+        for child_pin, child_module, conn_index, _ in get_all_net_connections(destination_net,
+                                                                              parent_module):
+            child_inst = parent_module.insts[conn_index]
             child_name = ["X{}".format(child_inst.name)]
             if not candidate_drivers or child_inst.name in candidate_drivers:
                 break

@@ -53,7 +53,7 @@ control_flop_buffers = [4]
 sense_amp_buffers = [3.56, 12.6, 45]
 tri_en_buffers = [3.42, 11.7, 40, 40]
 precharge_buffers = [1, 3.9, 15, 60]
-precharge_size = 1.5
+precharge_size = 6
 column_decoder_buffers = [2, 2]
 
 # default sizes config
@@ -84,9 +84,21 @@ buffer_repeater_sizes = [
 buffer_repeaters_col_threshold = 128
 
 
+def parse_timing_override(OPTS):
+    time_override = os.environ.get("OPENRAM_OVERRIDE_TIMING", None)
+    new_options = {}
+    if time_override:
+        for val in time_override.split(","):
+            name, value = val.split("=")
+            new_options[name] = float(value)
+            if hasattr(OPTS, name):
+                setattr(OPTS, name, float(value))
+    return new_options
+
+
 def configure_modules(bank, OPTS):
     # TODO multi stage buffer for predecoder col mux. pnor3 too large for 3x8 buffer
-    if OPTS.words_per_row > 2:
+    if bank.words_per_row > 2:
         OPTS.column_decoder_buffers = [4]  # use single stage
     num_rows = bank.num_rows
     num_cols = bank.num_cols

@@ -11,7 +11,8 @@ class stacked_wordline_driver_array(wordline_driver_array):
     """Wordline Driver array with two adjacent rows stacked horizontally
         so the total height per module is 2x the bitcell height"""
 
-    def __init__(self, name, rows, buffer_stages=None):
+    def __init__(self, rows, buffer_stages, name=None):
+        name = name or "wordline_driver_array"
         design.__init__(self, name)
         self.rows = self.num_rows = rows
         self.buffer_stages = buffer_stages
@@ -48,27 +49,31 @@ class stacked_wordline_driver_array(wordline_driver_array):
             mirror = "R0"
         return y_offset, mirror
 
+    def get_pin_and_inst_offsets(self):
+        en_rail_x = self.get_parallel_space(METAL1) + self.m1_width
+        en_pin_clearance = en_rail_x + self.m2_width + self.get_parallel_space(METAL2)
+
+        en_pin_x = en_pin_clearance + self.logic_buffer.width + en_rail_x
+
+        inst_offsets = [en_pin_clearance, 2 * en_pin_clearance + self.logic_buffer.width]
+        return (en_rail_x, en_pin_x), inst_offsets
+
     def add_modules(self):
         self.calculate_y_offsets()
 
-        en_pin_x = self.get_parallel_space(METAL1) + self.m1_width
-        self.en_pin_clearance = en_pin_clearance = (en_pin_x + self.m2_width +
-                                                    self.get_parallel_space(METAL2))
+        (en_rail_x, en_pin_x), x_offsets = self.get_pin_and_inst_offsets()
 
         rail_y = - 0.5 * self.rail_height
-        en_rail = self.add_rect(METAL2, offset=vector(en_pin_x, rail_y), width=self.m2_width,
+        en_rail = self.add_rect(METAL2, offset=vector(en_rail_x, rail_y), width=self.m2_width,
                                 height=self.height)
 
         en_pin = self.add_layout_pin(text="en", layer="metal2",
-                                     offset=vector(en_pin_clearance + self.logic_buffer.width +
-                                                   en_pin_x, rail_y),
+                                     offset=vector(en_pin_x, rail_y),
                                      width=self.m2_width, height=self.height)
 
         self.en_pin, self.en_rail = en_pin, en_rail
 
         self.join_en_pin_rail()
-
-        x_offsets = [en_pin_clearance, 2 * en_pin_clearance + self.logic_buffer.width]
 
         m3_clearance = 0.5 * m2m3.w_2 + self.get_parallel_space(METAL3)
 

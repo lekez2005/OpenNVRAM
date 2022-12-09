@@ -111,17 +111,25 @@ class single_level_column_mux_array(design.design):
                 offset.x += self.mux.width
             else:
                 mirror = NO_MIRROR
-            bitline_nets = "bl[{0}] br[{0}] "
-            bitline_nets += (bitline_nets.replace("bl", "bl_out").replace("br", "br_out")
-                             .replace("{0}", "{1}"))
-            bitline_conns = bitline_nets.format(col_num, int(col_num / self.words_per_row)).split()
 
             self.child_insts.append(self.add_inst(name=name, mod=self.mux, offset=offset,
                                                   mirror=mirror))
+            self.connect_inst(self.get_inst_connections(col_num))
 
-            self.connect_inst(bitline_conns +
-                              ["sel[{}]".format(col_num % self.words_per_row)] +
-                              self.power_nets)
+    def get_inst_connections(self, col_num):
+        bit = int(col_num / self.words_per_row)
+        child_pins = self.child_mod.pins
+        connections = []
+        for pin_name in child_pins:
+            if pin_name.endswith("_out"):
+                connections.append(f"{pin_name}[{bit}]")
+            elif pin_name.startswith("b"):
+                connections.append(f"{pin_name}[{col_num}]")
+            elif pin_name == "sel":
+                connections.append(f"{pin_name}[{col_num % self.words_per_row}]")
+            else:
+                connections.append(pin_name)
+        return connections
 
     def add_layout_pins(self):
         """ Add the pins after we determine the height. """

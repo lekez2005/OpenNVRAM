@@ -53,6 +53,14 @@ class pgate_horizontal(pgates_characterization_base, design):
             beta_suffix = ""
         return beta, beta_suffix
 
+    @staticmethod
+    def calculate_min_space(left_module: design, right_module: design):
+        return 0
+
+    @staticmethod
+    def fill_adjacent_wells(self: design, left_inst, right_inst):
+        pass
+
     # Abstract methods
     def add_pins(self):
         raise NotImplementedError
@@ -67,11 +75,11 @@ class pgate_horizontal(pgates_characterization_base, design):
         offset = vector(0, 0)
         self.pmos = ptx_spice(self.pmos_finger_width,
                               mults=int(self.num_fingers / self.num_poly_contacts),
-                              tx_type="pmos")
+                              tx_length=self.poly_width, tx_type="pmos")
         self.add_mod(self.pmos)
         self.nmos = ptx_spice(self.nmos_finger_width,
                               mults=int(self.num_fingers / self.num_poly_contacts),
-                              tx_type="nmos")
+                              tx_length=self.poly_width, tx_type="nmos")
         for index, conn_def in enumerate(self.get_ptx_connections()):
             mos, conn = conn_def
             name = "{}{}".format(mos.tx_type, index + 1)

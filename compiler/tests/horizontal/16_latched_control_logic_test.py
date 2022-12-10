@@ -30,7 +30,7 @@ class LatchedControlLogicTest(TestBase):
         OPTS.control_buffers_num_rows = rows
         OPTS.create_decoder_clk = True
         bank = SimpleNamespace(is_left_bank=is_left_bank, words_per_row=words_per_row)
-        a = LatchedControlLogic(bank)
+        a = LatchedControlLogic(bank=bank)
         self.local_check(a)
 
 

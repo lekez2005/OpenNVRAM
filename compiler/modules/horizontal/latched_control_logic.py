@@ -7,6 +7,7 @@ from base.vector import vector
 from modules.baseline_latched_control_buffers import LatchedControlBuffers
 from modules.buffer_stage import BufferStage
 from modules.control_buffers import ModOffset
+from modules.horizontal.pnand3_horizontal import pnand3_horizontal
 from modules.logic_buffer import LogicBuffer
 from modules.horizontal.buffer_stages_horizontal import BufferStagesHorizontal
 from modules.horizontal.logic_buffer_horizontal import LogicBufferHorizontal
@@ -16,6 +17,7 @@ from modules.horizontal.pnand2_horizontal import pnand2_horizontal
 from modules.horizontal.pnor2_horizontal import pnor2_horizontal
 from pgates.pinv import pinv
 from pgates.pnand2 import pnand2
+from pgates.pnand3 import pnand3
 from pgates.pnor2 import pnor2
 from tech import drc
 
@@ -64,6 +66,7 @@ class LatchedControlLogic(LatchedControlBuffers):
     def create_mod(self, mod_class, **kwargs):
         class_map = {
             pnand2: pnand2_horizontal,
+            pnand3: pnand3_horizontal,
             pnor2: pnor2_horizontal,
             pinv: pinv_horizontal,
             LogicBuffer: LogicBufferHorizontal,
@@ -77,7 +80,7 @@ class LatchedControlLogic(LatchedControlBuffers):
         self.logic_heights = self.inv.height
         self.body_tap = self.create_mod(pgate_horizontal_tap, pgate_mod=self.inv)
 
-    def get_module_spacing(self, _):
+    def get_module_spacing(self, *_):
         return 0
 
     def get_body_tap_index(self, module_groups):

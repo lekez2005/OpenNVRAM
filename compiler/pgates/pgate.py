@@ -736,6 +736,26 @@ class pgate(pgates_characterization_base, design.design):
         return min_space
 
     @staticmethod
+    def equalize_implant_heights(self: design.design, left_inst, right_inst):
+        for layer in [PIMP, NIMP]:
+            left_rect = left_inst.get_max_shape(layer, "rx", recursive=True)
+            right_rect = right_inst.get_max_shape(layer, "lx", recursive=True)
+
+            attribute = "uy" if layer == PIMP else "by"
+            left_attr = round_to_grid(getattr(left_rect, attribute)())
+            right_attr = round_to_grid(getattr(right_rect, attribute)())
+            if left_attr == right_attr:
+                continue
+            bottom, top = sorted([left_attr, right_attr])
+            bottom_rect, top_rect = sorted([left_rect, right_rect], key=lambda x: getattr(x, attribute)())
+
+            if layer == PIMP:
+                self.add_rect(layer, bottom_rect.ul(), width=bottom_rect.width, height=top - bottom)
+            else:
+                self.add_rect(layer, vector(top_rect.lx(), bottom), width=top_rect.width,
+                              height=top - bottom)
+
+    @staticmethod
     def fill_adjacent_wells(self: design.design, left_inst, right_inst):
         layers = [NWELL, TAP_ACTIVE, NIMP, PIMP]
         if self.has_pwell:

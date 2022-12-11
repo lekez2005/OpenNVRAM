@@ -59,6 +59,8 @@ class wordline_driver_array(BitcellVerticalAligned):
                                         route_outputs=False, route_inputs=False,
                                         contact_pwell=False, contact_nwell=False, align_bitcell=True)
         self.add_mod(self.logic_buffer)
+        buffer = self.logic_buffer
+        buffer.logic_mod.equalize_implant_heights(buffer, buffer.logic_inst, buffer.buffer_inst)
 
     def route_en_pin(self, buffer_inst, en_pin):
         # route en input pin

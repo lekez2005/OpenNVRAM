@@ -36,7 +36,6 @@ class precharge_horizontal(precharge):
         tx_mod = self.tx_mod = ptx(width=finger_width, mults=total_fingers, tx_type="pmos")
         self.add_mod(tx_mod)
 
-        # debug.pycharm_debug()
         if self.has_dummy:
             tx_y_offset = - tx_mod.get_max_shape(PO_DUMMY, "lx").cx()
             dummy_top = tx_mod.get_max_shape(PO_DUMMY, "rx").rx() + tx_y_offset
@@ -64,7 +63,6 @@ class precharge_horizontal(precharge):
         x_offset = self.left_space - active_rect.by() + self.tx_mod.height
         offset = vector(x_offset, self.tx_y_offset)
         debug.info(0, "precharge cell offsets: %.5g, %.5g", offset.x, offset.y)
-        # debug.pycharm_debug()
         self.tx_inst = self.add_inst(name="tx", mod=self.tx_mod, offset=offset, rotate=90)
         self.connect_inst([], check=False)
 
@@ -222,6 +220,9 @@ class precharge_horizontal(precharge):
 
         bitline_tx_pins = self.get_bitline_tx_pins()
 
+        enable_pin = self.get_pin("en")
+        bitline_y = enable_pin.by() - self.get_parallel_space(METAL3) - m2m3.h_2
+
         for i in range(2):
             bitcell_pin = self.bitcell.get_pin(pin_names[i])
             adjacent_pin = self.bitcell.get_pin(adjacent_names[i])
@@ -252,8 +253,8 @@ class precharge_horizontal(precharge):
                                   height=self.metal_fill_height,
                                   width=fill_right - fill_x)
 
-            self.add_layout_pin(pin_names[i].lower(), METAL2, offset=vector(bitcell_pin.lx(), 0),
-                                width=bitcell_pin.width(), height=self.height)
+            self.add_layout_pin(pin_names[i].lower(), METAL2, offset=vector(bitcell_pin.lx(), bitline_y),
+                                width=bitcell_pin.width(), height=self.height - bitline_y)
 
     def drc_fill(self):
         vdd_pin = self.get_pin("vdd")

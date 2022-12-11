@@ -387,12 +387,6 @@ def standardize_tech_config():
     if "implant_enclosure_poly" not in drc:
         drc["implant_enclosure_poly"] = 0
 
-    if not hasattr(tech, "delay_strategy_class"):
-        def delay_strategy_class():
-            from characterizer.base_delay_strategy import BaseDelayStrategy
-            return BaseDelayStrategy
-        tech.delay_strategy_class = delay_strategy_class
-
     # CDSHOME
     virtuoso_exe = find_exe("virtuoso")
     if virtuoso_exe:

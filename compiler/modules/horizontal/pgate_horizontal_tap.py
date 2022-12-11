@@ -57,12 +57,12 @@ class pgate_horizontal_tap(design, metaclass=unique_meta.Unique):
             tap_rect = self.add_rect(tap_layers[i], offset=vector(implant_x, implant_y),
                                      width=tap_implant_width, height=tap_implant_height)
             if i == 1 or self.has_pwell:
-                well_rect = self.pgate_mod.get_layer_shapes(wells[i])[0]
-                well_width = (tap_rect.rx() + self.well_enclose_active
-                              - self.implant_enclose_active)
-                self.add_rect(wells[i], offset=vector(0.0, well_rect.by()),
-                              width=well_width,
-                              height=well_rect.height)
+                well_rect = self.pgate_mod.get_max_shape(wells[i], "lx")
+                well_right = tap_rect.rx() + (self.well_enclose_active - self.implant_enclose_active)
+
+                well_left = min(0, tap_rect.lx() - (self.well_enclose_active - self.implant_enclose_active))
+                self.add_rect(wells[i], offset=vector(well_left, well_rect.by()),
+                              width=well_right - well_left, height=well_rect.height)
 
         self.width = tap_rect.rx() + tap_rect.lx()  # prevent right adjacent implant overlap
         self.height = self.pgate_mod.height

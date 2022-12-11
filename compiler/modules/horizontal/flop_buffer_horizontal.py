@@ -32,7 +32,7 @@ class FlopBufferHorizontal(FlopBuffer):
     def add_modules(self):
         # add flop
         self.flop_inst = self.add_inst("flop", mod=self.flop, offset=vector(0, 0))
-        self.connect_inst(["din", "flop_out", "flop_out_bar", "clk", "vdd", "gnd"])
+        self.connect_flop()
         # add tap
         flop_implant = max(self.flop.get_layer_shapes(NIMP), key=lambda x: x.rx())
         buffer_implant = min(self.body_tap.get_layer_shapes(NIMP), key=lambda x: x.lx())

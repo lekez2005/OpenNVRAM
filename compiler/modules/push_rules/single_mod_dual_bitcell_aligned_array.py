@@ -22,17 +22,13 @@ class single_mod_dual_bitcell_aligned_array(dual_bitcell_aligned_array, ABC):
         self.connect_inst(self.connection_template.format(mod_index).split())
 
     def get_x_offset(self, mod_index):
-        x_base = self.child_mod.width * self.num_dummies
-        if mod_index % 2 == 1:
-            x_base += self.child_mod.width
-            mod_index -= 1
-        return x_base + mod_index * self.words_per_row * self.child_mod.width
+        col_index = (mod_index - mod_index % 2) * self.words_per_row + mod_index % 2
+        return self.bitcell_offsets[col_index]
 
     def create_layout(self):
         self.word_size *= 2
         super().create_layout()
         self.word_size = int(self.word_size / 2)
-        self.width = (self.columns + 2 * self.num_dummies) * self.child_mod.width
 
     def add_dummies(self):
         pass

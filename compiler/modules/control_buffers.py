@@ -133,6 +133,7 @@ class ControlBuffers(design, ABC):
         self.create_modules()
         self.create_connections_mapping()
         self.create_schematic_connections()
+        self.rail_height = self.schematic_connections[0].mod.get_pins("vdd")[0].height()
         self.derive_module_offsets()
 
         self.derive_input_nets()
@@ -672,7 +673,7 @@ class ControlBuffers(design, ABC):
             y_base = 0
         else:
             sample_module = self.schematic_connections[0].mod
-            y_base = sample_module.height + 0.5 * sample_module.rail_height + self.bus_space
+            y_base = sample_module.height + 0.5 * self.rail_height + self.bus_space
 
             if self.num_additional_rails > 1:
                 rail_pitch = self.get_line_end_space(METAL2) + cross_m2m3.first_layer_height

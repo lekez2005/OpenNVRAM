@@ -412,7 +412,7 @@ class bitcell_array(design.design):
         tap_offsets = []
         offset = dummy_size * num_dummies
         for i in range(num_elements - 2 * num_dummies):
-            if i in tap_indices:
+            if i + num_dummies in tap_indices:
                 tap_offsets.append(offset)
                 offset += tap_size
             bitcell_offsets.append(offset)

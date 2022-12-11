@@ -6,6 +6,7 @@ import debug
 from base.design import design
 from base.hierarchy_layout import GDS_ROT_270
 from base.vector import vector
+from globals import OPTS
 
 
 class dual_bitcell_aligned_array(design, ABC):
@@ -91,6 +92,11 @@ class dual_bitcell_aligned_array(design, ABC):
 
         self.child_insts = []
 
+        bitcell_array_cls = self.import_mod_class_from_str(OPTS.bitcell_array)
+        offsets = bitcell_array_cls.calculate_x_offsets(num_cols=self.columns)
+
+        (self.bitcell_offsets, self.tap_offsets, self.dummy_offsets) = offsets
+
         for i in range(int(self.word_size / 2)):
             x_offset = self.get_x_offset(i)
             name = self.instance_name_prefix + "{}".format(i)
@@ -105,12 +111,14 @@ class dual_bitcell_aligned_array(design, ABC):
             self.child_insts.append(child_inst)
             self.connect_mod(i)
 
-        self.width = (self.columns + 2 * self.num_dummies) * (self.child_mod.width / 2)
+        bitcell = self.create_mod_from_str(OPTS.bitcell)
+        self.width = max(self.bitcell_offsets + self.dummy_offsets) + bitcell.width
         self.height = self.child_mod.height
 
     def get_x_offset(self, mod_index):
-        return (self.child_mod.width * self.num_dummies * 0.5
-                + (self.child_mod.width * self.words_per_row) * mod_index)
+        bit = mod_index * 2
+        col_index = bit * self.words_per_row
+        return self.bitcell_offsets[col_index]
 
     def add_layout_pins(self):
         bus_pins = []

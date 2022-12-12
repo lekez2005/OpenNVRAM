@@ -1,13 +1,11 @@
 import debug
-from base.contact import m2m3, m3m4, m1m2
+from base.contact import m2m3, m3m4, m1m2, cross_m2m3, cross_m1m2
 from base.design import METAL2, METAL1, METAL3, METAL4
 from base.hierarchy_layout import GDS_ROT_270
 from base.vector import vector
 from globals import OPTS
 from modules.baseline_bank import LEFT_FILL, RIGHT_FILL, BaselineBank
 from modules.horizontal.buffer_stages_horizontal import BufferStagesHorizontal
-from modules.horizontal.latched_control_logic import LatchedControlLogic
-from modules.horizontal.pgate_horizontal import pgate_horizontal
 from modules.horizontal.pgate_horizontal_tap import pgate_horizontal_tap
 
 
@@ -26,10 +24,6 @@ class HorizontalBank(BaselineBank):
             return [(self.decoder, "en")]
         return super().get_net_loads(net)
 
-    def create_control_buffers(self):
-        self.control_buffers = LatchedControlLogic(self)
-        self.add_mod(self.control_buffers)
-
     def create_control_flops(self):
         self.control_flop_mods = {}
         configs = self.derive_control_flops()
@@ -39,11 +33,15 @@ class HorizontalBank(BaselineBank):
             if i == 0:
                 dummy_indices = [0]
             elif i == len(configs) - 1:
-                dummy_indices = [2]
+                if len(config) % 2 == 0:
+                    dummy_indices = [0]
+                else:
+                    dummy_indices = [2]
             else:
                 dummy_indices = []
             control_flop = self.create_module("flop_buffer", OPTS.control_flop,
-                                              buffer_stages, dummy_indices=dummy_indices)
+                                              buffer_stages, dummy_indices=dummy_indices,
+                                              negate=negation)
             self.control_flop_mods[flop_name] = control_flop
             self.control_flop = control_flop  # for height dimension references
 
@@ -66,39 +64,12 @@ class HorizontalBank(BaselineBank):
             connections[dict_keys[i]] = (connection[0], connection[1], flop_buffer)
         return connections
 
-    def get_right_vdd_offset(self):
-        m2_extension = 0
-        for module in [self.bitcell_array.bitcell, self.bitcell_array.body_tap]:
-            right_m2 = max([x.rx() for x in module.get_layer_shapes(METAL2)])
-            m2_extension = max(m2_extension, right_m2 - module.width)
-        return max(self.bitcell_array_inst.rx() + m2_extension, self.rightmost_rail.rx(),
-                   self.control_buffers_inst.rx()) + self.wide_m1_space
-
-    def get_mid_gnd_offset(self):
-        m2_extension = 0
-        for module in [self.bitcell_array.bitcell, self.bitcell_array.body_tap]:
-            left_m2 = min([x.lx() for x in module.get_layer_shapes(METAL2)])
-            m2_extension = min(m2_extension, left_m2)
-        return m2_extension - self.wide_m1_space - self.vdd_rail_width
-
-    def get_row_decoder_control_flop_space(self):
-        flop_vdd = self.control_flop.get_pins("vdd")[0]
-        return flop_vdd.height() + 2 * self.poly_pitch  # prevent clash with poly dummies
-
     def get_precharge_y(self):
         if self.col_mux_array_inst is None:
             y_space = self.calculate_bitcell_aligned_spacing(self.precharge_array,
                                                              self.sense_amp_array)
             return self.sense_amp_array_inst.uy() + y_space
         return self.col_mux_array_inst.uy()
-
-    def add_wordline_driver(self):
-        x_offset = self.mid_vdd_offset - (self.wordline_driver.width + self.wide_m1_space)
-        self.wordline_driver_inst = self.add_inst(name="wordline_buffer", mod=self.wordline_driver,
-                                                  offset=vector(x_offset, self.bitcell_array_inst.by()))
-        connections = self.get_wordline_driver_connections()
-        connections.remove("wordline_en")
-        self.connect_inst(connections)
 
     def route_bitcell_array_power(self):
 
@@ -123,8 +94,8 @@ class HorizontalBank(BaselineBank):
         self.route_all_instance_power(self.col_mux_array_inst)
 
         reference_pin = self.col_mux_array_inst.get_pin("bl_out[0]")
-        bl_y_offset = reference_pin.by() - m3m4.height
-        br_y_offset = bl_y_offset - self.get_parallel_space(METAL3) - m3m4.height
+        bl_y_offset = reference_pin.by() - 0.5 * m3m4.height
+        br_y_offset = bl_y_offset - self.get_wide_space(METAL3) - m3m4.height
 
         pin_names = ["bl", "br"]
         y_offsets = [bl_y_offset, br_y_offset]
@@ -166,6 +137,25 @@ class HorizontalBank(BaselineBank):
                     self.join_rects(mux_pins, mux_pins[0].layer,
                                     mux_conn_rects, METAL3,
                                     via_alignment=via_alignments[i])
+
+    def route_bitcell(self):
+        """wordline driver wordline to bitcell array wordlines"""
+        debug.info(1, "Route bitcells")
+
+        fill_height = m2m3.h_1
+        _, fill_width = self.calculate_min_area_fill(fill_height, layer=METAL2)
+
+        for row in range(self.num_rows):
+            wl_in = self.bitcell_array_inst.get_pin("wl[{}]".format(row))
+            driver_out = self.wordline_driver_inst.get_pin("wl[{0}]".format(row))
+            self.add_cross_contact_center(cross_m2m3, driver_out.center())
+            self.add_cross_contact_center(cross_m1m2, driver_out.center(), rotate=True)
+            self.add_rect_center(METAL2, driver_out.center(), width=fill_width,
+                                 height=fill_height)
+
+            self.add_rect(wl_in.layer, offset=vector(driver_out.rx(), wl_in.by()),
+                          width=wl_in.lx() - driver_out.rx(), height=wl_in.height())
+        self.route_bitcell_array_power()
 
     def route_write_driver(self):
         """Route mask, data and data_bar from flops to write driver"""
@@ -210,12 +200,22 @@ class HorizontalBank(BaselineBank):
     def get_mask_flop_out(self, word):
         return self.mask_in_flops_inst.get_pin("dout[{}]".format(word))
 
+    def route_data_flop_in(self, bitline_pins, word, data_via_y, fill_width, fill_height,
+                           pin_name="bl"):
+        pin_name = "br"
+        super().route_data_flop_in(bitline_pins, word, data_via_y, fill_width, fill_height,
+                                   pin_name=pin_name)
+
+    def get_mask_flop_in_bitline(self, word, bitline_pins):
+        pin_name = "bl"
+        return next(filter(lambda x: pin_name in x.name, bitline_pins))
+
     def route_wordline_driver(self):
         if not self.is_left_bank:
             rail = getattr(self, "wordline_en_rail")
             self.add_layout_pin("wordline_en", METAL2, rail.ll(), width=rail.width, height=rail.height)
         for row in range(self.num_rows):
-            self.copy_layout_pin(self.wordline_driver_inst, "decode[{}]".format(row),
+            self.copy_layout_pin(self.wordline_driver_inst, "in[{}]".format(row),
                                  "dec_out[{}]".format(row))
         fill_width = self.mid_vdd.width()
         fill_width, fill_height = self.calculate_min_area_fill(fill_width, min_height=self.m2_width,
@@ -235,6 +235,9 @@ class HorizontalBank(BaselineBank):
 
     def route_body_tap_supplies(self):
         pass
+
+    def get_intra_array_grid_top(self):
+        return self.bitcell_array_inst.uy()
 
     def add_m2m4_power_rails_vias(self):
         all_power_pins = self.get_all_power_pins()
@@ -268,9 +271,6 @@ class HorizontalBank(BaselineBank):
         module = BufferStagesHorizontal(buffer_stages=buffer_sizes)
         self.add_mod(module)
         return module
-
-    def get_repeater_height(self):
-        return pgate_horizontal.height
 
     def get_repeater_input_via_x(self, in_pin):
         return in_pin.cx()

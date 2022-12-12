@@ -281,6 +281,8 @@ def run_lvs(cell_name, gds_name, sp_name, final_verification=False):
     out_errors = len(stdouterrors)
 
     total_errors = summary_errors + out_errors + ext_errors
+    if total_errors == 0:
+        debug.info(1, "LVS is Correct")
     return total_errors
 
 

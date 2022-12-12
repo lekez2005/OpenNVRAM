@@ -7,6 +7,7 @@ from base.hierarchy_layout import GDS_ROT_90
 from base.vector import vector
 from globals import OPTS
 from modules.hierarchical_predecode import hierarchical_predecode
+from modules.horizontal.buffer_stages_horizontal import BufferStagesHorizontal
 from modules.horizontal.pgate_horizontal_tap import pgate_horizontal_tap
 from modules.horizontal.pinv_horizontal import pinv_horizontal
 from modules.horizontal.pnand2_horizontal import pnand2_horizontal
@@ -74,12 +75,20 @@ class horizontal_predecode(hierarchical_predecode, ABC):
         self.nand = self.top_nand = nand
         self.add_mod(nand)
 
+        self.output_buffer = BufferStagesHorizontal(buffer_stages=self.buffer_sizes[1:],
+                                                    route_outputs=False)
+        self.add_mod(self.output_buffer)
+        self.top_output_buffer = self.output_buffer
+
         self.module_height = self.top_inv.height
 
         self.pgate_tap = pgate_horizontal_tap(self.inv)
         self.add_mod(self.pgate_tap)
 
         self.create_flops()
+
+    def calculate_nand_output_space(self):
+        return 0
 
     def add_input_inverters(self):
         super().add_input_inverters()
@@ -205,10 +214,11 @@ class horizontal_predecode(hierarchical_predecode, ABC):
         for num in range(self.number_of_outputs):
             # route nand output to output inv input
             z_pin = self.nand_inst[num].get_pin("Z")
-            a_pin = self.inv_inst[num].get_pin("A")
+            a_pin = self.inv_inst[num].get_pin("in")
             self.add_rect("metal1", offset=z_pin.rc(), width=a_pin.cx() - z_pin.rx())
+            out_pin = "out_inv" if len(self.output_buffer.buffer_stages) % 2 == 1 else "out"
 
-            self.copy_layout_pin(self.inv_inst[num], "Z", "out[{}]".format(num))
+            self.copy_layout_pin(self.inv_inst[num], out_pin, "out[{}]".format(num))
 
     def route_vdd_gnd(self):
         for i in range(len(self.nand_inst)):
@@ -223,7 +233,6 @@ class horizontal_predecode(hierarchical_predecode, ABC):
             _, fill_width = self.calculate_min_area_fill(fill_height, layer=METAL1)
             fill_width = max(fill_width, m1m2.height)
             for i in range(len(self.in_inst)):
-
                 flop_pin = self.in_inst[i].get_pin(pin_name)
                 nand_pin = self.nand_inst[i].get_pin(pin_name)
                 self.add_rect(METAL3, offset=flop_pin.lr(), height=flop_pin.height(),

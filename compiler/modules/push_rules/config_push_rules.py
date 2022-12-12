@@ -1,6 +1,6 @@
 import os
 
-python_path = ["modules/push_rules"]
+python_path = ["modules/push_rules", "modules/horizontal"]
 
 baseline = False
 mram = False
@@ -10,48 +10,46 @@ cells_per_group = 2
 use_y_body_taps = True
 use_x_body_taps = False
 mirror_bitcell_y_axis = True
+symmetric_bitcell = False
 export_dummy_bitcell_pins = False
 num_bitcell_dummies = 1
 
-sram_class = "modules.push_rules.horizontal_sram.HorizontalSram"
+sram_class = "horizontal_sram.HorizontalSram"
+bank_class = "horizontal_bank.HorizontalBank"
+control_optimizer = "push_rules_optimizer.PushRulesOptimizer"
+probe_class = "push_rules_probe.PushRulesProbe"
 
-bitcell_mod = "push_rules/cell_6t_hs_push"
 
+bitcell = "push_bitcell"
 body_tap = "push_bitcell_array.bitcell_tap"
-body_tap_mod = "push_rules/cell_6t_hs_push_tap"
+
 predecoder_flop = "ms_flop_horz_push_rot"
 
 decoder_and_2 = "horizontal_decoder_and.and2"
 decoder_and_2_tap = "horizontal_decoder_and.and2_tap"
 decoder_and_3 = "horizontal_decoder_and.and3"
 decoder_and_3_tap = "horizontal_decoder_and.and3_tap"
+precharge = "precharge_horizontal"
 
-tri_gate_mod = "push_rules/tri_gate_hs_push"
 tri_gate_class = "tri_gate_array_horizontal.tri_gate"
 
-flop_mod = "push_rules/dual_ms_flop_hs_push"
 flop_class = "flop_array_horizontal.flop"
 
-write_driver_mod = "push_rules/write_driver_push_3x_hs"
-write_driver_class = "write_driver_array_horizontal.driver"
-
-sense_amp_mod = "push_rules/latched_sense_amp_hs"
+write_driver = "write_driver_array_horizontal.driver"
 sense_amp_class = "sense_amp_array_horizontal.amp"
 
-write_driver = "write_driver_mask"
-write_driver_tap = "write_driver_mask_3x_tap"
-
-column_mux_mod = "push_rules/tgate_column_mux_push_hs"
-column_mux_class = "column_mux_array_horizontal.column_mux"
+column_mux = "column_mux_array_horizontal.column_mux"
 column_mux_array = "column_mux_array_horizontal.ColumnMuxArrayHorizontal"
+
+control_buffers_class = "latched_control_logic.LatchedControlLogic"
 
 # modules
 decoder_flops = True
 separate_vdd = False
 
 bitcell_array = "push_bitcell_array"
-wordline_driver = "wordline_buffer_array"
-decoder = "row_decoder_horizontal"
+wordline_driver = "wordline_buffer_no_enable_array"
+decoder = "row_decoder_with_enable"
 ms_flop_array = "flop_array_horizontal.FlopArray"
 sense_amp_array = "sense_amp_array_horizontal.SenseAmpArray"
 write_driver_array = "write_driver_array_horizontal.WriteDriverArray"
@@ -111,7 +109,8 @@ tri_en_buffers = [1, 2.6, 6.7, 17.4, 45]
 precharge_buffers = [1, 3.9, 15, 60]
 precharge_size = 1.5
 
-column_decoder_buffers = [4]
+# column_decoder_buffers = [4]
+column_decoder_buffers = [2, 2]
 
 # default sizes config
 word_size = 64

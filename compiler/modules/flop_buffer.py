@@ -62,14 +62,20 @@ class FlopBuffer(design, metaclass=Unique):
 
     def connect_flop(self):
         if len(self.buffer_stages) == 1:
-            self.connect_inst(["din", "flop_out", "dout_bar", "clk", "vdd", "gnd"])
+            if self.negate:
+                self.connect_inst(["din", "dout_bar", "flop_out", "clk", "vdd", "gnd"])
+            else:
+                self.connect_inst(["din", "flop_out", "dout_bar", "clk", "vdd", "gnd"])
         else:
             self.connect_inst(["din", "flop_out", "flop_out_bar", "clk", "vdd", "gnd"])
 
     def connect_buffer(self):
         if len(self.buffer_stages) == 1:
             nets = ["dout_bar", "dout", "dummy_net"]
-            flop_out = self.flop_inst.get_pin("dout_bar")
+            if self.negate:
+                flop_out = self.flop_inst.get_pin("dout")
+            else:
+                flop_out = self.flop_inst.get_pin("dout_bar")
         elif ((len(self.buffer_stages) % 2 == 0 and not self.negate) or
                 (len(self.buffer_stages) % 2 == 1 and self.negate)):
             if self.negate:

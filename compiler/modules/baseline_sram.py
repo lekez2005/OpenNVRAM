@@ -645,6 +645,9 @@ class BaselineSram(SramPowerGridMixin, design):
                           width=col_decoder_clk.lx() - via_offset.x,
                           height=col_decoder_clk.height())
             col_decoder_clk = self.add_rect_center(METAL2, via_offset)
+        elif col_decoder_clk.layer == METAL2 and col_decoder_clk.width() > col_decoder_clk.height():
+            col_decoder_clk = self.add_rect(METAL2, col_decoder_clk.ll() - vector(self.m2_width, 0),
+                                            width=self.m2_width, height=col_decoder_clk.height())
 
         if clk_m3_rail.lx() > col_decoder_clk.rx():
             # find rail_y

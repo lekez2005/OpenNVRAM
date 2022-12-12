@@ -54,13 +54,7 @@ class SimDataMixin(SpiceCharacterizer):
                 raise AssertionError("PEX failed")
 
     def replace_spice_models(self, file_name):
-        if hasattr(OPTS, "model_replacements"):
-            model_replacements = OPTS.model_replacements
-            sed_patterns = "; ".join(["s/{}/{}/g".format(mod, rep)
-                                      for mod, rep in model_replacements])
-            command = ["sed", "--in-place", sed_patterns, file_name]
-            debug.info(1, "Replacing bitcells with command: {}".format(" ".join(command)))
-            subprocess.run(command, shell=False)
+        pass
 
     def initialize_sram(self, probe: SramProbe = None, existing_data=None):
         """Write 'existing_data' address->data map

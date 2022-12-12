@@ -27,7 +27,11 @@ class SimOperationsMixin(SpiceCharacterizer):
         return dut
 
     def create_probe(self):
-        self.probe = SramProbe(self.sram, OPTS.pex_spice)
+        if hasattr(OPTS, "probe_class"):
+            probe_class = self.sram.import_mod_class_from_str(OPTS.probe_class)
+            self.probe = probe_class(sram=self.sram, pex_file=OPTS.pex_spice)
+        else:
+            self.probe = SramProbe(self.sram, OPTS.pex_spice)
 
     def get_delay_probe_cols(self):
         # probe these cols

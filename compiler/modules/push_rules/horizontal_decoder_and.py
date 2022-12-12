@@ -10,7 +10,7 @@ class and2(design):
 
 @library_import
 class and2_tap(design):
-    pin_names = []
+    pin_names = ["vdd", "gnd"]
     lib_name = "push_rules/decoder_and2_tap"
 
 
@@ -22,5 +22,5 @@ class and3(design):
 
 @library_import
 class and3_tap(design):
-    pin_names = []
+    pin_names = ["vdd", "gnd"]
     lib_name = "push_rules/decoder_and3_tap"

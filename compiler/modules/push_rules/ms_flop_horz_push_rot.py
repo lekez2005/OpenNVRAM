@@ -31,6 +31,3 @@ class ms_flop_horz_push_rot(design, metaclass=Unique):
 
         self.width = mod.height
         self.height = mod.width
-
-    def get_layer_shapes(self, layer, purpose=None, recursive=False):
-        return self.flop_mod.get_layer_shapes(layer, purpose, recursive)

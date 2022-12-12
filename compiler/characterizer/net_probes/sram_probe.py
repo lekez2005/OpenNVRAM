@@ -614,9 +614,12 @@ class SramProbe(object):
             template = full_net.replace("Xmod_0", "Xmod_{bit}")
             template = template.replace("[0]", "[{bit}]")
             for bit in self.get_control_buffers_probe_bits(array_inst, bank_, net):
-                full_net = template.format(bit=bit)
+                full_net = self.format_full_internal_net(template, bit)
                 net_probes[bit] = full_net
                 self.probe_labels.add(full_net)
+
+    def format_full_internal_net(self, template, bit):
+        return template.format(bit=bit)
 
     def control_buffers_voltage_probes(self, bank):
         key = "control_buffers"
@@ -657,7 +660,7 @@ class SramProbe(object):
                 full_net = re.sub(r"mod_[0-9]+([_\.])?", r"mod_{bit}\g<1>", full_net)
                 bits = self.get_control_buffers_probe_bits(inst, bank)
                 for bit in bits:
-                    probes[bit] = full_net.format(bit=bit)
+                    probes[bit] = self.format_full_internal_net(full_net, bit)
 
             self.probe_labels.update(probes.values())
 
@@ -721,6 +724,8 @@ class SramProbe(object):
                                  internal_nets=self.get_write_driver_internal_nets())
 
     def get_sense_amp_internal_nets(self):
+        if getattr(OPTS, "sense_amp_probe_nets"):
+            return OPTS.sense_amp_probe_nets
         if OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
             return ["bl", "br", "dout"]
         return ["dout", "out_int", "outb_int", "bl", "br"]

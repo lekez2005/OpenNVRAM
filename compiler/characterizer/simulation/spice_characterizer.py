@@ -69,9 +69,13 @@ class SpiceCharacterizer(SimDataMixin, PulseGenMixin, SimOperationsMixin):
         self.slew = slew
 
     def configure_timing(self, sram):
-        if hasattr(OPTS, "configure_timing"):
-            timings = OPTS.configure_timing(sram, OPTS)
-            first_read, first_write, second_read, second_write = timings
+        timing_override = os.environ.get("OPENRAM_OVERRIDE_TIMING", None)
+        has_configure_timing = hasattr(OPTS, "configure_timing")
+        if timing_override or has_configure_timing:
+            if has_configure_timing:
+                first_read, first_write, second_read, second_write = OPTS.configure_timing(sram, OPTS)
+            if timing_override:
+                first_read, first_write, second_read, second_write = OPTS.parse_timing_override(OPTS)[1]
             write_period = first_write + second_write
             write_duty = first_write / write_period
             read_period = first_read + second_read

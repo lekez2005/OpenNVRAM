@@ -780,14 +780,14 @@ class ControlBufferOptimizer:
 
     def get_mod_args(self, buffer_mod, size):
         class_name = buffer_mod.__class__.__name__
-        if "pinv" in class_name:
+        if class_name in ["pinv_wordline", "pinv_horizontal"]:
+            args = {"size": size, "beta": buffer_mod.beta}
+        elif "pinv" in class_name:
             args = {"height": buffer_mod.height, "size": size, "beta": buffer_mod.beta,
                     "contact_nwell": buffer_mod.contact_nwell,
                     "contact_pwell": buffer_mod.contact_pwell,
                     "align_bitcell": buffer_mod.align_bitcell,
                     "same_line_inputs": buffer_mod.same_line_inputs}
-        elif class_name == "pinv_wordline":
-            args = {"size": size, "beta": buffer_mod.beta}
         elif isinstance(buffer_mod, precharge_characterization):
             name = "precharge_{:.5g}".format(size)
             args = {"name": name, "size": size}

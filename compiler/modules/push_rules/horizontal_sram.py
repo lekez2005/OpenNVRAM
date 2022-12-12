@@ -1,6 +1,6 @@
 import debug
 from base.contact import m1m2, cross_m2m3, m2m3, m3m4
-from base.design import METAL2, METAL3, METAL1, METAL4, NIMP
+from base.design import METAL2, METAL3, METAL1, METAL4, NIMP, PIMP
 from base.hierarchy_layout import GDS_ROT_270
 from base.vector import vector
 from globals import OPTS
@@ -14,13 +14,9 @@ from modules.baseline_sram import BaselineSram
 class HorizontalSram(BaselineSram):
     rotation_for_drc = GDS_ROT_270
 
-    def create_modules(self):
-        super().create_modules()
-        self.row_decoder_y -= self.bank.bitcell.height
-
     @staticmethod
     def create_column_decoder_modules(words_per_row):
-        buffer_sizes = [OPTS.predecode_sizes[0]] + OPTS.column_decoder_buffers[1:]
+        buffer_sizes = [OPTS.predecode_sizes[0]] + OPTS.column_decoder_buffers
         if words_per_row == 2:
             column_decoder = FlopBufferHorizontal(OPTS.control_flop, OPTS.column_decoder_buffers,
                                                   dummy_indices=[0, 2])
@@ -34,10 +30,6 @@ class HorizontalSram(BaselineSram):
         super().route_layout()
         debug.info(1, "Route sram decoder enable bank")
         self.route_decoder_enable()
-
-    @staticmethod
-    def get_bank_class():
-        return HorizontalBank
 
     def get_row_decoder_connections(self):
         connections = super().get_row_decoder_connections() + ["wordline_en"]
@@ -175,15 +167,26 @@ class HorizontalSram(BaselineSram):
             self.add_contact_center(m2m3.layer_stack, offset=offset, rotate=90)
             self.add_contact_center(m3m4.layer_stack, offset=offset, rotate=90)
 
+    def route_col_decoder_power(self):
+        rails = [self.mid_vdd, self.mid_gnd]
+        for i, pin_name in enumerate(["vdd", "gnd"]):
+            rail = rails[i]
+            for pin in self.column_decoder_inst.get_pins(pin_name):
+                self.route_predecoder_col_mux_power_pin(pin, rail)
+
     def route_predecoder_col_mux_power_pin(self, pin, rail):
         flop_height = self.column_decoder.flop.height
-        if (pin.layer == METAL1 and
-                pin.by() - self.column_decoder_inst.by() > self.col_addr_size * flop_height):
+        if (pin.layer == METAL1
+                and pin.by() - self.column_decoder_inst.by() > self.col_addr_size * flop_height
+                and not self.words_per_row == 2):
             x_right = pin.lx()
             via = m1m2
             layer = METAL1
         else:
-            x_right = self.column_decoder_inst.lx() + self.column_decoder.in_inst[0].lx()
+            if self.words_per_row == 2:
+                x_right = self.column_decoder_inst.lx()
+            else:
+                x_right = self.column_decoder_inst.lx() + self.column_decoder.in_inst[0].lx()
             via = m2m3
             layer = METAL3
         self.add_rect(layer, offset=vector(rail.lx(), pin.by()),
@@ -194,24 +197,29 @@ class HorizontalSram(BaselineSram):
     def fill_decoder_wordline_space(self):
         and_inst = self.row_decoder.and_insts[0]
         buffer_inst = self.bank.wordline_driver_inst.mod.buffer_insts[0]
-        buffer_inv_inst = self.bank.wordline_driver_inst.mod.buffer.module_insts[0]
-        and_implant = max(and_inst.mod.get_layer_shapes(NIMP), key=lambda x: x.rx())
-        buffer_implant = min(buffer_inv_inst.mod.get_layer_shapes(NIMP), key=lambda x: x.lx())
+        and_implant = and_inst.get_max_shape(NIMP, "rx", recursive=True)
+        buffer_implant = buffer_inst.get_max_shape(NIMP, "lx", recursive=True)
 
-        implant_extension = - and_implant.by()
+        tap_pimplant = self.row_decoder.tap_insts[0].get_max_shape(PIMP, "rx")
+        tap_height = self.row_decoder.tap_insts[0].height
 
-        x_start = self.row_decoder_inst.lx() + and_inst.lx() + and_implant.rx()
-        x_end = (self.bank.wordline_driver_inst.lx() + buffer_inst.lx()
-                 + buffer_inv_inst.lx() + buffer_implant.lx())
+        implant_extension = and_inst.by() - and_implant.by()
+
+        x_start = self.row_decoder_inst.lx() + and_implant.rx()
+        x_end = (self.bank.wordline_driver_inst.lx() + buffer_implant.lx())
+
+        y_base = self.bank.wordline_driver_inst.by()
+
         if x_end > x_start:
-            y_base = self.bank.wordline_driver_inst.by() + buffer_inst.by() - implant_extension
-            y_offset = y_base
-            for tap_inst in self.bank.wordline_driver.tap_insts:
-                y_top = self.bank.wordline_driver_inst.by() + tap_inst.by() + implant_extension
+            y_offset = y_base + self.row_decoder.bitcell_offsets[0] - implant_extension
+            for tap_offset in self.row_decoder.tap_offsets:
+                y_top = y_base + tap_offset + implant_extension
                 self.add_rect(NIMP, offset=vector(x_start, y_offset), width=x_end - x_start,
                               height=y_top - y_offset)
-                y_offset = self.bank.wordline_driver_inst.by() + tap_inst.uy() - implant_extension
-            y_top = (self.bank.wordline_driver_inst.by()
-                     + self.bank.wordline_driver_inst.mod.buffer_insts[-1].uy() + implant_extension)
+                self.add_rect(PIMP, offset=vector(x_start - self.implant_width, y_top),
+                              width=x_end - x_start + self.implant_width,
+                              height=tap_pimplant.height)
+                y_offset = y_base + tap_offset + tap_height - implant_extension
+            y_top = y_base + self.bank.wordline_driver_inst.mod.buffer_insts[-1].uy() + implant_extension
             self.add_rect(NIMP, offset=vector(x_start, y_offset), width=x_end - x_start,
                           height=y_top - y_offset)

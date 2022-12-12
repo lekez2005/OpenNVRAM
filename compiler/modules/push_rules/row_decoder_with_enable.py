@@ -2,14 +2,13 @@ import re
 
 from base import well_implant_fills, utils
 from base.contact import cross_m2m3, m1m2
-from base.design import METAL1, PO_DUMMY, METAL3, METAL2
+from base.design import PO_DUMMY, METAL3, METAL2
 from base.hierarchy_layout import GDS_ROT_270
 from base.vector import vector
 from globals import OPTS
 from modules.hierarchical_decoder import hierarchical_decoder
 from modules.push_rules.predecode2x4_horizontal import predecode2x4_horizontal
 from modules.push_rules.predecode3x8_horizontal import predecode3x8_horizontal
-from modules.push_rules.push_bitcell_array import push_bitcell_array
 
 
 class row_decoder_with_enable(hierarchical_decoder):
@@ -31,10 +30,13 @@ class row_decoder_with_enable(hierarchical_decoder):
         self.add_mod(self.pre3_8_neg)
         self.pre3_8 = predecode3x8_horizontal(use_flops=self.use_flops, negate=False)
         self.add_mod(self.pre3_8)
-        self.all_predecoders = [self.pre2_4_neg] + (self.no_of_pre2x4 - 1) * [self.pre2_4]
-        if self.no_of_pre3x8 > 0:
-            all_pre_3_8 = [self.pre3_8_neg] + (self.no_of_pre3x8 - 1) * [self.pre3_8]
-            self.all_predecoders.extend(all_pre_3_8)
+
+        self.all_predecoders = ([self.pre2_4] * self.no_of_pre2x4 +
+                                [self.pre3_8] * self.no_of_pre3x8)
+        if self.no_of_pre2x4 > 0:
+            self.all_predecoders[0] = self.pre2_4_neg
+        else:
+            self.all_predecoders[0] = self.pre3_8_neg
 
         if self.num_inputs in [4, 5]:
             self.decoder_and = self.create_mod_from_str(OPTS.decoder_and_2, rotation=GDS_ROT_270)
@@ -51,14 +53,24 @@ class row_decoder_with_enable(hierarchical_decoder):
         super().calculate_dimensions()
 
         self.row_decoder_width = self.decoder_and.width + self.routing_width
-        self.row_decoder_height = (self.bitcell_offsets[-1] +
-                                   self.decoder_and.height +
-                                   OPTS.num_bitcell_dummies * self.decoder_and.height)
+        self.row_decoder_height = (self.bitcell_offsets + self.dummy_offsets)[-1] + self.mod_bitcell.height
 
-        vdd_pin = (self.pre2_4 or self.pre3_8).get_pins("vdd")[0]
-        self.predecoder_space = vdd_pin.height() + self.get_wide_space(METAL1)
+        predecoder_vdd_pin = (self.pre2_4 or self.pre3_8).get_pins("vdd")[0]
+        tap_gnd_pin = self.decoder_and_tap.get_pin("gnd")
 
-        self.height = self.predecoder_height + self.row_decoder_height + self.predecoder_space
+        wide_space = self.get_wide_space(METAL3)
+
+        self.bottom_gnd_y = self.predecoder_height + 0.5 * predecoder_vdd_pin.height() + wide_space
+        self.en_pin_y = self.bottom_gnd_y + tap_gnd_pin.height() + wide_space
+        en_pin = self.decoder_and.get_pin("en")
+        en_pin_space = wide_space + en_pin.width() - en_pin.by()
+
+        decoder_y_offset = self.en_pin_y + en_pin_space
+        self.row_decoder_y_base = decoder_y_offset - self.bitcell_offsets[0]
+
+        self.predecoder_space = self.row_decoder_y_base - self.predecoder_height
+
+        self.height = self.row_decoder_y_base + self.row_decoder_height
         self.width = max(self.row_decoder_width, self.predecoder_width + self.routing_width)
 
         self.nand2 = self.nand3 = self.inv = None
@@ -69,7 +81,7 @@ class row_decoder_with_enable(hierarchical_decoder):
     def add_nand_array(self, nand_mod, correct=0):
         """Add and2/and3 instances and taps"""
         self.and_insts = []
-        y_base = self.predecoder_height + self.predecoder_space + self.bitcell_height
+        y_base = self.row_decoder_y_base
 
         for i in range(self.rows):
             if i % 2 == 0:
@@ -99,12 +111,12 @@ class row_decoder_with_enable(hierarchical_decoder):
     def add_body_contacts(self):
         # additional bitcell because of dummy bitcell
         self.tap_insts = []
-        y_base = self.predecoder_height + self.predecoder_space + push_bitcell_array.bitcell.height
+        y_base = self.row_decoder_y_base
         for y_offset in self.tap_offsets:
             tap_inst = self.add_inst(self.decoder_and_tap.name, self.decoder_and_tap,
                                      offset=vector(self.routing_width, y_base + y_offset))
             self.tap_insts.append(tap_inst)
-            self.connect_inst([])
+            self.connect_inst([], check=False)
         well_implant_fills.fill_horizontal_poly(self, self.and_insts[0],
                                                 well_implant_fills.BOTTOM)
         well_implant_fills.fill_horizontal_poly(self, self.and_insts[-1],
@@ -129,8 +141,7 @@ class row_decoder_with_enable(hierarchical_decoder):
 
         en_pin = self.and_insts[0].get_pin("en")
         pin_height = en_pin.width()
-
-        y_offset = en_pin.by() - self.get_wide_space(METAL3) - pin_height
+        y_offset = self.en_pin_y
         self.add_rect(METAL2, offset=vector(en_pin.lx(), y_offset), width=en_pin.width(),
                       height=en_pin.by() - y_offset)
         self.add_layout_pin("en", METAL3, offset=vector(en_pin.lx(), y_offset),
@@ -166,12 +177,11 @@ class row_decoder_with_enable(hierarchical_decoder):
 
     def route_vdd_gnd(self):
         # ground pin below en pin
-        en_pin = self.get_pin("en")
         gnd_pins = self.and_insts[0].get_pins("gnd")
-        pin_height = max(map(lambda x: x.width(), gnd_pins))
         pin_x = min(map(lambda x: x.lx(), gnd_pins))
 
-        y_offset = en_pin.by() - self.get_wide_space(METAL3) - pin_height
+        y_offset = self.bottom_gnd_y
+        pin_height = self.decoder_and_tap.get_pin("gnd").height()
         self.add_layout_pin("gnd", METAL3, offset=vector(pin_x, y_offset),
                             height=pin_height, width=self.width - pin_x)
         # AND gates gnd to bottom gnd

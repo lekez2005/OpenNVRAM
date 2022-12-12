@@ -213,12 +213,15 @@ class hierarchical_predecode(design.design):
         self.x_off_nand = self.mid_rail_x + (1 + 2 * self.number_of_inputs) * self.m2_pitch + a_pin_space
 
         # x offset to output inverters
-        module_space = calculate_modules_implant_space(self.nand, self.output_buffer)
+        module_space = self.calculate_nand_output_space()
         self.x_off_inv_2 = self.x_off_nand + self.nand.width + module_space
 
         # Height width are computed 
         self.width = self.x_off_inv_2 + self.output_buffer.width
         self.height = self.number_of_outputs * self.nand.height
+
+    def calculate_nand_output_space(self):
+        return calculate_modules_implant_space(self.nand, self.output_buffer)
 
     def create_rails(self):
         """ Create all of the rails for the inputs and vdd/gnd/inputs_bar/inputs """
@@ -325,6 +328,16 @@ class hierarchical_predecode(design.design):
                 output_nets = [out_bar_net, out_net]
             self.connect_inst([z_net] + output_nets + ["vdd", "gnd"])
 
+    def get_nand_inst_connections(self, nand_index, connections):
+        nand_conns = []
+        for net in connections[nand_index]:
+            if self.negate and net.startswith("in["):
+                net = net.replace("in[", "inbar[")
+            elif self.negate and net.startswith("inbar["):
+                net = net.replace("inbar[", "in[")
+            nand_conns.append(net)
+        return nand_conns
+
     def add_nand(self, connections):
         """ Create the NAND stage for the decodes """
         self.nand_inst = []
@@ -346,13 +359,7 @@ class hierarchical_predecode(design.design):
                                                 mod=nand,
                                                 offset=offset,
                                                 mirror=mirror))
-            nand_conns = []
-            for net in connections[nand_input]:
-                if self.negate and net.startswith("in["):
-                    net = net.replace("in[", "inbar[")
-                elif self.negate and net.startswith("inbar["):
-                    net = net.replace("inbar[", "in[")
-                nand_conns.append(net)
+            nand_conns = self.get_nand_inst_connections(nand_input, connections)
             self.connect_inst(nand_conns)
 
             self.join_inverter_nand_implants(nand_input)

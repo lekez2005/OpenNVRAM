@@ -93,7 +93,10 @@ def parse_timing_override(OPTS):
             new_options[name] = float(value)
             if hasattr(OPTS, name):
                 setattr(OPTS, name, float(value))
-    return new_options
+        timings = (new_options.get(key, None) for key in ["first_read", "first_write",
+                                                          "second_read", "second_write"])
+        return new_options, timings
+    return None
 
 
 def configure_modules(bank, OPTS):

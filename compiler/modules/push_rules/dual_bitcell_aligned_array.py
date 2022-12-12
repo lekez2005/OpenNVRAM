@@ -20,7 +20,7 @@ class dual_bitcell_aligned_array(design, ABC):
     rotation_for_drc = GDS_ROT_270  # rotation of full for DRC runs
     mirror = True  # Mirror instances
     num_bitcell_dummies = 1
-    instance_name_prefix = "child_mod_"
+    instance_name_prefix = "mod_"
 
     @property
     def name(self):

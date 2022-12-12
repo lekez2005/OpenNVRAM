@@ -14,7 +14,7 @@ from pgates.pinv import pinv
 from pgates.pnand2 import pnand2
 from pgates.pnand3 import pnand3
 from tech import drc, info, add_tech_layers
-
+from base.utils import round_to_grid as rg
 
 class hierarchical_decoder(design.design):
     """
@@ -139,8 +139,8 @@ class hierarchical_decoder(design.design):
         self.bitcell_offsets, self.tap_offsets, self.dummy_offsets = offsets
 
         self.calculate_dimensions()
+        self.add_boundary()
 
-        
     def add_pins(self):
         """ Add the module pins """
         
@@ -433,26 +433,21 @@ class hierarchical_decoder(design.design):
         """
         if OPTS.separate_vdd_wordline:
             return
+
+        # predecoder implants
         top_predecoder_inst = (self.pre2x4_inst + self.pre3x8_inst)[-1]
-        predec_module = top_predecoder_inst.mod
+        predecoder_implants = top_predecoder_inst.get_layer_shapes(PIMP, recursive=True)
+        top_implant_y = rg(top_predecoder_inst.get_max_shape(PIMP, "uy", recursive=True).uy())
+        predecoder_implants = [x for x in predecoder_implants if rg(x.uy()) >= top_implant_y]
+        right_predecoder_implant = max(predecoder_implants, key=lambda x: x.rx())
+        left_predecoder_implant = min(predecoder_implants, key=lambda x: x.lx())
 
-        predecoder_inv_inst = predec_module.inv_inst[0].mod.module_insts[-1]
-        predecoder_inv = predecoder_inv_inst.mod
-        row_decoder_nand = self.nand_inst[0].mod
+        # nand implant
+        inv_implant = self.inv_inst[0].get_max_shape(PIMP, "by", recursive=True)
 
-        pre_inv_implant = max(predecoder_inv.get_layer_shapes(PIMP), key=lambda x: x.by())
-        row_nand_implant = min(row_decoder_nand.get_layer_shapes(PIMP), key=lambda x: x.uy())
-        implant_x = min(top_predecoder_inst.rx() -
-                        (predecoder_inv_inst.lx() + predec_module.inv_inst[0].rx()) +
-                        (predecoder_inv.width - pre_inv_implant.rx()),
-                        self.nand_inst[0].lx() + row_nand_implant.lx())
-        # add extra implant width for cases when this implant overlaps with wordline driver implant
-        # extend to the right of the predecoder`
+        implant_x = left_predecoder_implant.lx()
+        implant_right = max(right_predecoder_implant.rx(), inv_implant.rx())
 
-        predecoder_right = top_predecoder_inst.rx() - predec_module.nand_inst[0].lx()
-        row_decoder_right = self.inv_inst[0].rx()
-
-        implant_right = max(predecoder_right, row_decoder_right)
         implant_height = 2 * self.implant_width + self.rail_height
         y_offset = top_predecoder_inst.uy() - 0.5 * implant_height
 

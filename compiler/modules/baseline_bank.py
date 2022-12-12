@@ -485,10 +485,12 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         num_control_flops = len(self.get_control_flop_connections())
         row_mod = self.decoder.all_predecoders[0]
         control_flop = self.control_flop
-        if num_control_flops % 2 == 1:
+
+        flop_nwell = control_flop.get_max_shape(NWELL, "uy", recursive=True)
+
+        if num_control_flops % 2 == 1 or flop_nwell.height >= control_flop.height:
             # space NWELL
             row_nwell = row_mod.get_max_shape(NWELL, "by", recursive=True)
-            flop_nwell = control_flop.get_max_shape(NWELL, "uy", recursive=True)
             well_space = self.get_parallel_space(NWELL)
             space = -row_nwell.by() + (flop_nwell.uy() - control_flop.height) + well_space
         else:
@@ -1222,30 +1224,34 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         self.join_rects([driver_pin], driver_pin.layer, [m2_rect], METAL2,
                         via_alignment=LEFT_FILL)
 
+    def get_write_driver_mask_in_bitline(self, word):
+        br_inst = self.sense_amp_array_inst or self.write_driver_array_inst
+        br_pin = br_inst.get_pin("br[{}]".format(word))
+        bl_pin = br_inst.get_pin("bl[{}]".format(word))
+        mid_x = 0.5 * (br_pin.cx() + bl_pin.cx())
+        return br_pin, mid_x
+
     def route_write_driver_mask_in(self, word, mask_flop_out_via_y, mask_driver_in_via_y):
         """mask flop output to write driver in"""
 
         flop_pin = self.get_mask_flop_out(word)
 
         # align with sense amp bitline
-        br_inst = self.sense_amp_array_inst or self.write_driver_array_inst
-        br_pin = br_inst.get_pin("br[{}]".format(word))
-        br_x_offset = br_inst.get_pin("br[{}]".format(word)).lx()
+        bitline_pin, mid_bitlines_x = self.get_write_driver_mask_in_bitline(word)
+        bitline_x_offset = bitline_pin.lx()
 
         driver_pin = self.get_write_driver_mask_in(word)
         self.add_rect(METAL2, offset=flop_pin.ul(), width=flop_pin.width(),
                       height=mask_flop_out_via_y + self.m2_width - flop_pin.uy())
 
-        bl_pin = br_inst.get_pin("bl[{}]".format(word))
-        mid_x = 0.5 * (br_pin.cx() + bl_pin.cx())
-        if flop_pin.cx() > mid_x:
+        if flop_pin.cx() > mid_bitlines_x:
             via_x = flop_pin.rx() - m2m3.w_2
         else:
             via_x = flop_pin.lx()
         self.add_contact(m2m3.layer_stack, offset=vector(via_x, mask_flop_out_via_y))
 
         # add via to m4
-        via_offset = vector(br_x_offset, mask_flop_out_via_y + 0.5 * m2m3.second_layer_height
+        via_offset = vector(bitline_x_offset, mask_flop_out_via_y + 0.5 * m2m3.second_layer_height
                             - 0.5 * m3m4.height)
         cont = self.add_contact(m3m4.layer_stack, offset=via_offset)
         self.join_pins_with_m3(cont, flop_pin, cont.cy(), fill_height=m3m4.first_layer_height)
@@ -1256,11 +1262,11 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         # m3 to driver in
 
         self.add_contact(m3m4.layer_stack,
-                         offset=vector(br_x_offset, mask_driver_in_via_y +
+                         offset=vector(bitline_x_offset, mask_driver_in_via_y +
                                        0.5 * m3m4.first_layer_height -
                                        0.5 * m3m4.height))
         offset = vector(driver_pin.lx(), mask_driver_in_via_y)
-        self.add_rect(METAL3, offset=offset, width=br_pin.cx() - driver_pin.lx(),
+        self.add_rect(METAL3, offset=offset, width=bitline_pin.cx() - driver_pin.lx(),
                       height=m3m4.first_layer_height)
         self.add_rect(METAL2, offset=vector(driver_pin.lx(), offset.y),
                       width=driver_pin.width(),
@@ -1385,10 +1391,13 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                             offset=vector(x_offset, self.min_point),
                             height=y_offset + 0.5 * m3m4.height - self.min_point)
 
+    def get_mask_flop_in_bitline(self, word, bitline_pins):
+        return next(filter(lambda x: "bl" in x.name, bitline_pins))
+
     def route_mask_flop_in(self, bitline_pins, word, mask_via_y, fill_width, fill_height):
         if not self.has_mask_in:
             return
-        bl_pin = next(filter(lambda x: "bl" in x.name, bitline_pins))
+        bitline_pin = self.get_mask_flop_in_bitline(word, bitline_pins)
         # align mask flop in with bl
         mask_in = self.mask_in_flops_inst.get_pin("din[{}]".format(word))
 
@@ -1398,9 +1407,9 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
                       height=mask_in.by() - mask_via_y)
         via_offset = vector(mask_in.lx(), y_offset)
         cont = self.add_contact(m2m3.layer_stack, offset=via_offset)
-        self.join_pins_with_m3(cont, bl_pin, cont.cy(), fill_width, fill_height)
+        self.join_pins_with_m3(cont, bitline_pin, cont.cy(), fill_width, fill_height)
 
-        via_offset = vector(bl_pin.lx(), y_offset)
+        via_offset = vector(bitline_pin.lx(), y_offset)
         self.add_contact(m3m4.layer_stack, offset=via_offset)
         self.add_layout_pin("MASK[{}]".format(word), METAL4,
                             offset=vector(via_offset.x, self.min_point),

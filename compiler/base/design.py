@@ -1,6 +1,6 @@
 import copy
 import os
-from collections import Iterable
+from collections.abc import Iterable
 
 import debug
 from base.hierarchy_layout import layout as hierarchy_layout, get_purpose
@@ -75,6 +75,7 @@ class design(hierarchy_spice.spice, hierarchy_layout):
             'hierarchical_predecode3x8',
             'RotationWrapper',
             'reram_bitcell',
+            'push_bitcell',
         ]
         if name not in design.name_map:
             design.name_map.append(name)

@@ -192,7 +192,7 @@ for member in inspect.getmembers(sim_script):
         parser.add_argument("-c", "--num_cols", type=int, default=256)
         parser.add_argument("-r", "--num_words", type=int, default=128)
         parser.add_argument("-w", "--word_size", default=32, type=int)
-        parser.add_argument("-o", "--operation", default=OP_FIRST_WRITE,
+        parser.add_argument("-o", "--operation", default=OP_ALL,
                             choices=[OP_FIRST_READ, OP_FIRST_WRITE,
                                      OP_SECOND_WRITE, OP_SECOND_READ, OP_SENSE_TIME,
                                      OP_ALL])
@@ -413,7 +413,7 @@ for member in inspect.getmembers(sim_script):
 
     @staticmethod
     def is_failed_output(output):
-        return "failure:" not in output
+        return "failure:" in output
 
     def run_and_check_sim(self, verification_script_func, current_value):
         sim_process = self.run_simulation()

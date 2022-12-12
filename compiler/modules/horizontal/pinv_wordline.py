@@ -37,9 +37,10 @@ class pinv_wordline(wordline_pgate_horizontal, metaclass=unique_meta.Unique):
             max_fingers -= 1
 
         num_fingers = max_fingers
-        finger_width = 0
-        while finger_width < self.min_tx_width:
+        while True:
             finger_width = min(nmos_width, pmos_width) / num_fingers
+            if finger_width >= self.min_tx_width:
+                break
             num_fingers -= 1
         self.num_fingers = max(num_fingers, 1)
         self.tx_mults = self.num_fingers

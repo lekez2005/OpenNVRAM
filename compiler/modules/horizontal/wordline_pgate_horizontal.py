@@ -1,4 +1,4 @@
-from base import contact
+from base import contact, utils
 from base.contact import m2m3, m1m2
 from base.design import ACTIVE, NIMP, PIMP, NWELL, PWELL, METAL1, POLY, METAL3, METAL2, PO_DUMMY, design
 from base.vector import vector
@@ -6,6 +6,7 @@ from base.well_active_contacts import get_max_contact
 from base.well_implant_fills import calculate_tx_metal_fill
 from globals import OPTS
 from modules.horizontal.pgate_horizontal import pgate_horizontal
+from pgates.ptx import ptx
 
 
 class wordline_pgate_horizontal(pgate_horizontal):
@@ -33,19 +34,21 @@ class wordline_pgate_horizontal(pgate_horizontal):
     def initialize_constraints(cls, design_self: 'pgate_horizontal'):
         super().initialize_constraints(design_self)
         cls.bitcell = design_self.create_mod_from_str(OPTS.bitcell)
+
         poly_rects = cls.bitcell.get_layer_shapes(POLY)
+
+        unique_poly_y = set(map(lambda x: utils.round_to_grid(x.cy()), poly_rects))
 
         longest_poly = max(poly_rects, key=lambda x: max(x.width, x.height))
 
         cls.poly_width = min(longest_poly.height, longest_poly.width)
         cls.poly_pitch = cls.poly_width + design_self.poly_space
 
-        cls.max_num_fingers = len(poly_rects)
+        cls.max_num_fingers = len(unique_poly_y)
 
-        active_rects = cls.bitcell.get_layer_shapes(ACTIVE)
-        # find active rects with poly overlap
-        active_rects = [active_rect for active_rect in active_rects if
-                        any([poly_rect.overlaps(active_rect) for poly_rect in poly_rects])]
+        active_rects = (ptx.get_mos_active(cls.bitcell, tx_type="n", recursive=False) +
+                        ptx.get_mos_active(cls.bitcell, tx_type="p", recursive=False))
+
         top_active = max(active_rects, key=lambda x: x.uy())
         bottom_active = min(active_rects, key=lambda x: x.by())
         cls.bitcell_top_overlap = top_active.uy() >= cls.bitcell.height
@@ -67,7 +70,17 @@ class wordline_pgate_horizontal(pgate_horizontal):
     def get_source_drain_offsets(self):
         return [i * self.poly_pitch for i in range(self.num_fingers + 1)]
 
+    def get_contact_indices(self, is_nmos):
+        (n_power, p_power), (n_output, p_output) = self.get_source_drain_connections()
+        if is_nmos:
+            return n_power + n_output
+        else:
+            return p_power + p_output
+
     def add_poly_and_active(self, active_widths):
+        self.poly_width = self.__class__.poly_width
+        self.poly_pitch = self.__class__.poly_pitch
+
         self.poly_x_offset = max(self.implant_enclose_poly,
                                  0.5 * (contact.poly.second_layer_height -
                                         contact.poly.first_layer_height))
@@ -154,10 +167,12 @@ class wordline_pgate_horizontal(pgate_horizontal):
         well_layers = [PWELL, NWELL]
 
         m1m2_extension = max(0, 0.5 * (m1m2.height - self.left_active_rect.width))
-        self.mid_x = self.left_active_rect.rx() + max(0.5 * self.active_rect_space,
-                                                      m1m2_extension +
-                                                      self.get_line_end_space(METAL1) +
-                                                      0.5 * self.m1_width)
+
+        mid_x_space = 0.5 * self.active_rect_space
+        if not self.nmos_pmos_nets_aligned:
+            mid_x_space = max(mid_x_space, m1m2_extension + self.get_line_end_space(METAL1) +
+                              0.5 * self.m1_width)
+        self.mid_x = self.left_active_rect.rx() + mid_x_space
 
         for type_index, layer_type in enumerate([implant_layers, well_layers]):
             if self.mirror:
@@ -216,17 +231,15 @@ class wordline_pgate_horizontal(pgate_horizontal):
     def connect_power(self):
 
         conn_indices, _ = self.get_source_drain_connections()
-        y_offsets = self.get_source_drain_offsets()
 
         pin_names = ["gnd", "vdd"]
-        actives = [self.nmos_active, self.pmos_active]
-        via_shift = 0.5 * (m2m3.height - contact.active.height)
         for i in range(2):
             pin_name = pin_names[i]
 
-            x_offset = actives[i].cx() + via_shift
+            x_offset = self.active_m1m2_offsets[i]
 
-            contact_dimensions = get_max_contact(m2m3.layer_stack, actives[i].width).dimensions
+            max_width = self.sample_m1m2_contacts[i].height
+            contact_dimensions = get_max_contact(m2m3.layer_stack, max_width).dimensions
             num_contacts = min(2, contact_dimensions[1])
 
             pin = self.get_pin(pin_name)
@@ -248,10 +261,11 @@ class wordline_pgate_horizontal(pgate_horizontal):
         conn_indices, _ = self.get_source_drain_connections()
 
         y_offsets = self.get_source_drain_offsets()
+        self.active_m1m2_offsets = []
+        self.sample_m1m2_contacts = []
 
         for i in range(2):
             active_rect = active_rects[i]
-            contact_dimensions = get_max_contact(m1m2.layer_stack, active_rect.width).dimensions
 
             if getattr(self, fill_props[i]):
                 fill_x, fill_right, fill_height, fill_width = getattr(self, fill_props[i])
@@ -260,11 +274,18 @@ class wordline_pgate_horizontal(pgate_horizontal):
                     y_offset = y_offsets[y_index] - 0.5 * fill_height
                     self.add_rect(METAL1, offset=vector(real_fill_x, y_offset),
                                   width=fill_width, height=fill_height)
-                m1m2_via_x = fill_x + active_rect.lx() + 0.5 * contact.m1m2.height
+
+                sample_contact = get_max_contact(m1m2.layer_stack, fill_width)
+                m1m2_via_x = min(real_fill_x + fill_width - 0.5 * sample_contact.height,
+                                 active_rect.cx())
             else:
+                sample_contact = get_max_contact(m1m2.layer_stack, active_rect.width)
                 m1m2_via_x = active_rect.cx()
+            self.sample_m1m2_contacts.append(sample_contact)
+
+            self.active_m1m2_offsets.append(m1m2_via_x)
             for y_index in conn_indices[i]:
-                self.add_contact_center(m1m2.layer_stack, size=contact_dimensions,
+                self.add_contact_center(m1m2.layer_stack, size=sample_contact.dimensions,
                                         offset=vector(m1m2_via_x, y_offsets[y_index]),
                                         rotate=90)
 
@@ -276,7 +297,7 @@ class wordline_pgate_horizontal(pgate_horizontal):
         poly_pitch = reference_mod.poly_pitch
 
         return ([bottom_rect.by() - i * poly_pitch for i in range(2, 0, -1)],
-                [top_rect.uy() + i * poly_pitch for i in range(1, 3)])
+                [top_rect.by() + i * poly_pitch for i in range(1, 3)])
 
     @staticmethod
     def create_dummies(parent_mod: design, top_y, bottom_y, reference_mod=None):

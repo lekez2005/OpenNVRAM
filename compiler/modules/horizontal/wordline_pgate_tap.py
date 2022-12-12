@@ -66,6 +66,7 @@ class wordline_pgate_tap(design, metaclass=Unique):
         implant_height = implant_top - implant_bottom
         implant_width = utils.ceil(drc.get("minarea_implant", 0) / implant_height)
         implant_width = max(self.implant_width, active_width + 2 * self.implant_enclose_active,
+                            active_width + 2 * self.well_enclose_active,
                             implant_width)
 
         self.width = implant_width
@@ -110,12 +111,12 @@ class wordline_pgate_tap(design, metaclass=Unique):
 
             # join the power pins
             power_m2_rects = []
-            for rect in mod.get_layer_shapes(ACTIVE):
-                m2_rect = design_self. \
-                    add_rect_center(METAL2,
-                                    offset=vector(x_offset + buffer_inst.lx() + rect.cx(),
-                                                  y_offset + 0.5 * nwell_tap.height),
-                                    width=m1m2.height, height=nwell_tap.height)
+            for m1m2_x_offset in mod.active_m1m2_offsets:
+                offset = vector(x_offset + buffer_inst.lx() + m1m2_x_offset,
+                                y_offset + 0.5 * nwell_tap.height)
+                m2_rect = design_self.add_rect_center(METAL2, offset,
+                                                      width=m1m2.height,
+                                                      height=nwell_tap.height)
                 power_m2_rects.append(m2_rect)
 
             left_m2, right_m2 = sorted(power_m2_rects, key=lambda x: x.lx())
@@ -138,7 +139,7 @@ class wordline_pgate_tap(design, metaclass=Unique):
             left_x += buffer_inst.lx() + x_offset
             right_x += buffer_inst.lx() + x_offset
             for tap_x, tap, m2_rect in [(left_x, left_tap, left_m2),
-                               (right_x, right_tap, right_m2)]:
+                                        (right_x, right_tap, right_m2)]:
                 tap_inst = design_self.add_inst(tap.name, tap,
                                                 offset=vector(tap_x, y_offset))
                 design_self.connect_inst([])

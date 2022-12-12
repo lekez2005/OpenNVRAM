@@ -62,7 +62,7 @@ class precharge_horizontal(precharge):
         active_rect = self.tx_mod.get_max_shape(ACTIVE, "by")
         x_offset = self.left_space - active_rect.by() + self.tx_mod.height
         offset = vector(x_offset, self.tx_y_offset)
-        debug.info(0, "precharge cell offsets: %.5g, %.5g", offset.x, offset.y)
+        debug.info(2, "precharge cell offsets: %.5g, %.5g", offset.x, offset.y)
         self.tx_inst = self.add_inst(name="tx", mod=self.tx_mod, offset=offset, rotate=90)
         self.connect_inst([], check=False)
 

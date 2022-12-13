@@ -17,7 +17,7 @@ class TestBase(testutils.OpenRamTest):
         from globals import OPTS
         OPTS.serial = getattr(self, "serial", False)
 
-        if getattr(self, "latched", False):
+        if getattr(self, "latched", True):
             OPTS.sense_amp_type = OPTS.LATCHED_SENSE_AMP
         else:
             OPTS.sense_amp_type = OPTS.MIRROR_SENSE_AMP
@@ -34,8 +34,8 @@ class TestBase(testutils.OpenRamTest):
             elif "serial" in sys.argv:
                 TestBase.serial = True
                 sys.argv.remove("serial")
-            if "latched" in sys.argv:
-                TestBase.latched = True
-                sys.argv.remove("latched")
+            if "mirrored" in sys.argv:
+                TestBase.latched = False
+                sys.argv.remove("mirrored")
             parse_args()
             unittest.main()

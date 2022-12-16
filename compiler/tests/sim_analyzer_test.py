@@ -11,7 +11,7 @@ plot_exclusions = ["sense_en", "outb_int"]
 
 
 def print_max_delay(desc, val):
-    if val > 0:
+    if val is not None and val > 0:
         print("{} delay = {:.4g}p".format(desc, val * 1e12), flush=True)
 
 
@@ -395,14 +395,16 @@ class SimAnalyzerTest(SimulatorBase):
 
     def get_write_en_delay(self):
         delay_func = self.voltage_probe_delay
-        write_en_bar_delay = None
-        if "write_en_bar" in self.voltage_probes["control_buffers"]:
+        write_en_delay = write_en_bar_delay = None
+        probes = self.voltage_probes["control_buffers"][str(self.probe_bank)]
+        if "write_en_bar" in probes:
             write_en_bar_delay = delay_func("control_buffers", "write_en_bar",
                                             self.probe_bank,
                                             self.probe_control_bit, edge=self.FALLING_EDGE)
             print_max_delay("Write ENB", write_en_bar_delay)
-        write_en_delay = delay_func("control_buffers", "write_en", self.probe_bank,
-                                    bit=self.probe_control_bit, edge=self.RISING_EDGE)
+        if "write_en" in probes:
+            write_en_delay = delay_func("control_buffers", "write_en", self.probe_bank,
+                                        bit=self.probe_control_bit, edge=self.RISING_EDGE)
         return write_en_delay, write_en_bar_delay
 
     def get_flop_out_delay(self):
@@ -449,25 +451,6 @@ class SimAnalyzerTest(SimulatorBase):
             bit = self.probe_control_bit
         return self.analyzer.get_probe(key, net, self.probe_bank, bit)
 
-    def plot_sig(self, signal_name, label, from_t=None, to_t=None):
-        if signal_name is None:
-            return
-        if from_t is None:
-            from_t = self.probe_start_time
-        if to_t is None:
-            to_t = self.probe_end_time
-
-        for excl in plot_exclusions:
-            if excl in signal_name:
-                return
-        try:
-            self.debug.print_str(signal_name)
-            signal = self.sim_data.get_signal_time(signal_name,
-                                                   from_t=from_t, to_t=to_t)
-            self.ax1.plot(*signal, label=label)
-        except ValueError as er:
-            print(er)
-
     def get_wl_name(self):
         return "wl"
 
@@ -504,17 +487,11 @@ class SimAnalyzerTest(SimulatorBase):
         q_bit = str(self.probe_control_bit)
         write_current_net = self.current_probes["bitcell_array"][address][q_bit]
         write_current_net = "i1({})".format(write_current_net)
+        write_current_net = self.sim_data.convert_signal_name(write_current_net)
 
         from_t = self.probe_start_time
         to_t = self.probe_end_time
-        write_current_time = self.sim_data.get_signal_time(write_current_net,
-                                                           from_t=from_t, to_t=to_t)
-        write_current = write_current_time[1] * 1e6
-        ax2 = self.ax1.twinx()
-
-        ax2.plot(write_current_time[0], write_current, ':k', label="current")
-        ax2.set_ylabel("Write Current (uA)")
-        ax2.legend()
+        self.plotter.plot_current(write_current_net, "current", from_t, to_t)
 
     def plot_internal_sense_amp(self):
         for net in ["out_int", "outb_int"]:
@@ -535,14 +512,45 @@ class SimAnalyzerTest(SimulatorBase):
                                            bit=self.probe_control_bit)
         self.plot_sig(sig_name, label="dout")
 
+    def setup_plot(self):
+        if self.cmd_line_opts.plotter == "cadence":
+            from simulation_plotter import CadencePlotter
+            return CadencePlotter(self.temp_folder)
+        else:
+            from simulation_plotter import MatPlotLibPlotter
+            return MatPlotLibPlotter(self.sim_data)
+
+    def plot_sig(self, signal_name, label, from_t=None, to_t=None):
+        if signal_name is None:
+            return
+        if from_t is None:
+            from_t = self.probe_start_time
+        if to_t is None:
+            to_t = self.probe_end_time
+
+        for excl in plot_exclusions:
+            if excl in signal_name:
+                return
+        try:
+            real_signal_name = self.sim_data.convert_signal_name(signal_name)
+            if real_signal_name is None:
+                print("Signal {} not found".format(signal_name))
+                return
+            self.debug.print_str(real_signal_name)
+            self.plotter.plot(real_signal_name, label, from_t=from_t, to_t=to_t)
+        except ValueError as er:
+            print(er)
+
+    def finalize_plots(self):
+        base_name = os.path.basename(self.temp_folder)
+        title = f"{base_name}: bit = {self.probe_control_bit} col = {self.probe_col}" \
+                f" addr = {self.probe_address}"
+        self.plotter.finalize_plots(title, self.probe_start_time, self.probe_end_time)
+
     def run_plots(self):
         if self.cmd_line_opts.plot is None:
             return
-        import logging
-        import matplotlib
-        matplotlib.use("Qt5Agg")
-        from matplotlib import pyplot as plt
-        logging.getLogger('matplotlib').setLevel(logging.WARNING)
+        self.plotter = self.setup_plot()
 
         if self.cmd_line_opts.plot == "write":
             self.set_critical_path_params(self.max_write_event, self.max_write_bit_delays,
@@ -556,22 +564,10 @@ class SimAnalyzerTest(SimulatorBase):
         self.debug.print_str(f"\nPlot signals: ({self.probe_start_time * 1e9:.5g}, "
                              f"{self.probe_end_time * 1e9:.5g})")
 
-        self.fig, self.ax1 = plt.subplots()
         self.plot_common_signals()
         plot_func()
-
-        plt.axhline(y=0.5 * self.sim_data.vdd, linestyle='--', linewidth=0.5)
-        plt.axhline(y=self.sim_data.vdd, linestyle='--', linewidth=0.5)
-
-        self.ax1.grid()
-        self.ax1.legend(loc="center left", fontsize="x-small")
-        plt.title("{}: bit = {} col = {} addr = {}".format(os.path.basename(self.temp_folder),
-                                                           self.probe_control_bit,
-                                                           self.probe_col,
-                                                           self.probe_address))
 
         if not self.cmd_line_opts.verbose_save:
             print("Available bits: {}".format(", ".join(map(str, self.analyzer.probe_bits))))
 
-        plt.tight_layout()
-        plt.show()
+        self.finalize_plots()

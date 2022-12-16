@@ -103,6 +103,7 @@ class SimulatorBase(OpenRamTest):
         parser.add_argument("--skip_read_check", action="store_true")
         parser.add_argument("--energy", default=None, type=int)
         parser.add_argument("-p", "--plot", default=None)
+        parser.add_argument("--plotter", default="matplotlib")
         parser.add_argument("-o", "--analysis_op_index", default=None,
                             type=int, help="which of the ops to analyze")
         parser.add_argument("-b", "--analysis_bit_index", default=None,

@@ -1969,7 +1969,7 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
         power_grid_indices = []
 
         if len(empty_offset_indices) == 0:
-            i = 0
+            i = int(cell_spacing / 2)
             while i < self.num_cols - 1:
                 if i in self.occupied_m4_bitcell_indices:
                     index = self.find_closest_unoccupied_index(i)
@@ -2077,13 +2077,16 @@ class BaselineBank(design, ControlBuffersRepeatersMixin, ControlSignalsMixin, AB
             instance_power_pins = power_groups[pin_name]
             for base_offset in x_offsets:
                 x_offset = base_offset + self.bitcell_array_inst.lx()
-                new_pin = self.add_layout_pin(pin_name, METAL4,
-                                              offset=vector(x_offset, min_point),
-                                              width=rail_width, height=rail_top - min_point)
+                new_pin = self.add_m4_grid_pin(pin_name, x_offset, min_point, rail_width, rail_top)
                 self.add_related_m4_grid_pin(new_pin)
                 for power_pin in instance_power_pins:
                     self.connect_m4_grid_instance_power(power_pin, new_pin)
                 self.connect_control_buffers_power_to_grid(new_pin)
+
+    def add_m4_grid_pin(self, pin_name, x_offset, min_point, rail_width, rail_top):
+        return self.add_layout_pin(pin_name, METAL4,
+                                   offset=vector(x_offset, min_point),
+                                   width=rail_width, height=rail_top - min_point)
 
     def add_related_m4_grid_pin(self, original_pin):
         pass

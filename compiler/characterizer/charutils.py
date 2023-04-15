@@ -119,3 +119,12 @@ def convert_to_float(number):
         return False
 
     return float_value
+
+
+def vector_to_int(vec):
+    return int("".join(map(str, vec)), 2)
+
+
+def int_to_vec(int_, word_size):
+    str_format = "0{}b".format(word_size)
+    return list(map(int, [x for x in format(int_, str_format)]))

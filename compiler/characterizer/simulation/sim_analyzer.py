@@ -6,7 +6,7 @@ import numpy as np
 
 import debug
 from characterizer import SpiceReader
-from characterizer.charutils import get_measurement_file, get_sim_file
+from characterizer.charutils import get_measurement_file, get_sim_file, vector_to_int
 from characterizer.simulation.sim_reader import FALLING_EDGE, RISING_EDGE
 from globals import OPTS
 
@@ -33,15 +33,6 @@ def search_file(filename, pattern):
     with open(filename, 'r') as file:
         content = file.read()
         return search_str(content, pattern)
-
-
-def vector_to_int(vec):
-    return int("".join(map(str, vec)), 2)
-
-
-def int_to_vec(int_, word_size):
-    str_format = "0{}b".format(word_size)
-    return list(map(int, [x for x in format(int_, str_format)]))
 
 
 def address_to_int(vec_str):

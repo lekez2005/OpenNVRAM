@@ -1,5 +1,4 @@
 import debug
-from base import utils
 from base.contact import m1m2, m2m3, m3m4, cross_m2m3, cross_m3m4, cross_m1m2
 from base.design import design, METAL3, METAL4, METAL2, METAL1
 from base.layout_clearances import get_range_overlap
@@ -8,8 +7,6 @@ from base.vector import vector
 from globals import OPTS
 from modules.bitline_compute.bl_bank import BlBank
 from modules.logic_buffer import LogicBuffer
-from tech import delay_strategy_class
-from tech import drc
 
 
 @library_import
@@ -406,11 +403,11 @@ class BitlineALU(design):
                 col = word * self.word_size + i
                 next_col = col + 1
 
-                shift_out = list(filter(lambda x: x.layer == "metal3",
+                shift_out = list(filter(lambda x: x.layer == METAL3,
                                         self.mcc_insts[next_col].get_pins("shift_out")))[0]
                 shift_in = self.mcc_insts[col].get_pin("shift_in")
 
-                self.add_rect("metal3", offset=vector(shift_in.rx(), shift_out.by()),
+                self.add_rect(METAL3, offset=vector(shift_in.rx(), shift_out.by()),
                               width=shift_out.lx() - shift_in.rx(), height=shift_out.height())
 
             # msb shift in to gnd
@@ -420,20 +417,10 @@ class BitlineALU(design):
 
             closest_gnd = min(filter(lambda x: x.by() < shift_in.by(), gnd_pins),
                               key=lambda x: shift_in.by() - x.by())
-            self.add_rect("metal3", offset=vector(shift_in.rx() - self.m3_width,
-                                                  closest_gnd.cy()),
-                          height=shift_in.by() - closest_gnd.cy())
 
-            fill_width = utils.ceil(drc["minarea_metal3_drc"] / m2m3.height)
-            x_offset = shift_in.rx() - 0.5 * (self.m3_width + fill_width)
-            y_offset = closest_gnd.cy() - 0.5 * m2m3.height
-            self.add_rect("metal2", offset=vector(x_offset, y_offset),
-                          width=fill_width, height=m2m3.height)
-            self.add_contact_center(m2m3.layer_stack,
-                                    offset=vector(shift_in.rx() - 0.5 * self.m2_width,
-                                                  closest_gnd.cy()))
-            self.add_contact_center(m1m2.layer_stack, size=[2, 1],
-                                    offset=vector(shift_in.rx() - 0.5 * self.m2_width, closest_gnd.cy()))
+            x_offset = shift_in.rx() - self.m1_width
+            self.add_rect(METAL1, vector(x_offset, closest_gnd.cy()), width=self.m1_width,
+                          height=shift_in.cy() - closest_gnd.cy())
 
     def route_carries(self):
         for word in range(self.num_words):
@@ -484,7 +471,7 @@ class BitlineALU(design):
             top_range = clk_pin.cy() + 0.5 * fill_height
             bottom_range = clk_pin.cy() - 0.5 * fill_height
             mcc_m2_rects = [x for x in mcc_m2_rects if x.by() < top_range
-                            and x.uy() > bottom_range ]
+                            and x.uy() > bottom_range]
             if mcc_m2_rects:
                 m2_x = min(mcc_m2_rects, key=lambda x: x.lx()).lx()
             else:
@@ -505,8 +492,14 @@ class BitlineALU(design):
                           width=clk_pin.lx() - mid_offset.x)
 
         else:
-            self.add_rect(METAL1, offset=vector(out_pin.lx(), clk_pin.by()),
-                          width=clk_pin.lx() - out_pin.lx(), height=clk_pin.height())
+            pin_y = min([out_pin.by(), out_pin.uy()], key=lambda x: abs(x - clk_pin.cy()))
+            rect_x = out_pin.cx() - 0.5 * m2m3.h_2
+            self.add_rect(METAL3, vector(rect_x, clk_pin.by()), height=clk_pin.height(),
+                          width=clk_pin.lx() - rect_x)
+            self.add_rect(METAL2, vector(out_pin.lx(), pin_y), width=out_pin.width(),
+                          height=clk_pin.cy() - pin_y)
+            self.add_cross_contact_center(cross_m2m3, vector(out_pin.cx(), clk_pin.cy()),
+                                          rotate=False)
 
         # clk in
         clk_in = self.clk_buf_inst.get_pin("A")

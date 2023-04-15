@@ -3,7 +3,7 @@ Implements a simple spice parser to enable constructing cell hierarchy
 """
 import os
 import re
-from typing import Union, TextIO, List
+from typing import Union, TextIO, List, Tuple
 
 import debug
 from tech import spice as tech_spice
@@ -161,7 +161,30 @@ class SpiceParser:
             tx_names.update(tech_spice["tx_names"].keys())
         return mod_name in tx_names
 
+    @staticmethod
+    def is_primitive(line: str) -> Tuple[str, List]:
+        """Check if a line contains a primitive. Return pair of primitive's name and primitive's pins"""
+        if SpiceParser.line_contains_tx(line):
+            return line.split()[5], ["d", "g", "s", "b"]
+
+        prev_token = None
+        for token in line.split():
+            if "=" in token:
+                break
+            prev_token = token
+        spice_primitives = tech_spice.get("primitives", {})
+        if prev_token and prev_token in spice_primitives:
+            return prev_token, spice_primitives[prev_token]
+
     def deduce_hierarchy_for_pin(self, pin_name, module_name):
+
+        def pin_name_callback(line, pin_index, is_primitive):
+            primitive_name, primitive_pins = is_primitive
+            return [(primitive_pins[pin_index], line)]
+
+        return self._deduce_hierarchy_for_pin(pin_name, module_name, pin_name_callback)
+
+    def _deduce_hierarchy_for_pin(self, pin_name, module_name, post_process_callback):
         pin_name = pin_name.lower()
         module = self.get_module(module_name)
         nested_hierarchy = []
@@ -171,9 +194,10 @@ class SpiceParser:
                 continue
 
             pin_index = line.split().index(pin_name) - 1
-            if self.line_contains_tx(line):  # end of hierarchy
+            is_primitive = self.is_primitive(line)
+            if is_primitive:  # end of hierarchy
                 pin_index = line.split().index(pin_name) - 1
-                yield [(["d", "g", "s", "b"][pin_index], line)]
+                yield post_process_callback(line, pin_index, is_primitive)
             else:
                 child_module_name = line.split()[-1]
                 child_module = self.get_module(child_module_name)
@@ -185,7 +209,7 @@ class SpiceParser:
         # Now go deep into each branch
         for branch in nested_hierarchy:
             instance_name, child_module_name, child_pin_name = branch
-            for child in self.deduce_hierarchy_for_pin(child_pin_name, child_module_name):
+            for child in self._deduce_hierarchy_for_pin(child_pin_name, child_module_name, post_process_callback):
                 yield [instance_name] + child
 
     def deduce_hierarchy_for_node(self, node_name, module_name):
@@ -268,7 +292,7 @@ class SpiceParser:
 
         :param pin_name: pin to evaluate
         :param module_name: parent module
-        :param vdd_name: to count as a a path, pmos must terminate on "vdd_name"
+        :param vdd_name: to count as a path, pmos must terminate on "vdd_name"
         :param gnd_name: to count as a path, nmos must terminate on "gnd_name"
         :param max_depth: This is used as a termination condition to prevent infinite cycles
         :return: max resistance in path

@@ -85,7 +85,12 @@ class TxCapacitance(CharTestBase):
                             self.options.max_c = (4 * total_cap)
                             self.options.min_c = 0.5 * total_cap
 
-                        total_cap, _, cap_per_tx_micron, _ = self.run_single_sim()
+                        try:
+                            total_cap, _, cap_per_tx_micron, _ = self.run_single_sim()
+                        except AssertionError as ex:
+                            if len(ex.args) > 0 and "Optimization result not found" in ex.args[0]:
+                                print("Optimization result not found")
+                                continue
                         print("      {}: \t size = {:.3g} \t C={:.3g}fF per micron".format(
                             terminal, size,
                             cap_per_tx_micron * 1e15))
@@ -135,7 +140,7 @@ class TxCapacitance(CharTestBase):
         from base import contact
         from base.design import design
         from base.vector import vector
-        from tech import info
+        from tech import info, add_tech_layers
 
         class MosWrapper(design):
             def __init__(self, mos: design):
@@ -203,6 +208,12 @@ class TxCapacitance(CharTestBase):
                     self.add_rect(well_layer, offset=vector(rect_left, rect_bottom),
                                   width=rect_right - rect_left,
                                   height=rect_top - rect_bottom)
+
+                sizes = self.find_highest_coords()
+                self.width, self.height = sizes[0], sizes[1]
+                from pgates.ptx import ptx
+                ptx.flatten_tx_inst(self, inst)
+                add_tech_layers(self)
         return MosWrapper
 
     @staticmethod

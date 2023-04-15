@@ -48,7 +48,7 @@ class MeasureResistance(CharTestBase):
         cls.parser.add_argument("--max_size",
                                 default=50, type=float, help="Inverter size")
         cls.parser.add_argument("--num_sizes",
-                                default=10, type=float, help="Inverter size")
+                                default=10, type=int, help="Inverter size")
         cls.parser.add_argument("--min_beta", type=float, default=1.0, help="min beta for beta sweep")
         cls.parser.add_argument("--max_beta", type=float, default=3.0, help="max beta for beta sweep")
 
@@ -110,7 +110,7 @@ class MeasureResistance(CharTestBase):
             nmos_wrapped = TxCapacitance.create_mos_wrapper(self.options, beta_suffix=False)(n_tx)
 
             self.options.tx_type = PMOS
-            p_tx = ptx(width=self.options.tx_width, mults=self.options.num_fingers,
+            p_tx = ptx(width=self.options.pmos_tx_width, mults=self.options.num_fingers,
                        tx_type=PMOS, connect_active=True, connect_poly=True)
             pmos_wrapped = TxCapacitance.create_mos_wrapper(self.options, beta_suffix=False)(p_tx)
 
@@ -230,7 +230,7 @@ class MeasureResistance(CharTestBase):
     def test_sweep_tx(self):
         if not self.options.action == ACTION_SWEEP_TX:
             return
-        from tech import drc
+        from tech import drc, spice
         self.options.gate = MOS
 
         for num_fingers in [1, 2, 3, 4, 5, 6, 10, 20, 40]:
@@ -240,17 +240,28 @@ class MeasureResistance(CharTestBase):
             sizes = [1, 1.25, 1.5, 1.75, 2, 2.5, 3, 5, 10]
             for size in sizes:
                 self.options.size = size
-                self.options.tx_width = size * drc["minwidth_tx"]
-                r_n, r_p, _, _, _ = self.run_simulation()
+                minwidth_tx_nmos = spice["minwidth_tx"]
+                minwidth_tx_pmos = spice.get("minwidth_tx_pmos", spice["minwidth_tx"])
+
+                self.options.tx_width = size * minwidth_tx_nmos
+                self.options.pmos_tx_width = size * minwidth_tx_pmos
+                try:
+                    r_n, r_p, _, _, _ = self.run_simulation()
+                except:
+                    import traceback
+                    traceback.print_exc()
+                    continue
                 resistances = [r_n, r_p]
                 gates = [NMOS, PMOS]
+                widths = [self.options.tx_width, self.options.pmos_tx_width]
+                print(" rn = {:.3g} rp = {:.3g}".format(r_n, r_p))
                 for ii in range(2):
-                    resistance = resistances[ii]
-                    resistance = resistance * drc["minwidth_tx"] * num_fingers
-
-                    print("    {} size: {:.3g}: {:.6g}".format(gates[ii], size, resistance))
+                    resistance_per_finger = resistances[ii] * num_fingers
+                    resistance_per_micron = resistance_per_finger * widths[ii]
+                    print("    {} size: {:.3g}: {:.6g}".format(gates[ii], size, resistance_per_micron))
                     size_suffixes = [("nf", num_fingers)]
-                    self.save_result(gates[ii], "resistance", resistance, size=size,
+                    self.save_result(gates[ii], "resistance", resistance_per_micron,
+                                     size=widths[ii] / minwidth_tx_nmos,
                                      size_suffixes=size_suffixes,
                                      file_suffixes=[])
 
@@ -275,7 +286,8 @@ class MeasureResistance(CharTestBase):
                 try:
                     r_n, r_p, fall_time, rise_time, scale_factor = self.run_simulation()
                 except AssertionError as ex:
-                    if len(ex.args) > 0 and "Only Single finger" in ex.args[0]:
+                    if len(ex.args) > 0 and ("Only Single finger" in ex.args[0] or
+                                             "Cannot finger" in ex.args[0]):
                         print("    Invalid size {} for {}".format(size, gate))
                         continue
                     raise ex

@@ -36,7 +36,7 @@ class PgateCaps(CharTestBase):
         cls.parser.add_argument("--max_size",
                                 default=50, type=float, help="Max inverter size")
         cls.parser.add_argument("--num_sizes",
-                                default=20, type=float, help="Number of sizes to sweep")
+                                default=20, type=int, help="Number of sizes to sweep")
 
     def test_single_sim(self):
         import debug
@@ -88,7 +88,8 @@ class PgateCaps(CharTestBase):
                     try:
                         cap_val, dut = self.run_sim()
                     except AssertionError as ex:
-                        if str(ex).startswith("Only Single"):
+                        if (str(ex).startswith("Only Single") or "Cannot finger" in str(ex) or
+                                "Optimization result not found" in str(ex)):
                             # ignore if size doesn't fit height
                             continue
                         else:
@@ -109,6 +110,7 @@ class PgateCaps(CharTestBase):
                     if pin_name == "A":
                         # Z pin
                         _, cap_per_unit = dut.compute_input_cap("z")
+                        print(f"    Z:\t Cap = {1e15 * cap_per_unit / size:5.5g} fF")
                         self.save_result(gate, "z", value=cap_per_unit, size=size,
                                          file_suffixes=file_suffixes, size_suffixes=size_suffixes)
 

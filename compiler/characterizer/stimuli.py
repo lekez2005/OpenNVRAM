@@ -232,7 +232,8 @@ class stimuli:
 
         if OPTS.spice_name == "ngspice":
             # UIC is needed for ngspice to converge
-            self.sf.write(f".TRAN {output_interval} {end_time_str} UIC\n")
+            if end_time > 0:
+                self.sf.write(f".TRAN {output_interval} {end_time_str} UIC\n")
             # ngspice sometimes has convergence problems if not using gear method
             # which is more accurate, but slower than the default trapezoid method
             # Do not remove this or it may not converge due to some "pa_00" nodes
@@ -256,9 +257,11 @@ class stimuli:
             self.sf.write(f".OPTIONS NONLIN-TRAN ABSTOL={abs_tol}\n")
             self.sf.write(f".OPTIONS TIMEINT ABSTOL={abs_tol} RELTOL={OPTS.spice_rel_tol}\n")
             self.sf.write(f".OPTIONS TIMEINT METHOD={OPTS.spice_integrator} MINORD=2\n")
-            self.sf.write(f".TRAN {initial_step} {end_time_str} 0 {max_step} \n")
+            if end_time > 0:
+                self.sf.write(f".TRAN {initial_step} {end_time_str} 0 {max_step} \n")
         else:
-            self.sf.write(f".TRAN {output_interval} {end_time_str} \n")
+            if end_time > 0:
+                self.sf.write(f".TRAN {output_interval} {end_time_str} \n")
             self.sf.write(f".OPTIONS RUNLVL={OPTS.spice_runlvl} PROBE MEASFAIL=1 MEASFORM=2\n")
             self.sf.write(".TEMP={}\n".format(self.temperature))
             if max_step:
@@ -318,10 +321,11 @@ usim_opt  rcr_fmax=20G
 
             # self.sf.write('dcOp dc write="spectre.dc" readns="spectre.dc" maxiters=150 maxsteps=10000 annotate=status\n')
             tran_options = OPTS.tran_options if hasattr(OPTS, "tran_options") else ""
-            self.sf.write('tran tran step={} stop={}n ic={} write=spectre.dc'
-                          ' annotate=status maxiters=5 {}\n'.format("5p", end_time,
-                                                                    OPTS.spectre_ic_mode,
-                                                                    tran_options))
+            if end_time > 0:
+                self.sf.write('tran tran step={} stop={}n ic={} write=spectre.dc'
+                              ' annotate=status maxiters=5 {}\n'.format("5p", end_time,
+                                                                        OPTS.spectre_ic_mode,
+                                                                        tran_options))
             if OPTS.use_pex:
                 nestlvl = 1
             else:

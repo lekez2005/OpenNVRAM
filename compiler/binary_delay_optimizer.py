@@ -308,12 +308,17 @@ for member in inspect.getmembers(sim_script):
         return math.ceil(value * 1 / tolerance) / (1 / tolerance)
 
     def update_environment_variable(self):
-        env_values = []
+        env_values = {}
         for param_name in self.get_timing_params():
             value = getattr(self, param_name)
-            env_values.append(f"{param_name}={value}")
+            env_values[param_name] = value
+        self.set_timing_environment_variable(env_values)
 
-        os.environ["OPENRAM_OVERRIDE_TIMING"] = ",".join(env_values)
+    def set_timing_environment_variable(self, env_values):
+        if isinstance(env_values, dict):
+            env_values = ",".join([f"{key}={value}" for key, value in env_values.items()])
+
+        os.environ["OPENRAM_OVERRIDE_TIMING"] = env_values
 
     def __init__(self):
         self.cmd_line_options, self.other_args = self.create_parser().parse_known_args()

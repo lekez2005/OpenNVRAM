@@ -39,7 +39,7 @@ class SimOperationsMixin(SpiceCharacterizer):
             return list(range(0, self.sram.bank.num_cols, OPTS.words_per_row))
         else:
             # mix even and odd cols
-            points = 5
+            points = min(OPTS.simulator_num_probes, self.word_size)
             bits = np.linspace(0, self.word_size - 1, points)
             cols = []
             for i in range(points):
@@ -77,12 +77,13 @@ class SimOperationsMixin(SpiceCharacterizer):
         self.probe_all_addresses(self.all_addresses + [self.dummy_address],
                                  self.get_delay_probe_cols())
 
+    def set_probe_cols_and_bits(self, probe_cols):
+        OPTS.probe_cols = [x for x in probe_cols]
+        OPTS.probe_bits = [int(x / self.sram.words_per_row) for x in OPTS.probe_cols]
+
     def probe_all_addresses(self, all_addresses, probe_cols):
         self.trim_address = all_addresses[0]
-        probe_cols = [int(x / OPTS.words_per_row) * OPTS.words_per_row for x in probe_cols]
-
-        OPTS.probe_cols = list(sorted(set(probe_cols)))
-        OPTS.probe_bits = [int(x / self.sram.words_per_row) for x in OPTS.probe_cols]
+        self.set_probe_cols_and_bits(probe_cols)
 
         for i in range(self.sram.num_banks):
             self.probe.probe_bank(i)
@@ -341,8 +342,11 @@ class SimOperationsMixin(SpiceCharacterizer):
     def get_time_suffix(self):
         return f"{self.current_time:.3g}".replace('.', '_')
 
-    def log_event(self, event_name, address_int=0, row=0, col_index=0,
-                  bank_index=0):
+    def log_event(self, event_name, address_int=0, row=None, col_index=None,
+                  bank_index=None):
+        if row is None:
+            bank_index, _, row, col_index = self.probe.decode_address(address_int)
+
         self.sf.write(f"* -- {event_name} : [{address_int}, {row},"
                       f" {col_index}, {bank_index}, {self.current_time},"
                       f" {self.period}, {self.duty_cycle}]\n")

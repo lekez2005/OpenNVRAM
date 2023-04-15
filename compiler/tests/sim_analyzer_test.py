@@ -61,9 +61,16 @@ class SimAnalyzerTest(SimulatorBase):
         if not self.cmd_line_opts.skip_read_check:
             max_read_event, max_read_bit_delays = self.analyze_read_events()
             self.max_read_event, self.max_read_bit_delays = max_read_event, max_read_bit_delays
+        else:
+            self.max_read_event = self.get_analysis_events(self.analyzer.load_events("Read"), None)
+            self.max_read_bit_delays = None
+
         if not self.cmd_line_opts.skip_write_check:
             max_write_event, max_write_bit_delays = self.analyze_write_events()
             self.max_write_event, self.max_write_bit_delays = max_write_event, max_write_bit_delays
+        else:
+            self.max_write_event = self.get_analysis_events(self.analyzer.load_events("Write"), None)
+            self.max_write_bit_delays = None
         print("----------------Critical Paths---------------")
         if not self.cmd_line_opts.skip_read_check:
             self.evaluate_read_critical_path(max_read_event, max_read_bit_delays)
@@ -491,6 +498,7 @@ class SimAnalyzerTest(SimulatorBase):
 
         from_t = self.probe_start_time
         to_t = self.probe_end_time
+        self.debug.print_str(write_current_net)
         self.plotter.plot_current(write_current_net, "current", from_t, to_t)
 
     def plot_internal_sense_amp(self):

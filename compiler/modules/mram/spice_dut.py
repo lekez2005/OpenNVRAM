@@ -124,6 +124,9 @@ class SpiceDut(stimuli):
         match_groups = regex_pattern.search(tx_name).groupdict()
 
         args = [split, match_groups, replacement_f, format_tx]
+        self.do_cell_replacement(*args)
+
+    def do_cell_replacement(self, *args):
         if OPTS.mram == "sot":
             self.replace_sot_cells(*args)
         elif self.one_t_one_s:

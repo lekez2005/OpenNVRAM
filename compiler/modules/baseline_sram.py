@@ -123,8 +123,8 @@ class BaselineSram(SramPowerGridMixin, design):
 
         self.route_left_bank_power()
 
-        self.copy_layout_pins()
         self.route_power_grid()
+        self.copy_layout_pins()
 
     def compute_sizes(self, word_size, num_words, num_banks, words_per_row):
         self.num_banks = num_banks
@@ -408,15 +408,18 @@ class BaselineSram(SramPowerGridMixin, design):
         self.col_decoder_is_above = False
 
         # check it can fit y space from control flops to wordline driver
-
-        decoder_vdd = [x for x in self.row_decoder_inst.get_pins("vdd") if x.by() < sel_pin_y]
-        top_decoder_vdd = max(decoder_vdd, key=lambda x: x.uy())
-        bottom_decoder_vdd = min(decoder_vdd, key=lambda x: x.by())
-
-        top_y = rg(top_decoder_vdd.cy())
         bottom_y = (top_flop_inst.uy() + self.get_space(NWELL, prefix="different") +
                     2 * self.bus_width)
-        bottom_y = rg(max(bottom_y, bottom_decoder_vdd.cy()))
+
+        decoder_vdd = [x for x in self.row_decoder_inst.get_pins("vdd") if x.by() < sel_pin_y]
+        if len(decoder_vdd) > 0:
+            top_decoder_vdd = max(decoder_vdd, key=lambda x: x.uy())
+            bottom_decoder_vdd = min(decoder_vdd, key=lambda x: x.by())
+
+            top_y = rg(top_decoder_vdd.cy())
+            bottom_y = rg(max(bottom_y, bottom_decoder_vdd.cy()))
+        else:
+            top_y = bottom_y
 
         # check if it can fit x space
         left_x = self.row_decoder_inst.rx() + 2 * self.bus_pitch
@@ -449,7 +452,7 @@ class BaselineSram(SramPowerGridMixin, design):
         left_most_rail_x = min(flop_inputs_pins, key=lambda x: x.lx()).lx() - self.bus_space
         max_col_decoder_x = (left_most_rail_x - (1 + self.words_per_row) * self.bus_pitch -
                              column_decoder.width)
-        if max_col_decoder_x > left_x:
+        if max_col_decoder_x > left_x and len(decoder_vdd) > 0:
             self.col_decoder_is_above = True
             col_decoder_is_left = False
             col_decoder_x = max_col_decoder_x
@@ -461,6 +464,7 @@ class BaselineSram(SramPowerGridMixin, design):
             self.col_sel_rails_y = max(self.col_sel_rails_y, col_decoder_y +
                                        0.5 * column_decoder.height -
                                        0.5 * self.words_per_row * self.bus_pitch)
+            self.col_sel_rails_y = rg(self.col_sel_rails_y)
 
         self.column_decoder_inst = self.add_inst("col_decoder", mod=self.column_decoder,
                                                  offset=vector(col_decoder_x, col_decoder_y))
@@ -622,9 +626,9 @@ class BaselineSram(SramPowerGridMixin, design):
         y_offsets = [out_bar_y, out_y]
         self.col_decoder_outputs = []
 
-        self.route_col_decoder_to_rail(output_pins=[out_bar_pin, out_pin], rail_offsets=y_offsets)
+        self.route_col_decoder_outputs_to_rail(output_pins=[out_bar_pin, out_pin], rail_offsets=y_offsets)
 
-        self.route_col_decoder_outputs()
+        self.route_col_decoder_rails_to_sels()
         self.route_col_decoder_power()
         self.copy_layout_pin(self.column_decoder_inst, "din", self.get_col_decoder_connections()[0])
 
@@ -682,7 +686,7 @@ class BaselineSram(SramPowerGridMixin, design):
         self.add_cross_contact_center(cross_m2m3, vector(col_decoder_clk.cx(), clk_m3_rail.cy()),
                                       fill=False)
 
-    def route_col_decoder_to_rail(self, output_pins=None, rail_offsets=None):
+    def route_col_decoder_outputs_to_rail(self, output_pins=None, rail_offsets=None):
         if output_pins is None:
             output_pins = [self.column_decoder_inst.get_pin("out[{}]".format(i)) for i in range(self.words_per_row)]
         if rail_offsets is None:
@@ -698,15 +702,23 @@ class BaselineSram(SramPowerGridMixin, design):
             rails_x = [x_offset + i * self.bus_pitch for i in range(self.words_per_row)]
         else:
             base_x = self.leftmost_m2_rail_x
-            rails_y = []
-            rails_x = []
+            right_rails_base_x = self.column_decoder_inst.rx() + self.bus_pitch
+            rails_x = [right_rails_base_x + i * self.bus_pitch for i in range(self.words_per_row)]
+
+            rails_y = [x for x in rail_offsets]
+
         x_offsets = [base_x + i * self.bus_pitch for i in range(self.words_per_row)]
+        min_m2_height = m2m3.contact_width + self.get_space(m2m3.layer_stack[1])
 
         self.col_decoder_outputs = []
         for i in range(self.words_per_row):
             output_pin = output_pins[i]
             x_offset = x_offsets[i]
             y_offset = rail_offsets[i]
+
+            rail_y = rails_y[i]
+            m2_height = rail_y - y_offset
+            add_m2_rail = True
 
             if i == 0 and self.words_per_row == 2:
 
@@ -718,12 +730,14 @@ class BaselineSram(SramPowerGridMixin, design):
                                          height=fill_height)
                 m3_x = output_pin.cx() - 0.5 * m2m3.h_2
                 self.add_rect(METAL3, offset=vector(m3_x, y_offset - 0.5 * self.bus_width),
-                              width=x_offset - m3_x,
-                              height=self.bus_width)
+                              width=x_offset - m3_x, height=self.bus_width)
                 self.add_cross_contact_center(cross_m2m3, offset=vector(output_pin.cx(), y_offset),
                                               fill=False)
                 rail_via_offset = vector(x_offset + 0.5 * self.bus_width, y_offset)
-                self.add_cross_contact_center(cross_m2m3, offset=rail_via_offset, fill=True)
+                if m2_height > min_m2_height or not self.col_decoder_is_left:
+                    self.add_cross_contact_center(cross_m2m3, offset=rail_via_offset, fill=True)
+                else:
+                    add_m2_rail = False
             else:
                 rail_via_offset = vector(x_offset + 0.5 * self.bus_width,
                                          y_offset + 0.5 * self.bus_width)
@@ -737,25 +751,30 @@ class BaselineSram(SramPowerGridMixin, design):
                                                               width=self.bus_width,
                                                               height=self.bus_width))
             else:
-                _, fill_height = self.calculate_min_area_fill(self.bus_width, layer=METAL2)
-                rail_y = rails_y[i]
-                m2_height = rail_y - y_offset
-                self.add_rect(METAL2, offset=vector(x_offset, y_offset),
-                              height=m2_height, width=self.bus_width)
+                if add_m2_rail:
+                    _, fill_height = self.calculate_min_area_fill(self.bus_width, layer=METAL2)
 
-                if abs(m2_height) < fill_height:
-                    self.add_rect(METAL2, offset=vector(x_offset, y_offset), height=fill_height, width=self.bus_width)
+                    self.add_rect(METAL2, offset=vector(x_offset, y_offset),
+                                  height=m2_height, width=self.bus_width)
 
-                self.add_cross_contact_center(cross_m2m3, offset=vector(x_offset + 0.5 * self.bus_width,
+                    if abs(m2_height) < fill_height:
+                        self.add_rect(METAL2, offset=vector(x_offset, y_offset), height=fill_height,
+                                      width=self.bus_width)
+                    self.add_cross_contact_center(cross_m2m3, offset=vector(x_offset + 0.5 * self.bus_width,
+                                                                            rail_y + 0.5 * self.bus_width))
+                else:
+                    self.add_rect(METAL3, vector(x_offset, rail_y), width=self.bus_width,
+                                  height=y_offset + 0.5 * self.bus_width - rail_y)
+
+                self.add_cross_contact_center(cross_m2m3, offset=vector(rails_x[i] + 0.5 * self.bus_width,
                                                                         rail_y + 0.5 * self.bus_width))
                 self.add_rect(METAL3, offset=vector(x_offset, rail_y), width=rails_x[i] - x_offset,
                               height=self.bus_width)
-                self.add_cross_contact_center(cross_m2m3, offset=vector(rails_x[i] + 0.5 * self.bus_width,
-                                                                        rail_y + 0.5 * self.bus_width))
+
                 self.col_decoder_outputs.append(self.add_rect(METAL2, offset=vector(rails_x[i], rail_y),
                                                               width=self.bus_width, height=self.bus_width))
 
-    def route_col_decoder_outputs(self):
+    def route_col_decoder_rails_to_sels(self):
         if self.num_banks == 2:
             top_predecoder_inst = max(self.row_decoder.pre2x4_inst + self.row_decoder.pre3x8_inst,
                                       key=lambda x: x.uy())
@@ -770,10 +789,14 @@ class BaselineSram(SramPowerGridMixin, design):
             rail = self.col_decoder_outputs[i]
             self.add_rect(METAL2, offset=rail.ul(), width=self.bus_width,
                           height=sel_pin.cy() - rail.uy())
-            self.add_rect(METAL1, offset=vector(rail.lx(), sel_pin.cy() - 0.5 * self.bus_width),
+            if sel_pin.layer == METAL1:
+                cross_via, via_rotate = cross_m1m2, True
+            else:
+                cross_via, via_rotate = cross_m2m3, False
+            self.add_rect(sel_pin.layer, offset=vector(rail.lx(), sel_pin.cy() - 0.5 * self.bus_width),
                           width=sel_pin.lx() - rail.lx(), height=self.bus_width)
-            self.add_cross_contact_center(cross_m1m2, offset=vector(rail.cx(), sel_pin.cy()),
-                                          rotate=True)
+            self.add_cross_contact_center(cross_via, offset=vector(rail.cx(), sel_pin.cy()),
+                                          rotate=via_rotate)
 
             if self.num_banks == 2:
                 # route to the left
@@ -837,8 +860,8 @@ class BaselineSram(SramPowerGridMixin, design):
             self.copy_layout_pin(self.column_decoder_inst, "flop_in[{}]".format(i), all_addr_pins[i])
 
         #
-        self.route_col_decoder_to_rail()
-        self.route_col_decoder_outputs()
+        self.route_col_decoder_outputs_to_rail()
+        self.route_col_decoder_rails_to_sels()
         self.route_col_decoder_power()
 
     def route_decoder_power(self):
@@ -962,8 +985,12 @@ class BaselineSram(SramPowerGridMixin, design):
     def route_col_decoder_power(self):
         rails = [self.mid_vdd, self.mid_gnd]
 
-        sample_power = [x for x in self.row_decoder_inst.get_pins("vdd")
-                        if x.cy() < self.bank_inst.get_pin("sel[0]").uy()][0]
+        sample_power_pins = [x for x in self.row_decoder_inst.get_pins("vdd")
+                             if x.cy() < self.bank_inst.get_pin("sel[0]").uy()]
+        if sample_power_pins:
+            sample_power = sample_power_pins[0]
+        else:
+            return
         row_decoder_y = rg(self.row_decoder_inst.by())
         x_offset = sample_power.rx()
         for i, pin_name in enumerate(["vdd", "gnd"]):

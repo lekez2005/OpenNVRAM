@@ -89,7 +89,8 @@ class pgate(pgates_characterization_base, design.design):
         elif height is None:
             height = default_height
 
-        if not align_bitcell and not height == default_height:
+        if (not align_bitcell and not height == default_height or
+                align_bitcell and not height == pgate.bitcell.height):
             height_suffix = "_h_" + "{:.5g}".format(height)
         else:
             height_suffix = ""

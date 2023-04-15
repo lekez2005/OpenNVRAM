@@ -254,12 +254,8 @@ class MramBank(RwlWwlMixin, BaselineBank):
             self.add_pin("vref")
 
     def create_optimizer(self):
-        if hasattr(OPTS, "control_optimizer"):
-            optimizer_class = self.import_mod_class_from_str(OPTS.control_optimizer)
-        else:
-            from modules.mram.sotfet.sotfet_control_buffers_optimizer import \
-                SotfetControlBuffersOptimizer as optimizer_class
-        self.optimizer = optimizer_class(self)
+        assert hasattr(OPTS, "control_optimizer"), "control_optimizer should be defined in config"
+        super().create_optimizer()
 
     def create_control_buffers(self):
         self.control_buffers = SotfetMramControlBuffers(bank=self)

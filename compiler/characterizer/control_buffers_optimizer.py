@@ -456,9 +456,12 @@ class ControlBufferOptimizer:
             "precharge_buffers": self.create_precharge_optimization_func
         }
 
+    def calculate_size_penalty(self, stages, buffer_stages_str):
+        penalty = OPTS.buffer_optimization_size_penalty
+        return penalty * sum(stages)
+
     def create_dynamic_opt_func(self, config_key, loads, fixed_load, num_elements,
                                 eval_buffer_stage_delay_slew):
-        penalty = OPTS.buffer_optimization_size_penalty
 
         def eval_precharge_delays(stages_list):
             precharge_size = stages_list[-1]
@@ -475,23 +478,22 @@ class ControlBufferOptimizer:
             return delays
 
         def eval_precharge_delay(stage_list):
-            return sum(eval_precharge_delays(stage_list)) * 1e12 + penalty * sum(stage_list)
+            return (sum(eval_precharge_delays(stage_list)) * 1e12 +
+                    self.calculate_size_penalty(stage_list, config_key))
 
         return (eval_precharge_delay, eval_precharge_delays), loads
 
-    @staticmethod
-    def adjust_optimization_loads(new_loads, eval_buffer_stage_delay_slew):
+    def adjust_optimization_loads(self, new_loads, eval_buffer_stage_delay_slew):
         """Modify optimization objective function 'eval_buffer_stage_delay_slew'
             to use 'new_loads'"""
-        penalty = OPTS.buffer_optimization_size_penalty
-
         def evaluate_delays(stages_list):
             stage_loads = [x for x in new_loads]
             delays, slew = eval_buffer_stage_delay_slew(stages_list, stage_loads)
             return delays
 
         def total_delay(stage_list):
-            return sum(evaluate_delays(stage_list)) * 1e12 + penalty * sum(stage_list)
+            return (sum(evaluate_delays(stage_list)) * 1e12 +
+                    self.calculate_size_penalty(stage_list, None))
 
         return (total_delay, evaluate_delays), new_loads
 
@@ -525,7 +527,6 @@ class ControlBufferOptimizer:
             delays_func evaluate the delays for each stage
         """
         drive_res, drive_gm, driver_load = driver_params
-        penalty = OPTS.buffer_optimization_size_penalty
 
         slew_in = drive_res * driver_load
         num_stages = len(initial_stages)
@@ -578,7 +579,8 @@ class ControlBufferOptimizer:
             return delays
 
         def eval_buffer_stage_delay(stage_list):
-            return sum(eval_buffer_stage_delays(stage_list)) * 1e12 + penalty * sum(stage_list)
+            return (sum(eval_buffer_stage_delays(stage_list)) * 1e12 +
+                    self.calculate_size_penalty(stage_list, config_key))
 
         buffer_stages_str = driver_config["buffer_stages_str"]
         opt_func = self.get_opt_func_map().get(buffer_stages_str, None)

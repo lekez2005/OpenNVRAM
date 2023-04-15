@@ -222,36 +222,37 @@ class ControlBuffersRepeatersMixin(BaselineBank):
                           height=top_pin_y - net_rail.by() + 0.5 * m3m4.height, width=bus_width)
 
             for dest_pin in destination_pins[output_net]:
-
-                # manually fill METAL2 destinations to prevent potential
-                # vertical clash with surrounding METAL2
-                if dest_pin.layer == METAL2:
-                    destination_layer = METAL3
-                else:
-                    destination_layer = dest_pin.layer
-
-                vias, via_rotates, fill_layers = contact.get_layer_vias(destination_layer,
-                                                                        METAL4,
-                                                                        cross_via=True)
-                via_offset = vector(via_center, dest_pin.cy())
-                if dest_pin.layer == METAL2:
-                    self.add_contact_center(m2m3.layer_stack, offset=via_offset, rotate=90)
-                    fill_layers = [METAL3]
-
-                for via, via_rotate in zip(vias, via_rotates):
-                    super(design, self).add_cross_contact_center(via, offset=via_offset,
-                                                                 rotate=via_rotate)
-                for layer in fill_layers:
-                    if layer == METAL3:
-                        fill_height, fill_width = self.calculate_min_area_fill(
-                            dest_pin.height(), layer=METAL3)
-                    else:
-                        fill_width, fill_height = self.calculate_min_area_fill(
-                            bus_width, layer=METAL3)
-                    self.add_rect_center(layer, offset=via_offset, width=fill_width,
-                                         height=fill_height)
+                self.connect_repeater_rail_to_dest(dest_pin, via_center, bus_width)
 
             rail_count += 1
+
+    def connect_repeater_rail_to_dest(self, dest_pin, via_mid_x, bus_width):
+        # manually fill METAL2 destinations to prevent potential
+        # vertical clash with surrounding METAL2
+        if dest_pin.layer == METAL2:
+            destination_layer = METAL3
+        else:
+            destination_layer = dest_pin.layer
+
+        vias, via_rotates, fill_layers = contact.get_layer_vias(destination_layer,
+                                                                METAL4,
+                                                                cross_via=True)
+        via_offset = vector(via_mid_x, dest_pin.cy())
+        if dest_pin.layer == METAL2:
+            self.add_contact_center(m2m3.layer_stack, offset=via_offset, rotate=90)
+            fill_layers = [METAL3]
+
+        for via, via_rotate in zip(vias, via_rotates):
+            design.add_cross_contact_center(self, via, offset=via_offset, rotate=via_rotate)
+        for layer in fill_layers:
+            if layer == METAL3:
+                fill_height, fill_width = self.calculate_min_area_fill(
+                    dest_pin.height(), layer=METAL3)
+            else:
+                fill_width, fill_height = self.calculate_min_area_fill(
+                    bus_width, layer=METAL3)
+            self.add_rect_center(layer, offset=via_offset, width=fill_width,
+                                 height=fill_height)
 
     def connect_buffer_rails(self):
         if self.mirror_sense_amp:
@@ -288,18 +289,18 @@ class ControlBuffersRepeatersMixin(BaselineBank):
 
     @staticmethod
     def get_fill_width():
-        return utils.ceil((drc["minarea_metal3_drc"])**0.5)
+        return utils.ceil((drc["minarea_metal3_drc"]) ** 0.5)
 
     def connect_rail_to_pin(self, source_rail: rectangle,
                             source_pin: pin_layout, destination_pin: pin_layout, x_shift=0.0):
         x_offset = self.find_closest_x(source_pin.rx()) + x_shift
 
         self.add_rect("metal3", offset=vector(source_pin.lx(), source_rail.by()),
-                      width=x_offset-source_pin.lx(), height=self.m3_width)
-        self.add_contact_center(m3m4.layer_stack, offset=vector(x_offset, source_rail.by()+0.5*self.m3_width),
+                      width=x_offset - source_pin.lx(), height=self.m3_width)
+        self.add_contact_center(m3m4.layer_stack, offset=vector(x_offset, source_rail.by() + 0.5 * self.m3_width),
                                 rotate=90)
-        self.add_rect("metal4", offset=vector(x_offset-0.5*self.m4_width, source_rail.by()),
-                      height=destination_pin.cy()-source_rail.by())
+        self.add_rect("metal4", offset=vector(x_offset - 0.5 * self.m4_width, source_rail.by()),
+                      height=destination_pin.cy() - source_rail.by())
 
         return x_offset
 
@@ -311,14 +312,14 @@ class ControlBuffersRepeatersMixin(BaselineBank):
         dest_pin = self.mask_in_flops_inst.get_pin("clk")
 
         for source_pin in self.get_all_control_pins("clk_buf"):
-                m4_x_offset = self.connect_rail_to_pin(source_rail, source_pin, dest_pin)
-                for via in [m1m2, m2m3, m3m4]:
-                    self.add_contact_center(via.layer_stack, offset=vector(m4_x_offset, dest_pin.cy()), rotate=90)
+            m4_x_offset = self.connect_rail_to_pin(source_rail, source_pin, dest_pin)
+            for via in [m1m2, m2m3, m3m4]:
+                self.add_contact_center(via.layer_stack, offset=vector(m4_x_offset, dest_pin.cy()), rotate=90)
 
-                self.add_rect_center("metal3", offset=vector(m4_x_offset, dest_pin.cy()),
-                                     width=fill_width, height=fill_width)
-                self.add_rect("metal2", offset=vector(m4_x_offset - 0.5 * fill_width, dest_pin.uy() - fill_width),
-                              width=fill_width, height=fill_width)
+            self.add_rect_center("metal3", offset=vector(m4_x_offset, dest_pin.cy()),
+                                 width=fill_width, height=fill_width)
+            self.add_rect("metal2", offset=vector(m4_x_offset - 0.5 * fill_width, dest_pin.uy() - fill_width),
+                          width=fill_width, height=fill_width)
 
         source_rail = self.clk_bar_rail
         dest_pin = self.data_in_flops_inst.get_pin("clk")
@@ -328,31 +329,31 @@ class ControlBuffersRepeatersMixin(BaselineBank):
                                                    x_shift=x_shift)
             cell_start_x = m4_x_offset - x_shift
             # use space between data and mask flops
-            y_offset = 0.5*(self.mask_in_flops_inst.uy() + self.data_in_flops_inst.by())
+            y_offset = 0.5 * (self.mask_in_flops_inst.uy() + self.data_in_flops_inst.by())
 
             for via in [m2m3, m3m4]:
                 self.add_contact_center(via.layer_stack, offset=vector(m4_x_offset, y_offset), rotate=90)
 
-            offset = vector(cell_start_x-0.5*m1m2.height, y_offset-0.5*self.m2_width)
-            self.add_rect("metal2", offset=offset, width=m4_x_offset-offset.x)
-            self.add_rect("metal2", offset=offset, height=dest_pin.by()-offset.y)
+            offset = vector(cell_start_x - 0.5 * m1m2.height, y_offset - 0.5 * self.m2_width)
+            self.add_rect("metal2", offset=offset, width=m4_x_offset - offset.x)
+            self.add_rect("metal2", offset=offset, height=dest_pin.by() - offset.y)
             self.add_contact_center(m1m2.layer_stack, offset=vector(cell_start_x, dest_pin.cy()), rotate=90)
 
             self.add_rect_center("metal3", offset=vector(m4_x_offset, y_offset),
                                  width=fill_width, height=fill_width)
 
     def connect_sense_en(self):
-        x_shift = self.bitcell_array.cell.get_pin("BL").rx() + self.line_end_space + 0.5*self.m4_width
+        x_shift = self.bitcell_array.cell.get_pin("BL").rx() + self.line_end_space + 0.5 * self.m4_width
         # sense_en
         dest_pin = self.sense_amp_array_inst.get_pin("en")
         for source_pin in self.get_all_control_pins("sense_en"):
             source_rail = self.sense_en_rail
             m4_x_offset = self.connect_rail_to_pin(source_rail, source_pin, dest_pin, x_shift=x_shift)
 
-            if source_pin.cx() < dest_pin.cx(): # for left connection
+            if source_pin.cx() < dest_pin.cx():  # for left connection
 
                 fill_height = m2m3.height
-                fill_width = drc["minarea_metal3_drc"]/fill_height
+                fill_width = drc["minarea_metal3_drc"] / fill_height
                 for via_layer in ["via1", "via2"]:
                     self.add_rect_center(via_layer, offset=vector(m4_x_offset, dest_pin.cy()))
                 self.add_contact_center(m3m4.layer_stack, offset=vector(m4_x_offset, dest_pin.cy()))
@@ -364,19 +365,19 @@ class ControlBuffersRepeatersMixin(BaselineBank):
                               height=fill_height, width=fill_width)
             else:
                 sample_b_pin = self.sense_amp_array_inst.get_pin("sampleb")
-                y_bend = 0.5*(sample_b_pin.cy() + dest_pin.cy()) - 0.5*self.m3_width
-                self.add_rect("metal4", offset=vector(m4_x_offset-0.5*self.m4_width, dest_pin.cy()),
-                              height=y_bend-dest_pin.cy())
+                y_bend = 0.5 * (sample_b_pin.cy() + dest_pin.cy()) - 0.5 * self.m3_width
+                self.add_rect("metal4", offset=vector(m4_x_offset - 0.5 * self.m4_width, dest_pin.cy()),
+                              height=y_bend - dest_pin.cy())
                 tap_offsets = [x + self.bitcell_array_inst.lx() + 0.5 * self.bitcell_array.body_tap.width -
                                self.wide_m1_space
                                for x in self.bitcell_array.tap_offsets]
                 closest_tap = min(tap_offsets, key=lambda x: abs(x - m4_x_offset))
-                self.add_contact_center(m3m4.layer_stack, offset=vector(m4_x_offset, y_bend+0.5*self.m3_width))
-                self.add_rect("metal3", offset=vector(m4_x_offset, y_bend), width=closest_tap-m4_x_offset)
-                self.add_contact_center(m2m3.layer_stack, offset=vector(closest_tap+0.5*self.m2_width,
-                                                                        y_bend+0.5*self.m3_width))
-                self.add_rect("metal2", offset=vector(closest_tap, dest_pin.cy()), height=y_bend-dest_pin.cy())
-                self.add_contact_center(m1m2.layer_stack, offset=vector(closest_tap+0.5*self.m2_width,
+                self.add_contact_center(m3m4.layer_stack, offset=vector(m4_x_offset, y_bend + 0.5 * self.m3_width))
+                self.add_rect("metal3", offset=vector(m4_x_offset, y_bend), width=closest_tap - m4_x_offset)
+                self.add_contact_center(m2m3.layer_stack, offset=vector(closest_tap + 0.5 * self.m2_width,
+                                                                        y_bend + 0.5 * self.m3_width))
+                self.add_rect("metal2", offset=vector(closest_tap, dest_pin.cy()), height=y_bend - dest_pin.cy())
+                self.add_contact_center(m1m2.layer_stack, offset=vector(closest_tap + 0.5 * self.m2_width,
                                                                         dest_pin.cy()), rotate=90)
 
     def connect_tri_en(self):
@@ -389,7 +390,7 @@ class ControlBuffersRepeatersMixin(BaselineBank):
 
             self.add_contact_center(m3m4.layer_stack, offset=vector(m4_x_offset, dest_pin.cy()), rotate=90)
             self.add_contact_center(m2m3.layer_stack, offset=vector(m4_x_offset, dest_pin.cy()), rotate=90)
-            self.add_rect_center("metal3", offset=vector(m4_x_offset, dest_pin.by()+0.5*fill_width),
+            self.add_rect_center("metal3", offset=vector(m4_x_offset, dest_pin.by() + 0.5 * fill_width),
                                  width=fill_width, height=fill_width)
 
         # tri_en_bar
@@ -409,11 +410,11 @@ class ControlBuffersRepeatersMixin(BaselineBank):
             pin_name = "write_" + name
             dest_pin = self.write_driver_array_inst.get_pin(name)
             for source_pin in self.get_all_control_pins(pin_name):
-                m4_x_offset = self.connect_rail_to_pin(getattr(self, pin_name+"_rail"), source_pin,
+                m4_x_offset = self.connect_rail_to_pin(getattr(self, pin_name + "_rail"), source_pin,
                                                        dest_pin, x_shift=x_shift)
 
-                self.add_rect("metal3", offset=vector(m4_x_offset-0.5*self.m3_width-self.via_enclose,
-                                                      dest_pin.cy()-0.5*fill_width),
+                self.add_rect("metal3", offset=vector(m4_x_offset - 0.5 * self.m3_width - self.via_enclose,
+                                                      dest_pin.cy() - 0.5 * fill_width),
                               width=fill_width, height=fill_width)
                 self.add_rect_center("metal4", offset=vector(m4_x_offset, dest_pin.cy()), height=m3m4.height)
 
@@ -421,11 +422,11 @@ class ControlBuffersRepeatersMixin(BaselineBank):
                     self.add_rect_center(via_layer, offset=vector(m4_x_offset, dest_pin.cy()))
 
                 if name == "en":
-                    y_offset = dest_pin.cy() + 0.5*m1m2.height - fill_width
+                    y_offset = dest_pin.cy() + 0.5 * m1m2.height - fill_width
                 else:
                     y_offset = dest_pin.by()
 
-                self.add_rect("metal2", offset=vector(m4_x_offset-0.5*fill_width, y_offset),
+                self.add_rect("metal2", offset=vector(m4_x_offset - 0.5 * fill_width, y_offset),
                               width=fill_width, height=fill_width)
 
     def connect_sample_b(self):
@@ -441,7 +442,7 @@ class ControlBuffersRepeatersMixin(BaselineBank):
                                                    en_pin,
                                                    x_shift=x_shift)
 
-            cell_mid = m4_x_offset - x_shift + 0.5 * self.bitcell.width - 0.5*self.m4_width
+            cell_mid = m4_x_offset - x_shift + 0.5 * self.bitcell.width - 0.5 * self.m4_width
             cell_start = m4_x_offset - x_shift
 
             dout_pin = self.sense_amp_array_inst.get_pin("data[0]")
@@ -450,27 +451,27 @@ class ControlBuffersRepeatersMixin(BaselineBank):
 
             # avoid coupling to and_pin and bl by going to the middle
 
-            self.add_rect("metal4", offset=vector(m4_x_offset-0.5*self.m2_width, en_pin.cy()),
+            self.add_rect("metal4", offset=vector(m4_x_offset - 0.5 * self.m2_width, en_pin.cy()),
                           height=y_bend - en_pin.cy())
 
             self.add_rect("metal4", offset=vector(m4_x_offset - 0.5 * self.m4_width, y_bend),
-                          width=cell_mid - m4_x_offset + 0.5*self.m4_width)
+                          width=cell_mid - m4_x_offset + 0.5 * self.m4_width)
 
-            self.add_rect("metal4", offset=vector(cell_mid, y_bend), height=vdd_pin.cy()-y_bend)
-            self.add_contact_center(m3m4.layer_stack, offset=vector(cell_mid+0.5*self.m4_width,
+            self.add_rect("metal4", offset=vector(cell_mid, y_bend), height=vdd_pin.cy() - y_bend)
+            self.add_contact_center(m3m4.layer_stack, offset=vector(cell_mid + 0.5 * self.m4_width,
                                                                     vdd_pin.cy()))
 
             # go to beginning of cell
 
-            self.add_rect("metal3", offset=vector(cell_start, vdd_pin.cy()-0.5*self.m3_width),
-                          width=cell_mid-cell_start)
+            self.add_rect("metal3", offset=vector(cell_start, vdd_pin.cy() - 0.5 * self.m3_width),
+                          width=cell_mid - cell_start)
             self.add_contact_center(m2m3.layer_stack, offset=vector(cell_start, vdd_pin.cy()))
 
             # go down to sampleb pin
 
             fill_width = m1m2.height
-            fill_height = utils.ceil(self.minarea_metal1_contact/fill_width)
-            self.add_rect("metal2", offset=vector(cell_start-0.5*fill_width, dest_pin.by()),
+            fill_height = utils.ceil(self.minarea_metal1_contact / fill_width)
+            self.add_rect("metal2", offset=vector(cell_start - 0.5 * fill_width, dest_pin.by()),
                           height=fill_height, width=fill_width)
             self.add_contact_center(m1m2.layer_stack, offset=vector(cell_start, dest_pin.cy()), rotate=90)
 
@@ -492,13 +493,13 @@ class ControlBuffersRepeatersMixin(BaselineBank):
             m2_width = fill_width * fill_width / height
             self.add_rect_center("metal2", offset=offset, width=m2_width, height=height)
 
-            offset = vector(m4_x_offset-0.5*fill_width + self.via_enclose - 0.5*self.m2_width, dest_pin.cy())
+            offset = vector(m4_x_offset - 0.5 * fill_width + self.via_enclose - 0.5 * self.m2_width, dest_pin.cy())
             self.add_rect_center("via2", offset=offset)
             self.add_rect_center("via1", offset=offset)
 
             y_offset = dest_pin.cy() + 0.5 * m3m4.width + self.via_enclose - fill_width
-            x_offset = m4_x_offset - 0.5*m2_width - self.via_enclose
-            width = m4_x_offset + 0.5*self.m3_width + 0.5*self.m3_width - x_offset
+            x_offset = m4_x_offset - 0.5 * m2_width - self.via_enclose
+            width = m4_x_offset + 0.5 * self.m3_width + 0.5 * self.m3_width - x_offset
             self.add_rect("metal3", offset=vector(x_offset, y_offset), width=width,
                           height=fill_width)
 
@@ -510,16 +511,16 @@ class ControlBuffersRepeatersMixin(BaselineBank):
             # go to middle between precharge and bitcells
 
             y_offset = self.precharge_array_inst.uy()
-            cell_mid = m4_x_offset - x_shift + 0.5*self.bitcell.width
-            x_offset = m4_x_offset-0.5*self.m4_width
-            self.add_rect("metal4", offset=vector(x_offset, y_offset), width=cell_mid-x_offset)
+            cell_mid = m4_x_offset - x_shift + 0.5 * self.bitcell.width
+            x_offset = m4_x_offset - 0.5 * self.m4_width
+            self.add_rect("metal4", offset=vector(x_offset, y_offset), width=cell_mid - x_offset)
             self.add_rect("metal4", offset=vector(x_offset, dest_pin.cy()),
-                          height=y_offset-dest_pin.cy())
+                          height=y_offset - dest_pin.cy())
             via_offset = vector(cell_mid, y_offset)
             self.add_contact_center(m3m4.layer_stack, offset=via_offset)
             self.add_contact_center(m2m3.layer_stack, offset=via_offset)
             self.add_contact_center(m1m2.layer_stack, offset=via_offset)
             self.add_rect_center("metal3", offset=via_offset, width=fill_width, height=fill_width)
             self.add_rect_center("metal2", offset=via_offset, width=fill_width, height=fill_width)
-            self.add_rect("metal1", offset=vector(cell_mid-0.5*self.m1_width, dest_pin.cy()),
-                          height=y_offset-dest_pin.cy())
+            self.add_rect("metal1", offset=vector(cell_mid - 0.5 * self.m1_width, dest_pin.cy()),
+                          height=y_offset - dest_pin.cy())

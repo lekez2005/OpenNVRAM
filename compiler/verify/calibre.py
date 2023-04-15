@@ -312,7 +312,8 @@ def get_lvs_summary_errors(report_file):
     return summary_errors
 
 
-def run_pex(cell_name, gds_name, sp_name, output=None, run_drc_lvs=True, correct_port_order=True):
+def run_pex(cell_name, gds_name, sp_name, output=None, run_drc_lvs=True,
+            correct_port_order=True, final_verification=True):
     """Run pex on a given top-level name which is
        implemented in gds_name and sp_name. """
 
@@ -354,6 +355,11 @@ def run_pex(cell_name, gds_name, sp_name, output=None, run_drc_lvs=True, correct
         'pexSVRFCmds': '{LVS PRESERVE BOX CELLS YES} {SOURCE CASE YES} {LAYOUT CASE YES}',
         'pexIncludeCmdsType': 'SVRF',  # used for preserving lvs box names
     }
+
+    if not final_verification:
+        pex_runset['cmnVConnectReport'] = 1
+        pex_runset['cmnVConnectNamesState'] = 'ALL'
+
     pex_runset.update(get_lvs_box_cells())
 
     # write the runset file

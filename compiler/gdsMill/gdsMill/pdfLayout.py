@@ -3,6 +3,8 @@ import random
 import numpy as np
 import pyx
 
+import debug
+
 FILL = "fill"
 OUTLINE = "outline"
 STRIPE = "stripe"
@@ -73,8 +75,14 @@ class pdfLayout:
     def get_boundary_style(self, boundary):
 
         styles = [pyx.style.linewidth.THick]
-        if boundary.drawingLayer in self.layerColors:
-            style_def = self.layerColors[boundary.drawingLayer]
+
+        layer_and_purpose = f"{boundary.drawingLayer}_{boundary.dataType}"
+        style_def = self.layerColors.get(layer_and_purpose,
+                                         self.layerColors.get(boundary.drawingLayer, None))
+        if style_def is None:
+            return None
+
+        if style_def is not None:
             color, style = style_def[:2]
             if len(self.layerColors[boundary.drawingLayer]) > 2:
                 transparency = style_def[2]
@@ -113,6 +121,8 @@ class pdfLayout:
         width = coordinates[1][0] - coordinates[0][0]
         height = coordinates[3][1] - coordinates[0][1]
         styles = self.get_boundary_style(boundary)
+        if styles is None:
+            return
         rect = pyx.path.rect(coordinates[0][0], coordinates[0][1], width, height)
         self.canvas.stroke(rect, styles)
 

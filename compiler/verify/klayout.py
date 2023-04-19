@@ -13,7 +13,7 @@ def run_klayout(command_name, cell_name, rule_file, options):
     out_file = os.path.join(OPTS.openram_temp, f"{cell_name}.{command_name}.out")
 
     return_code = utils.run_command(command, stdout_file=out_file, stderror_file=err_file,
-                                    verbose_level=3, cwd=OPTS.openram_temp)
+                                    verbose_level=2, cwd=OPTS.openram_temp)
     return return_code, out_file, err_file
 
 

@@ -26,9 +26,13 @@ class BlBank(BaselineBank):
             self.add_pin(f"dec_in_0[{row}]")
             self.add_pin(f"dec_in_1[{row}]")
 
-        diff_pins = ["diff", "diffb"] * (not self.mirror_sense_amp)
+        diff_pins = []
+        for pin_name in ["diff", "diffb"]:
+            if pin_name in self.sense_amp_array.pins:
+                diff_pins.append(pin_name)
+
         control_pins = self.get_control_pins()
-        if self.mirror_sense_amp and not "clk_pin" in control_pins:
+        if self.mirror_sense_amp and "clk_pin" not in control_pins:
             control_pins.append("clk_buf")
         self.add_pin_list(control_pins + diff_pins +
                           ["dec_en_1", "vdd", "gnd"])

@@ -3,8 +3,12 @@ from globals import OPTS
 from modules.bitline_compute.bitline_alu import BitlineALU
 from modules.logic_buffer import LogicBuffer
 
+import typing
 
-class BlComputeOptimizer(ControlBufferOptimizer):
+OptimizerType = typing.Union[ControlBufferOptimizer]
+
+
+class BlComputeOptimizerMixin(OptimizerType):
 
     def extract_loads(self):
         super().extract_loads()
@@ -38,3 +42,7 @@ class BlComputeOptimizer(ControlBufferOptimizer):
         self.driver_loads["sr_clk_buffers"] = {"loads": [(out_pin, total_cap)],
                                                "config": config,
                                                "buffer_stages_str": "sr_clk_buffers"}
+
+
+class BlComputeOptimizer(BlComputeOptimizerMixin, ControlBufferOptimizer):
+    pass

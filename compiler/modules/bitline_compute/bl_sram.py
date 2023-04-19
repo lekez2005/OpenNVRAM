@@ -25,7 +25,6 @@ class BlSram(BaselineSram):
         super().create_modules()
 
         self.create_alu()
-        self.row_decoder_y += self.alu.bank_y_shift
 
         self.wordline_driver_inst_real, self.bank.wordline_driver_inst = (
             self.bank.wordline_driver_inst, self.bank.decoder_logic_inst)
@@ -37,12 +36,12 @@ class BlSram(BaselineSram):
         self.add_mod(self.alu)
 
     def add_modules(self):
-        self.alu_inst = self.add_inst("alu", mod=self.alu, offset=vector(0, 0))
+        y_offset = - self.alu.bank_y_shift
+        self.alu_inst = self.add_inst("alu", mod=self.alu, offset=vector(0, y_offset))
 
         self.connect_inst(self.get_alu_connections())
 
-        y_offset = self.alu.bank_y_shift
-        self.bank_inst = self.add_inst("bank0", mod=self.bank, offset=vector(0, y_offset))
+        self.bank_inst = self.add_inst("bank0", mod=self.bank, offset=vector(0, 0))
         self.right_bank_inst = self.bank_inst
         self.bank_insts = [self.bank_inst]
 
@@ -107,9 +106,13 @@ class BlSram(BaselineSram):
         ])
         return connections
 
+    @staticmethod
+    def get_bitline_compute_pin_map():
+        return [(("and", "and_in"), ("nor", "nor_in")),
+                (("DATA", "bus_out"), ("mask_in_bar", "mask_bar_out"))]
+
     def route_bitline_compute_pins(self):
-        pin_pairs = [(("and", "and_in"), ("nor", "nor_in")),
-                     (("DATA", "bus_out"), ("mask_in_bar", "mask_bar_out"))]
+        pin_pairs = self.get_bitline_compute_pin_map()
         pitch = self.get_parallel_space(METAL4) + m3m4.height
         line_end_space = self.get_line_end_space(METAL4)
         y_offset = self.bank_inst.get_pin("and[0]").by() - pitch

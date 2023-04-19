@@ -11,10 +11,6 @@ class BlBank(BaselineBank):
     Represents a bitline compute bank
     """
 
-    def create_optimizer(self):
-        from modules.bitline_compute.bl_compute_optimizer import BlComputeOptimizer
-        self.optimizer = BlComputeOptimizer(self)
-
     def add_pins(self):
         """Add bank pins"""
         for i in range(self.word_size):

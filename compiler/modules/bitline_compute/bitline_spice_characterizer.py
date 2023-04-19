@@ -2,9 +2,44 @@ import random
 from math import ceil
 
 from characterizer import SpiceCharacterizer, debug
+from characterizer.charutils import vector_to_int, int_to_vec
 from globals import OPTS
 from modules.bitline_compute.bl_probe import BlProbe
 from modules.bitline_compute.spice_dut import SpiceDut
+
+
+def alu_sum(d1_vec, d2_vec, cin, alu_word_size, serial=False):
+    if serial:
+        alu_word_size = 1
+    num_cols = len(d1_vec)
+    num_words = int(num_cols / alu_word_size)
+
+    def get_word(index, vec):
+        index = num_words - index - 1
+        return vec[index * alu_word_size:(1 + index) * alu_word_size]
+
+    res = []
+
+    for word in range(num_words):
+        # confirm correct sum
+        if serial:
+            d1 = get_word(word, d1_vec)
+            d2 = get_word(word, d2_vec)
+            dc = get_word(word, cin)
+            expected_sum = [(x[0] + x[1] + x[2]) % 2 for x in zip(d1, d2, dc)]
+            expected_carry = [int((x[0] + x[1] + x[2]) > 1) for x in zip(d1, d2, dc)]
+        else:
+            d1 = vector_to_int(get_word(word, d1_vec))
+            d2 = vector_to_int(get_word(word, d2_vec))
+            expected_sum_ = int_to_vec(d1 + d2 + cin[num_words - word - 1],
+                                       alu_word_size + 1)
+
+            expected_carry = [expected_sum_[0]]
+            expected_sum = expected_sum_[1:]
+
+        res.append((expected_sum, expected_carry))
+
+    return list(reversed(res))
 
 
 class BitlineSpiceCharacterizer(SpiceCharacterizer):
@@ -67,9 +102,9 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
                 self.bus_sigs.append("c_val[{}]".format(i))
             self.c_val = self.prev_c_val = [0] * self.num_cols
         else:
-            for i in range(self.words_per_row):
+            for i in range(self.sram.alu_num_words):
                 self.bus_sigs.append("cin[{}]".format(i))
-            self.cin = self.prev_cin = [0] * self.words_per_row
+            self.cin = self.prev_cin = [0] * self.sram.alu_num_words
 
         for sig in self.select_sigs + bitline_signals:
             setattr(self, sig, 0)
@@ -134,7 +169,7 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
                 self.write_pwl(key, self.prev_c_val[i], self.c_val[i])
             self.prev_c_val = self.c_val
         else:
-            for i in range(self.words_per_row):
+            for i in range(self.sram.alu_num_words):
                 key = "cin[{}]".format(i)
                 self.write_pwl(key, self.prev_cin[i], self.cin[i])
             self.prev_cin = self.cin
@@ -146,8 +181,8 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
 
     def update_output(self, increment_time=True):
         self.diffb = int(not self.diff)
-        super().update_output(increment_time)
         self.update_cin()
+        super().update_output(increment_time)
 
     def probe_delay_addresses(self):
         # TODO addresses to use?
@@ -160,6 +195,7 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
     def generate_delay_steps(self):
         a_address, b_address, c_address = self.all_addresses
         num_cols = self.num_cols
+        alu_num_words = self.sram.alu_num_words
 
         def select_cols(x):
             if len(x) >= num_cols:
@@ -232,6 +268,9 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
             data_two = select_cols([0] * (alu_word_size - 1) + [1] + [1, 0] * int(alu_word_size / 2))
             data_three = select_cols([1] * alu_word_size + [0, 0] * int(alu_word_size / 2))
 
+            self.data_one, self.data_two, self.data_three = data_one, data_two, data_three
+            self.mask_one, self.mask_two, self.mask_three = mask_one, mask_two, mask_three
+
             a_data = [data_three[i] if mask_three[i] else data_one[i] for i in range(num_cols)]
 
             self.wr(a_address, data_one, mask_one)
@@ -246,15 +285,17 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
             self.rd(b_address)
 
             # Read A effectively sum =  A + 0
-            self.cin = [0] * self.words_per_row
+            self.cin = [0] * self.sram.alu_num_words
             self.setup_read_measurements(a_address)
             self.rd(a_address)
 
             # BL compute C = A + B
-            self.cin = [1, 0] * max(1, int(self.words_per_row / 2))
+            self.cin = [1, 0] * max(1, int(alu_num_words / 2))
             if OPTS.serial:
                 c_val = [1, 0] * max(1, int(self.num_cols / 2))
                 self.set_c_val(c_val)
+
+            self.set_one_hot_mux("s_sum", self.bus_selects)
             self.blc(a_address, b_address, a_address)
 
             self.setup_write_measurements(c_address)
@@ -275,11 +316,13 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
             self.wb_mask_and()
 
             # Write back B + C if MSB
+            self.set_one_hot_mux("s_sum", self.bus_selects)
             self.blc(b_address, c_address, b_address)
             self.sr_en = 0
             self.setup_write_measurements(c_address)
             self.wb(c_address, src="add", cond="msb")
             # Write back B + C if LSB
+            self.set_one_hot_mux("s_sum", self.bus_selects)
             self.blc(b_address, c_address, b_address)
             if not OPTS.serial:
                 self.srl()
@@ -291,8 +334,7 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
     def setup_mask_measurements(self):
         clk_buf_probe = self.probe.clk_probes[0]
         for col, col_label in self.mask_probes.items():
-            time_suffix = "{:.2g}".format(self.current_time).replace('.', '_')
-            meas_name = "mask_col{}_t{}".format(col, time_suffix)
+            meas_name = "mask_col{}_t{}".format(col, self.get_time_suffix())
             self.stim.gen_meas_delay(meas_name=meas_name,
                                      trig_name=clk_buf_probe,
                                      trig_val=0.5 * self.vdd_voltage, trig_dir="RISE",
@@ -301,30 +343,30 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
                                      targ_val=0.5 * self.vdd_voltage, targ_dir="CROSS",
                                      targ_td=self.current_time)
 
+    def set_one_hot_mux(self, selected, choices):
+        if selected is None:  # to enable selective sets
+            return
+        assert selected in choices, "Selected {} must be in {}".format(selected, " ".join(choices))
+        for sig in choices:
+            if selected == sig:
+                value = 1
+            else:
+                value = 0
+            setattr(self, sig, value)
+
     def set_selects(self, bus_sel=None, sr_in=None, sr_out=None):
         if OPTS.baseline:
             return
 
-        def one_hot_mux(selected, all_sels):
-            if selected is None:  # to enable selective sets
-                return
-            assert selected in all_sels, "Selected {} must be in {}".format(selected, " ".join(all_sels))
-            for sig in all_sels:
-                if selected == sig:
-                    value = 1
-                else:
-                    value = 0
-                setattr(self, sig, value)
-
         if OPTS.serial:
-            one_hot_mux(bus_sel, self.bus_selects)
-            one_hot_mux(sr_in, self.sr_in_selects)
+            self.set_one_hot_mux(bus_sel, self.bus_selects)
+            self.set_one_hot_mux(sr_in, self.sr_in_selects)
             # TODO mask_en set reminder
         else:
             selects = [self.bus_selects, self.sr_in_selects, self.sr_out_selects]
             selected = [bus_sel, sr_in, sr_out]
             for i in range(3):
-                one_hot_mux(selected[i], selects[i])
+                self.set_one_hot_mux(selected[i], selects[i])
 
     # uOPS
     def rd(self, addr):
@@ -511,6 +553,7 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
             cond_str = ''
 
         # Source Selection
+        comment_suffix = ""
         if src == 'and':
             src_str = '.and'
         elif src == 'nand':
@@ -530,11 +573,12 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
 
         elif src == 'data_in':
             src_str = '.data_in'
-
+            comment_suffix = str(self.data)
         else:
             src_str = '.and'
 
-        self.command_comments.append("* [{: >20}] {}wb{} {}\n".format(self.current_time, cond_str, src_str, addr_v))
+        self.command_comments.append(f"* [{self.current_time: >20}] {cond_str}wb{src_str}"
+                                     f" {addr_v} {comment_suffix}\n")
 
         self.address = list(reversed(addr_v))
         self.mask = [1] * self.num_cols
@@ -692,6 +736,7 @@ class BitlineSpiceCharacterizer(SpiceCharacterizer):
         self.set_selects(sr_in='s_shift')
 
         self.sr_in = 1
+        self.bank_sel = 0
 
         self.read = 0
         self.en_0 = 0

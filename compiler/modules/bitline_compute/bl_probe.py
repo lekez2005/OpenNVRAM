@@ -55,11 +55,9 @@ class BlProbe(SramProbe):
         self.voltage_probes[self.sram.bank.sense_amp_array_inst.name][0]["nor"] = self.nor_probes
 
     def get_sense_amp_internal_nets(self):
-        if OPTS.baseline:
-            return super().get_sense_amp_internal_nets()
         if OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
             return ["bl", "br"]
-        return ["int1", "int2", "bl", "br"]
+        return super().get_sense_amp_internal_nets()
 
     def sense_amp_current_probes(self, bank, bits):
         probes = self.bitline_current_probes(bank, bits, modules=["sense_amp_array"],

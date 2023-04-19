@@ -1,14 +1,29 @@
-from modules.precharge_array import precharge_array
+import debug
+from globals import OPTS
+from modules.bitcell_aligned_array import BitcellAlignedArray
 
 
-class BitlineDischargeArray(precharge_array):
-    def get_connections(self, col):
-        return f"bl[{col}] br[{col}] bl_discharge, br_discharge gnd".split()
+class BitlineDischargeArray(BitcellAlignedArray):
 
-    def create_layout(self):
-        self.add_insts()
-        for pin_name in ["gnd", "bl_discharge", "br_discharge"]:
+    def __init__(self, columns, size=1):
+        self.size = size
+        debug.info(1, "Creating {0} with precharge size {1:.3g}".format(self.get_name(), size))
+        BitcellAlignedArray.__init__(self, columns=columns, word_size=columns)
 
-            for pin in self.child_insts[0].get_pins(pin_name):
-                self.add_layout_pin(pin_name, pin.layer, pin.ll(), height=pin.height(),
-                                    width=self.width - pin.lx())
+    @property
+    def mod_name(self):
+        return OPTS.precharge
+
+    def get_name(self):
+        return "precharge_array"
+
+    @property
+    def bus_pins(self):
+        return ["bl", "br"]
+
+    def create_child_mod(self):
+        self.child_mod = self.create_mod_from_str(self.mod_name, size=self.size)
+        debug.info(1, "Using module {} for {}".format(self.child_mod.name,
+                                                      self.name))
+        self.pc_cell = self.child_mod
+        self.height = self.child_mod.height

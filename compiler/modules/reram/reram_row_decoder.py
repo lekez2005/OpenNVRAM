@@ -1,6 +1,7 @@
 from base.contact import well as well_contact, m1m2, m2m3
 from base.design import METAL2, NWELL, PWELL, METAL3
 from base.layout_clearances import find_clearances, HORIZONTAL
+from base.utils import round_to_grid as rg
 from base.vector import vector
 from base.well_active_contacts import calculate_num_contacts
 from globals import OPTS
@@ -27,6 +28,7 @@ class reram_row_decoder(SeparateWordlineMixin, stacked_hierarchical_decoder):
 
     def route_vdd_gnd(self):
         super().route_vdd_gnd()
+        # add pwell/nwell contacts
 
         nwell_height = max(well_contact.first_layer_width + 2 * self.well_enclose_active,
                            self.well_width)
@@ -72,7 +74,14 @@ class reram_row_decoder(SeparateWordlineMixin, stacked_hierarchical_decoder):
 
             for pin in layout_pins:
                 if pin_name == "vdd" and pin in row_decoder_pins:
-                    self.add_rect_center(NWELL, offset=(well_contact_x, pin.cy()),
+                    if rg(pin.cy()) == rg(self.nand_inst[0].by()):
+                        well_extension = (self.nand_inst[0].mod.get_max_shape(NWELL, "uy").uy() -
+                                          self.nand_inst[0].mod.height)
+                        nwell_y = min(pin.cy() - 0.5 * well_contact.w_1 - self.well_enclose_active,
+                                      pin.cy() - well_extension) + 0.5 * nwell_height
+                    else:
+                        nwell_y = pin.cy()
+                    self.add_rect_center(NWELL, offset=(well_contact_x, nwell_y),
                                          width=nwell_width, height=nwell_height)
                 if pin in row_decoder_pins:
                     offset = vector(well_contact_x, pin.cy())

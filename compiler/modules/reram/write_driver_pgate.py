@@ -1,6 +1,6 @@
 import tech
 from base.contact import cross_m1m2, m1m2, poly as poly_contact, cross_poly, cross_m2m3
-from base.design import METAL2, POLY, METAL1, METAL3
+from base.design import METAL2, POLY, METAL1, METAL3, NWELL
 from base.geometry import MIRROR_X_AXIS
 from base.vector import vector
 from base.well_active_contacts import calculate_num_contacts
@@ -10,12 +10,20 @@ from modules.reram.bitcell_aligned_pgate import BitcellAlignedPgate
 class WriteDriverPgate(BitcellAlignedPgate):
     mod_name = "write_driver"
 
-    def __init__(self, logic_size, buffer_size, name=None):
-        name = name or f"{self.mod_name}_{logic_size:.4g}_{buffer_size:.4g}"
+    @classmethod
+    def get_name(cls, logic_size, buffer_size, name=None):
+        name = name or f"{cls.mod_name}_{logic_size:.4g}_{buffer_size:.4g}"
         name = name.replace(".", "__")
+        return name
+
+    def __init__(self, logic_size, buffer_size, name=None):
+        name = self.get_name(logic_size, buffer_size, name)
         self.logic_size = logic_size
         self.buffer_size = buffer_size
         super().__init__(size=None, name=name)
+
+    def is_delay_primitive(self):
+        return True
 
     def create_layout(self):
         self.add_pins()
@@ -323,12 +331,13 @@ class WriteDriverPgate(BitcellAlignedPgate):
                 conts.append(cont)
 
             y_bottom = conts[0].by()
-            y_top = conts[1].uy() - self.m2_width
+            y_top = conts[1].uy() + self.m2_space
             rail_offset, rail_width = self.get_bitline_rail_offset(tx_pins)
             self.add_rect(METAL2, vector(rail_offset, y_bottom), width=rail_width,
                           height=y_top - y_bottom + self.m2_width)
-            self.add_rect(METAL2, vector(tx_pins[1].cx(), y_top),
-                          width=bitcell_pin.cx() - tx_pins[1].cx())
+            x_offset = conts[1].lx() if i == 0 else conts[1].rx()
+            self.add_rect(METAL2, vector(x_offset, y_top),
+                          width=bitcell_pin.cx() - x_offset)
             self.add_layout_pin(pin_names[i], METAL2, vector(bitcell_pin.lx(), y_top),
                                 width=bitcell_pin.width(), height=self.height - y_top)
 
@@ -363,3 +372,6 @@ class WriteDriverPgate(BitcellAlignedPgate):
 
         for i in range(3):
             self.add_power_tap(y_offsets[i], pin_names[i], ptx_insts[i])
+
+        vdd_pin = self.get_pins("vdd")[0]
+        self.extend_tx_well(self.buffer_pmos_inst, NWELL, vdd_pin)

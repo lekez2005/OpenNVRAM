@@ -10,3 +10,8 @@ class TriStatePgateArray(tri_gate_array):
         debug.info(1, "Using module {} for {}".format(self.child_mod.name,
                                                       self.name))
         self.height = self.child_mod.height
+
+    def get_horizontal_pins(self):
+        for pin_name in ["vdd", "gnd", "en", "en_bar"]:
+            for pin in self.child_mod.get_pins(pin_name):
+                yield pin

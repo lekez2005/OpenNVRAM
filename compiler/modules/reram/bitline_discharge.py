@@ -1,13 +1,16 @@
 import debug
 import tech
+from base import utils
+from base.analog_cell_mixin import AnalogMixin
 from base.contact import m1m2, well as well_contact, poly as poly_contact, \
     cross_m2m3, cross_m3m4, cross_poly, cross_m1m2, m2m3, m3m4
 from base.design import design, ACTIVE, METAL1, METAL2, POLY, METAL3
 from base.unique_meta import Unique
+from base.utils import round_to_grid as round_
 from base.vector import vector
+from base.well_active_contacts import add_power_tap
 from globals import OPTS
 from modules.precharge import precharge_characterization
-from base.utils import round_to_grid as round_
 from pgates.ptx import ptx
 from pgates.ptx_spice import ptx_spice
 
@@ -39,7 +42,7 @@ class BitlineDischarge(design, precharge_characterization, metaclass=Unique):
         self.add_boundary()
 
     def add_pins(self):
-        self.add_pin_list(["bl", "br", "bl_discharge", "br_discharge", "gnd"])
+        self.add_pin_list(["bl", "br", "bl_reset", "br_reset", "gnd"])
 
     def add_tx(self):
         self.bitcell = self.create_mod_from_str(OPTS.bitcell)
@@ -70,62 +73,70 @@ class BitlineDischarge(design, precharge_characterization, metaclass=Unique):
 
         offset = vector(0, 0)
         self.add_inst("bl_inst", tx_spice, offset)
-        self.connect_inst(["bl", "bl_discharge", "gnd", "gnd"])
+        self.connect_inst(["bl", "bl_reset", "gnd", "gnd"])
         self.add_inst("br_inst", tx_spice, offset)
-        self.connect_inst(["br", "br_discharge", "gnd", "gnd"])
+        self.connect_inst(["br", "br_reset", "gnd", "gnd"])
 
     def add_enable_pins(self):
-        sample_drain = self.nmos.get_pins("D")[0]
-        self.bitline_via_y = sample_drain.by() + 0.5 * self.m3_space
+        # first assume bl_reset will be centered at middle poly contact\
+        enable_pin_space = 1.4 * self.bus_space
 
-        self.bitline_via_height = via_height = max(m2m3.h_1, m2m3.w_2, m3m4.w_1)
-        br_discharge_y = (self.bitline_via_y + via_height +
-                          max(self.m3_space, self.m2_space) + 0.5 * m1m2.h_2 -
-                          0.5 * self.bus_width)
-
-        bl_discharge_y = br_discharge_y + self.bus_width + 1.4 * self.bus_space
-
+        active_rect = max(self.nmos.get_layer_shapes(ACTIVE),
+                          key=lambda x: x.width * x.height)
         active_to_poly_contact = tech.drc.get("poly_contact_to_active")
         active_to_mid_contact = active_to_poly_contact + 0.5 * poly_contact.contact_width
-        contact_mid_y = self.nmos.by() + self.nmos.mod.active_rect.uy() + active_to_mid_contact
+        contact_mid_y = active_rect.uy() + active_to_mid_contact
 
-        contact_mid_y = max(contact_mid_y, br_discharge_y + 0.5 * self.bus_width)
+        bl_reset_y = contact_mid_y - 0.5 * self.bus_width
+        br_reset_y = bl_reset_y - enable_pin_space - self.bus_width
+        self.bitline_via_height = max(m1m2.h_2, m2m3.h_1, m2m3.w_2, m3m4.w_1)
+        enable_to_via_space = (max(self.get_line_end_space(METAL2),
+                                   self.get_line_end_space(METAL3)) + 0.5 * m1m2.h_2 -
+                               0.5 * self.bus_width)
+        bitline_via_y = br_reset_y - enable_to_via_space - self.bitline_via_height
 
-        br_discharge_y = max(bl_discharge_y - self.bus_width - 1.4 * self.bus_space,
-                             br_discharge_y)
+        # check if it's far enough from power rail and shift enable pins up if appropriate
+        min_bitline_via_y = max(self.rail_height + enable_pin_space,
+                                active_rect.by())
+        if bitline_via_y < min_bitline_via_y:
+            y_shift = utils.ceil(min_bitline_via_y - bitline_via_y)
+            bitline_via_y += y_shift
+            bl_reset_y += y_shift
+            br_reset_y += y_shift
+        # check contact mid_y to avoid bitline via
+        contact_mid_y = max(contact_mid_y, bitline_via_y + self.bitline_via_height +
+                            self.get_line_end_space(METAL2) + 0.5 * m1m2.h_2)
 
-        self.height = contact_mid_y + 0.5 * poly_contact.h_1
+        self.bitline_via_y = bitline_via_y
+        self.height = max(contact_mid_y + 0.5 * poly_contact.h_1,
+                          bl_reset_y + 0.5 * self.bus_width + 0.5 * m2m3.h_1)
 
+        # add poly contacts
         poly_rects = list(sorted(self.nmos.get_pins("G"), key=lambda x: x.lx()))
+        poly_top = contact_mid_y + 0.5 * poly_contact.h_1
         x_offsets = []
         for left_rect, right_rect in [poly_rects[:2], poly_rects[2:]]:
             x_offset = 0.5 * (left_rect.cx() + right_rect.cx())
-            self.add_cross_contact_center(cross_poly, vector(x_offset, contact_mid_y))
+            x_offsets.append(x_offset)
             for rect in [left_rect, right_rect]:
                 self.add_rect(POLY, rect.ul(), width=rect.width(),
-                              height=self.height - rect.uy())
-            x_offsets.append(x_offset)
+                              height=poly_top - rect.uy())
+            self.add_cross_contact_center(cross_poly, vector(x_offset, contact_mid_y))
 
-        # bl_discharge
-        y_offset = contact_mid_y - 0.5 * self.bus_width
-        self.add_layout_pin("bl_discharge", METAL3, vector(0, y_offset),
-                            width=self.width, height=self.bus_width)
-        offset = vector(x_offsets[0], contact_mid_y)
-        self.add_cross_contact_center(cross_m1m2, offset, rotate=True)
-        self.add_cross_contact_center(cross_m2m3, offset)
+        y_offsets = [bl_reset_y, br_reset_y]
+        pin_names = ["bl_reset", "br_reset"]
 
-        # br_discharge
-        y_offset = br_discharge_y
-        self.add_layout_pin("br_discharge", METAL3, vector(0, y_offset),
-                            width=self.width, height=self.bus_width)
-        via_y = y_offset + 0.5 * self.bus_width
-        self.add_cross_contact_center(cross_m2m3,
-                                      vector(x_offsets[1], via_y))
-        self.add_rect(METAL2, vector(x_offsets[1] - 0.5 * m1m2.w_2, via_y),
-                      width=m1m2.w_2, height=contact_mid_y - via_y)
-        self.add_cross_contact_center(cross_m1m2, vector(x_offsets[1], contact_mid_y),
-                                      rotate=True)
-        self.br_discharge_y = y_offset
+        for i in range(2):
+            y_offset = y_offsets[i]
+            self.add_layout_pin(pin_names[i], METAL3, vector(0, y_offset),
+                                width=self.width, height=self.bus_width)
+
+            offset = vector(x_offsets[i], contact_mid_y)
+            self.add_cross_contact_center(cross_m1m2, offset, rotate=True)
+            via_offset = vector(offset.x, y_offset + 0.5 * self.bus_width)
+            self.add_cross_contact_center(cross_m2m3, via_offset)
+            self.add_rect(METAL2, via_offset - vector(0.5 * m2m3.w_1, 0),
+                          width=m2m3.w_1, height=offset.y - via_offset.y)
 
     def add_bitlines(self):
         pin_names = ["bl", "br"]
@@ -148,8 +159,9 @@ class BitlineDischarge(design, precharge_characterization, metaclass=Unique):
                           height=m1m2.h_2, width=layout_pin.cx() - drain_pin.cx())
 
     def add_power(self):
-        self.bitcell.add_power_pin(self, 0, "gnd", "p")
-        width = round_(1.5 * self.m1_width)
+        pin, cont, well_type = add_power_tap(self, 0, "gnd", self.width)
+        AnalogMixin.add_m1_m3_power_via(self, pin, add_m3_pin=True)
+        width = round_(self.poly_pitch - self.get_parallel_space(METAL1))
         for pin in self.nmos.get_pins("S"):
             self.add_rect(METAL1, vector(pin.cx() - 0.5 * width, 0),
                           width=width, height=pin.uy())

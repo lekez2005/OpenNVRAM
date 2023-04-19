@@ -8,3 +8,5 @@ from testutils import OpenRamTest
 
 class ReRamTestBase(OpenRamTest):
     config_template = "config_reram_{}"
+    RERAM_MODE = "reram"
+    valid_modes = [RERAM_MODE]

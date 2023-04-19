@@ -9,6 +9,14 @@ from modules.reram.bitcell_aligned_pgate import BitcellAlignedPgate
 class TriStatePgate(BitcellAlignedPgate):
     mod_name = "tri_state"
 
+    @classmethod
+    def get_name(cls, size, name=None):
+        name = name or f"{cls.mod_name}_{size:.4g}"
+        return name
+
+    def is_delay_primitive(self):
+        return True
+
     def create_layout(self):
         self.add_pins()
         self.create_modules()
@@ -177,9 +185,12 @@ class TriStatePgate(BitcellAlignedPgate):
                               width=poly_rect.width(), height=top - bottom)
 
                 self.add_contact_center(m1m2.layer_stack, offset, rotate=90)
-                self.add_layout_pin(pin_names[inst_index], METAL2,
-                                    vector(0, offset.y - 0.5 * self.bus_width),
-                                    width=self.width, height=self.bus_width)
+                # move closer to the poly contact to prevent m2 space issue
+                if poly_index == 0:
+                    pin_x = offset.x - 0.5 * m1m2.h_2
+                    self.add_layout_pin(pin_names[inst_index], METAL2,
+                                        vector(pin_x, offset.y - 0.5 * self.bus_width),
+                                        width=self.width - pin_x, height=self.bus_width)
 
     def add_power_and_taps(self):
         pin_names = ["gnd", "vdd"]

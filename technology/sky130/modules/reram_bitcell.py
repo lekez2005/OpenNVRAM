@@ -3,6 +3,7 @@ import tech
 from base.contact import m1m2, poly as poly_contact, cross_poly, cross_m1m2, \
     cross_m2m3, m2m3, cross_m3m4, m3m4, well as well_contact
 from base.design import design, METAL1, POLY, METAL3, METAL2, METAL4, ACTIVE, PWELL
+from base.hierarchy_spice import INOUT
 from base.library_import import library_import
 from base.unique_meta import Unique
 from base.utils import round_to_grid as round_
@@ -16,6 +17,9 @@ from pgates.ptx import ptx
 class reram(design):
     lib_name = "sky130_fd_pr__reram_reram_cell"
     pin_names = ["TE", "BE"]
+
+    def get_pin_type(self, name: str):
+        return INOUT
 
 
 class body_tap(design, metaclass=Unique):

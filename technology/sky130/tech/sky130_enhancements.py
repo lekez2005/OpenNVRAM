@@ -98,6 +98,8 @@ def enhance_module(obj: design):
     debug.info(2, f"Enhancing module {obj.name}")
     obj.sky_130_enhanced = True
     # add stdc and seal poly before flattening vias
+    from custom_transistors import add_voltage_layers
+    add_voltage_layers(obj)
     add_stdc(obj)
     seal_poly_vias(obj)
     flatten_vias(obj)

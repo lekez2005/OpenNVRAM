@@ -1,6 +1,6 @@
 import tech
 from base.contact import m1m2, well as well_contact, m2m3
-from base.design import METAL2, PWELL, NWELL, METAL3
+from base.design import METAL2, PWELL, NWELL, METAL3, ACTIVE
 from base.layout_clearances import find_clearances, HORIZONTAL
 from base.vector import vector
 from base.well_active_contacts import calculate_num_contacts
@@ -10,7 +10,6 @@ from modules.stacked_wordline_driver_array import stacked_wordline_driver_array
 
 class reram_wordline_driver_array(stacked_wordline_driver_array):
     def __init__(self, rows, buffer_stages=None, name=None):
-        name = name or "wordline_driver_array"
         super().__init__(name=name, rows=rows, buffer_stages=buffer_stages)
 
     def get_en_rail_y(self, en_rail):
@@ -22,7 +21,8 @@ class reram_wordline_driver_array(stacked_wordline_driver_array):
 
     def fill_tap_well(self):
         body_tap = self.logic_buffer.logic_inst.mod.create_pgate_tap()
-        x_offset = - body_tap.get_layer_shapes(NWELL)[0].width
+        x_shift = self.buffer_insts[0].lx()
+        x_offset = - body_tap.get_layer_shapes(NWELL)[0].width + x_shift
         right_rect = max(self.buffer_insts[1].get_layer_shapes(NWELL, recursive=True),
                          key=lambda x: x.rx())
         nwell_width = right_rect.rx() - x_offset
@@ -56,7 +56,7 @@ class reram_wordline_driver_array(stacked_wordline_driver_array):
             x_shift = self.logic_buffer.buffer_inst.lx()
             x_shift += first_buffer_inst.cx()
             well_contact_offsets = [x.lx() + x_shift for x in self.buffer_insts[:2]]
-            available_space = first_buffer_inst.width - self.m1_width
+            available_space = first_buffer_inst.width - self.get_space(ACTIVE)
             sample_well = calculate_num_contacts(self, available_space,
                                                  layer_stack=well_contact.layer_stack,
                                                  return_sample=True)

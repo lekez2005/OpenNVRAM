@@ -23,8 +23,8 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
         if self.baseline:
             self.read_settling_time = 120e-12
         elif self.one_t_one_s:
-            self.address_data_threshold = 0
-            self.read_settling_time = -50e-12
+            self.analyzer.address_data_threshold = 0
+            self.read_settling_time = 0e-12
         else:
             self.read_settling_time = -50e-12
         self.write_settling_time = 150e-12
@@ -36,6 +36,7 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
 
         class BlAnalyzer(SimAnalyzer):
             def get_address_data(self, address, time, threshold=None):
+                threshold = threshold or getattr(self, "address_data_threshold", None)
                 address_data = super().get_address_data(address, time, threshold)
                 if test_self.one_t_one_s:
                     return [int(not x) for x in address_data]
@@ -53,7 +54,7 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
 
         if self.latched:
             # internal_nets = ["and", "nor", "int1", "int2"]
-            internal_nets = ["int1", "int2", "net28", "net32", "vref"]
+            internal_nets = ["vref", "and_int", "nor_int"]
         else:
             internal_nets = ["int1", "int2"]
         for net in internal_nets:
@@ -150,7 +151,7 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
         debug_error(f"NOR failure: At time {event_time * 1e9:.3g} n ",
                     expected_nor, actual_nor)
 
-        # verify data was not over-writtten
+        # verify data was not over-written
         new_d1 = self.analyzer.get_address_data(addr_1, cycle_end)
         debug_error(f"Address {addr_1} overwritten", initial_d1, new_d1)
         new_d2 = self.analyzer.get_address_data(addr_2, cycle_end)
@@ -160,8 +161,8 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
 
     def verify_sum(self, event, blc_end, initial_d1, initial_d2,
                    expected_and, expected_nor):
-        from characterizer.simulation.sim_analyzer import debug_error, \
-            vector_to_int, int_to_vec
+        from characterizer.simulation.sim_analyzer import debug_error
+        from modules.bitline_compute.bitline_spice_characterizer import alu_sum
 
         word_size = self.cmd_line_opts.alu_word_size
         num_words = int(self.cmd_line_opts.num_cols / word_size)
@@ -196,8 +197,11 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
         previous_data = self.analyzer.get_address_data(write_address, compute_time)
         actual_data = self.analyzer.get_address_data(write_address, write_end)
 
-        expectations = [None, expected_and, expected_nor]
-        sig_names = ["s_sum", "s_and", "s_nor"]
+        expected_data_in = self.analyzer.get_data_in(sum_end)
+
+        expectations = [None, expected_and, expected_nor, expected_data_in]
+
+        sig_names = ["s_sum", "s_and", "s_nor", "s_data"]
         expected_result = None
         for j in range(len(sig_names)):
             selected = self.sim_data.get_binary(sig_names[j], sum_end)[0]
@@ -207,22 +211,10 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
 
         bank_sel = not self.sim_data.get_binary("Csb", sum_end)[0]
 
-        for word in range(num_words):
-            # confirm correct sum
-            if self.serial:
-                d1 = get_word(word, initial_d1)
-                d2 = get_word(word, initial_d2)
-                dc = get_word(word, cin)
-                expected_sum = [(x[0] + x[1] + x[2]) % 2 for x in zip(d1, d2, dc)]
-                expected_carry = [int((x[0] + x[1] + x[2]) > 1) for x in zip(d1, d2, dc)]
-            else:
-                d1 = vector_to_int(get_word(word, initial_d1))
-                d2 = vector_to_int(get_word(word, initial_d2))
-                expected_sum_ = int_to_vec(d1 + d2 + cin[num_words - word - 1],
-                                           word_size + 1)
+        expected_sums = list(reversed(alu_sum(initial_d1, initial_d2, cin, word_size)))
 
-                expected_carry = [expected_sum_[0]]
-                expected_sum = expected_sum_[1:]
+        for word in range(num_words):
+            expected_sum, expected_carry = expected_sums[word]
 
             actual_sum = get_word(word, blc_bus_out)
             if expected_result is None:
@@ -232,7 +224,7 @@ class AnalyzeBlSimulation(BlSimulator, SimAnalyzerTest, TestBase):
 
             is_correct = debug_error(f"Incorrect sum (word {word}) "
                                      f"at time {compute_time * 1e9:.3g} n",
-                                     expected_sum, actual_sum)
+                                     expected_write_back, actual_sum)
             if is_correct:
                 if self.serial:
                     actual_carry = get_word(word, cout)

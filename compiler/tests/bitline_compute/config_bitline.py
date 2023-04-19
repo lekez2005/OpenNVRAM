@@ -39,6 +39,7 @@ buffer_repeater_sizes = [
 
 bank_class = "bl_bank.BlBank"
 control_buffers_class = "bl_latched_control_buffers.LatchedControlBuffers"
+control_optimizer = "bl_compute_optimizer.BlComputeOptimizer"
 sram_class = "bl_sram.BlSram"
 
 

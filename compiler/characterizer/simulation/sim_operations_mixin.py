@@ -102,8 +102,12 @@ class SimOperationsMixin(SpiceCharacterizer):
         self.mask_probes = self.probe.mask_probes
 
     def write_delay_stimulus(self):
+        original_use_pex = OPTS.use_pex
+        if OPTS.use_pex and OPTS.pex_exe[0] == "magic":
+            OPTS.use_pex = False
         self.create_probe()
         self.probe_delay_addresses()
+        OPTS.use_pex = original_use_pex
         self.run_pex_and_extract()
         self.write_stimulus(self.generate_delay_steps)
 
@@ -242,7 +246,7 @@ class SimOperationsMixin(SpiceCharacterizer):
         if OPTS.use_pex:
             decoder_clk = self.probe.extract_from_pex("decoder_clk")
         else:
-            decoder_clk = "v(Xsram.decoder_clk)"
+            decoder_clk = "Xsram.decoder_clk"
         self.probe.saved_nodes.add(decoder_clk)
         self.sf.write(f"*-- decoder_clk = {decoder_clk}\n")
 
@@ -410,6 +414,9 @@ class SimOperationsMixin(SpiceCharacterizer):
                                      targ_val=0.5 * self.vdd_voltage, targ_dir="CROSS",
                                      targ_td=self.current_time)
 
+    def get_precharge_probe(self, bitline_name, bank, col):
+        return self.probe.voltage_probes[bitline_name][bank][col]
+
     def setup_precharge_measurement(self, bank, col_index):
         time = self.current_time
         # power measurement
@@ -427,7 +434,7 @@ class SimOperationsMixin(SpiceCharacterizer):
                 bank_col = col
             clk_buf_probe = self.probe.clk_probes[bank_]
             for bitline in ["bl", "br"]:
-                probe = self.probe.voltage_probes[bitline][bank_][bank_col]
+                probe = self.get_precharge_probe(bitline, bank_, bank_col)
                 meas_name = "PRECHARGE_DELAY_{}_c{}_t{}".format(bitline, col, time_suffix)
                 self.stim.gen_meas_delay(meas_name=meas_name,
                                          trig_name=clk_buf_probe,

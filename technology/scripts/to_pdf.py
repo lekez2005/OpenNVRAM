@@ -48,7 +48,11 @@ def export_pdf(gds, tech):
     }
     layers["active_contact"] = layers["active"]
     if hasattr(tech, "layer_colors"):
-        layers.update(tech.layer_colors)
+        drawing_purpose_num = tech.purpose.get("drawing")
+        for layer_name in tech.layer_colors:
+            layer_number = tech.layer[layer_name]
+            purpose_number = tech.purpose.get(layer_name, drawing_purpose_num)
+            visualizer.layerColors[f"{layer_number}_{purpose_number}"] = tech.layer_colors[layer_name]
 
     for layer_num in layout.layerNumbersInUse:
         layer_name = [key for key, value in tech.layer.items() if value == layer_num]

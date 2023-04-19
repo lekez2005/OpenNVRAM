@@ -66,7 +66,7 @@ ext2spice hierarchy on
 ext2spice scale off
 ext2spice format ngspice
 ext2spice cthresh infinite
-ext2spice rthresh infinite:q
+ext2spice rthresh infinite
 ext2spice renumber off
 ext2spice global off
 ext2spice {cell_name_}{flat_suffix} -o {cell_name_}.spice
@@ -79,6 +79,8 @@ netgen_template = """
 #!/env sh
 {netgen_exe} -noconsole << EOF
 lvs {{{source_spice} {cell_name_} }} {{{layout_spice} {lvs_cell_name}}} {setup_file} {report_file} -full -json
+# print nodes
+# print elements
 quit
 EOF
 retcode=$?
@@ -87,10 +89,14 @@ exit $retcode
 
 # PEX extraction script
 pex_template = """
+drc off
 load "{mag_file_}"
+{make_ports}
+# {extract_unique}
 flatten "{cell_name_}_flat"
 load "{cell_name_}_flat"
 select top cell
+extract do aliases
 extract all
 ext2sim labels on
 ext2sim
@@ -229,7 +235,6 @@ def run_drc(cell_name, gds_name, exception_group="", flatten=None):
     """Run DRC check on a cell which is implemented in gds_name."""
     from globals import OPTS
     from tech import drc_exceptions
-    debug.info(1, f"Running DRC for cell {cell_name}")
 
     flatten = getattr(OPTS, "flat_drc", True)
 
@@ -295,7 +300,8 @@ def get_lvs_kwargs(cell_name, mag_file, source_spice, final_verification, flatte
         make_ports = f"readspice \"{source_spice}\""
     else:
         make_ports = "port makeall"
-    extract_unique = "extract unique all" * final_verification
+    # extract_unique = "extract unique all" * final_verification
+    extract_unique = "extract unique noports" * final_verification
     extract_style = getattr(OPTS, "lvs_extract_style", "")
 
     if flatten:

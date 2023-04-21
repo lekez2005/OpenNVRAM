@@ -2,7 +2,7 @@
 
 for design in "bp-vram" "bs-vram"; do
 
-  for uop in "rd" "wr" "blc" "wb" "wb_add" "wb_mask" "wb_mask_add" "srl"; do
+  for uop in "rd" "wr" "blc" "wb" "wb_add" "wb_and" "wb_mask" "wb_mask_add" "wb_mask_and" "srl"; do
 
     if [ -f ${design}-${uop}.log ]; then
       str=$(tail -n1 ${design}-${uop}.log)

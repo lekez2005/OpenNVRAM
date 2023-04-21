@@ -12,6 +12,7 @@ class AnalyzeMramSimulation(MramSimulator, SimAnalyzerTest, TestBase):
 
     def setUp(self):
         super().setUp()
+        self.analyzer.address_data_threshold = 0
         self.update_global_opts()
 
     def initialize(self):
@@ -20,8 +21,10 @@ class AnalyzeMramSimulation(MramSimulator, SimAnalyzerTest, TestBase):
         if OPTS.mram == "sot":
             self.read_settling_time = 200e-12
         else:
-            self.read_settling_time = 200e-12
+            self.read_settling_time = 50e-12
         self.write_settling_time = 200e-12
+        if not OPTS.use_pex:
+            self.read_settling_time = 70e-12
 
     def plot_write_signals(self):
         super().plot_write_signals()

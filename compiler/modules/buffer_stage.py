@@ -121,6 +121,7 @@ class BufferStage(design.design, metaclass=Unique):
         if self.total_instances == 1:
             pin_names = ["out_inv"]
             instances = self.module_insts[-1:]
+            self.copy_layout_pin(self.module_insts[-1], "A", "out")
         elif self.total_instances % 2 == 0:
             pin_names = ["out_inv", "out"]
             instances = self.module_insts[-2:]

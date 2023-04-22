@@ -724,7 +724,7 @@ class SramProbe(object):
                                  internal_nets=self.get_write_driver_internal_nets())
 
     def get_sense_amp_internal_nets(self):
-        if getattr(OPTS, "sense_amp_probe_nets"):
+        if hasattr(OPTS, "sense_amp_probe_nets"):
             return OPTS.sense_amp_probe_nets
         if OPTS.sense_amp_type == OPTS.MIRROR_SENSE_AMP:
             return ["bl", "br", "dout"]

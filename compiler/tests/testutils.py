@@ -34,7 +34,7 @@ class OpenRamTest(unittest.TestCase):
             config_template = cls.config_template
         parse_args()
         from globals import OPTS
-        config_template = getattr(OPTS, "config_file", config_template)
+        config_template = OPTS.config_file or config_template
         globals.init_openram(config_template.format(OPTS.tech_name), openram_temp=cls.temp_folder)
         if OPTS.debug_level > 0:
             header(inspect.getfile(cls), OPTS.tech_name)

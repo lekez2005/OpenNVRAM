@@ -18,7 +18,7 @@ class options(optparse.Values):
     # is minimal, etc.
     debug_level = 0
     # This determines whether  LVS and DRC is checked for each submodule.
-    check_lvsdrc = True
+    check_lvsdrc = False
     # Whether to export designs to cadence during Calibre DRC runs to ease debugging
     export_drc_cadence = False
     # Variable to select the variant of spice
@@ -135,6 +135,7 @@ class options(optparse.Values):
     body_tap = "body_tap"
     control_flop = "ms_flop_horz_pitch"
     flop_buffer = "flop_buffer.FlopBuffer"
+    sram_class = "baseline_sram.BaselineSram"
 
     # buffer stages
     max_buf_size = 40

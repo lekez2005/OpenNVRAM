@@ -1,3 +1,5 @@
+import datetime
+import os
 from typing import TYPE_CHECKING
 
 import debug
@@ -6,6 +8,7 @@ from base.contact import m2m3, m1m2, cross_m2m3, m3m4
 from base.design import METAL3, METAL2, METAL4
 from base.layout_clearances import find_clearances, VERTICAL
 from base.vector import vector
+from globals import OPTS, print_time
 from modules.horizontal.pinv_wordline import pinv_wordline
 
 if TYPE_CHECKING:
@@ -170,3 +173,81 @@ class StackedDecoderMixin(BaselineSram):
 
                 self.add_rect(METAL3, vector(end_x, rail_offset), width=self.m3_width,
                               height=wordline_in.cy() - rail_offset)
+
+
+class SramOutputMixin(BaselineSram):
+    output_operation_start_time = None
+
+    def initialize_operations_start_time(self):
+        self.output_operation_start_time = datetime.datetime.now()
+
+    def print_operation_time(self, op_name):
+        current_time = datetime.datetime.now()
+        print_time(op_name, current_time, self.output_operation_start_time)
+        self.output_operation_start_time = current_time
+
+    def save_output_spice_gds(self):
+        # Save the spice file and gds
+        sp_name = os.path.join(OPTS.output_path, self.name + ".sp")
+        gds_name = os.path.join(OPTS.output_path, self.name + ".gds")
+        debug.print_str("SP: Writing to {0}".format(sp_name))
+        self.sp_write(sp_name)
+        self.print_operation_time("Spice writing")
+        debug.print_str("GDS: Writing to {0}".format(gds_name))
+        self.gds_write(gds_name)
+        self.print_operation_time("GDS writing")
+        return sp_name, gds_name
+
+    def save_output_pex(self, sp_name, gds_name):
+        # Save the extracted spice file
+        if OPTS.use_pex:
+            import verify
+            # Output the extracted design if requested
+            sp_file = os.path.join(OPTS.output_path, "temp_pex.sp")
+            verify.run_pex(self.name, gds_name, sp_name, output=sp_file)
+            self.print_operation_time("Extraction")
+        else:
+            # Use generated spice file for characterization
+            sp_file = sp_name
+        return sp_file
+
+    def create_output_lef(self):
+        # Create a LEF physical model
+        start_time = datetime.datetime.now()
+        lefname = os.path.join(OPTS.output_path, self.name + ".lef")
+        debug.print_str("LEF: Writing to {0}".format(lefname))
+        self.lef_write(lefname)
+        self.print_operation_time("LEF")
+
+    def create_output_verilog(self):
+        # Write a verilog model
+        vname = os.path.join(OPTS.output_path, self.name + ".v")
+        debug.print_str("Verilog: Writing to {0}".format(vname))
+        self.verilog_write(vname)
+        self.print_operation_time("Verilog")
+
+    def characterize_output(self, sp_file, gds_file):
+        # Characterize the design
+        from characterizer import lib
+        debug.print_str("LIB: Characterizing... ")
+        if OPTS.analytical_delay:
+            debug.print_str("Using analytical delay models (no characterization)")
+        else:
+            if OPTS.spice_name != "":
+                debug.print_str("Performing simulation-based characterization with {}".format(OPTS.spice_name))
+            if OPTS.trim_netlist:
+                debug.print_str("Trimming netlist to speed up characterization.")
+        # TODO use binary simulation optimizer for timing and energy
+        # lib(out_dir=OPTS.output_path, sram=self, sp_file=sp_file)
+        self.print_operation_time("Characterization")
+
+    def save_output(self):
+        """ Save all the output files while reporting time to do it as well. """
+
+        self.initialize_operations_start_time()
+        sp_name, gds_name = self.save_output_spice_gds()
+        sp_file = self.save_output_pex(sp_name, gds_name)
+
+        self.characterize_output(sp_file, gds_name)
+        self.create_output_lef()
+        self.create_output_verilog()

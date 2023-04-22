@@ -17,10 +17,11 @@ from modules.baseline_bank import BaselineBank
 from modules.flop_buffer import FlopBuffer
 from modules.hierarchical_predecode2x4 import hierarchical_predecode2x4
 from modules.hierarchical_predecode3x8 import hierarchical_predecode3x8
+from modules.sram_mixins import SramOutputMixin
 from modules.sram_power_grid import SramPowerGridMixin
 
 
-class BaselineSram(SramPowerGridMixin, design):
+class BaselineSram(SramPowerGridMixin, SramOutputMixin, design):
     wide_space = None
     bank_insts = bank = row_decoder = None
     column_decoder = column_decoder_inst = None

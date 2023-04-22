@@ -4,7 +4,7 @@ the global OpenRAM setup as well.
 """
 import copy
 import importlib.util
-import optparse
+import argparse
 import os
 import shutil
 import sys
@@ -13,59 +13,62 @@ from importlib import reload
 import debug
 import options
 
-USAGE = "Usage: openram.py [options] <config file>\nUse -h for help.\n"
+USAGE = "Usage: openram.py [options] --config_file <config file>\nUse -h for help.\n"
 
 # Anonymous object that will be the options
 OPTS = options.options()
 DEFAULT_OPTS = options.options()
 
-def parse_args():
+
+def parse_args(check=True):
     """ Parse the optional arguments for OpenRAM """
 
-    global OPTS
+    parser = argparse.ArgumentParser(usage=USAGE, description="Compile and/or characterize an SRAM.",
+                                     prog="OpenRAM")
 
-    option_list = {
-        optparse.make_option("-b", "--backannotated", action="store_true", dest="run_pex",
-                             help="Back annotate simulation"),
-        optparse.make_option("-o", "--output", dest="output_name",
-                             help="Base output file name(s) prefix", metavar="FILE"),
-        optparse.make_option("-p", "--outpath", dest="output_path",
-                             help="Output file(s) location"),
-        optparse.make_option("-n", "--nocheck", action="store_false",
-                             help="Disable inline LVS/DRC checks", dest="check_lvsdrc"),
-        optparse.make_option("-v", "--verbose", action="count", dest="debug_level",
-                             help="Increase the verbosity level"),
-        optparse.make_option("-t", "--tech", dest="tech_name",
-                             help="Technology name"),
-        optparse.make_option("-s", "--spice", dest="spice_name",
-                             help="Spice simulator executable name"),
-        optparse.make_option("-r", "--remove_netlist_trimming", action="store_false", dest="trim_netlist",
-                             help="Disable removal of noncritical memory cells during characterization"),
-        optparse.make_option("-c", "--characterize", action="store_false", dest="analytical_delay",
-                             help="Perform characterization to calculate delays (default is analytical models)"),
-        optparse.make_option("-d", "--dontpurge", action="store_false", dest="purge_temp",
-                             help="Don't purge the contents of the temp directory after a successful run"),
-        optparse.make_option("--config_file", help="Explicitly specify config file")
-        # -h --help is implicit.
-    }
+    parser.add_argument("-b", "--backannotated", action="store_true", dest="run_pex",
+                        help="Back annotate simulation"),
+    parser.add_argument("-o", "--output", dest="output_name",
+                        help="Base output file name(s) prefix", metavar="FILE"),
+    parser.add_argument("-p", "--outpath", dest="output_path",
+                        help="Output file(s) location"),
+    parser.add_argument("-n", "--nocheck", action="store_false",
+                        help="Disable inline LVS/DRC checks", dest="check_lvsdrc"),
+    parser.add_argument("-v", "--verbose", action="count", dest="debug_level",
+                        help="Increase the verbosity level"),
+    parser.add_argument("-t", "--tech", dest="tech_name",
+                        help="Technology name"),
+    parser.add_argument("-s", "--spice", dest="spice_name",
+                        help="Spice simulator executable name"),
+    parser.add_argument("-r", "--remove_netlist_trimming", action="store_false", dest="trim_netlist",
+                        help="Disable removal of noncritical memory cells during characterization"),
+    parser.add_argument("-c", "--characterize", action="store_false", dest="analytical_delay",
+                        help="Perform characterization to calculate delays (default is analytical models)"),
+    parser.add_argument("-d", "--dontpurge", action="store_false", dest="purge_temp",
+                        help="Don't purge the contents of the temp directory after a successful run"),
+    parser.add_argument("--config_file", help="Explicitly specify config file")
+    parser.add_argument("_config_file", nargs='?', help="Explicitly specify config file")
 
-    parser = optparse.OptionParser(option_list=option_list,
-                                   description="Compile and/or characterize an SRAM.",
-                                   usage=USAGE,
-                                   version="OpenRAM")
+    if check:
+        _ = parser.parse_args(namespace=OPTS)
+        other_args = []
+    else:
+        _, other_args = parser.parse_known_args(namespace=OPTS)
 
-    (options, args) = parser.parse_args(values=OPTS)
+    OPTS.config_file = OPTS.config_file or OPTS._config_file
+
     # This may be overridden when we read a config file though...
     if OPTS.tech_name == "":
         OPTS.tech_name = "sky130"
     # Alias SCMOS to AMI 0.5um
-    if OPTS.tech_name == "scmos":
+    elif OPTS.tech_name == "scmos":
         OPTS.tech_name = "scn3me_subm"
     os.environ["OPENRAM_TECH_NAME"] = OPTS.tech_name
+
     global DEFAULT_OPTS
     DEFAULT_OPTS = copy.deepcopy(OPTS)
 
-    return (options, args)
+    return OPTS, other_args
 
 def print_banner():
     """ Conditionally print the banner to stdout """
@@ -207,6 +210,7 @@ def read_config(config_file, is_unit_test=True, openram_temp=None):
     debug.info(1, "Configuration file is " + config_file)
     try:
         if os.path.exists(config_file):
+            sys.path.insert(0, os.path.dirname(config_file))
             config_module_name, _ = os.path.splitext(os.path.basename(config_file))
             spec = importlib.util.spec_from_file_location(config_module_name, config_file)
             config = importlib.util.module_from_spec(spec)

@@ -20,9 +20,6 @@ OP_SECOND_READ = "sr"
 OP_SENSE_TIME = "st"
 OP_ALL = "all"
 
-OPENRAM_HOME = os.getenv("OPENRAM_HOME")
-OPENRAM_TECH = os.getenv("OPENRAM_TECH")
-
 
 def format_float(value, width=7, decimals=4):
     format_str = f"{{0:<{width}.{decimals}g}} ps "
@@ -128,11 +125,13 @@ class BinaryDelayOptimizer(ABC):
         return ["first_read", "first_write", "second_read", "second_write",
                 "sense_trigger_delay"]
 
-    def load_config_file_path(self):
+    def load_config_file_path(self, openram_home):
         config_name = self.get_config_file_name()
         if os.path.isabs(config_name):
             return config_name
-        for env_val in [OPENRAM_HOME, OPENRAM_TECH]:
+
+        openram_tech = os.getenv("OPENRAM_TECH", os.path.join(openram_home, "..", "technology"))
+        for env_val in [openram_home, openram_tech]:
             config_file = subprocess.check_output(["find", env_val, "-name",
                                                    config_name]).decode()
             if config_file:
@@ -172,15 +171,21 @@ for member in inspect.getmembers(sim_script):
         return None
 
     def initialize_openram(self):
-        config_file = self.load_config_file_path()
-        sys.path.append(OPENRAM_HOME)
-        sys.path.append(os.path.join(OPENRAM_HOME, "tests"))
+        openram_home = os.getenv("OPENRAM_HOME", os.path.dirname(__file__))
+        sys.path.append(openram_home)
+        sys.path.append(os.path.join(openram_home, "tests"))
 
-        argv = [x for x in sys.argv]
-        sys.argv = [argv[0], "-t", self.cmd_line_options.tech]
         import globals, debug
-        globals.parse_args()
+        # preserve argv
+        argv = [x for x in sys.argv]
+        sys.argv = [argv[0], "-t", self.cmd_line_options.tech] + self.other_args
+
+        OPTS, other_args = globals.parse_args(check=False)
+
+        config_file = OPTS.config_file or self.load_config_file_path(openram_home)
+
         globals.init_openram(config_file)
+
         sys.argv = argv
         self.debug = debug
         self.config_file = config_file

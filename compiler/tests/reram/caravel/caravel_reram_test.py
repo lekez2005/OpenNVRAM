@@ -12,6 +12,7 @@ sys.path.insert(0, reram_dir)
 
 from reram_test_base import ReRamTestBase
 
+# Whether to regenerate individual bank's gds if they already exist
 generate_reram_gds = False
 # This toggle exists to speed up layout generation during development
 # should never be off: There may be power shorts if off

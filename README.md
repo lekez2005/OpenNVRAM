@@ -1,16 +1,15 @@
-OpenRAM Port to support generation and simulation-based characterizations of non-volatile memories
+This project is a port of [OpenRAM](https://github.com/VLSIDA/OpenRAM) focusing on generation and simulation-based characterizations of post-CMOS, or non-volatile, or unconventional CMOS-based memories. While [OpenRAM](https://github.com/VLSIDA/OpenRAM) focuses on conventional CMOS 6T-based SRAMs (including multi-port support), this project is more research-focused, with an emphasis on post-layout simulation-based read/write/search timing characterizations.
 
 # BASIC SETUP
 
-Please look at the OpenRAM ICCAD paper and presentation in the repository:
-https://github.com/mguthaus/OpenRAM/blob/master/OpenRAM_ICCAD_2016_paper.pdf
-https://github.com/mguthaus/OpenRAM/blob/master/OpenRAM_ICCAD_2016_presentation.pdf
+Please look at the OpenRAM ICCAD paper in the upstream repository:
+https://github.com/VLSIDA/OpenRAM/blob/stable/OpenRAM_ICCAD_2016_paper.pdf. A more complete OpenRAM documentation is available at https://github.com/VLSIDA/OpenRAM/blob/stable/docs/source/index.md. 
 
 The OpenRAM compiler has very few dependencies:
 * ngspice-26 (or later) or HSpice I-2013.12-1 (or later) or CustomSim 2017 (or later) or Spectre 15 (or later)
 * Python 3.6 and higher
 * Python numpy (and scipy if using optimized buffer stages)
-* [libpsf](https://github.com/lekez2005/libpsf) is running simulations using spectre or hspice
+* [libpsf](https://github.com/lekez2005/libpsf) if running simulations using spectre or hspice
 * a setup script for each technology
 * a technology directory for each technology with the base cells
 
@@ -64,7 +63,7 @@ that are part of QFlow:
   * compiler/tests - unit tests
     - / - standard logic rule sram. Simulate using 21_simulation_test.py
     - /horizontal - unit tests for horizontal orientation modules
-    - /push_rules - logic rules sram. Simulate using top-level 21_simulation_test.py
+    - /push_rules - push rules sram. Simulate using top-level 21_simulation_test.py
     - /cam - 10T CAM implementation. Simulate using 21_cam_simulation_test.py
     - /mram - SOT-MRAM and SOTFET-MRAM implementations. Simulate using 21_mram_simulation_test.py
     - /reram - Sky130 ReRAM implementation. Includes Sky130 caravel wrapper implementation. Simulate using 21_reram_simulation_test.py

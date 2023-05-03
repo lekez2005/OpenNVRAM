@@ -246,6 +246,8 @@ if drc_name == "magic":
                                  "All nwells must contain metal-connected N+ taps (nwell.4)"]
 else:
     drc_exceptions["latchup"] = []
+    drc_exceptions["all"] = ["warning: previous definition of",
+                             "warning: already initialized constant"]
 
 drc_exceptions["ptx"] = drc_exceptions["latchup"]
 drc_exceptions["reram_bitcell"] = drc_exceptions["latchup"]

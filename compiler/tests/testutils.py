@@ -29,7 +29,7 @@ class OpenRamTest(unittest.TestCase):
             unittest.main()
 
     @classmethod
-    def initialize_tests(cls, config_template=None):
+    def initialize_tests(cls, config_template=None, test_name=None):
         if not config_template:
             config_template = cls.config_template
         parse_args()
@@ -37,7 +37,8 @@ class OpenRamTest(unittest.TestCase):
         config_template = OPTS.config_file or config_template
         globals.init_openram(config_template.format(OPTS.tech_name), openram_temp=cls.temp_folder)
         if OPTS.debug_level > 0:
-            header(inspect.getfile(cls), OPTS.tech_name)
+            test_name = test_name or inspect.getfile(cls)
+            header(test_name, OPTS.tech_name)
 
     @classmethod
     def setUpClass(cls):
@@ -48,7 +49,8 @@ class OpenRamTest(unittest.TestCase):
 
     def run(self, result=None):
         if not self.initialized:
-            self.initialize_tests()
+            test_name = f"{self.__class__.__name__}.{self._testMethodName}"
+            self.initialize_tests(test_name=test_name)
             self.initialized = True
         super().run(result)
 

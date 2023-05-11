@@ -217,7 +217,12 @@ class options(optparse.Values):
     def set_temp_folder(self, openram_temp=None):
         # openram_temp is the temp directory where all intermediate results are stored.
         openram_temp = openram_temp or self.openram_temp
-        default_openram_temp = os.path.join(os.environ.get("SCRATCH", "/tmp"), "openram")
+        scratch_dir = os.environ.get("SCRATCH", "/tmp")
+        if not os.path.exists(scratch_dir):
+            import debug
+            debug.error(f"Scratch directory {scratch_dir} does not exist")
+        os.environ["SCRATCH"] = scratch_dir
+        default_openram_temp = os.path.join(scratch_dir, "openram")
         if openram_temp is None:
             openram_temp = default_openram_temp
         elif not os.path.isabs(openram_temp):

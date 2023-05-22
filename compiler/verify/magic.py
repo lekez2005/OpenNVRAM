@@ -231,6 +231,13 @@ def check_process_errors(err_file, op_name, benign_errors=None):
                     debug.error(f"{op_name} Errors: {errors}")
 
 
+def get_drc_exceptions(exception_group):
+    from tech import drc_exceptions
+    ignored = drc_exceptions.get(exception_group, [])
+    ignored += drc_exceptions.get("all", [])
+    return ignored
+
+
 def run_drc(cell_name, gds_name, exception_group="", flatten=None):
     """Run DRC check on a cell which is implemented in gds_name."""
     from globals import OPTS
@@ -253,7 +260,8 @@ def run_drc(cell_name, gds_name, exception_group="", flatten=None):
     script = generate_magic_script(gds_name, cell_name, True, "drc", **kwargs)
     return_code, out_file, err_file = run_script(script, cell_name, "drc")
 
-    check_process_errors(err_file, "DRC")
+    benign_errors = get_drc_exceptions(exception_group)
+    check_process_errors(err_file, "DRC", benign_errors=benign_errors)
 
     with open(out_file, "r") as f:
         results = f.readlines()

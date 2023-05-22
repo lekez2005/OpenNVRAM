@@ -45,15 +45,9 @@ class DrcError:
             yield rule.find("name").text, rule.find("description").text
 
     @staticmethod
-    def get_drc_exceptions(exception_group):
-        from tech import drc_exceptions
-        ignored = drc_exceptions.get(exception_group, [])
-        ignored += drc_exceptions.get("all", [])
-        return ignored
-
-    @staticmethod
     def parse_errors(report_file, exception_group):
-        ignored = DrcError.get_drc_exceptions(exception_group)
+        from .magic import get_drc_exceptions
+        ignored = get_drc_exceptions(exception_group)
 
         tree = ElementTree.parse(report_file)
         rules = {key: value for key, value in DrcError.parse_rules(tree)}
@@ -82,9 +76,9 @@ def run_drc(cell_name, gds_name, exception_group="", flatten=None):
     rule_file = os.environ.get("KLAYOUT_DRC_DECK")
     assert os.path.exists(rule_file), f"DRC rules file {rule_file} does not exist"
     return_code, out_file, err_file = run_klayout(command_name, cell_name, rule_file, options)
-    from .magic import check_process_errors
+    from .magic import check_process_errors, get_drc_exceptions
     debug.error(f"{command_name} return code is non-zero", return_code)
-    benign_errors = DrcError.get_drc_exceptions(exception_group)
+    benign_errors = get_drc_exceptions(exception_group)
     check_process_errors(err_file, command_name, benign_errors=benign_errors)
 
     num_errors = DrcError.parse_errors(report_file, exception_group)

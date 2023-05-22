@@ -10,7 +10,6 @@ bank_pattern = re.compile(r"Xbank([0-9]+)")
 row_col_pattern = re.compile(r"_r([0-9]+)_c([0-9]+)")
 child_mod_pattern = re.compile("Xmod_([0-9]+)")
 parenthesis_pattern = re.compile(r"\[([0-9]+)\]")
-wordline_en_pattern = re.compile(r"bank\S+wordline_driver\S+/en")
 
 
 def get_adjacent_source_drain(net, device):
@@ -64,9 +63,9 @@ def search_pattern(pattern, str_=None):
 def get_bank_probe(net_name, index=None, bank=0):
     net_name = net_name.replace("[", "\[").replace("]", "\]")
     if index is None:
-        pattern = re.compile(rf"bank\S+/{net_name}")
+        pattern = re.compile(rf"bank\S+[\./]{net_name}")
     else:
-        pattern = re.compile(rf"bank\S+/\S+/{net_name}\[{index}\]")
+        pattern = re.compile(rf"bank\S+[\./]\S+[\./]{net_name}\[{index}\]")
     return search_pattern(pattern)
 
 
@@ -107,7 +106,7 @@ def get_sense_amp_net(label, net_name, bank=0):
         return get_adjacent_source_drain(bitline_net, next(iter(devices))[0])
     else:
         bit = parenthesis_pattern.findall(label)[0]
-        pattern = re.compile(fr"bank\S+sense\S+/dout\[{bit}\]")
+        pattern = re.compile(fr"bank\S+sense\S+[\./]dout\[{bit}\]")
         return search_pattern(pattern)
 
 
@@ -127,7 +126,7 @@ def get_enable_net(label, net_name):
     else:
         inst_name = "tri_gate"
 
-    pattern = re.compile(fr"bank\S+{inst_name}\S+/{internal_net}")
+    pattern = re.compile(fr"bank\S+{inst_name}\S+[\./]{internal_net}")
     return search_pattern(pattern)
 
 

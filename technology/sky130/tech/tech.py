@@ -244,6 +244,7 @@ if drc_name == "magic":
     drc_exceptions["latchup"] = ["N-diff distance to P-tap must be < 15.0um (LU.2)",
                                  "P-diff distance to N-tap must be < 15.0um (LU.3)",
                                  "All nwells must contain metal-connected N+ taps (nwell.4)"]
+    drc_exceptions["all"] = ["placed on top of itself"]
 else:
     drc_exceptions["latchup"] = []
     drc_exceptions["all"] = ["warning: previous definition of",

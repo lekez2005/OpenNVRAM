@@ -34,6 +34,7 @@ For example, in csh/tcsh, add to your .cshrc/.tcshrc:
   setenv OPENRAM_TECH "$HOME/OpenRAM/technology"
   setenv SCRATCH "/tmp/<USER>
 ```
+### FreePDK45 Setup
 If you are using FreePDK, you should also have that set up and have the
 environment variable point to the PDK. 
 For example, in bash, add to your .bashrc:
@@ -47,12 +48,24 @@ For example, in csh/tcsh, add to your .tcshrc:
 We do not distribute the PDK, but you may get it from:
     https://www.eda.ncsu.edu/wiki/FreePDK45:Contents
 
+### SCMOS Setup
 If you are using SCMOS, you should install Magic and netgen from:
 	http://opencircuitdesign.com/magic/
 	http://opencircuitdesign.com/netgen/
 In addition, you will need to install the MOSIS SCMOS rules for scn3me_subm 
 that are part of QFlow:
 	http://opencircuitdesign.com/qflow/
+
+### Sky130 Setup
+If you intend to simulate ReRAM devices using the Sky130 process, you need to install
+- Sky130 Hspice model. This model enables Spice simulations using either Spectre or Hspice simulators. These simulators can in turn simulate the Verilog-A-based ReRAM device model. To install: 
+  - Download the tar.gz spice model [file](https://github.com/lekez2005/open_pdks/releases/download/1.0.306/hspice-model.tar.bz2)
+  - Extract the tar.gz file to a directory
+    - `mkdir hspice`
+    - `tar -xf hspice-model.tar.bz2 -C hspice`
+  - Copy the hspice directory to the Sky130 PDK directory
+    - `cp -r hspice/ $PDK_ROOT_130/sky130B/libs.tech/hspice/`
+- [libpsf](https://github.com/lekez2005/libpsf) to enable post-simulation functionality verification
 
 # DIRECTORY STRUCTURE
 
